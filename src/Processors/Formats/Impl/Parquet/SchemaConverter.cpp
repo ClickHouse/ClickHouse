@@ -118,10 +118,7 @@ void SchemaConverter::prepareForReading()
     {
         TraversalNode node;
         processSubtree(node);
-        if (!node.element->__isset.field_id)
-            top_level_field_ids.reset();
-        else if (top_level_field_ids)
-            top_level_field_ids->insert(node.element->field_id);
+        addFieldIdOfLevel(*node.element, top_level_field_ids);
     }
 
     /// Check that all requested columns were found.
@@ -352,6 +349,17 @@ std::optional<Int64> SchemaConverter::getFieldId(const parq::SchemaElement & ele
     if (name_mapped_field_ids.empty())
         return std::nullopt;
     return name_mapped_field_ids.at(static_cast<size_t>(&element - file_metadata.schema.data()));
+}
+
+void SchemaConverter::addFieldIdOfLevel(const parq::SchemaElement & element, std::optional<UnorderedSetWithMemoryTracking<Int64>> & level_field_ids) const
+{
+    if (const std::optional<Int64> field_id = getFieldId(element))
+    {
+        if (level_field_ids)
+            level_field_ids->insert(*field_id);
+    }
+    else if (name_mapped_field_ids.empty())
+        level_field_ids.reset();
 }
 
 /// Checks that the children of a group annotated with the `FILE` logical type are the fields
@@ -1276,10 +1284,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::optional<UnorderedSetWithMemoryTracking<Int64>> element_field_ids{std::in_place};
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        if (!file_metadata.schema.at(schema_idx).__isset.field_id)
-            element_field_ids.reset();
-        else if (element_field_ids)
-            element_field_ids->insert(file_metadata.schema.at(schema_idx).field_id);
+        addFieldIdOfLevel(file_metadata.schema.at(schema_idx), element_field_ids);
 
         bool not_in_schema = false;
         const String & element_name = element_names_in_file.emplace_back(
@@ -1349,9 +1354,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     }
 
     /// Only for a struct that is the field of the mapper with its id: one with another id can have the same name.
-    if (column_mapper && column_mapper->hasIcebergInitialDefaults() && node.element->__isset.field_id
-        && column_mapper->getFieldIdToClickHouseName().contains(node.element->field_id))
-        struct_field_ids[node.name] = std::move(element_field_ids);
+    if (column_mapper && column_mapper->hasIcebergInitialDefaults())
+    {
+        const std::optional<Int64> struct_field_id = getFieldId(*node.element);
+        if (struct_field_id && column_mapper->getFieldIdToClickHouseName().contains(*struct_field_id))
+            struct_field_ids[node.name] = std::move(element_field_ids);
+    }
 
     if (!node.requested)
     {

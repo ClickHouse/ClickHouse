@@ -187,6 +187,9 @@ private:
     void assignFieldIdsFromNameMapping(const IcebergNameMapping & mapping);
     /// The field id of the element in the file, or the one the name mapping assigns to it.
     [[nodiscard]] std::optional<Int64> getFieldId(const parq::SchemaElement & element) const;
+    /// Adds the field id of `element` to the ids of its level; an element without one leaves the ids unknown, unless the
+    /// name mapping is used: then the element is not in the table.
+    void addFieldIdOfLevel(const parq::SchemaElement & element, std::optional<UnorderedSetWithMemoryTracking<Int64>> & level_field_ids) const;
 
     void processSubtree(TraversalNode & node);
 

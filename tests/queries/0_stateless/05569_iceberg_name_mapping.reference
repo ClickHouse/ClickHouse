@@ -123,3 +123,12 @@ compaction
 3	\N
 4	40
 5	\N
+initial-default
+1	7	8
+2	7	8
+3	7	8
+4	7	8
+5	7	\N
+6	7	\N
+join runtime filter
+50	5

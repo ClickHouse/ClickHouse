@@ -184,3 +184,52 @@ $CLICKHOUSE_LOCAL -q "
 SELECT count() FROM file('$WORK_DIR/t/data/*.parquet') WHERE _file LIKE 'import%';
 SELECT id, b FROM file('$WORK_DIR/t/data/*.parquet') ORDER BY id;
 "
+
+# Two metadata files on top of `V_BOTH`, written the way other engines write them: `n` and `s.z` added with an
+# `initial-default`, with the data files read under that schema (as after their manifest is rewritten under it), and the
+# names of `id` and `b` swapped in the mapping. The JOIN runtime filter must not prune by the manifest bounds of `id`.
+echo 'initial-default'
+cd "$CUR_DIR/data_iceberg" || exit 1
+rm -rf "$WORK_DIR"
+mkdir -p "$WORK_DIR"
+cp -r name_mapping_import "$WORK_DIR/"
+python3 - "$WORK_DIR/name_mapping_import/metadata" <<'PY'
+import copy, glob, json, os, sys
+metadata_dir = sys.argv[1]
+with open(glob.glob(os.path.join(metadata_dir, "00004-*.metadata.json"))[0]) as f:
+    base = json.load(f)
+mapping = json.loads(base["properties"]["schema.name-mapping.default"])
+
+metadata = copy.deepcopy(base)
+schema = copy.deepcopy(metadata["schemas"][0])
+schema["schema-id"] = 1
+schema["fields"].append({"id": 13, "name": "n", "type": "int", "required": False, "initial-default": 7})
+next(f for f in schema["fields"] if f["name"] == "s")["type"]["fields"].append(
+    {"id": 14, "name": "z", "type": "int", "required": False, "initial-default": 8})
+metadata["schemas"].append(schema)
+metadata["current-schema-id"] = 1
+metadata["last-column-id"] = 14
+for snapshot in metadata["snapshots"]:
+    snapshot["schema-id"] = 1
+defaults_mapping = copy.deepcopy(mapping)
+defaults_mapping.append({"names": ["n"], "field-id": 13})
+next(f for f in defaults_mapping if f["field-id"] == 3)["fields"].append({"names": ["z"], "field-id": 14})
+metadata["properties"]["schema.name-mapping.default"] = json.dumps(defaults_mapping)
+with open(os.path.join(metadata_dir, "00015-initial-default.metadata.json"), "w") as f:
+    json.dump(metadata, f)
+
+metadata = copy.deepcopy(base)
+for f in mapping:
+    if f["field-id"] in (1, 2):
+        f["names"] = ["b"] if f["field-id"] == 1 else ["id"]
+metadata["properties"]["schema.name-mapping.default"] = json.dumps(mapping)
+with open(os.path.join(metadata_dir, "00016-swapped.metadata.json"), "w") as f:
+    json.dump(metadata, f)
+PY
+cd "$WORK_DIR" || exit 1
+$CLICKHOUSE_LOCAL -q "
+SELECT id, n, s.z FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00015-initial-default.metadata.json') ORDER BY id;
+SELECT 'join runtime filter';
+SELECT t.id, t.b FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00016-swapped.metadata.json') AS t
+INNER JOIN (SELECT 50 AS k) AS r ON t.id = r.k;
+"
