@@ -132,7 +132,7 @@ Caches with the `LRU_OVERCOMMIT` and `SLRU_OVERCOMMIT` policies are not supporte
 
 The walk first takes at most `max_elements` entries of the queue (for 'random', the sample), and only then reads their segments, without blocking the queue. The result is not an atomic snapshot: a segment which is removed from the cache in the meantime is skipped, so the result can have fewer than `max_elements` segments even if the cache holds more. When a segment's cache key is locked by another query (e.g. while the segment is being downloaded), the query waits for it.
 
-`max_elements` can be at most the `max_observed_elements` setting of the cache (1000000 by default), unless the cache holds fewer segments.
+`max_elements` can be at most the `max_observed_elements` setting of the cache (1000000 by default), unless the cache holds fewer segments. Since 'random' walks the whole queue, it also requires that the cache holds at most `max_observed_elements` segments, however small `max_elements` is.
 
 Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks the eviction queue of one cache, and with 'hottest' and 'coldest' only as far as needed, so it can return the hottest segments (e.g. to prewarm another replica), the next eviction candidates, or a uniform sample of the cache.
 

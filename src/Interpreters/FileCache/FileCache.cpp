@@ -2727,7 +2727,18 @@ FileSegmentSummaryInfoList FileCache::observeFilesystemCache(
             getName());
 
     const size_t limit = max_observed_elements.load(std::memory_order_relaxed);
-    const size_t requested = std::min<UInt64>(query_max_elements, main_priority->getElementsCountApprox());
+    const size_t elements_count = main_priority->getElementsCountApprox();
+
+    if (query_order == IFileCachePriority::IterationOrder::RANDOM && elements_count > limit)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The `random` order walks all {} file segments of the filesystem cache '{}', which is more than its `max_observed_elements` "
+            "({})",
+            elements_count,
+            getName(),
+            limit);
+
+    const size_t requested = std::min<UInt64>(query_max_elements, elements_count);
     if (requested > limit)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

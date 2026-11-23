@@ -4775,6 +4775,7 @@ try
     }
 
     /// `max_observed_elements`: requesting more segments throws, unless the cache holds fewer.
+    /// `RANDOM` throws if the cache holds more, however few segments are requested.
     {
         auto settings = make_settings("observe_lru_limit", FileCachePolicy::LRU, false);
         settings[FileCacheSetting::max_observed_elements] = 2;
@@ -4786,9 +4787,12 @@ try
         add_range(cache, key, user, 5, 5);
         /// The cache holds only 2 segments, so the request is effectively for 2.
         ASSERT_EQ(cache.observeFilesystemCache(100, 100, Order::COLDEST).size(), 2);
+        ASSERT_EQ(cache.observeFilesystemCache(1, 100, Order::RANDOM).size(), 1);
 
         add_range(cache, key, user, 10, 5);
         ASSERT_EQ(cache.observeFilesystemCache(2, 100, Order::COLDEST).size(), 2);
+        ASSERT_EQ(cache.observeFilesystemCache(2, 100, Order::HOTTEST).size(), 2);
+        ASSERT_THROW(cache.observeFilesystemCache(1, 100, Order::RANDOM), Exception);
         for (const auto order : {Order::COLDEST, Order::HOTTEST, Order::RANDOM})
             ASSERT_THROW(cache.observeFilesystemCache(3, 100, order), Exception);
     }
