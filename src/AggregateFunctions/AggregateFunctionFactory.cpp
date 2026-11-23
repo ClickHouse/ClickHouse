@@ -122,6 +122,25 @@ static DataTypePtr convertVariantArgument(const DataTypePtr & type, const String
     return makeNullable(supertype);
 }
 
+bool AggregateFunctionFactory::hasOrderByCombinator(const String & name) const
+{
+    /// The same order of lookup as in `getImpl`: a function name takes precedence over a combinator suffix.
+    String nested_name = getAliasToOrName(name);
+    while (!aggregate_functions.contains(nested_name) && !case_insensitive_aggregate_functions.contains(Poco::toLower(nested_name)))
+    {
+        auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(nested_name);
+        if (!combinator)
+            return false;
+
+        const auto & combinator_name = combinator->getName();
+        if (combinator_name == "OrderBy")
+            return true;
+
+        nested_name = getAliasToOrName(nested_name.substr(0, nested_name.size() - combinator_name.size()));
+    }
+    return false;
+}
+
 AggregateFunctionPtr AggregateFunctionFactory::get(
     const String & name,
     NullsAction action,
@@ -157,13 +176,14 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
 
-    /// The OrderBy combinator handles Nullable arguments itself: it does not apply the `Null` wrapper
-    /// on top, because that would drop the rows where only a sort key is NULL (they must be ordered
-    /// according to NULLS FIRST/LAST instead). The nested function is created by a recursive call
-    /// with the nested-function arguments only, and that call applies the `Null` wrapper to it.
-    bool is_order_by_combinator = false;
-    if (auto outer_combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
-        is_order_by_combinator = outer_combinator->getName() == "OrderBy";
+    /// The `OrderBy` combinator handles Nullable arguments itself: the `Null` wrapper is not applied on top of it,
+    /// because that would drop the rows where only a sort key is NULL (they must be ordered according to
+    /// NULLS FIRST/LAST instead). This also holds when `OrderBy` is not the outermost combinator,
+    /// e.g. `groupArrayOrderByIf('0 ASC NULLS FIRST')(v, k, cond)` or `groupArrayOrderByState('0 ASC')(v, k)`:
+    /// the outer combinators cannot tell the sort keys from the other arguments. Every nested function is created
+    /// by a recursive call with its own arguments only, and the call for the function under `OrderBy`
+    /// applies the `Null` wrapper to it. So the state under `-State` is the same as the state of the function without it.
+    bool is_order_by_combinator = hasOrderByCombinator(name);
 
     if (!is_window_function && !is_order_by_combinator && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))

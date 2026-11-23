@@ -111,6 +111,9 @@ private:
     [[nodiscard]] DataTypes getVariantArgumentsConversion(
         const String & name, NullsAction action, const DataTypes & argument_types, bool including_nested) const;
 
+    /// Whether there is the `OrderBy` combinator among the combinators of the function, e.g. in `groupArrayOrderByIf`.
+    [[nodiscard]] bool hasOrderByCombinator(const String & name) const;
+
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,

@@ -1,0 +1,19 @@
+-- If
+['b','c','a']
+['c','a','b']
+['b','a']
+-- The same as the outermost OrderBy
+['b','c','a']
+['b','c','a']
+-- State and Merge
+['b','d','c','a','e']	AggregateFunction(groupArrayOrderBy(\'0 ASC NULLS FIRST\'), String, Nullable(Int32))
+['b','d','c','a','e']
+['d','c','a','e','b']
+-- A Nullable argument of the nested function is still skipped, a NULL sort key is not
+['c','a']
+['d','c','a','e']
+2	3
+11	Nullable(Int64)
+-- Other outer combinators
+['b','d','c','a','e']	['d','c','a','e','b']
+['b','c','a']
