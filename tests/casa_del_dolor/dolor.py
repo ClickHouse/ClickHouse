@@ -506,6 +506,35 @@ def stop_distributed_sends(server) -> None:
 
 
 POSTGRES_HEALTHY_TIMEOUT = 60
+# Above the `CURL_TIMEOUT` of the autoheal sidecar, which bounds each of its Docker API requests
+AUTOHEAL_DRAIN_TIMEOUT = 40
+
+
+def has_curl_descendant(pid: int) -> bool:
+    with open(f"/proc/{pid}/task/{pid}/children") as f:
+        children = f.read().split()
+    for child in children:
+        with open(f"/proc/{child}/comm") as f:
+            if f.read().strip() == "curl" or has_curl_descendant(int(child)):
+                return True
+    return False
+
+
+def pause_autoheal_between_requests() -> bool:
+    # The daemon can answer a request the sidecar sent before its pause after postgres1 is paused,
+    # and the resumed sidecar restarts what that answer lists, so freeze it with no `curl` running.
+    # Read through /proc: `docker top` can block behind the health check exec of the paused sidecar.
+    container = cluster.get_instance_docker_id("autoheal")
+    deadline = time.monotonic() + AUTOHEAL_DRAIN_TIMEOUT
+    while True:
+        cluster.process_integration_nodes("postgres", ["autoheal"], "pause")
+        pid = cluster.docker_client.api.inspect_container(container)["State"]["Pid"]
+        if not has_curl_descendant(pid):
+            return True
+        cluster.process_integration_nodes("postgres", ["autoheal"], "unpause")
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.2)
 
 
 def wait_container_healthy(name: str, timeout: float) -> bool:
@@ -1026,8 +1055,11 @@ while all_running and (not reached_limit):
         # Docker reports a paused container as unhealthy until its first health probe after the unpause,
         # and the autoheal sidecar of the postgres compose file restarts unhealthy containers
         hold_autoheal = next_pick == "postgres" and stop_action == "pause"
-        if hold_autoheal:
-            cluster.process_integration_nodes(next_pick, ["autoheal"], "pause")
+        if hold_autoheal and not pause_autoheal_between_requests():
+            logger.warning(
+                f"autoheal kept a request in flight for {AUTOHEAL_DRAIN_TIMEOUT}s, stopping postgres1 instead"
+            )
+            hold_autoheal, stop_action, start_action = False, "stop", "start"
         cluster.process_integration_nodes(next_pick, choosen_instances, stop_action)
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, start_action)
