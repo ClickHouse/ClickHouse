@@ -63,3 +63,4 @@ SELECT tuple('true') IN (SELECT tuple(a) FROM b), tuple('true') IN (SELECT tuple
 SELECT accurateCastOrNull(tuple('true'), 'Tuple(SimpleAggregateFunction(sumWithOverflow, Bool))'), accurateCastOrNull(tuple('x'), 'Tuple(SimpleAggregateFunction(any, Bool))'), accurateCastOrNull(tuple(map('a', 1)), 'Tuple(SimpleAggregateFunction(any, JSON))'), accurateCastOrNull(tuple('x'), 'Tuple(SimpleAggregateFunction(any, JSON))');
 SELECT k, (SELECT count() FROM numbers(5) WHERE number = b.v) FROM b ORDER BY k;
 SELECT accurateCastOrNull(CAST([1., 2.], 'Array(Dynamic)'), 'QBit(SimpleAggregateFunction(max, Float32), 2)'), accurateCastOrNull(CAST([1., 'a'], 'Array(Variant(Float64, String))'), 'QBit(SimpleAggregateFunction(max, Float32), 2)');
+SELECT CAST('{"a":"2020-01-01 00:00:00.123"}'::JSON(a DateTime64(3)) AS JSON(a SimpleAggregateFunction(any, DateTime))) SETTINGS json_use_optimized_type_conversion = 1;

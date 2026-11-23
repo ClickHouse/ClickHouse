@@ -2571,7 +2571,7 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
 
     auto all_values_convert_exactly = [&]
     {
-        auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
+        auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(removeSimpleAggregateFunction(to_inner, from)));
         const auto & null_map = assert_cast<const ColumnNullable &>(*probe).getNullMapData();
         return memoryIsZero(null_map.data(), 0, null_map.size());
     };
