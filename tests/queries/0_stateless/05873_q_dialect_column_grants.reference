@@ -1,0 +1,13 @@
+--- the granted column
+1
+2
+3
+2
+--- only the visible columns are known
+['a']
+--- the column without a grant
+UNKNOWN_IDENTIFIER
+UNKNOWN_IDENTIFIER
+--- a table without grants
+ACCESS_DENIED
+ACCESS_DENIED

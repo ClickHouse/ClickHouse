@@ -38,6 +38,8 @@ select from trades where sym = `IBM;
 The assignments of a program are visible to the following statements of the same query,
 but not to the following queries. The value of the last statement is the result of the query.
 Comments start with `/` after whitespace; `--` comments are accepted as well.
+A line with a lone `/` starts a block comment that lasts until a line with a lone `\`,
+and a lone `\` outside of a block comment ends the script: the rest of the text is ignored.
 
 ## What is supported {#what-is-supported}
 
@@ -86,3 +88,7 @@ A grouped `select` returns the groups sorted by the keys, like q. A non-aggregat
 - The values of a program are compiled, not evaluated: recursion, control statements (`if`, `do`, `while`),
   system commands, IPC, files, and the modification of tables in place (`` `t insert ... ``) are not supported.
 - General lists must consist of items of the same shape; dictionaries are supported in simple forms.
+- The names starting with `__q` are reserved for the helper columns of the generated query: a table with such a column
+  cannot be used in a q program (rename the column with `.ch.sql`).
+- The columns of a table are those that the user is allowed to see, as in `system.columns`. A program needs the `SELECT` grant
+  only for the columns that it uses.
