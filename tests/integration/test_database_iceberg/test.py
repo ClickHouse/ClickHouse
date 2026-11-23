@@ -3066,6 +3066,88 @@ def test_namespace_two_part_name_resolution(started_cluster):
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`system.columns`")
 
 
+def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
+    """
+    A serialized query plan names a table as `db`.`table`; the receiving server reads it as
+    written and does not also try it as table `db.table` of its current database.
+    """
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+    on = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_plan_{uuid.uuid4().hex[:8]}"
+    X = f"ns_{test_ref}"
+    T = "plan_table"
+    T2 = "plan_table_without_overlap"
+    D = f"dist_{test_ref}"
+    D2 = f"dist2_{test_ref}"
+    S = f"set_{test_ref}"
+    worker = "worker_default_database_demo"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # database `demo` gets tables `X.T` (5 rows) and `demo.X.T` (3 rows)
+    catalog.create_namespace(X)
+    create_table(catalog, X, T).append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+    nested = f"{CATALOG_NAME}.{X}"
+    catalog.create_namespace(nested)
+    create_table(catalog, nested, T).append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+    create_table(catalog, X, T2).append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+
+    try:
+        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM `{X}.{T}`", settings=on))
+        assert result == 5, f"table X.T: expected 5 rows, got {result}"
+        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM `{nested}.{T}`", settings=on))
+        assert result == 3, f"table demo.X.T: expected 3 rows, got {result}"
+
+        # the shard's `default_database` is the catalog, so the plan names the table as `demo`.`X.T`
+        node1.query(
+            f"CREATE TABLE default.{D} (symbol Nullable(String)) "
+            f"ENGINE = Distributed(cluster_demo_default_database, '', '{X}.{T}')"
+        )
+        query = f"SELECT count() FROM default.{D}"
+        for serialize in (0, 1):
+            result = int(node1.query(query, settings={**on, "serialize_query_plan": serialize}))
+            assert result == 5, f"serialize_query_plan = {serialize}: expected 5 rows, got {result}"
+
+        # a table-backed set `default.S`, while the catalog has a table `default.S` too
+        try:
+            catalog.create_namespace("default")
+        except NamespaceAlreadyExistsError:
+            pass
+        create_table(catalog, "default", S).append(pa.Table.from_pylist([generate_record()]))
+        for node in (node1, node2):
+            node.query(f"CREATE TABLE default.{S} (x String) ENGINE = Set")
+            node.query(f"INSERT INTO default.{S} VALUES ('kek')")
+
+        # the catalog is the worker user's default database (under the shard's `default_database` the
+        # initiator itself reports the ambiguity); the user is kept for the connections pooled on `node1`
+        node2.query(f"CREATE USER IF NOT EXISTS {worker} IDENTIFIED WITH no_password DEFAULT DATABASE {CATALOG_NAME}")
+        for table in (f"{CATALOG_NAME}.`{X}.{T2}`", f"default.{S}", f"{CATALOG_NAME}.`default.{S}`"):
+            node2.query(f"GRANT SELECT ON {table} TO {worker}")
+        node1.query(
+            f"CREATE TABLE default.{D2} (symbol Nullable(String)) "
+            f"ENGINE = Distributed(cluster_worker_default_database_demo, {CATALOG_NAME}, '{X}.{T2}')"
+        )
+        # only the serialized plan: the query text is still read under the two-part rule
+        result = int(
+            node1.query(
+                f"SELECT count() FROM default.{D2} WHERE symbol IN default.{S}",
+                settings={**on, "serialize_query_plan": 1},
+            )
+        )
+        assert result == 5, f"set through a serialized plan: expected 5 rows, got {result}"
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS default.{D}")
+        node1.query(f"DROP TABLE IF EXISTS default.{D2}")
+        for node in (node1, node2):
+            node.query(f"DROP TABLE IF EXISTS default.{S}")
+        node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{S}`")
+
+
 def test_three_part_identifier(started_cluster):
     """
     Test 3-part compound identifier syntax: db.namespace.table
