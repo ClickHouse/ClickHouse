@@ -218,12 +218,15 @@ private:
     bool failed = false;
 };
 
-/// An argument of an aggregate of a lane that is an expression over the values, computed on the device for each batch,
-/// see `GPUComputedArgument`. It holds the compiled kernel, which must outlive the stream of the lane.
-struct GPUComputedLaneArgument
+/// An argument of an aggregate that is an expression over the values of a batch rather than one of them, such as
+/// `l_extendedprice * (1 - l_discount)` of `sum(l_extendedprice * (1 - l_discount))`. A lane computes it on the device for
+/// every batch by the compiled `expression`, so that only the values it reads go to the device, and gives it to its
+/// `GROUP BY` as one more value. Of a fixed width.
+struct GPUComputedArgument
 {
+    /// Holds the kernel, which must outlive the stream of the lane.
     CompiledGPUExpression expression;
-    /// `columns[i]` is the value the expression reads as its column `i`.
+    /// `columns[i]` is the value of the batch that the expression reads as its column `i`.
     std::vector<uint32_t> columns;
 };
 
@@ -237,7 +240,7 @@ public:
         std::vector<GPUElementType> keys_,
         std::vector<GPUElementType> values_,
         std::vector<GPUGroupByAggregate> aggregates_,
-        std::vector<GPUComputedLaneArgument> computed_,
+        std::vector<GPUComputedArgument> computed_,
         std::optional<CompiledGPUExpression> where_,
         size_t num_parts);
 
@@ -273,16 +276,20 @@ public:
 
 private:
     CudfGroupBy & groupByOrThrow() const;
+    /// The values of a batch, then its computed arguments, which this computes on the device.
+    std::vector<DeviceColumnView> withComputedArguments(const std::vector<DeviceColumnView> & value_columns, size_t rows);
     CudfRowCollector & collectorOrThrow() const;
 
     const std::vector<GPUElementType> keys;
     const std::vector<GPUElementType> values;
     const std::vector<GPUGroupByAggregate> aggregates;
     /// Declared before `lane_stream`, which is synchronized on destruction: their kernels must outlive it.
-    const std::vector<GPUComputedLaneArgument> computed;
+    const std::vector<GPUComputedArgument> computed;
     const std::optional<CompiledGPUExpression> where;
 
     StreamPtr lane_stream;
+    /// Of each computed argument, its values of the last batch; after `lane_stream`, in whose order they are freed.
+    std::vector<DeviceBuffer> computed_values;
     std::unique_ptr<CudfGroupBy> group_by;
     std::unique_ptr<CudfRowCollector> collector;
 

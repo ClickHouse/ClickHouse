@@ -137,20 +137,20 @@ std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_values, std::vecto
     return aggregates;
 }
 
-std::vector<GPUComputedLaneArgument> computedArgumentsOrThrow(const std::vector<GPUElementType> & values, std::vector<GPUComputedLaneArgument> computed)
+std::vector<GPUComputedArgument> computedArgumentsOrThrow(const std::vector<GPUElementType> & values, std::vector<GPUComputedArgument> computed)
 {
     for (const auto & value : computed)
     {
         const GPUExpression & expression = value.expression.expression;
         if (expression.result != GPUExpressionResult::Value)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives by a predicate");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "An argument of a GPU aggregate computed by a predicate");
         if (value.columns.size() != expression.num_columns)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "A value the GPU derives by an expression of {} columns from {}", expression.num_columns, value.columns.size());
+                ErrorCodes::LOGICAL_ERROR, "An argument of a GPU aggregate computed by an expression of {} columns from {}", expression.num_columns, value.columns.size());
         for (const uint32_t column : value.columns)
         {
             if (column >= values.size() || columnKindOf(values[column]) != GPUColumnKind::Fixed)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from value {} of {}", column, values.size());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "An argument of a GPU aggregate computed from value {} of {}", column, values.size());
         }
     }
     return computed;
@@ -789,7 +789,7 @@ GPUGroupingLane::GPUGroupingLane(
     std::vector<GPUElementType> keys_,
     std::vector<GPUElementType> values_,
     std::vector<GPUGroupByAggregate> aggregates_,
-    std::vector<GPUComputedLaneArgument> computed_,
+    std::vector<GPUComputedArgument> computed_,
     std::optional<CompiledGPUExpression> where_,
     size_t num_parts)
     : keys(std::move(keys_))
@@ -810,11 +810,15 @@ GPUGroupingLane::GPUGroupingLane(
         return;
     }
 
-    std::vector<GPUComputedArgument> computed_arguments;
-    computed_arguments.reserve(computed.size());
-    for (const auto & value : computed)
-        computed_arguments.push_back({.expression = value.expression.expression, .columns = value.columns});
-    group_by = std::make_unique<CudfGroupBy>(keys, values, computed_arguments, aggregates, num_parts, stream());
+    /// The `GROUP BY` takes the computed arguments as values after those of the batch.
+    std::vector<GPUElementType> all_values = values;
+    computed_values.reserve(computed.size());
+    for (const auto & argument : computed)
+    {
+        all_values.push_back(argument.expression.expression.value_type);
+        computed_values.emplace_back(stream());
+    }
+    group_by = std::make_unique<CudfGroupBy>(keys, all_values, aggregates, num_parts, stream());
 }
 
 CudfGroupBy & GPUGroupingLane::groupByOrThrow() const
@@ -860,12 +864,35 @@ void GPUGroupingLane::add(
     Stopwatch watch;
     if (collector)
         collector->addBatch(value_columns, filter_columns, filter);
-    else
+    else if (computed.empty())
         group_by->addBatch(key_columns, value_columns, filter_columns, filter);
+    else
+        group_by->addBatch(key_columns, withComputedArguments(value_columns, rows), filter_columns, filter);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+}
+
+std::vector<DeviceColumnView> GPUGroupingLane::withComputedArguments(const std::vector<DeviceColumnView> & value_columns, size_t rows)
+{
+    std::vector<DeviceColumnView> all_values = value_columns;
+    std::vector<GPUExpressionInput> inputs;
+    for (size_t i = 0; i < computed.size(); ++i)
+    {
+        const GPUExpression & expression = computed[i].expression.expression;
+        inputs.clear();
+        for (const uint32_t column : computed[i].columns)
+            inputs.push_back({.data = value_columns[column].fixed.data, .type = value_columns[column].fixed.element_type});
+
+        /// The values of the batch before are done with in the order of the stream, which this one follows.
+        DeviceBuffer & out = computed_values[i];
+        out.clear();
+        char * const result = out.grow(rows * sizeOf(expression.value_type));
+        evaluateGPUExpression(expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, result, stream());
+        all_values.emplace_back(DeviceFixedColumn{.element_type = expression.value_type, .data = result, .rows = rows});
+    }
+    return all_values;
 }
 
 size_t GPUGroupingLane::collectedRows() const

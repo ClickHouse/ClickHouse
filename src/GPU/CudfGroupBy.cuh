@@ -16,25 +16,13 @@ class GroupBy;
 class RowCollector;
 }
 
-/// An argument of an aggregate that is an expression over the values of a batch rather than one of them, such as
-/// `l_extendedprice * (1 - l_discount)` of `sum(l_extendedprice * (1 - l_discount))`. The device computes it for every
-/// batch by the compiled `expression`, so that only the values it reads go to the device. Of a fixed width: `columns[i]`
-/// is the value of the batch that the expression reads as its column `i`.
-struct GPUComputedArgument
-{
-    GPUExpression expression;
-    GPUSpan<uint32_t> columns;
-};
-
 /// A device `GROUP BY` split by a hash of the keys into parts; of plain types, as both ClickHouse and the cuDF island include it.
 class CudfGroupBy
 {
 public:
-    /// The aggregates take the `values` of a batch, then the `computed` values, which the device computes for each batch.
     __host__ CudfGroupBy(
         GPUSpan<GPUElementType> keys,
         GPUSpan<GPUElementType> values,
-        GPUSpan<GPUComputedArgument> computed,
         GPUSpan<GPUGroupByAggregate> aggregates,
         size_t num_parts,
         cuda::stream_ref stream);
@@ -43,7 +31,7 @@ public:
     CudfGroupBy(const CudfGroupBy &) = delete;
     CudfGroupBy & operator=(const CudfGroupBy &) = delete;
 
-    /// Without the computed arguments. The rows where `filter`, a predicate over `filter_columns`, is false are left out. The
+    /// The rows where `filter`, a predicate over `filter_columns`, is false are left out. The
     /// columns must stay alive in the order of the stream.
     __host__ void addBatch(
         GPUSpan<DeviceColumnView> keys,

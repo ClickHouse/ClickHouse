@@ -127,59 +127,6 @@ __host__ std::unique_ptr<cudf::groupby_aggregation> cudfAggregationOf(GPUAggrega
 namespace cudf_group_by
 {
 
-/// The arguments of aggregates that are expressions over the values, see `GPUComputedArgument`: for each batch, a kernel
-/// of each expression computes a column of it on the device, which the aggregates read after the values of the batch.
-class ComputedArguments
-{
-public:
-    __host__ ComputedArguments(GPUSpan<GPUComputedArgument> computed, cuda::stream_ref stream_) : stream(stream_)
-    {
-        for (const auto & value : computed)
-        {
-            if (value.expression.result != GPUExpressionResult::Value)
-                throwGPUError("a computed argument of an expression that is a predicate");
-            expressions.push_back(value.expression);
-            columns.emplace_back(value.columns.begin(), value.columns.end());
-            buffers.emplace_back(0, stream_);
-        }
-    }
-
-    __host__ size_t size() const { return expressions.size(); }
-
-    /// Appends the computed arguments of a batch to `batch`, of the keys and then the values, the first `num_key_columns`.
-    __host__ void derive(std::vector<cudf::column_view> & batch, size_t num_key_columns, const std::vector<GPUElementType> & values)
-    {
-        const auto rows = static_cast<size_t>(batch[0].size());
-        const size_t num_values = batch.size() - num_key_columns;
-        for (size_t i = 0; i < expressions.size(); ++i)
-        {
-            std::vector<GPUExpressionInput> inputs;
-            inputs.reserve(columns[i].size());
-            for (const uint32_t column : columns[i])
-            {
-                if (column >= num_values)
-                    throwGPUError(("a computed argument of value " + std::to_string(column) + " of a batch of " + std::to_string(num_values)).c_str());
-                const DeviceFixedColumn value = deviceViewOf(batch[num_key_columns + column], values[column]);
-                inputs.push_back({.data = value.data, .type = value.element_type});
-            }
-
-            const GPUElementType type = expressions[i].value_type;
-            rmm::device_buffer & out = buffers[i];
-            if (out.size() < rows * sizeOf(type))
-                out.resize(rows * sizeOf(type), stream);
-            evaluateGPUExpression(expressions[i], {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, out.data(), stream);
-            batch.emplace_back(cudfTypeOf(type), static_cast<cudf::size_type>(rows), out.data(), nullptr, 0);
-        }
-    }
-
-private:
-    const cuda::stream_ref stream;
-    std::vector<GPUExpression> expressions;
-    std::vector<std::vector<uint32_t>> columns;
-    /// Of each computed argument, its values of the last batch.
-    std::vector<rmm::device_buffer> buffers;
-};
-
 /// The partials that cuDF computes for the aggregates, and the tables of partial results.
 class Partials
 {
@@ -527,7 +474,6 @@ public:
     __host__ GroupBy(
         GPUSpan<GPUElementType> keys_,
         const std::vector<GPUElementType> & values_,
-        GPUSpan<GPUComputedArgument> computed_,
         GPUSpan<GPUGroupByAggregate> aggregates_,
         size_t num_parts,
         cuda::stream_ref stream_)
@@ -539,7 +485,6 @@ public:
         , keyless_key(0, stream_)
         , filter_mask(0, stream_)
         , all_true(0, stream_)
-        , computed(computed_, stream_)
         , partials(aggregates_, values, keys.size() + (keyless ? 1 : 0), stream_)
         , parts(partials, num_parts, stream_)
         , streaming(partials, parts, stream_)
@@ -556,11 +501,10 @@ public:
         if (finalized)
             throwGPUError("a batch after the groups were finalized");
 
-        const size_t num_batch_values = values.size() - computed.size();
-        if (batch_keys.size() != keys.size() || batch_values.size() != num_batch_values)
+        if (batch_keys.size() != keys.size() || batch_values.size() != values.size())
             throwGPUError(
                 ("a batch of " + std::to_string(batch_keys.size()) + " keys and " + std::to_string(batch_values.size()) + " values, expected "
-                 + std::to_string(keys.size()) + " and " + std::to_string(num_batch_values)).c_str());
+                 + std::to_string(keys.size()) + " and " + std::to_string(values.size())).c_str());
 
         const size_t rows = batch_keys.empty() ? batch_values[0].rows() : batch_keys[0].rows();
         if (rows == 0)
@@ -582,9 +526,6 @@ public:
             if (!applyFilter(columns, kept, compacted))
                 return;
         }
-
-        if (computed.size() != 0)
-            computed.derive(columns, partials.keyIndices().size(), values);
 
         if (strategy == Strategy::Undecided)
             chooseStrategy(columns);
@@ -772,7 +713,6 @@ private:
     /// Of the `WHERE` of the last batch, or of the `HAVING`.
     rmm::device_buffer filter_mask;
     rmm::device_buffer all_true;
-    ComputedArguments computed;
 
     Partials partials;
     Strategy strategy = Strategy::Undecided;
@@ -885,7 +825,6 @@ private:
 __host__ CudfGroupBy::CudfGroupBy(
     GPUSpan<GPUElementType> keys,
     GPUSpan<GPUElementType> values,
-    GPUSpan<GPUComputedArgument> computed,
     GPUSpan<GPUGroupByAggregate> aggregates,
     size_t num_parts,
     cuda::stream_ref stream)
@@ -897,19 +836,7 @@ __host__ CudfGroupBy::CudfGroupBy(
     if (num_parts == 0 || num_parts > static_cast<size_t>(std::numeric_limits<int>::max()))
         throwGPUError(("a `GROUP BY` split into " + std::to_string(num_parts) + " parts").c_str());
 
-    /// The values of a batch, then the computed ones.
-    std::vector<GPUElementType> all_values(values.begin(), values.end());
-    for (const auto & value : computed)
-    {
-        for (const uint32_t column : value.columns)
-        {
-            if (column >= values.size() || columnKindOf(values[column]) != GPUColumnKind::Fixed)
-                throwGPUError(("a computed argument of value " + std::to_string(column) + " of " + std::to_string(values.size())
-                    + ", or of one of varying width").c_str());
-        }
-        all_values.push_back(value.expression.value_type);
-    }
-
+    const std::vector<GPUElementType> all_values(values.begin(), values.end());
     for (const auto & aggregate : aggregates)
     {
         if ((aggregate.aggregation == GPUAggregationKind::Count) != (aggregate.column == GPUGroupByAggregate::no_column))
@@ -917,7 +844,7 @@ __host__ CudfGroupBy::CudfGroupBy(
         if (aggregate.column != GPUGroupByAggregate::no_column && aggregate.column >= all_values.size())
             throwGPUError(("an aggregate of value " + std::to_string(aggregate.column) + " of " + std::to_string(all_values.size())).c_str());
     }
-    impl = guarded("making a `GROUP BY`", [&] { return new cudf_group_by::GroupBy(keys, all_values, computed, aggregates, num_parts, stream); });
+    impl = guarded("making a `GROUP BY`", [&] { return new cudf_group_by::GroupBy(keys, all_values, aggregates, num_parts, stream); });
 }
 
 __host__ CudfGroupBy::~CudfGroupBy()
