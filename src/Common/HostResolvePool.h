@@ -163,7 +163,7 @@ protected:
             return address == r.address;
         }
 
-        size_t getWeight() const
+        [[nodiscard]] size_t getWeight() const
         {
             if (failed)
                 return 0;
@@ -264,6 +264,8 @@ public:
 private:
     Silk::FiberMutex mutex;
     std::unordered_map<String, HostResolver::Ptr> host_pools TSA_GUARDED_BY(mutex);
+    /// Incremented by `dropCache`, so that the resolutions which started before the drop are not cached.
+    UInt64 generation TSA_GUARDED_BY(mutex) = 0;
 };
 
 }

@@ -17,6 +17,10 @@
 -- cached chunks, so both shapes keep the source plan intact and the deferred
 -- `DelayedCreatingSetsStep::makePlansForSets` can rebuild the set.
 
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS t_qrc_in;
 CREATE TABLE t_qrc_in (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_qrc_in SELECT number FROM numbers(1000);

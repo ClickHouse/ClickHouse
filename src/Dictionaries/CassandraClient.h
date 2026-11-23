@@ -6,6 +6,7 @@
 
 #include <base/types.h>
 #include <Common/Logger.h>
+#include <Common/SecretString.h>
 #include <Common/StringWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/Net/StreamSocket.h>
@@ -105,12 +106,12 @@ struct ColumnSpec
 class ResultPage
 {
 public:
-    size_t columns() const { return column_specs.size(); }
-    size_t rows() const { return rows_count; }
-    const VectorWithMemoryTracking<ColumnSpec> & columnSpecs() const { return column_specs; }
+    [[nodiscard]] size_t columns() const { return column_specs.size(); }
+    [[nodiscard]] size_t rows() const { return rows_count; }
+    [[nodiscard]] const VectorWithMemoryTracking<ColumnSpec> & columnSpecs() const { return column_specs; }
 
     /// The serialized value of a column in a row, or `std::nullopt` for NULL.
-    std::optional<std::string_view> value(size_t row, size_t column) const
+    [[nodiscard]] std::optional<std::string_view> value(size_t row, size_t column) const
     {
         const Value & v = values[row * column_specs.size() + column];
         if (v.size < 0)
@@ -119,8 +120,8 @@ public:
     }
 
     /// Opaque state to request the next page. Empty if this is the last page.
-    const String & pagingState() const { return paging_state; }
-    bool hasMorePages() const { return has_more_pages; }
+    [[nodiscard]] const String & pagingState() const { return paging_state; }
+    [[nodiscard]] bool hasMorePages() const { return has_more_pages; }
 
 private:
     friend class Connection;
@@ -144,7 +145,7 @@ private:
 struct ConnectionSettings
 {
     String user;
-    String password;
+    SecretString password;
     /// Use TLS with the client settings from the `openSSL.client` section of the server configuration.
     bool secure = false;
     Compression compression = Compression::None;
@@ -167,9 +168,9 @@ public:
     ResultPage query(const String & query_text, Consistency consistency, Int32 page_size, const String & paging_state);
 
     /// Whether the connection is alive and has no unread data, so it can be reused for another request.
-    bool isReusable() const;
+    [[nodiscard]] bool isReusable() const;
 
-    const Poco::Net::SocketAddress & getAddress() const { return address; }
+    [[nodiscard]] const Poco::Net::SocketAddress & getAddress() const { return address; }
 
 private:
     struct Frame
@@ -182,7 +183,7 @@ private:
 
     void handshake(const ConnectionSettings & settings);
     void sendFrame(UInt8 opcode, std::string_view body);
-    StringWithMemoryTracking compress(std::string_view body) const;
+    [[nodiscard]] StringWithMemoryTracking compress(std::string_view body) const;
     void decompress(StringWithMemoryTracking & body) const;
     Frame receiveFrame();
     [[noreturn]] void throwServerError(const Frame & frame) const;
