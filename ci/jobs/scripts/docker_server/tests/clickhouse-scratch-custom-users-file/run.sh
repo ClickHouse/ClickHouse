@@ -34,6 +34,11 @@ remoteQuery() {
     clickhouse-client --host clickhouse "$@"
 }
 
+# Without arguments: `retry.sh` parses its command line with `getopt`, so it would take `--password` as its own option.
+remoteQueryWithPassword() {
+  remoteQuery --password "$password" --query 'SELECT 1'
+}
+
 # Start the server with the docker arguments before the image ($1) and the server arguments after it (the rest).
 checkPassword() {
   local docker_args="$1"
@@ -52,7 +57,7 @@ checkPassword() {
   . "$TESTS_LIB_DIR/retry.sh" \
     --tries "$CLICKHOUSE_TEST_TRIES" \
     --sleep "$CLICKHOUSE_TEST_SLEEP" \
-    remoteQuery --password "$password" --query 'SELECT 1'
+    remoteQueryWithPassword
 
   if remoteQuery --query 'SELECT 1' > /dev/null 2>&1; then
     echo "the server accepts a remote connection of user 'default' without the requested password" >&2
