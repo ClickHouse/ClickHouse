@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonOrderDomain.h>
@@ -2955,6 +2956,13 @@ private:
 
             bool is_any_nullable = false;
             bool all_constants_convert_losslessly = true;
+            /// A `Field` does not keep the type of a `Dynamic` value or a `Variant` alternative, so the set may
+            /// put such a constant into a different type than the one `equals` compares.
+            const auto loses_type_in_field = [](const IDataType & type)
+            {
+                const auto * variant = typeid_cast<const DataTypeVariant *>(&type);
+                return isDynamic(type) || (variant && variant->getVariants().size() > 1);
+            };
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -2993,6 +3001,9 @@ private:
                 /// `tuple(NULL::Nullable(UInt64)) = tuple(NULL::Nullable(UInt64))` is NULL, while
                 /// `tuple(NULL::Nullable(UInt64)) IN (tuple(NULL))` is true.
                 if (tupleMemberCanContainNull(literal->getResultType()))
+                    all_constants_convert_losslessly = false;
+
+                if (anyInTypeTree(*literal->getResultType(), loses_type_in_field))
                     all_constants_convert_losslessly = false;
             }
 
