@@ -1333,12 +1333,14 @@ IcebergStorageSink::IcebergStorageSink(
     ContextPtr context_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     const Iceberg::PersistentTableComponents & persistent_table_components_,
-    const StorageID & table_id_)
+    const StorageID & table_id_,
+    std::optional<Int32> planned_schema_id_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , data_file_uploads(object_storage_->supportParallelWrite()
         ? context_->getSettingsRef()[Setting::iceberg_insert_max_data_files_in_upload] : 0)
     , object_storage(object_storage_)
+    , planned_schema_id(planned_schema_id_)
     , context(context_)
     , format_settings(format_settings_)
     , catalog(catalog_)
@@ -1393,11 +1395,21 @@ void IcebergStorageSink::readLatestMetadata()
             /* use_uuid_in_metadata */ catalog != nullptr, metadata_compression_method, write_format);
     filename_generator.setBaseMetadataFile(last_version, metadata_path);
 
+    /// A change of the schema between the attempts conflicts with this insert.
     const auto schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
-    if (is_retry && schema_id != current_schema_id)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
-    current_schema_id = schema_id;
+    if (is_retry)
+    {
+        if (schema_id != base_schema_id)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
+        /// The schema, the partition spec and the sort order stay as on the first read. The data files and the manifests are already written with them.
+        return;
+    }
+    base_schema_id = schema_id;
 
+    /// The inserted columns are matched by name in the schema the query planned them with, not in the latest one, like
+    /// a write of the Java implementation does: when a column is renamed and another one is added under its name meanwhile,
+    /// the data keeps the field id of the column the query meant. The metadata keeps the earlier schemas of the table.
+    current_schema_id = planned_schema_id.value_or(schema_id);
     auto schemas = metadata->getArray(Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
@@ -1406,10 +1418,12 @@ void IcebergStorageSink::readLatestMetadata()
             current_schema = schemas->getObject(static_cast<UInt32>(i));
         }
     }
-
-    /// The partition spec and the sort order stay as on the first read. The data files and the manifests are already written with them.
-    if (is_retry)
-        return;
+    if (!current_schema)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Metadata changed during write operation, try again: the table metadata has no schema with id {} any more, "
+            "which the insert was planned with",
+            current_schema_id);
 
     if (metadata->has(Iceberg::f_properties))
     {
@@ -1421,7 +1435,8 @@ void IcebergStorageSink::readLatestMetadata()
     partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
     auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 
-    sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description);
+    sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(
+        metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description, current_schema);
     /// Files sorted by a key ClickHouse orders differently from Iceberg are sorted but not tagged.
     if (!sort_description.column_names.empty() && canTagSortOrder(metadata, current_schema))
         data_file_sort_order_id = metadata->getValue<Int32>(Iceberg::f_default_sort_order_id);
@@ -1854,7 +1869,8 @@ bool IcebergStorageSink::initializeMetadata()
                     /*per_file_statistics=*/{},
                     data_file_sort_order_ids,
                     /*per_file_entry_lineage=*/{},
-                    /*schema_to_serialize=*/nullptr,
+                    /// The schema the data files are written with.
+                    /*schema_to_serialize=*/current_schema,
                     &per_file_fresh_statistics);
                 buffer_manifest_entry->finalize();
                 auto size = buffer_manifest_entry->count();

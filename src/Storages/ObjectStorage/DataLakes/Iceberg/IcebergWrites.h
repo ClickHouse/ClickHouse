@@ -180,7 +180,8 @@ public:
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        std::optional<Int32> planned_schema_id_);
 
     ~IcebergStorageSink() override;
 
@@ -209,8 +210,13 @@ private:
     size_t pending_bytes = 0;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
+    /// The schema the query planned the inserted columns with; unset if the query pinned no table state.
+    const std::optional<Int32> planned_schema_id;
+    /// The schema the data files are written with: the planned one, or the current one of the first read.
     Int64 current_schema_id = 0;
     Poco::JSON::Object::Ptr current_schema;
+    /// The current schema of the metadata the first attempt commits on. A later attempt requires it unchanged.
+    Int64 base_schema_id = 0;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
     KeyDescription sort_description;

@@ -2413,14 +2413,20 @@ Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr &
     return nullptr;
 }
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description)
+KeyDescription getSortingKeyDescriptionFromMetadata(
+    Poco::JSON::Object::Ptr metadata_object,
+    const NamesAndTypesList & ch_schema,
+    ContextPtr local_context,
+    SortDescription * sort_description,
+    Poco::JSON::Object::Ptr schema)
 {
     auto fields = getDefaultSortOrderFields(metadata_object);
     if (!fields || fields->size() == 0)
         return KeyDescription{};
 
     std::unordered_map<Int64, String> source_id_to_column_name;
-    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    if (!schema)
+        schema = parseTableSchemaV2Method(metadata_object).first;
 
     auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
     for (const auto & [col_name, source_id] : mapper)
