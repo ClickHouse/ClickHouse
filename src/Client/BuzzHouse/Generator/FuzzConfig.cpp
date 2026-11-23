@@ -693,7 +693,10 @@ void FuzzConfig::logDistributedShapesReach()
     countIf(exception_code = 49) AS logical_errors
 FROM "system"."query_log"
 WHERE is_initial_query AND type != 'QueryStart' AND query_kind = 'Select'
-GROUP BY ALL ORDER BY ALL)";
+GROUP BY ALL ORDER BY ALL
+SETTINGS make_distributed_plan = 0, enable_parallel_replicas = 0, extremes = 0, limit = 0, offset = 0,
+    max_execution_time = 0, max_result_rows = 0, max_result_bytes = 0, max_rows_to_read = 0, max_bytes_to_read = 0,
+    max_rows_to_group_by = 0, max_memory_usage = 0, max_threads = 0)";
 
     if (!processServerQuery(false, "SYSTEM FLUSH LOGS;"))
     {

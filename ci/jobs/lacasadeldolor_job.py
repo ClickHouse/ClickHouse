@@ -493,7 +493,11 @@ def main():
     ]
 
     # Generate BuzzHouse config, with the budget `dolor.py` gets as its `--timeout`
-    generate_buzz_config(workspace_path, str(buzz_out), time_to_run=DOLOR_RUN_MINUTES)
+    # TODO: temporary, BuzzHouse stops first, so that it logs the reach of the distributed shapes
+    # before `dolor.py` kills it
+    generate_buzz_config(
+        workspace_path, str(buzz_out), time_to_run=DOLOR_RUN_MINUTES - 2
+    )
 
     ctree = ET.parse(f"{repo_dir}/ci/jobs/scripts/server_fuzzer/config.xml")
     croot = ctree.getroot()
