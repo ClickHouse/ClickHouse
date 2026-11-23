@@ -231,12 +231,6 @@ public:
 
     void add(GPUDeviceBatch batch);
 
-    /// Columns there in the order of `stream` until it is done with them, without the computed arguments.
-    void add(
-        const std::vector<DeviceColumnView> & key_columns,
-        const std::vector<DeviceColumnView> & value_columns,
-        const std::vector<DeviceFixedColumn> & filter_columns);
-
     size_t collectedRows() const;
 
     MutableColumns takeCollected(const DataTypes & types);

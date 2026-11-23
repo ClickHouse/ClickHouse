@@ -823,14 +823,10 @@ CudfRowCollector & GPUGroupingLane::collectorOrThrow() const
 void GPUGroupingLane::add(GPUDeviceBatch batch)
 {
     batch.moveTo(stream());
-    add(batch.keys(), batch.values(), batch.filterColumns());
-}
+    const std::vector<DeviceColumnView> key_columns = batch.keys();
+    const std::vector<DeviceColumnView> value_columns = batch.values();
+    const std::vector<DeviceFixedColumn> filter_columns = batch.filterColumns();
 
-void GPUGroupingLane::add(
-    const std::vector<DeviceColumnView> & key_columns,
-    const std::vector<DeviceColumnView> & value_columns,
-    const std::vector<DeviceFixedColumn> & filter_columns)
-{
     const size_t num_where_columns = where ? where->columns.size() : 0;
     if (key_columns.size() != keys.size() || value_columns.size() != values.size() || filter_columns.size() != num_where_columns)
         throw Exception(
