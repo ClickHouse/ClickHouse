@@ -520,7 +520,7 @@ namespace
     class ParserFunctionName : public IParserBase
     {
     protected:
-        const char * getName() const override { return "function name"; }
+        [[nodiscard]] const char * getName() const override { return "function name"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
             ParserCompoundIdentifier parser(false, true, Highlight::function);
@@ -677,12 +677,12 @@ public:
 
     virtual bool parse(IParser::Pos & /*pos*/, Expected & /*expected*/, Action & /*action*/) = 0;
 
-    bool isFinished() const
+    [[nodiscard]] bool isFinished() const
     {
         return finished;
     }
 
-    int previousPriority() const
+    [[nodiscard]] int previousPriority() const
     {
         if (operators.empty())
             return 0;
@@ -690,7 +690,7 @@ public:
         return operators.back().priority;
     }
 
-    OperatorType previousType() const
+    [[nodiscard]] OperatorType previousType() const
     {
         if (operators.empty())
             return OperatorType::None;
@@ -698,7 +698,7 @@ public:
         return operators.back().type;
     }
 
-    const Operator * previousOperator() const
+    [[nodiscard]] const Operator * previousOperator() const
     {
         if (operators.empty())
             return nullptr;
@@ -712,7 +712,7 @@ public:
     /// a lambda body can leave higher-priority binary operators on top of the
     /// lambda operator (e.g. `[..., Lambda, Plus]` for `x -> x + 1`), so
     /// inspecting only the stack top via `previousType` would miss the lambda.
-    bool hasPendingOperator(OperatorType type) const
+    [[nodiscard]] bool hasPendingOperator(OperatorType type) const
     {
         for (const auto & op : operators)
             if (op.type == type)
@@ -720,7 +720,7 @@ public:
         return false;
     }
 
-    int isCurrentElementEmpty() const
+    [[nodiscard]] int isCurrentElementEmpty() const
     {
         return operators.empty() && operands.empty();
     }
@@ -1668,13 +1668,13 @@ private:
 
     /// `argument` put back as text, when it is a literal and the target type reads the text more
     /// precisely - see `exactCastArgument`.
-    ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
+    [[nodiscard]] ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
     {
         return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 
     /// `TRY_CAST(x AS T)` is `accurateCastOrNull(x, 'T')`. It reads a literal argument as exactly as `CAST` does.
-    ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
+    [[nodiscard]] ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
     {
         auto exact_argument = exactArgument(argument, type_text, pos);
         if (is_try)
@@ -3155,12 +3155,14 @@ public:
             auto select_expected = expected;
             /// The speculation keeps its failed keyword readings to itself, as its variants may be discarded.
             select_expected.failed_keyword_readings = nullptr;
+            select_expected.failed_subquery_readings = nullptr;
 
             if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
                 && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
             {
                 pos = select_pos;
                 select_expected.failed_keyword_readings = expected.failed_keyword_readings;
+                select_expected.failed_subquery_readings = expected.failed_subquery_readings;
                 expected = select_expected;
                 elements = {make_intrusive<ASTSubquery>(std::move(query))};
                 finished = true;
@@ -3473,7 +3475,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     return false;
 }
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
     {"?",             Operator("",                2,  0, OperatorType::StartIf)},
@@ -3536,7 +3538,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"::",            Operator(toString(toStringView(Keyword::CAST)),            14, 2, OperatorType::Cast)},
 };
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
     {toStringView(Keyword::NOT), Operator("not", 5, 1, OperatorType::Not)},
     {"-", Operator("negate", 13, 1)},
@@ -3729,23 +3731,27 @@ static bool isEscapeSupportingPredicate(std::string_view function_name)
 /// the subquery reading is the only one: `(FROM t)`, `(FROM numbers(10) |> LIMIT 1)`,
 /// `(FROM (SELECT 1))`. Even then the reading is taken only if the parentheses really do hold an
 /// expression, which keeps a relation named after an operator readable as one: `1 IN (FROM in)`.
-bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
+bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos & pos)
 {
-    if (pos->type != TokenType::OpeningRoundBracket)
+    if (pos.in_column_named_from_lookahead)
         return false;
-    ++pos;
+
+    auto token_pos = pos;
+    if (token_pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++token_pos;
 
     /// A clause keyword is always a BareWord token, so a quoted `` `from` `` never starts a FROM clause.
-    auto contents_pos = pos;
-    if (pos->type != TokenType::BareWord || !equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from"))
+    auto contents_pos = token_pos;
+    if (token_pos->type != TokenType::BareWord || !equalsCaseInsensitive(std::string_view(token_pos->begin, token_pos->size()), "from"))
         return false;
-    ++pos;
+    ++token_pos;
 
     Expected expected;
     bool operator_follows = false;
     for (const auto & [lexeme, unused_operator] : ParserExpressionImpl::operators_table)
     {
-        auto operator_pos = pos;
+        auto operator_pos = token_pos;
         if (parseOperator(operator_pos, lexeme, expected))
         {
             operator_follows = true;
@@ -3759,7 +3765,10 @@ bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
     /// The contents can also be a tuple or carry an alias, so parse them the way RoundBracketsLayer does.
     ASTPtr contents;
     ParserExpressionList contents_parser(/*allow_alias_without_as_keyword*/ false);
-    return contents_parser.parse(contents_pos, contents, expected) && contents_pos->type == TokenType::ClosingRoundBracket;
+    contents_pos.in_column_named_from_lookahead = true;
+    const bool parsed = contents_parser.parse(contents_pos, contents, expected);
+    pos.backtracks = std::max(pos.backtracks, contents_pos.backtracks);
+    return parsed && contents_pos->type == TokenType::ClosingRoundBracket;
 }
 
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)

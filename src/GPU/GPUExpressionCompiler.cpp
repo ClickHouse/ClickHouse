@@ -92,7 +92,7 @@ std::unique_ptr<llvm::TargetMachine> makeNVPTXTargetMachine()
         triple, architecture, "", llvm::TargetOptions(), std::nullopt, std::nullopt, llvm::CodeGenOptLevel::Aggressive));
     if (!machine)
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot create an NVPTX target machine of LLVM for {}", architecture);
-    if (!machine->getMCSubtargetInfo()->isCPUStringValid(architecture))
+    if (!machine->getMCSubtargetInfo().isCPUStringValid(architecture))
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "The NVPTX target of LLVM does not know the device's {}", architecture);
     return machine;
 }
