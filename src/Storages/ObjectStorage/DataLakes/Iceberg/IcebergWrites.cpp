@@ -38,8 +38,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestMerge.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/Decimal.h>
@@ -284,6 +286,8 @@ avro::GenericDatum makeDecimalFixedDatum(const Field & field, const avro::NodePt
     return datum;
 }
 
+}
+
 std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
@@ -339,6 +343,9 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         }
     }
 }
+
+namespace
+{
 
 /// Retains only the bounds that can be serialized. A field left out is simply absent from the
 /// manifest bounds map, which readers treat as "bound unknown" for that column.
@@ -646,7 +653,9 @@ void generateManifestFile(
 
         /// A metadata-only rewrite (non-empty per_file_entry_lineage) writes each entry as EXISTING, keeping the snapshot-id and sequence number that originally added the file rather than re-stamping it as ADDED.
         const DataFileEntryLineage * entry_lineage
-            = per_file_entry_lineage.empty() ? nullptr : &per_file_entry_lineage[file_idx];
+            = per_file_entry_lineage.empty() || per_file_entry_lineage[file_idx].added_by_new_snapshot
+            ? nullptr
+            : &per_file_entry_lineage[file_idx];
 
         manifest.field(Iceberg::f_status)
             = avro::GenericDatum(entry_lineage ? static_cast<Int32>(ManifestEntryStatus::EXISTING)
@@ -719,6 +728,14 @@ void generateManifestFile(
             set_fields(stats.nan_value_counts, Iceberg::f_nan_value_counts, [](Int32, Int64 value) { return value; });
             set_fields(stats.lower_bounds, Iceberg::f_lower_bounds, to_bytes);
             set_fields(stats.upper_bounds, Iceberg::f_upper_bounds, to_bytes);
+            if (stats.split_offsets && data_file.hasField(Iceberg::f_split_offsets))
+            {
+                auto & split_offsets_field = data_file.field(Iceberg::f_split_offsets);
+                split_offsets_field.selectBranch(1);
+                auto & split_offsets_array = split_offsets_field.value<avro::GenericArray>().value();
+                for (Int64 offset : *stats.split_offsets)
+                    split_offsets_array.push_back(avro::GenericDatum(offset));
+            }
         }
         else if (effective_statistics)
         {
@@ -894,7 +911,8 @@ void generateManifestList(
     const std::vector<Int64> & entry_partition_spec_ids,
     const std::vector<ManifestPartitionSummary> & entry_partition_summaries,
     const std::vector<Int64> & entry_row_counts,
-    const std::vector<Int64> & entry_file_counts)
+    const std::vector<Int64> & entry_file_counts,
+    const std::unordered_set<String> & replaced_manifest_paths)
 {
     chassert(
         per_entry_content_types.empty() || per_entry_content_types.size() == manifest_entry_names.size(),
@@ -1066,6 +1084,8 @@ void generateManifestList(
                         if (!carry_forward_manifest_paths.empty()
                             && !carry_forward_manifest_paths.contains(old_manifest_path.value<std::string>()))
                             return;
+                        if (replaced_manifest_paths.contains(old_manifest_path.value<std::string>()))
+                            return;
                         avro::GenericDatum new_datum(schema.root());
                         avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
 
@@ -1218,10 +1238,12 @@ void generateManifestList(
             /// whose entries stay EXISTING) reports existing_* counts.
             const auto & counts = entry_counts[entry_idx];
             setVersionedField(entry, counts.counts_are_added ? counts.files_count : 0, Iceberg::f_added_files_count);
-            setVersionedField(entry, counts.counts_are_added ? 0 : counts.files_count, Iceberg::f_existing_files_count);
+            setVersionedField(
+                entry, (counts.counts_are_added ? 0 : counts.files_count) + counts.existing_files_count, Iceberg::f_existing_files_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
             setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
-            setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
+            setVersionedField(
+                entry, (counts.counts_are_added ? 0 : counts.rows_count) + counts.existing_rows_count, Iceberg::f_existing_rows_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
 
             write_partition_summary(entry, entry_idx);
@@ -1699,6 +1721,9 @@ bool IcebergStorageSink::initializeMetadata()
         best_effort_remove(storage_manifest_list_name);
         if (statistics_file_path)
             best_effort_remove(*statistics_file_path);
+        for (const auto & merged_manifest : merged_manifests_in_storage)
+            best_effort_remove(merged_manifest);
+        merged_manifests_in_storage.clear();
 
         if (retry_because_of_metadata_conflict)
         {
@@ -1862,29 +1887,132 @@ bool IcebergStorageSink::initializeMetadata()
             if (single_manifest)
                 write_manifest();
         }
+        std::optional<Iceberg::ManifestMergeResult> merge_result;
+        if (auto merge_settings = Iceberg::getManifestMergeSettings(metadata, context->getSettingsRef()); merge_settings && parent_snapshot != -1)
+        {
+            std::optional<IcebergPathFromMetadata> parent_manifest_list;
+            auto snapshots = metadata->getArray(Iceberg::f_snapshots);
+            for (size_t i = 0; i < snapshots->size(); ++i)
+            {
+                auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+                if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == parent_snapshot)
+                    parent_manifest_list = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
+            }
+            if (!parent_manifest_list)
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg metadata has no snapshot with the current snapshot id {}", parent_snapshot);
+
+            auto parent_manifests = getManifestList(object_storage, persistent_table_components, context, *parent_manifest_list, log);
+
+            std::vector<Iceberg::NewManifest> new_manifests;
+            for (size_t i = 0; i < manifest_entries.size(); ++i)
+                new_manifests.push_back(Iceberg::NewManifest{
+                    manifest_entries[i],
+                    manifest_entry_sizes[i],
+                    manifest_entry_file_counts[i],
+                    entry_partition_summaries.empty() ? nullptr : &entry_partition_summaries[i]});
+
+            Iceberg::ManifestMergeTarget target{
+                metadata,
+                new_snapshot,
+                partititon_spec,
+                static_cast<Int32>(partition_spec_id),
+                partitioner ? partitioner->getColumns() : std::vector<String>{},
+                partitioner ? partitioner->getResultTypes() : DataTypes{},
+                static_cast<Int32>(current_schema_id),
+                sample_block,
+                write_format,
+                context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions]};
+
+            merge_result = Iceberg::mergeManifestsOnAppend(
+                *merge_settings,
+                target,
+                parent_manifests,
+                new_manifests,
+                filename_generator,
+                persistent_table_components,
+                object_storage,
+                context,
+                merged_manifests_in_storage);
+            if (merge_result->empty())
+                merge_result.reset();
+        }
+
         {
             auto buffer_manifest_list = object_storage->writeObject(
                 StoredObject(storage_manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
             try
             {
-                generateManifestList(
-                    persistent_table_components.path_resolver,
-                    metadata, object_storage, context,
-                    manifest_entries,
-                    new_snapshot,
-                    manifest_entry_sizes,
-                    *buffer_manifest_list,
-                    Iceberg::FileContentType::DATA,
-                    /* use_previous_snapshots = */ true,
-                    /* per_entry_content_types = */ {},
-                    /* entry_counts = */ {},
-                    /* carry_forward_manifest_paths = */ {},
-                    /// Explicit, because after a conflict the default spec may differ from the one the manifests were written with.
-                    std::vector<Int64>(manifest_entries.size(), partition_spec_id),
-                    entry_partition_summaries,
-                    manifest_entry_row_counts,
-                    manifest_entry_file_counts);
+                if (merge_result)
+                {
+                    const Int64 new_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+                    std::vector<IcebergPathFromMetadata> list_entries;
+                    std::vector<Int64> list_entry_sizes;
+                    std::vector<ManifestListEntryCounts> list_entry_counts;
+                    std::vector<ManifestPartitionSummary> list_entry_partition_summaries;
+                    for (size_t i = 0; i < manifest_entries.size(); ++i)
+                    {
+                        if (merge_result->is_new_manifest_merged[i])
+                            continue;
+                        list_entries.push_back(manifest_entries[i]);
+                        list_entry_sizes.push_back(manifest_entry_sizes[i]);
+                        ManifestListEntryCounts counts;
+                        counts.files_count = manifest_entry_file_counts[i];
+                        counts.rows_count = manifest_entry_row_counts[i];
+                        counts.min_sequence_number = new_sequence_number;
+                        counts.counts_are_added = true;
+                        list_entry_counts.push_back(counts);
+                        if (!entry_partition_summaries.empty())
+                            list_entry_partition_summaries.push_back(entry_partition_summaries[i]);
+                    }
+                    for (auto & merged : merge_result->merged_manifests)
+                    {
+                        list_entries.push_back(merged.path);
+                        list_entry_sizes.push_back(merged.size_bytes);
+                        list_entry_counts.push_back(merged.counts);
+                        if (merged.partition_summary)
+                            list_entry_partition_summaries.push_back(*merged.partition_summary);
+                    }
+
+                    generateManifestList(
+                        persistent_table_components.path_resolver,
+                        metadata, object_storage, context,
+                        list_entries,
+                        new_snapshot,
+                        list_entry_sizes,
+                        *buffer_manifest_list,
+                        Iceberg::FileContentType::DATA,
+                        /* use_previous_snapshots = */ true,
+                        /* per_entry_content_types = */ {},
+                        list_entry_counts,
+                        /* carry_forward_manifest_paths = */ {},
+                        std::vector<Int64>(list_entries.size(), partition_spec_id),
+                        list_entry_partition_summaries,
+                        /* entry_row_counts = */ {},
+                        /* entry_file_counts = */ {},
+                        merge_result->replaced_manifest_paths);
+                }
+                else
+                {
+                    generateManifestList(
+                        persistent_table_components.path_resolver,
+                        metadata, object_storage, context,
+                        manifest_entries,
+                        new_snapshot,
+                        manifest_entry_sizes,
+                        *buffer_manifest_list,
+                        Iceberg::FileContentType::DATA,
+                        /* use_previous_snapshots = */ true,
+                        /* per_entry_content_types = */ {},
+                        /* entry_counts = */ {},
+                        /* carry_forward_manifest_paths = */ {},
+                        /// Explicit, because after a conflict the default spec may differ from the one the manifests were written with.
+                        std::vector<Int64>(manifest_entries.size(), partition_spec_id),
+                        entry_partition_summaries,
+                        manifest_entry_row_counts,
+                        manifest_entry_file_counts);
+                }
                 buffer_manifest_list->finalize();
             }
             catch (...)
@@ -1945,6 +2073,24 @@ bool IcebergStorageSink::initializeMetadata()
 
         /// Invalidate the cache so the next reader gets the latest version, which a concurrent catalog update may have changed.
         persistent_table_components.invalidateMetadataCache();
+        merged_manifests_in_storage.clear();
+
+        if (merge_result)
+        {
+            for (size_t i = 0; i < manifest_entries_in_storage.size(); ++i)
+            {
+                if (!merge_result->is_new_manifest_merged[i])
+                    continue;
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(manifest_entries_in_storage[i]));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", manifest_entries_in_storage[i]));
+                }
+            }
+        }
     }
     catch (...)
     {

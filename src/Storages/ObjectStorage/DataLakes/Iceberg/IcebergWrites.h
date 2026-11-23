@@ -57,11 +57,13 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, Int64>> nan_value_counts;
     std::vector<std::pair<Int32, String>> lower_bounds;
     std::vector<std::pair<Int32, String>> upper_bounds;
+    std::optional<std::vector<Int64>> split_offsets;
 };
 
 /// Per-file manifest-entry lineage (`added_snapshot_id`, data `sequence_number` and `file_sequence_number`) carried over for a manifest-only rewrite.
 struct DataFileEntryLineage
 {
+    bool added_by_new_snapshot = false;
     std::optional<Int64> added_snapshot_id;
     std::optional<Int64> sequence_number;
     std::optional<Int64> file_sequence_number;
@@ -93,6 +95,8 @@ private:
 };
 
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
+
+std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type);
 
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
@@ -143,6 +147,8 @@ struct ManifestListEntryCounts
     /// forward from an earlier snapshot or contains only pre-existing files (metadata-only
     /// rewrite), so its counts are reported as existing_*.
     bool counts_are_added = false;
+    Int64 existing_files_count = 0;
+    Int64 existing_rows_count = 0;
     /// When set, override the entry's `added_snapshot_id` / `sequence_number`, preserving the
     /// lineage of a manifest that was first added by an earlier snapshot and is carried
     /// forward into this manifest list.
@@ -167,7 +173,8 @@ void generateManifestList(
     const std::vector<Int64> & entry_partition_spec_ids = {},
     const std::vector<ManifestPartitionSummary> & entry_partition_summaries = {},
     const std::vector<Int64> & entry_row_counts = {},
-    const std::vector<Int64> & entry_file_counts = {});
+    const std::vector<Int64> & entry_file_counts = {},
+    const std::unordered_set<String> & replaced_manifest_paths = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
@@ -250,6 +257,7 @@ private:
     std::vector<Int64> manifest_entry_row_counts;
     std::vector<Int64> manifest_entry_file_counts;
     std::vector<ManifestPartitionSummary> entry_partition_summaries;
+    Strings merged_manifests_in_storage;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
