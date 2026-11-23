@@ -17,7 +17,6 @@
 #include <Disks/DiskLocal.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <base/sleep.h>
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/callback.hxx>
 #include <libnuraft/cluster_config.hxx>
@@ -82,7 +81,6 @@ namespace FailPoints
 {
     extern const char keeper_local_logs_preprocessing_wait[];
     extern const char keeper_never_pause_appending_entries[];
-    extern const char keeper_shutdown_delay_before_asio_stop[];
 }
 
 namespace CoordinationSetting
@@ -895,12 +893,6 @@ void KeeperServer::shutdownRaftServer()
         }
     }
 
-    fiu_do_on(FailPoints::keeper_shutdown_delay_before_asio_stop,
-    {
-        LOG_INFO(log, "Delaying the stop of the Raft asio service");
-        sleepForMilliseconds(3000);
-    });
-
     if (asio_service)
     {
         asio_service->stop();
@@ -915,7 +907,7 @@ void KeeperServer::shutdownRaftServer()
     if (asio_service->get_active_workers() != 0)
         LOG_WARNING(log, "Failed to shutdown RAFT server in {} seconds", timeout);
 
-    /// The asio workers run Raft callbacks that use `raft_instance`, so it is destroyed only after they are stopped.
+    /// Raft callbacks run on the asio workers and use the server, so it is released only after the workers are stopped.
     raft_instance.reset();
 }
 
