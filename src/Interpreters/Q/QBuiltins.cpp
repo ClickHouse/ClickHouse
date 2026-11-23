@@ -2099,11 +2099,19 @@ const std::unordered_map<String, Handler> & handlers()
             }
             const QTable & left = c.tableArg(0);
             const QTable & right = c.tableArg(1);
+            /// The result is in the order of the rows of the left table, and then of the right one,
+            /// while a `CROSS JOIN` gives no order (the tables can be swapped), so the rows are numbered.
+            QSelectBuilder left_numbered = selectColumns(left);
+            left_numbered.select.push_back(withAlias(fn("rowNumberInAllBlocks", ASTs{}), "__qrow"));
+            QSelectBuilder right_numbered = selectColumns(right);
+            right_numbered.select.push_back(withAlias(fn("rowNumberInAllBlocks", ASTs{}), "__qrow"));
             QSelectBuilder builder;
-            builder.from = makeSubqueryTableExpression(selectColumns(left).build(), "__ql");
+            builder.from = makeSubqueryTableExpression(left_numbered.build(), "__ql");
             auto table_join = make_intrusive<ASTTableJoin>();
             table_join->kind = JoinKind::Cross;
-            builder.joins.emplace_back(makeSubqueryTableExpression(selectColumns(right).build(), "__qr"), table_join);
+            builder.joins.emplace_back(makeSubqueryTableExpression(right_numbered.build(), "__qr"), table_join);
+            builder.order_by.emplace_back(qualified("__ql", "__qrow"), false);
+            builder.order_by.emplace_back(qualified("__qr", "__qrow"), false);
             for (const auto & column : left.columns)
                 builder.select.push_back(withAlias(qualified("__ql", column.name), column.name));
             for (const auto & column : right.columns)
