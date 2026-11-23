@@ -74,6 +74,7 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool parallel_replicas_filter_pushdown;
@@ -559,6 +560,23 @@ static bool addFilters(
     const auto * query_node = query_tree->as<QueryNode>();
     if (!query_node)
         return false;
+
+    /// The filter is represented by an actions DAG after the outer query has
+    /// been analyzed. Turning it back into SQL and putting it in a subquery's
+    /// `HAVING` makes that subquery analyze `IN` under its own settings. Keep
+    /// the filter on the initiator if its null mode would change there.
+    if (settings[Setting::in_null_as_unknown]
+        != query_node->getContext()->getSettingsRef()[Setting::in_null_as_unknown])
+    {
+        for (const auto & node : pushed_down_filters.getNodes())
+        {
+            if (!node.function_base)
+                continue;
+            const auto & name = node.function_base->getName();
+            if (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
+                return false;
+        }
+    }
 
     /// We are building a set with projection names and a map with execution names here.
     /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
