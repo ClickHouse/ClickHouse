@@ -59,6 +59,7 @@
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -336,6 +337,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold;
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold_for_remote_disk;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsUInt64 delay_merges_after_startup_seconds;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool table_disk;
@@ -1159,6 +1161,9 @@ MergeTreeData::MergeTreeData(
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
 
+    merges_can_be_delayed_after_startup = isLoadingFromExistingMetadata(mode)
+        && getContext()->getApplicationType() == Context::ApplicationType::SERVER;
+
     try
     {
         settings->sanityCheck(
@@ -1492,6 +1497,35 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
 
         window_begin = window_end;
     }
+}
+
+void MergeTreeData::addColumnSizesOfParts(
+    const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result)
+{
+    std::vector<std::vector<std::pair<String, ColumnSize>>> sizes_of_parts(parts.size());
+    loadStatisticsOfPartsInParallel(
+        parts.size(),
+        max_threads,
+        [&](size_t part_index)
+        {
+            auto sizes = parts[part_index]->getColumnAndSubcolumnSizes(column_names, with_columns, /* only_from_memory = */ true);
+            if (!sizes)
+                return false;
+            sizes_of_parts[part_index] = std::move(*sizes);
+            return true;
+        },
+        [&](size_t part_index)
+        {
+            sizes_of_parts[part_index]
+                = *parts[part_index]->getColumnAndSubcolumnSizes(column_names, with_columns, /* only_from_memory = */ false);
+        },
+        [&](size_t part_index)
+        {
+            /// Moved out, so that the memory of a consumed part is released.
+            const auto sizes = std::move(sizes_of_parts[part_index]);
+            for (const auto & [name, size] : sizes)
+                result[name].add(size);
+        });
 }
 
 bool MergeTreeData::isInsertOrderSensitive() const
@@ -9199,6 +9233,37 @@ std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartition() c
 }
 
 
+void MergeTreeData::delayMergesAfterStartup()
+{
+    if (merges_can_be_delayed_after_startup)
+        startup_time_ns.store(clock_gettime_ns(CLOCK_MONOTONIC), std::memory_order_relaxed);
+}
+
+
+void MergeTreeData::stopDelayingMergesAfterStartup()
+{
+    if (startup_time_ns.exchange(0, std::memory_order_relaxed))
+        background_operations_assignee.trigger();
+}
+
+
+bool MergeTreeData::areMergesDelayedAfterStartup() const
+{
+    const UInt64 startup_ns = startup_time_ns.load(std::memory_order_relaxed);
+    if (!startup_ns)
+        return false;
+
+    const auto settings = getSettings();
+    if ((clock_gettime_ns(CLOCK_MONOTONIC) - startup_ns) / 1'000'000'000 >= (*settings)[MergeTreeSetting::delay_merges_after_startup_seconds])
+        return false;
+
+    /// Do not delay merges once inserts start to be slowed down because of too many parts.
+    const UInt64 parts_to_delay_insert = (*settings)[MergeTreeSetting::parts_to_delay_insert];
+    return !parts_to_delay_insert || getActivePartsCount() < parts_to_delay_insert
+        || getMaxPartsCountAndSizeForPartition().first < parts_to_delay_insert;
+}
+
+
 size_t MergeTreeData::getMaxOutdatedPartsCountForPartition() const
 {
     return getMaxPartsCountAndSizeForPartitionWithState(DataPartState::Outdated).first;
@@ -10126,15 +10191,13 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         parts.assign(committed_parts_range.begin(), committed_parts_range.end());
     }
 
-    for (const auto & part : parts)
-    {
-        for (const auto & col_name : subcolumn_names)
-        {
-            auto column = part->tryGetColumn(col_name);
-            if (column && column->isSubcolumn())
-                result[col_name].add(part->getSubcolumnSize(col_name));
-        }
-    }
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    addColumnSizesOfParts(
+        parts,
+        subcolumn_names,
+        /* with_columns = */ false,
+        query_context ? static_cast<size_t>(query_context->getSettingsRef()[Setting::max_threads]) : 1,
+        result);
 
     return result;
 }
@@ -15675,11 +15738,12 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
         if (!new_hint)
             continue;
 
-        /// Structure may change after alter or differ because the part preserves older serialization settings.
-        /// Do not add info for such items. Instead it will be updated on commit of a compatible part.
-        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name) || !new_hint->structureEquals(*info))
+        /// Structure may change after alter. Do not add info for such items.
+        /// Instead it will be updated on commit of the result part of alter.
+        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
             continue;
 
+        chassert(new_hint->structureEquals(*info));
         if (remove)
             new_hint->remove(*info);
         else
@@ -15768,10 +15832,32 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
 }
 
-SerializationInfoByName MergeTreeData::getSerializationHints() const
+SerializationInfoByName MergeTreeData::getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const
 {
     auto lock = readLockParts();
-    return serialization_hints.clone();
+
+    /// `setPropertiesAndResetSerializationHints` publishes the new column types and the hints built for them under one `parts_lock`,
+    /// so under the lock `serialization_hints` match the current metadata. The snapshot of the caller may be taken before
+    /// a concurrent `ALTER` (or after it, if the lock is taken later), so keep only the hints of the columns
+    /// whose types are the same in both. For example, the hint of a `String` column must not be given to the `Tuple` type
+    /// it had before `ALTER TABLE ... MODIFY COLUMN`.
+    const auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+    if (&*current_metadata == &metadata_snapshot)
+        return serialization_hints.clone();
+
+    const auto & current_columns = current_metadata->getColumns();
+    const auto & snapshot_columns = metadata_snapshot.getColumns();
+
+    SerializationInfoByName res(serialization_hints.getSettings());
+    for (const auto & [name, info] : serialization_hints)
+    {
+        auto current_column = current_columns.tryGetPhysical(name);
+        auto snapshot_column = snapshot_columns.tryGetPhysical(name);
+        if (current_column && snapshot_column && current_column->type->equals(*snapshot_column->type))
+            res.emplace(name, info->clone());
+    }
+
+    return res;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const

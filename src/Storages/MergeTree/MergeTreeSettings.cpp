@@ -344,13 +344,10 @@ This makes settings like `string_serialization_version` effective.
 - `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
 listing omitted columns and the type whose default represents their values.
 Required to enable `skip_empty_columns_on_insert`.
-- `with_subcolumns` - Everything `with_missing_columns` records (so `skip_empty_columns_on_insert`
-keeps working), plus serialization information for the declared paths of `JSON` columns,
-so that each declared path can use sparse serialization independently.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `with_types`, `with_missing_columns`, or `with_subcolumns` to enable the corresponding features.
+switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
 )", 0, \
         {"25.11", "basic", "with_types", "Change to the newer format allowing custom string serialization"}, \
         {"25.10", "basic", "basic", "New setting"}) \
@@ -947,6 +944,20 @@ requests to zookeeper in large-scale clusters
 The sleep time for merge selecting task is multiplied by this factor when
 there's nothing to merge and divided when a merge was assigned
 )", 0) \
+    DECLARE(UInt64, delay_merges_after_startup_seconds, 60, R"(
+Background merges of a table that the server loads at startup do not start
+until this many seconds after the table starts up, so that the first queries
+after a restart do not compete with them. The first `INSERT`, `OPTIMIZE`,
+mutation or lightweight update of the table on this server ends the delay. A
+replica of a `ReplicatedMergeTree` table postpones the merges of its
+replication queue, also those it would fetch as a merged part, so
+`SYSTEM SYNC REPLICA` and mutations started on another replica can wait on it
+until the delay ends. Tables created by `CREATE TABLE`, attached by
+`ATTACH TABLE` or restored by `UNDROP TABLE` are not delayed. Merges are not
+delayed while a partition has at least `parts_to_delay_insert` active parts.
+0 disables the delay.
+)", 0, \
+        {"26.12", 0, 60, "New setting to delay background merges after the server startup"}) \
     DECLARE(UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60, R"(
 Sets the interval in seconds for ClickHouse to execute the cleanup of old
 temporary directories.
