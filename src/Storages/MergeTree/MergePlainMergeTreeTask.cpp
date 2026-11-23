@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/StatisticsCache.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -8,9 +7,9 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionManager.h>
 #include <Common/setThreadName.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
@@ -18,6 +17,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char mt_merge_task_pause_before_transaction_commit[];
+}
 
 namespace ErrorCodes
 {
@@ -39,16 +43,15 @@ void MergePlainMergeTreeTask::onCompleted()
 bool MergePlainMergeTreeTask::executeStep()
 {
     auto component_guard = Coordination::setCurrentComponent("MergePlainMergeTreeTask::executeStep");
-    /// All metrics will be saved in the thread_group, including all scheduled tasks.
-    /// In profile_counters only metrics from this thread will be saved.
-    ProfileEventsScope profile_events_scope(&profile_counters);
+
+    if (!thread_group)
+    {
+        task_context = createTaskContext();
+        thread_group = ThreadGroup::createForMergeMutate(task_context, std::move(query_thread_group));
+    }
 
     /// Make out memory tracker a parent of current thread memory tracker
-    std::optional<ThreadGroupSwitcher> switcher;
-    if (merge_list_entry)
-    {
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
-    }
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     switch (state)
     {
@@ -95,17 +98,11 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        task_context);
-    /// Remember the group of the thread that runs this task (for `OPTIMIZE` it is the query thread) before
-    /// the switcher below borrows the thread for the merge group, so that the profile counters accumulated by
-    /// the merge are transferred to the initial query and not back into the merge group itself.
-    auto query_thread_group = CurrentThread::getGroup();
-
-    ThreadGroupSwitcher switcher((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+        task_context,
+        thread_group);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
@@ -113,7 +110,7 @@ void MergePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         auto projections_duration_ms = merge_task ? merge_task->grabProjectionsMergeTime() : std::map<String, UInt64>{};
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
@@ -126,19 +123,6 @@ void MergePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot),
             {},
             projections_duration_ms);
-    };
-
-    transfer_profile_counters_to_initial_query = [this, query_thread_group] ()
-    {
-        if (query_thread_group)
-        {
-            auto task_thread_group = (*merge_list_entry)->thread_group;
-            auto task_counters_snapshot = task_thread_group->performance_counters.getPartiallyAtomicSnapshot();
-
-            auto & query_counters = query_thread_group->performance_counters;
-            for (ProfileEvents::Event i = ProfileEvents::Event(0); i < ProfileEvents::end(); ++i)
-                query_counters.incrementNoTrace(i, task_counters_snapshot[i]);
-        }
     };
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
@@ -160,7 +144,7 @@ void MergePlainMergeTreeTask::prepare()
 
 void MergePlainMergeTreeTask::finish()
 {
-    new_part = merge_task->getFuture().get();
+    new_part = merge_task->takeResultPart();
     new_part->getDataPartStorage().commitTransaction();
 
     MergeTreeData::Transaction transaction(storage, txn.get());
@@ -197,11 +181,11 @@ void MergePlainMergeTreeTask::finish()
     write_part_log({});
 
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
-    transfer_profile_counters_to_initial_query();
 
     if (auto txn_ = txn_holder.getTransaction())
     {
         /// Explicitly commit the transaction if we own it (it's a background merge, not OPTIMIZE)
+        FailPointInjection::pauseFailPoint(FailPoints::mt_merge_task_pause_before_transaction_commit);
         TransactionManager::instance().commitTransaction(txn_, /* throw_on_unknown_status */ false);
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();

@@ -469,7 +469,7 @@ struct IntNode
     int value;
     IntNode(int value_) : value(value_) { } /// NOLINT(google-explicit-constructor)
     IntNode copyFromSnapshotNode() { return *this; }
-    [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
+    [[nodiscard]] [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
     [[maybe_unused]] bool operator==(const int & rhs) const { return value == rhs; }
     [[maybe_unused]] bool operator!=(const int & rhs) const { return rhs != this->value; }
 };
@@ -491,6 +491,15 @@ TEST(ACLMapTest, OverflowWraparound)
 
     auto id3 = acl_map.convertACLs({{1, "digest", "user3:pwd"}});
     EXPECT_EQ(id3, 2);
+
+    /// Restore the mappings, including the maximum ID, as a snapshot does.
+    DB::ACLMap restored;
+    for (const auto & [id, acls] : acl_map.getMapping())
+        restored.addMapping(id, acls);
+    EXPECT_EQ(restored.convertACLs({{1, "digest", "user2:pwd"}}), std::numeric_limits<DB::ACLId>::max());
+    auto id4 = restored.convertACLs({{1, "digest", "user4:pwd"}});
+    EXPECT_NE(id4, 0);
+    EXPECT_NE(id4, std::numeric_limits<DB::ACLId>::max());
 }
 
 TEST(ACLMapTest, RemoveUnusedACLs)
@@ -3573,7 +3582,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsRejectedRecursiveRequ
 
     appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive("/")));
-    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive(DB::keeper_system_path)));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive(String(DB::keeper_system_path))));
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ true)));
     /// Control: the same recursive listing without a watch is valid and walks the pruned subtree.
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ false)));

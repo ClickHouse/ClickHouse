@@ -53,7 +53,7 @@ std::unique_ptr<S3::Client> createClient(const S3::URI & uri)
         /* s3_slow_all_threads_after_network_error= */ false,
         /* s3_slow_all_threads_after_retryable_error= */ false,
         /* enable_s3_requests_logging= */ false,
-        /* for_disk_s3= */ false,
+        /* group= */ HTTPConnectionGroupType::STORAGE,
         /* opt_disk_name= */ {},
         /* request_throttler= */ {},
         uri.uri.getScheme());

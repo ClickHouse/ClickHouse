@@ -1,4 +1,6 @@
 #include <memory>
+#include <base/arithmeticOverflow.h>
+#include <numeric>
 #include <stack>
 #include <unordered_set>
 
@@ -13,7 +15,6 @@
 #include <Interpreters/misc.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 
@@ -47,7 +48,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -235,7 +235,7 @@ NameSet getVirtualNamesForFileLikeStorage()
 /// Virtual columns that can only be materialized after the read buffer is opened (e.g. HTTP response
 /// headers exposed as `_headers` for web reads). They are not known during object listing, so they must
 /// not participate in the path/file pre-listing predicate split, where the listing-time block can only
-/// materialize `_path`/`_file`/hive columns/`_idx`.
+/// materialize `_path`/`_file`/hive columns.
 static bool isReaderOnlyVirtualColumn(const String & name)
 {
     return name == "_headers";
@@ -317,8 +317,8 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
 static void addPathAndFileToVirtualColumns(
     const Block & block,
     MutableColumns & columns,
+    const NamesAndTypesList & partition_columns,
     const String & path,
-    size_t idx,
     const FormatSettings & format_settings,
     const String * file_name = nullptr)
 {
@@ -344,22 +344,16 @@ static void addPathAndFileToVirtualColumns(
         columns[block.getPositionByName("_file")]->insert(file);
     }
 
-    /// Any other column of the block, except `_idx`, is a Hive partition column.
     std::optional<HivePartitioningUtils::HivePartitioningKeysAndValues> keys_and_values;
-    for (size_t pos = 0; pos < block.columns(); ++pos)
+    for (const auto & column : partition_columns)
     {
-        const auto & column = block.getByPosition(pos);
-        if (column.name == "_path" || column.name == "_file" || column.name == "_idx")
-            continue;
-
         if (!keys_and_values)
             keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
 
-        ReadBufferFromString buf(HivePartitioningUtils::getPartitionValueFromPath(*keys_and_values, column.name, path));
-        column.type->getDefaultSerialization()->deserializeWholeText(*columns[pos], buf, format_settings);
+        const auto value = HivePartitioningUtils::getPartitionValueFromPath(*keys_and_values, column.getNameInStorage(), path);
+        columns[block.getPositionByName(column.name)]->insert(
+            HivePartitioningUtils::convertPartitionValueToType(value, *column.type, column.getNameInStorage(), path, format_settings));
     }
-
-    columns[block.getPositionByName("_idx")]->insert(idx);
 }
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(
@@ -387,7 +381,6 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
     return splitFilterDagForAllowedInputs(predicate, &block, context);
 }
 
@@ -407,21 +400,28 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const NameSet required = actions->getRequiredColumnsWithTypes().getNameSet();
 
     Block block;
+    /// Every column of the block except `_path` and `_file` is a Hive partition column.
+    NamesAndTypesList partition_columns;
+    auto add_column = [&](const NameAndTypePair & column)
+    {
+        block.insert({column.type->createColumn(), column.type, column.name});
+        if (column.name != "_path" && column.name != "_file")
+            partition_columns.push_back(column);
+    };
+
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
         if (required.contains(column.name) && (column.name == "_file" || column.name == "_path"
             || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name))))
-            block.insert({column.type->createColumn(), column.type, column.name});
+            add_column(column);
     }
 
     for (const auto & column : hive_columns)
     {
         if (required.contains(column.name) && !block.has(column.name))
-            block.insert({column.type->createColumn(), column.type, column.name});
+            add_column(column);
     }
-
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
 
@@ -434,16 +434,25 @@ ColumnPtr getFilterByPathAndFileIndexes(
         addPathAndFileToVirtualColumns(
             block,
             columns,
+            partition_columns,
             paths[i],
-            /* idx */i,
             hive_format_settings,
             file_names ? &(*file_names)[i] : nullptr);
     }
     block.setColumns(std::move(columns));
 
-    filterBlockWithExpression(actions, block);
+    size_t num_rows = paths.size();
+    actions->execute(block, num_rows, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
+    ColumnPtr filter_column
+        = block.getByName(actions->getActionsDAG().getOutputs().at(0)->result_name).column->convertToFullColumnIfConst();
 
-    return block.getByName("_idx").column;
+    if (ConstantFilterDescription(*filter_column).always_false)
+        return ColumnUInt64::create();
+
+    auto indexes = ColumnUInt64::create(num_rows);
+    std::iota(indexes->getData().begin(), indexes->getData().end(), 0);
+    FilterDescription filter(*filter_column);
+    return indexes->filter(*filter.data, -1);
 }
 
 /// Builds a `Nullable(UInt64)` row lineage column out of the values materialized in the data file,
@@ -496,7 +505,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
             {
                 size_t last_slash_pos = virtual_values.path.find_last_of('/');
-                auto filename_from_path = virtual_values.path.substr(last_slash_pos + 1);
+                auto filename_from_path = last_slash_pos == std::string::npos ? virtual_values.path : virtual_values.path.substr(last_slash_pos + 1);
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
         }
@@ -611,7 +620,8 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 {
                     if (row >= row_positions.size())
                         return std::nullopt;
-                    return *virtual_values.first_row_id + row_positions[row];
+                    /// Row ids are modulo 2^64: `first_row_id` is a writer-declared signed long read as unsigned.
+                    return common::addIgnoreOverflow(*virtual_values.first_row_id, static_cast<UInt64>(row_positions[row]));
                 }));
         }
         else if (virtual_column.name == "_table")
@@ -634,7 +644,9 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(String(value)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
+                    HivePartitioningUtils::convertPartitionValueToType(
+                        value, *virtual_column.type, virtual_column.getNameInStorage(), virtual_values.path, hive_format_settings))
+                    ->convertToFullColumnIfConst());
         }
     }
 }
@@ -858,7 +870,8 @@ void filterBlockWithPredicate(
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }
 
-std::optional<Strings> extractConstantStringValues(
+template <typename T>
+std::optional<std::vector<T>> extractConstantValues(
     const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit)
 {
     if (!predicate || !column_node)
@@ -869,7 +882,7 @@ std::optional<Strings> extractConstantStringValues(
     if (!variants)
         return {};
 
-    Strings result;
+    std::vector<T> result;
     for (const auto & block : variants.value())
     {
         // Check for unexpected number of columns in block, or absent column
@@ -877,7 +890,13 @@ std::optional<Strings> extractConstantStringValues(
             return {};
 
         // Check for unexpected column data type
-        if (!recursiveRemoveLowCardinality(block.at(0).type)->equals(DataTypeString()))
+        const auto type = recursiveRemoveLowCardinality(block.at(0).type);
+        if constexpr (std::is_same_v<T, String>)
+        {
+            if (!type->equals(DataTypeString()))
+                return {};
+        }
+        else if (!type->equals(DataTypeNumber<T>()))
             return {};
 
         const auto & column = block.at(0).column;
@@ -888,14 +907,15 @@ std::optional<Strings> extractConstantStringValues(
             /// String value, so dropping it keeps the result a valid over-approximation.
             if (field.isNull())
                 continue;
-            result.push_back(field.safeGet<String>());
+            result.push_back(static_cast<T>(field.safeGet<T>()));
         }
     }
 
     return result;
 }
 
-std::optional<Strings> extractConstantStringValuesForColumn(
+template <typename T>
+std::optional<std::vector<T>> extractConstantValuesForColumn(
     const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit)
 {
     if (!predicate)
@@ -925,8 +945,17 @@ std::optional<Strings> extractConstantStringValuesForColumn(
             nodes.push(child);
     }
 
-    return extractConstantStringValues(predicate, column_node, context, limit);
+    return extractConstantValues<T>(predicate, column_node, context, limit);
 }
+
+template std::optional<std::vector<String>> extractConstantValues<String>(
+    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit);
+template std::optional<std::vector<UInt32>> extractConstantValues<UInt32>(
+    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit);
+template std::optional<std::vector<String>> extractConstantValuesForColumn<String>(
+    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit);
+template std::optional<std::vector<UInt32>> extractConstantValuesForColumn<UInt32>(
+    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit);
 
 std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
 {
@@ -945,7 +974,7 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
         }
     }
 
-    return extractConstantStringValues(filter_dag->getOutputs().at(0), path_node, context, limit);
+    return extractConstantValues<String>(filter_dag->getOutputs().at(0), path_node, context, limit);
 }
 
 DataPartsVector filterDataPartsWithExpression(

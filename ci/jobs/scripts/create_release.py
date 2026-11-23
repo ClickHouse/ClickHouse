@@ -40,7 +40,6 @@ import dataclasses
 import json
 import os
 import re
-import shlex
 import shutil
 import sys
 import tempfile
@@ -96,28 +95,12 @@ class Labels:
     RELEASE_LTS = "release-lts"
 
 
-def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool:
-    """Whether `branch` is the latest release branch — i.e. the head branch of
-    the most recently created `release`-labeled PR. Release-domain logic (knows
-    the `release` label / branch convention), so it lives here rather than in
-    the generic praktika GH helper.
-
-    The `gh pr list` read is retried and a persistent failure raises: mistaking
-    a transient GitHub error for "not the latest branch" would silently skip the
-    floating `latest` docker tag for an otherwise successful release. A
-    successful `--json` read always prints at least `[]`, so an empty result
-    means the command failed; genuinely no release PR is an empty JSON array."""
-    raw = GH.get_output_with_retries(
-        f'gh pr list --label release --repo {shlex.quote(repo)} --search "sort:created"'
-        f" -L1 --json headRefName"
-    )
-    if not raw:
-        raise RuntimeError(
-            f"gh pr list failed for release PRs in repo [{repo}] after retries; "
-            f"refusing to treat a failed lookup as 'not the latest release branch'"
-        )
-    prs = json.loads(raw)
-    latest_branch = prs[0]["headRefName"] if prs else ""
+def is_latest_release_branch(branch: str) -> bool:
+    """Whether `branch` has the highest major.minor among the release branches of `origin`."""
+    # A glob cannot say "digits only": one or two digits for each of major and minor
+    patterns = " ".join(f"'refs/remotes/origin/{major}.{minor}'" for major in ("[1-9]", "[1-9][0-9]") for minor in ("[1-9]", "[1-9][0-9]"))
+    latest_branch = Shell.get_output(f"git for-each-ref --sort=-version:refname --count=1 --format='%(refname:lstrip=3)' {patterns}", strict=True)
+    assert latest_branch, "no release branches among the origin branches"
     print(
         f"Latest release branch [{latest_branch}], checking [{branch}]:"
         f" is_latest={latest_branch == branch}"
@@ -300,7 +283,7 @@ class ReleaseInfo:
                 branch_version = CHVersion.get_current_version()
             self.is_bump_landed = version.is_older(branch_version)
 
-            if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
+            if is_latest_release_branch(release_branch):
                 print("This is going to be the latest release!")
                 latest_release = True
 
@@ -649,8 +632,8 @@ class PackageDownloader:
     # The package/build-job/filename contract lives in `release_packages`, the
     # single source of truth shared with the `AutoReleases` gate
     # (`tests/ci/auto_release.py`), so the producer here and the checker there
-    # cannot drift. Re-export the two constants callers read off the class.
-    PACKAGES = release_packages.PACKAGES
+    # cannot drift. The package set depends on the release commit, see
+    # `release_packages.commit_packages`.
     PACKAGE_ARCHS = release_packages.PACKAGE_ARCHS
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
         "amd": "macos",
@@ -663,7 +646,7 @@ class PackageDownloader:
         with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
         with_illumos = release_packages.commit_has_illumos_build(commit_sha)
         self.with_signed_macos = with_signed_macos
-        self.package_names = list(self.PACKAGES)
+        self.package_names = list(release_packages.commit_packages(commit_sha))
         self.release = release
         self.s3_commit_prefix = release_packages.s3_commit_prefix(release, commit_sha)
         self.version = version
@@ -690,7 +673,7 @@ class PackageDownloader:
             "tgz": self.tgz_package_files,
         }
         for repo_type, package_file, job_name in release_packages.iter_package_objects(
-            version
+            version, self.package_names
         ):
             files_by_repo_type[repo_type].append(package_file)
             self.file_to_job_name[package_file] = job_name

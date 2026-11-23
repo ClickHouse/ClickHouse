@@ -10,7 +10,6 @@ keywords: ['Datadog', 'Datadog agent', 'migration', 'ClickHouse Observability']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge/>
@@ -32,7 +31,15 @@ Send logs, traces, and metrics from your existing Datadog agents to ClickHouse O
 
 Open your service and navigate to **Team Settings → Data → Managed Telemetry**. Copy the **OTLP HTTP endpoint** and **API key**.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 The Datadog endpoint uses the same hostname with port `8126`. No additional collector is required. Use these values in the Agent configuration below:
 

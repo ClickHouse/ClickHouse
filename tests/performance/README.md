@@ -4,8 +4,8 @@ This directory contains `.xml`-files with performance tests.
 
 ### Which tests run in pull requests
 
-Ordinary PR comparisons against master choose whole XML tests from a recent,
-complete performance coverage run. They use the shared stateless and integration
+Ordinary PR comparisons against master choose whole XML tests from a recent
+performance coverage export. They use the shared stateless and integration
 selection rules independently, with limits of 250 and 100 tests, then combine
 their results without another limit. Only query execution coverage is used:
 setup and teardown still run, but their coverage does not choose tests. Regions
@@ -33,8 +33,8 @@ Full runs retain the existing query sampling settings. Master, release, nightly
 and special Iceberg comparisons keep their existing behavior.
 
 Each job attaches `performance_selection.json` with its tests, selection reasons,
-coverage identities, source mapping gaps and query policy. Missing or incomplete
-coverage is reported rather than silently running all tests. A transient CIDB or
+coverage identities, source mapping gaps and query policy. Tests whose coverage
+failed or was not collected are always selected. A transient CIDB or
 GitHub failure skips the job with a warning and is not cached; rerun it to test.
 Selection reduces work, but does not guarantee that every performance change is
 caught. Coverage collected on AMD is also used for ARM selection.
@@ -92,11 +92,17 @@ Test template:
 
 The drop queries also run when the test fails, and a test whose drop queries cannot be shown to have cleaned up stops the rest of its batch.
 
+Currently, do not use `run_all_queries="1"` outside the standard benchmarks `clickbench.xml`, `tpch.xml` and `tpcds.xml`. Master runs and full pull request runs measure at most 10 queries of a test, chosen at random, and the attribute makes them measure every query of the test, which slows down CI. The nightly job runs all queries of every test anyway.
+
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
 ### Queries whose time keeps growing with each run
 
 Every query runs several times on the same tables, with nothing reset between the runs. The check of a pull request that adds or changes a test fails when the time of a query of the test keeps growing with each run on the tested server (at least 5 runs, correlation of run number and time above 0.8, last run over first above 1.2). Usually each run reads what the previous runs changed, for example a table that grows with every timed `INSERT`. A pull request job runs at most 10 queries of a test, chosen at random, unless the test sets `run_all_queries="1"`. Make every run do the same work, for example write to `/dev/null` instead of a file, or make an `UPDATE` skip the rows it already rewrote.
+
+### Unstable queries in a new or changed test
+
+The check of a pull request also fails when a query of a test it adds or changes is unstable. If the pull request changes only files under `tests/` and the reference server runs the performance reference build of the master commit the pull request is merged with, both servers run the same code built the same way, and the check fails when the report marks the query changed or unstable (a relative difference above 15% that is at least its randomization threshold, or a randomization threshold above 25%; higher for a query with history or a test with its own threshold). Otherwise the two servers do not run the same build (the pull request changes code, or the reference is the official build or a build of an older master commit), and the check fails when the standard deviation of the query's run times on the tested server is more than half their median (at least 5 runs). This includes a spread that the change itself causes: after the merge both servers of master run that code, so the query would vary as much on both. A query that failed on the reference server and ran only on the tested one, which the report does not compare, is judged by the standard deviation of its run times in any pull request. Usually the query runs for a few milliseconds or waits for something besides its own work, such as Keeper or the network; make each run do more work.
 
 ### Disabling a query
 
@@ -163,7 +169,7 @@ Tests tagged `long` are skipped in PR and master runs (`perf.py` skips them unle
 
 How to write one:
 
-* `<test run_all_queries="1" max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
+* `<test max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
 * Put `<max_execution_time>0</max_execution_time>` into `<settings>`, otherwise long setup statements are cut by the server profile limit. Prewarm and timed runs still get the budget.
 * Load raw data with `fill_query` and finish every loaded MergeTree table as `tpch_sf100.xml` does: insert; `MODIFY SETTING lock_acquire_timeout_for_background_operations`; `OPTIMIZE ... FINAL` with `optimize_throw_if_noop = 1`; row and part counts; then content checks. `tpch_sf100.xml` also runs `MATERIALIZE STATISTICS` (`mutations_sync = 1`) before `SYSTEM STOP MERGES`, which blocks mutations too; for a test whose queries only read, the harness stops merges after the setup (`perf.py --stop-merges`).
 * Keep the tables in `default` (no `CREATE DATABASE`, no `USE`) and drop them with `DROP TABLE IF EXISTS <t> SYNC`, so the disk is free for the next test. (`USE` in existing tests is reconnect-safe: `clickhouse_driver` re-sends the database selected by `USE` when it reconnects.)
@@ -208,6 +214,7 @@ Nightly results are comparable only under the same conditions. Append a dated li
 
 * YYYY-MM-DD (first scheduled night): instance type `r8g.4xlarge`, image `clickhouse/performance-comparison`, pool `arm-medium-storage`.
 * YYYY-MM-DD (first night with the new tests): 26 new `long` tests (Iceberg and data lakes, formats, Arrow Flight, vector index, JSON, engine, projections, skip indexes, analyzer, query shapes, encodings), `NIGHTLY_PERF_PLACEMENT` pins, Arrow Flight port and ticket flags on the nightly servers, S3 public-data and REST-catalog seeding, S3 cleanup after every S3 test.
+* YYYY-MM-DD (first night with the test): `iceberg_suite_local_tpcds_sf100.xml` (TPC-DS SF100 over `IcebergLocal` tables) in `2/4`.
 
 Each job log also carries the resolved docker image digest (printed by the praktika runner) and the host identity (kernel, OS, CPU, memory, instance).
 
@@ -257,20 +264,33 @@ timing job's bulk rewrite, which is too expensive with LLVM instrumentation.
 The manifest records `dataset_layout=prebuilt`; test-defined setup and writes
 still run under coverage.
 
-Coverage setup and fill statements have a 30-minute execution limit. The client
-socket timeout is one minute longer than the larger of that limit and the query
-execution limit. The CI wrapper allows 30 minutes per query statement (unless
-the XML test specifies `max_query_seconds`) and twelve hours per shard, including
-a 20-minute export reserve. Each test can use the remaining collection budget;
-there is no separate one-hour limit for an entire XML file.
+Coverage setup, queries and teardown have no separate statement or socket time
+limit. They share the shard's remaining collection budget: twelve hours including
+a 20-minute export reserve. This avoids applying release-query limits to heavily
+instrumented code. Ordinary performance measurements keep their existing limits.
+
+A failed test remains a job failure, but collection continues after restarting
+the server and rerunning that test's teardown. If restart or teardown fails,
+or the shard budget expires, the remaining tests are recorded
+as not run. Completed tests are still exported. PR selection always includes
+every test without completed coverage; a test failure does not invalidate the
+coverage of the other tests.
 
 Shard assignment uses measured instrumented runtimes in
 `ci/jobs/performance_coverage_timings.json`. Whole XML files are sorted from
 longest to shortest, with lexical ties, then placed on the least-loaded shard.
-The weights include test setup and teardown. The load prediction also includes
-measured shard-level fixture and export overhead. The first 808 timings comprise
-478 measured whole-test wall times and 330 measured stage totals with an estimated
-wrapper cost; they are not release-query medians.
+The weights include test setup and teardown, plus measured shard-level fixture
+and export overhead. A test whose runtime is only a timeout lower bound can be
+marked `isolate_until_measured` in the timing table: it gets a dedicated shard
+until a completed run supplies its full wall time. Refreshing that measurement
+removes the isolation flag. The lower bound is not a predicted completion time.
+
+The 2026-11-13 refresh adds 797 whole-test wall measurements from the nightly
+collection and a completed 48-minute measurement for
+`limit_zero_primary_key_analysis.xml`. That test now shares a shard with other
+tests instead of being isolated. Older entries without a wall measurement retain
+measured stage totals plus an estimated wrapper cost; they are not release-query
+medians.
 
 Discovery defines the test universe, so a newly added XML is included without
 editing the timing table. New tests use the table's upper-quartile runtime as an
@@ -382,12 +402,16 @@ on one dedicated server; background work can still contribute to a phase.
 The collector must not use LLVM continuous profiling (`%c`). Each successful
 test exports the integration collector's six-column TSV format. The existing
 exporter aggregates it into `default.checks_coverage_lines`, using the job's
-start time and check name. Only completed test batches reach the coverage upload.
+start time and check name. Only completed XML tests reach the coverage upload;
+partial output from failed tests remains in the diagnostic archive.
 
 Each shard attaches `performance_coverage.tar.gz` and a job manifest. Per-test
 manifests contain full expanded queries, hashes, settings, phase names and row
 counts. The job manifest records the workflow and binary commits, snapshot identity, completed tests,
-skips, failures and tests not reached before a timeout. A missing mapping is not
+skips, failures and tests not reached before a timeout. `coverage_published` is
+set only after successful export, independently of the job's pass/fail status;
+`complete` still means every eligible test completed. The selector validates
+the full shard assignment and all phases of each exported test. A missing mapping is not
 evidence that a query is unaffected. Shell queries are explicitly skipped until
 their subprocesses can be instrumented too; `long` tests are outside this initial
 collection. Any future selector must account for these gaps and stale mappings.
