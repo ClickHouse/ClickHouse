@@ -51,6 +51,7 @@ private:
     VectorWithMemoryTracking<size_t> state_offsets;
     size_t total_state_size = 0;
     size_t max_state_align = 1;
+    size_t num_zero_sized_states = 0;
     String nested_func_name;
 
     /// Result type: a Tuple of the nested result types, preserving explicit element names.
@@ -67,12 +68,6 @@ public:
         const Array & params);
 
     String getName() const override { return nested_func_name + "Tuple"; }
-
-    void forEachNestedFunction(const std::function<void(const AggregateFunctionPtr &)> & callback) const override
-    {
-        for (const auto & nested_function : nested_functions)
-            callback(nested_function);
-    }
 
     bool isVersioned() const override;
     size_t getDefaultVersion() const override;
@@ -176,8 +171,6 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
-    bool isOnlyWindowFunction() const override;
-
     AggregateFunctionStateVariant getStateVariant() const override;
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override;
     void mergeStateFromDifferentVariant(
@@ -228,8 +221,11 @@ private:
                 }
                 catch (...)
                 {
-                    for (size_t i = transferred; i-- > 0;)
+                    for (size_t j = transferred; j > 0; --j)
+                    {
+                        const size_t i = j - 1;
                         nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
+                    }
                     throw;
                 }
 

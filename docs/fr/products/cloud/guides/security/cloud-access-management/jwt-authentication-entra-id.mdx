@@ -1,0 +1,322 @@
+---
+sidebarTitle: 'Authentification JWT avec Entra ID'
+slug: /cloud/security/jwt-authentication-entra-id
+title: 'Authentification JWT avec Microsoft Entra ID'
+description: "Comment configurer Microsoft Entra ID pour qu'il émette des JWT destinés à un service ClickHouse Cloud, en associant les rôles d'application Entra ID aux rôles ClickHouse"
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'app roles', 'authentication', 'identity provider']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/fr/components/VersionBadge/VersionBadge.jsx";
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="Authentification JWT avec un fournisseur d’identité personnalisé" />
+
+Ce guide explique comment configurer **Microsoft Entra ID** (anciennement Azure Active Directory) afin que les utilisateurs et les applications se connectent à un service ClickHouse Cloud à l’aide de jetons d’accès Entra ID plutôt que de mots de passe de base de données. Les rôles d’application Entra ID étant mappés aux rôles ClickHouse, vous contrôlez l’accès en affectant des utilisateurs, des groupes et des applications à des rôles d’application dans Entra ID.
+
+<Tip>
+  Ce guide traite de la configuration côté Entra ID ainsi que des valeurs à saisir dans ClickHouse Cloud. Pour des informations générales sur les fournisseurs JWT, consultez [Configuration de l’authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). Pour en savoir plus sur les revendications des jetons et le fonctionnement des utilisateurs éphémères, consultez la référence [Authentification JWT](/fr/concepts/features/security/external-authenticators/jwt).
+</Tip>
+
+## Avant de commencer {#before-you-begin}
+
+Vous aurez besoin des éléments suivants :
+
+* Une organisation souscrivant au plan **Enterprise** et un service exécutant **ClickHouse version 26.4 ou ultérieure**.
+* Un rôle ClickHouse Cloud disposant de la permission `control-plane:service:manage` sur le service (par exemple, **Administrateur** ou **Administrateur du service**) pour ajouter le fournisseur JWT.
+* Un accès au **Microsoft Entra admin center** avec au minimum le rôle **Cloud Application Administrator**.
+* Microsoft Entra ID P1 ou P2 si vous souhaitez affecter des groupes, plutôt que des utilisateurs individuels, aux rôles d’application.
+* L’[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) et [`clickhouse-client`](/fr/concepts/features/interfaces/client) pour tester la configuration.
+* La liste des rôles ClickHouse que vous souhaitez accorder via Entra ID. Chacun d’eux correspondra à un rôle d’application Entra ID du même nom. Ce guide en utilise deux :
+
+  | Valeur du rôle d’application | Privilèges ClickHouse                  |
+  | ---------------------------- | -------------------------------------- |
+  | `ch_analyst`                 | `SELECT` et `INSERT` sur `analytics.*` |
+  | `ch_readonly`                | `SELECT` sur `*.*`                     |
+
+## Fonctionnement {#how-it-works}
+
+1. Vous enregistrez dans Entra ID une application qui représente votre service ClickHouse Cloud, puis vous définissez un rôle d’application pour chaque rôle ClickHouse.
+2. Vous affectez des utilisateurs, des groupes et des applications Entra ID à ces rôles d’application.
+3. Un utilisateur se connecte via Azure CLI ou `clickhouse-client --login`, ou une application utilise le flux d’octroi par identifiants client (client credentials grant). Entra ID émet alors un jeton d’accès v2.0 dont la revendication `aud` contient l’ID d’application (client) et dont la revendication `roles` répertorie les rôles d’application assignés à l’appelant.
+4. ClickHouse Cloud vérifie la signature du jeton à l’aide des clés publiques d’Entra ID, contrôle les revendications `iss` et `aud`, puis crée un utilisateur éphémère doté des privilèges des rôles ClickHouse indiqués dans la revendication `roles`, dans la limite des privilèges de l’utilisateur `default`.
+
+## Enregistrer ClickHouse dans Entra ID {#register-in-entra-id}
+
+<Steps>
+  <Step title="Créer l’inscription d’application" id="create-app-registration">
+    Dans le centre d’administration Microsoft Entra, ouvrez **App registrations** et sélectionnez **New registration** :
+
+    * **Name** : un nom d’affichage, par exemple `clickhouse-cloud-production`.
+    * **Supported account types** : locataire unique. Selon la version du portail, cette option s’intitule **Single tenant only** ou **Accounts in this organizational directory only**.
+    * **Redirect URI** : laissez ce champ vide. Les utilisateurs se connectent via le flux de code d’appareil (device code flow), qui n’utilise pas d’URI de redirection.
+
+    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Formulaire d’inscription d’une application dans le centre d’administration Microsoft Entra, avec un type de compte à locataire unique et sans URI de redirection" />
+
+    Sélectionnez **Register**. Sur la page **Overview**, copiez les valeurs suivantes :
+
+    * **Application (client) ID**, désigné ci-après par `<CLIENT_ID>`. Il devient la revendication `aud` des jetons.
+    * **Directory (tenant) ID**, désigné ci-après par `<TENANT_ID>`. Il entre dans la composition de l’émetteur et de l’URL JWKS.
+  </Step>
+
+  <Step title="Demander des jetons d’accès v2.0" id="request-v2-tokens">
+    Par défaut, Entra ID émet des jetons d’accès v1.0, dont l’émetteur est `https://sts.windows.net/<TENANT_ID>/`. Configurez plutôt l’application pour qu’elle reçoive des jetons v2.0, dont l’émetteur est `https://login.microsoftonline.com/<TENANT_ID>/v2.0` et dont la revendication `aud` correspond toujours à l’ID client.
+
+    Dans l’inscription de votre application, ouvrez **Manifest**, définissez la version du jeton d’accès sur `2`, puis sélectionnez **Save**. Le nom de la propriété dépend du format de manifest affiché dans l’éditeur :
+
+    * Format Microsoft Graph : `requestedAccessTokenVersion` dans la section `api`.
+    * Format Azure AD Graph : la propriété de premier niveau `accessTokenAcceptedVersion`, comme dans la capture d’écran ci-dessous.
+
+    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="Éditeur du manifest de l’application avec accessTokenAcceptedVersion défini sur 2" />
+  </Step>
+
+  <Step title="Exposer une API" id="expose-an-api">
+    Ouvrez **Expose an API** :
+
+    1. À côté de **Application ID URI**, sélectionnez **Add**, acceptez la valeur par défaut `api://<CLIENT_ID>`, puis enregistrez. Les clients utilisent cet URI pour demander des jetons pour ClickHouse. Il ne modifie pas la revendication `aud` des jetons v2.0, qui reste l&#39;ID client.
+
+       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Page Expose an API avec le panneau Application ID URI affichant la valeur api:// par défaut" />
+
+    2. Sélectionnez **Add a scope** et remplissez le formulaire. Les utilisateurs demandent cette portée lors de leur connexion. Les applications qui s&#39;authentifient en leur propre nom ne l&#39;utilisent pas.
+
+       | Champ                          | Valeur                                                 |
+       | ------------------------------ | ------------------------------------------------------ |
+       | **Scope name**                 | `access_as_application`                                |
+       | **Who can consent?**           | **Admins only**                                        |
+       | **Admin consent display name** | Par exemple, `Access ClickHouse as the signed-in user` |
+       | **Admin consent description**  | Description au choix                                   |
+       | **State**                      | **Enabled**                                            |
+
+       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Panneau Add a scope avec la portée access_as_application, le consentement réservé aux administrateurs et l'état défini sur Enabled" />
+  </Step>
+
+  <Step title="Autoriser une application cliente à connecter les utilisateurs" id="authorize-client-application">
+    Les utilisateurs obtiennent des jetons via une application cliente publique. En pré-autorisant cette application pour la portée `access_as_application`, vous évitez que leur consentement soit demandé aux utilisateurs. Ce guide utilise Azure CLI, dont l&#39;ID client est `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, à la fois pour `az` et pour `clickhouse-client --login`.
+
+    Dans **Expose an API**, sous **Authorized client applications**, sélectionnez **Add a client application**. Saisissez `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, sélectionnez la portée `api://<CLIENT_ID>/access_as_application`, puis sélectionnez **Add application**.
+
+    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Panneau Add a client application avec l'ID client d'Azure CLI et la portée access_as_application sélectionnée" />
+
+    <Note>
+      Pour utiliser votre propre application cliente plutôt qu&#39;Azure CLI, enregistrez une application distincte, définissez **Allow public client flows** sur **Yes** sous **Authentication**, puis pré-autorisez son ID client ici. Transmettez ensuite cet ID client via `--oauth-client-id` lorsque vous [vous connectez avec clickhouse-client](#sign-in-with-clickhouse-client). Si votre locataire n&#39;autorise pas le consentement des utilisateurs, un administrateur doit également donner son consentement pour les autorisations `openid`, `profile` et `offline_access` de cette application.
+    </Note>
+  </Step>
+
+  <Step title="Créer des rôles d’application" id="create-app-roles">
+    Chaque rôle d’application correspond à un rôle ClickHouse. La **Value** du rôle d’application correspond à ce qui figure dans la revendication `roles` du jeton : elle doit donc correspondre exactement au nom du rôle ClickHouse, casse comprise.
+
+    Ouvrez **App roles** et sélectionnez **Create app role** pour chaque rôle ClickHouse :
+
+    | Champ                                    | Valeur                                                                                                                                                                   |
+    | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+    | **Display name**                         | Un nom lisible, par exemple `ClickHouse analyst`                                                                                                                         |
+    | **Allowed member types**                 | **Both (Users/Groups + Applications)**. Choisissez **Users/Groups** si seules des personnes se connectent, ou **Applications** si seules des applications se connectent. |
+    | **Value**                                | Le nom du rôle ClickHouse, par exemple `ch_analyst`                                                                                                                      |
+    | **Description**                          | Description libre                                                                                                                                                        |
+    | **Do you want to enable this app role?** | Coché                                                                                                                                                                    |
+
+    L’exemple suivant définit trois rôles d’application dont les valeurs sont des noms de rôles ClickHouse :
+
+    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="Page App roles répertoriant ClickHouse Admin, ClickHouse Analyst DB et ClickHouse Read Only avec les valeurs ch_admin, ch_analyst et ch_readonly" />
+  </Step>
+
+  <Step title="Exiger une attribution" id="require-assignment">
+    Par défaut, tout utilisateur de votre locataire peut obtenir un jeton pour l&#39;application. Pour réserver l&#39;émission de jetons aux utilisateurs, groupes et applications que vous affectez à un rôle d&#39;application, ouvrez **Enterprise applications**, sélectionnez l&#39;application portant le même nom que votre inscription d&#39;application, ouvrez **Properties**, définissez **Assignment required?** sur **Yes**, puis sélectionnez **Save**.
+
+    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Propriétés de l'application d'entreprise avec Assignment required défini sur Yes" />
+  </Step>
+
+  <Step title="Affecter des utilisateurs et des groupes aux rôles de l’application" id="assign-users-and-groups">
+    Dans la même application d’entreprise, ouvrez **Users and groups** et sélectionnez **Add user/group**. Sélectionnez un utilisateur ou un groupe, choisissez un rôle d’application, puis sélectionnez **Assign**. Répétez l’opération pour chaque utilisateur ou groupe.
+
+    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="Page Users and groups de l’application d’entreprise montrant un utilisateur assigné au rôle d’application ClickHouse Read Only" />
+
+    Un utilisateur auquel plusieurs rôles d’application sont assignés, directement ou via des groupes, les reçoit tous dans la revendication `roles`.
+
+    <Note>
+      L’assignation de groupes à des rôles d’application nécessite Microsoft Entra ID P1 ou P2. Les groupes imbriqués ne sont pas pris en charge : seuls les membres directs d’un groupe assigné reçoivent son rôle d’application.
+    </Note>
+  </Step>
+</Steps>
+
+## Créer les rôles correspondants dans ClickHouse {#create-clickhouse-roles}
+
+Connectez-vous à votre service en tant qu&#39;utilisateur `default`, par exemple depuis la console SQL, puis créez un rôle pour chaque valeur de rôle d&#39;application :
+
+```sql
+CREATE ROLE ch_analyst;
+GRANT SELECT, INSERT ON analytics.* TO ch_analyst;
+
+CREATE ROLE ch_readonly;
+GRANT SELECT ON *.* TO ch_readonly;
+```
+
+Points à retenir :
+
+* Les noms de rôles sont sensibles à la casse et doivent correspondre aux valeurs des rôles de l’application.
+* ClickHouse ignore les noms de la revendication `roles` qui ne correspondent à aucun rôle existant sur le service.
+* Dans ClickHouse Cloud, la limite d’autorisations des fournisseurs JWT correspond à l’utilisateur `default`. ClickHouse supprime tout privilège d’un rôle dont l’utilisateur `default` ne dispose pas.
+
+## Ajouter Entra ID comme fournisseur JWT {#add-jwt-provider}
+
+Suivez les étapes décrites dans [Ajouter un fournisseur JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider) et saisissez les valeurs suivantes :
+
+| Champ           | Valeur                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Name**        | Le nom de votre choix, par exemple `entra-id`                                                                |
+| **Issuer**      | `https://login.microsoftonline.com/<TENANT_ID>/v2.0`                                                         |
+| **Audience**    | `<CLIENT_ID>`, c&#39;est-à-dire l&#39;ID d&#39;application (client). N&#39;utilisez pas `api://<CLIENT_ID>`. |
+| **URL JWKS**    | `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys`                                          |
+| **Roles claim** | `roles`                                                                                                      |
+
+<Warning>
+  Définissez **Roles claim** sur `roles`. Si vous laissez ce champ vide, ClickHouse lit les rôles à partir de la revendication `clickhouse:roles`, absente des jetons Entra ID : les utilisateurs s&#39;authentifient alors sans aucun privilège.
+</Warning>
+
+## Se connecter en tant qu’utilisateur {#connect-as-a-user}
+
+Définissez comme variables de l’interpréteur de commandes les valeurs issues de l’inscription de votre application ainsi que le nom d’hôte de votre service :
+
+```bash
+TENANT_ID="<TENANT_ID>"
+CLIENT_ID="<CLIENT_ID>"
+CH_HOST="<your-service-hostname>"
+```
+
+### Transmettre un jeton Azure CLI {#pass-an-azure-cli-token}
+
+Connectez-vous avec Azure CLI, demandez un jeton d’accès pour l’application ClickHouse, puis transmettez-le à `clickhouse-client` via `--jwt` :
+
+```bash
+az login --tenant "$TENANT_ID" --allow-no-subscriptions
+TOKEN=$(az account get-access-token --resource "api://$CLIENT_ID" --query accessToken --output tsv)
+
+clickhouse-client --host "$CH_HOST" --secure --jwt "$TOKEN"
+```
+
+Le même jeton fonctionne avec l&#39;interface HTTP :
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+Par défaut, les jetons d’accès Entra ID sont valides de 60 à 90 minutes. Demandez un nouveau jeton à son expiration, ou utilisez `--login` pour les sessions de longue durée.
+
+### Se connecter avec clickhouse-client {#sign-in-with-clickhouse-client}
+
+`clickhouse-client` peut exécuter lui-même le flux OAuth 2.0 « device code » et renouveler le jeton en cours de session :
+
+```bash
+clickhouse-client --host "$CH_HOST" --secure --login \
+  --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
+  --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
+```
+
+Le client affiche une URL et un code. Ouvrez l’URL, saisissez le code, puis connectez-vous avec votre compte Entra ID. Conservez `offline_access` dans la portée : cette valeur permet à Entra ID de renvoyer un jeton de rafraîchissement, que le client utilise pour renouveler le jeton d’accès. Sans elle, vous devrez vous reconnecter à l’expiration du jeton d’accès.
+
+## Se connecter en tant qu’application {#connect-as-an-application}
+
+Les applications telles que les jobs ETL et les services backend s’authentifient en leur propre nom via le flux d’octroi par identifiants client OAuth 2.0. Les rôles d’application que vous attribuez à une application doivent autoriser le type de membre **Applications**.
+
+1. Dans **App registrations**, inscrivez une application distincte pour la charge de travail. Sous **Certificates &amp; secrets**, créez un secret client ou téléversez un certificat. Dans les commandes ci-dessous, l’ID client et le secret de la charge de travail sont désignés par `<WORKLOAD_CLIENT_ID>` et `<WORKLOAD_CLIENT_SECRET>`.
+2. Dans l’inscription d’application de la charge de travail, ouvrez **API permissions** et sélectionnez **Add a permission**. Sous **APIs my organization uses**, recherchez l’application ClickHouse, sélectionnez **Application permissions**, cochez les rôles d’application nécessaires à la charge de travail, puis sélectionnez **Add permissions**.
+3. Sélectionnez **Grant admin consent** pour affecter les rôles d’application à la charge de travail.
+
+Obtenez un jeton auprès de l’endpoint de jetons d’Entra ID et envoyez-le à ClickHouse :
+
+```bash
+TOKEN=$(curl -s "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -d grant_type=client_credentials \
+  -d client_id="<WORKLOAD_CLIENT_ID>" \
+  --data-urlencode client_secret="<WORKLOAD_CLIENT_SECRET>" \
+  --data-urlencode scope="api://$CLIENT_ID/.default" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+En production, utilisez la [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-overview) ou la bibliothèque Azure Identity correspondant à votre langage. Elles mettent les jetons en cache et en demandent de nouveaux avant l’expiration des précédents.
+
+## Vérifier {#verify}
+
+Une fois la connexion établie, vérifiez l&#39;identity et les privilèges de la session :
+
+```sql
+SELECT currentUser();
+SHOW GRANTS;
+SHOW CURRENT ROLES;
+```
+
+| Requête                | Résultat attendu                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `SELECT currentUser()` | Un nom de la forme `JWT::<sub>::<hash>`, où `<sub>` correspond à la revendication `sub` du jeton                                      |
+| `SHOW GRANTS`          | Les privilèges des rôles figurant dans la revendication `roles` du jeton, par exemple `GRANT SELECT ON *.* TO ...` pour `ch_readonly` |
+| `SHOW CURRENT ROLES`   | Aucune ligne                                                                                                                          |
+
+ClickHouse n&#39;accorde pas les rôles eux-mêmes à l&#39;utilisateur éphémère. Il rassemble les privilèges des rôles indiqués dans le jeton, en calcule l&#39;intersection avec les privilèges de l&#39;utilisateur `default`, puis accorde directement le résultat à l&#39;utilisateur. C&#39;est pourquoi `SHOW CURRENT ROLES` ne renvoie aucune ligne.
+
+Pour les jetons utilisateur, Entra ID attribue à `sub` un identifiant opaque, propre à chaque combinaison d&#39;utilisateur et d&#39;application. Il ne s&#39;agit ni de l&#39;adresse e-mail de l&#39;utilisateur, ni de son ID d&#39;objet.
+
+## Bonnes pratiques {#best-practices}
+
+### Affectez des groupes plutôt que des utilisateurs individuels {#assign-groups}
+
+Affectez un groupe Entra ID à chaque rôle d&#39;application, puis accordez ou révoquez l&#39;accès en modifiant les membres du groupe. Ainsi, personne n&#39;a besoin de modifier l&#39;application lorsque des personnes rejoignent ou quittent une équipe.
+
+### Utiliser une inscription d’application distincte pour chaque environnement {#separate-app-registrations}
+
+Les jetons contiennent l&#39;ID client de leur inscription d’application dans la revendication `aud`. Si vous utilisez des inscriptions d’application distinctes pour la production et la préproduction, un jeton émis pour l&#39;un de ces environnements ne permettra pas de s&#39;authentifier auprès de l&#39;autre.
+
+### Les modifications de rôles s&#39;appliquent au prochain jeton {#role-changes}
+
+Entra ID renseigne la revendication `roles` au moment où il émet un jeton. Lorsque vous modifiez les attributions de rôles d&#39;application d&#39;un utilisateur, la modification ne prend effet qu&#39;une fois que l&#39;utilisateur a obtenu un nouveau jeton. Les jetons déjà émis conservent leurs rôles jusqu&#39;à leur expiration. Avec Azure CLI, exécutez `az logout` puis `az login` pour obtenir immédiatement un nouveau jeton.
+
+## Dépannage {#troubleshooting}
+
+<AccordionGroup>
+  <Accordion title="Le jeton est rejeté et son émetteur commence par https://sts.windows.net" id="v1-token">
+    Entra ID a émis un jeton v1.0. Définissez `requestedAccessTokenVersion` sur `2` dans le manifest de l&#39;application, comme décrit dans [Demander des jetons d&#39;accès v2.0](#request-v2-tokens), puis demandez un nouveau jeton.
+  </Accordion>
+
+  <Accordion title="Le jeton est rejeté en raison de son audience" id="audience-mismatch">
+    * L&#39;**Audience** du fournisseur dans ClickHouse Cloud doit être l&#39;ID client, et non `api://<CLIENT_ID>`.
+    * Vérifiez que vous avez bien demandé un jeton pour l&#39;application ClickHouse. Sans `--resource`, `az account get-access-token` renvoie un jeton destiné à Azure Resource Manager.
+  </Accordion>
+
+  <Accordion title="Entra ID renvoie AADSTS65001 ou demande un consentement" id="consent-required">
+    L&#39;application cliente n&#39;est pas pré-autorisée pour la portée `access_as_application`. Ajoutez son ID client sous **Expose an API → Authorized client applications**, comme décrit dans [Autoriser une application cliente pour la connexion des utilisateurs](#authorize-client-application).
+  </Accordion>
+
+  <Accordion title="Entra ID renvoie AADSTS50105 ou AADSTS501051" id="not-assigned">
+    L&#39;utilisateur ou l&#39;application n&#39;est pas assigné à l&#39;application ClickHouse, alors que **Assignment required?** est défini sur **Yes**. Assignez l&#39;utilisateur, l&#39;un de ses groupes ou l&#39;application à un rôle d&#39;application. Si vous avez assigné un groupe, assurez-vous que l&#39;utilisateur en est un membre direct.
+  </Accordion>
+
+  <Accordion title="L'authentification réussit, mais les requêtes échouent avec ACCESS_DENIED" id="no-privileges">
+    L&#39;utilisateur éphémère ne dispose pas des privilèges requis par la requête. Vérifiez les points suivants :
+
+    * Le champ **Roles claim** du fournisseur est défini sur `roles`.
+    * Le jeton contient une revendication `roles`. Celle-ci est absente lorsque l&#39;appelant est assigné à l&#39;application sans rôle d&#39;application.
+    * Chaque valeur de la revendication `roles` correspond à un rôle ClickHouse existant sur le service, en respectant la casse.
+    * L&#39;utilisateur `default` dispose des privilèges que vous avez accordés au rôle.
+
+    Pour afficher les revendications d&#39;un jeton, décodez sa charge utile localement :
+
+    ```bash
+    python3 -c 'import sys, base64, json; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+    ```
+  </Accordion>
+
+  <Accordion title="Le jeton est rejeté après la configuration d'une politique de correspondance des revendications" id="app-signing-key">
+    Si vous avez configuré une politique de correspondance des revendications ou une clé de signature personnalisée pour l&#39;application, Entra ID signe ses jetons avec une clé absente du JWKS du locataire. Définissez l&#39;**URL JWKS** du fournisseur sur `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys?appid=<CLIENT_ID>`.
+  </Accordion>
+</AccordionGroup>
+
+## Voir aussi {#related}
+
+* [Configuration de l&#39;authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) : ajout, mise à jour et suppression de fournisseurs JWT dans la Console Cloud.
+* [Authentification JWT](/fr/concepts/features/security/external-authenticators/jwt) : revendications des jetons, utilisateurs éphémères et utilisation côté client.
