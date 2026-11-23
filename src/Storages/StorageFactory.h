@@ -107,6 +107,9 @@ public:
         /// The background job only feeds dependent views, so a table that has none is deferred like
         /// any other, while one that has some is loaded eagerly to keep them fed.
         bool defers_only_without_dependent_views = false;
+        /// See also `IStorage::isStreamingStorage`. A deferred table that is not loaded yet answers it from this,
+        /// so that `SYSTEM STOP` and the like know which grant the table requires before they load it.
+        bool is_streaming = false;
         /// Set if `IStorage::checkTableCanBeRenamedByDatabaseRename` of the engine can refuse the new name. A deferred
         /// table of such an engine that is not loaded yet is asked through this, see `StorageTableProxy`.
         CheckDatabaseRenameFn * check_database_rename_fn = nullptr;
@@ -163,6 +166,7 @@ public:
         .supports_sql_security = false,
         .supports_deferred_load = false,
         .defers_only_without_dependent_views = false,
+        .is_streaming = false,
         .check_database_rename_fn = nullptr,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,

@@ -2946,10 +2946,18 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     };
 
     auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-    /// Loading a lazily loaded table constructs and starts it, so it is not done for a user who holds neither grant.
-    if (storage && !isStorageLoaded(storage) && !can_views && !can_streaming)
-        throw_not_authorized();
-    storage = resolveStorageProxyLoading(storage);
+    /// Loading a lazily loaded table constructs and starts it, so it is not done for a user who does not hold
+    /// the grant the table requires. A table that is not loaded yet is never a view, and its engine, known
+    /// from the `CREATE` query, tells whether it is a streaming one, so this is the same decision as below.
+    if (storage && !isStorageLoaded(storage))
+    {
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(storage->getName());
+        const bool is_streaming_engine = features && features->is_streaming;
+        if (!(is_streaming_engine ? can_streaming : (can_views || can_streaming)))
+            throw_not_authorized();
+        storage = resolveStorageProxyLoading(storage);
+        chassert(storage->isStreamingStorage() == is_streaming_engine);
+    }
     const bool is_streaming = storage && storage->isStreamingStorage();
     const auto * mv = storage ? dynamic_cast<const StorageMaterializedView *>(storage.get()) : nullptr;
     const bool is_refreshable_view = mv && mv->isRefreshable();
