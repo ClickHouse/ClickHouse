@@ -24,8 +24,6 @@
 
 #include <fmt/ranges.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
