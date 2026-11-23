@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 これは、ClickPipes のレプリケーションに使用できる Neon Postgres のセットアップ方法を説明するガイドです。
 このセットアップを行う前に、[Neon console](https://console.neon.tech/app/projects) にサインインしていることを確認してください。
 
@@ -68,11 +66,27 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 Neon では、UI から論理レプリケーションを有効にできます。これは、ClickPipes の CDC (変更データキャプチャ) がデータをレプリケートするために必要です。
 **Settings** タブを開き、**Logical Replication** セクションに移動します。
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp" alt="論理レプリケーションを有効にする" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![論理レプリケーションを有効にする](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
+
+</Frame>
+
+</div>
 
 ここでは **Enable** をクリックすれば完了です。有効化すると、以下の成功メッセージが表示されます。
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp" alt="論理レプリケーションが有効" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![論理レプリケーションが有効](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
+
+</Frame>
+
+</div>
 
 Neon Postgres インスタンスで、以下の設定を確認しましょう。
 
@@ -89,7 +103,15 @@ SHOW max_replication_slots; -- should be 10
 Neon Enterprise プランをご利用の場合は、[ClickPipes の IP](/ja/integrations/clickpipes/networking/static-ips) を許可リストに追加することで、ClickPipes からお使いの Neon Postgres インスタンスへのレプリケーションを許可できます。
 これを行うには、**Settings** タブをクリックし、**IP Allow** セクションに移動します。
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="IP 許可画面" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![IP 許可画面](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
+
+</Frame>
+
+</div>
 
 <div id="copy-connection-details">
   ## 接続情報をコピーする
@@ -98,7 +120,15 @@ Neon Enterprise プランをご利用の場合は、[ClickPipes の IP](/ja/inte
 ユーザーと publication の準備が整い、レプリケーションも有効になったので、新しい ClickPipe を作成するために接続情報をコピーできます。
 **ダッシュボード**に移動し、接続文字列が表示されているテキストボックスで、表示を **パラメータのみ** に変更します。次のステップでこれらのパラメータが必要です。
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp" alt="接続情報" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![接続情報](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## 次のステップ

@@ -13,11 +13,13 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -26,6 +28,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -332,10 +335,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
-    /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
+    /// When InequalityJoin takes this join (`inequality` listed first in `join_algorithm` with a suitable
     /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.
-    if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
+    if (isInequalityJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
     /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
@@ -348,7 +351,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             join_algorithms,
             [](JoinAlgorithm algorithm)
             {
-                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
+                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::INEQUALITY
                     && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
                     && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
             });
@@ -532,9 +535,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         const auto & join_key_build_side = join_keys_build_side[i];
         const auto & join_key_probe_side = join_keys_probe_side[i];
 
+        DataTypePtr common_type = join_key_build_side.type;
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
-            auto common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
+            common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
             if (!common_type)
             {
                 /// The keys still can be joined by the values that they have in common, see
@@ -551,12 +555,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
                 return false;
             }
-            common_types.push_back(std::move(common_type));
         }
-        else
-        {
-            common_types.push_back(join_key_build_side.type);
-        }
+        common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(std::move(common_type), join_key_build_side.type, join_key_probe_side.type));
     }
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
@@ -691,6 +691,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
+    join_step->setHasRuntimeFilters();
+
     return true;
 }
 
@@ -699,7 +701,8 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     const auto & frame = stack.back();
 
     auto * read_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (!read_step)
+    auto * object_storage_read_step = typeid_cast<ReadFromObjectStorageStep *>(frame.node->step.get());
+    if (!read_step && !object_storage_read_step)
         return;
 
     /// Walk up from the reading step composing the filters through the expression steps,
@@ -708,7 +711,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     /// (which then fails the bare-column check) instead of colliding with a physical
     /// column's name. Unlike that pass, nothing is attached to the step's filter and no
     /// index analysis is redone: only the applied `__applyFilter` conjuncts are registered.
-    std::vector<const ActionsDAG *> expression_dags;
+    VectorWithMemoryTracking<const ActionsDAG *> expression_dags;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (const auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
@@ -718,7 +721,14 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
 
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
-                read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+            {
+                if (read_step)
+                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
+                        descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+                else if (object_storage_read_step && !descr.is_global_row_index)
+                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
+                        descr.filter_id, descr.key_column_name, descr.key_column_type);
+            }
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {
