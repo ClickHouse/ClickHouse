@@ -323,6 +323,7 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    PAUSEABLE(tcp_handler_pause_before_query_plan_deserialization) \
     REGULAR(slowdown_system_parts_enumeration) \
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
@@ -495,6 +496,10 @@ static struct InitFiu
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE(iceberg_compaction_merge_pause_in_step) \
     PAUSEABLE_ONCE(iceberg_compaction_pause_before_metadata_commit) \
+    REGULAR(iceberg_compaction_refuse_metadata_commit) \
+    ONCE(iceberg_compaction_lose_metadata_commit_response) \
+    ONCE(iceberg_compaction_lose_metadata_commit_request) \
+    PAUSEABLE_ONCE(iceberg_compaction_pause_before_commit_reconciliation) \
     PAUSEABLE_ONCE(iceberg_reader_pause_before_next_file) \
     PAUSEABLE_ONCE(datalake_optimize_pause_before_arming_compaction) \
     PAUSEABLE_ONCE(datalake_background_pause_before_loading_metadata) \
@@ -561,7 +566,8 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
-    REGULAR(http_connection_socket_inode_unavailable)
+    REGULAR(http_connection_socket_inode_unavailable) \
+    PAUSEABLE(silk_fiber_socket_send_timeout_expires_after_write)
 
 namespace FailPoints
 {
