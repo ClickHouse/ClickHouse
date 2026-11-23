@@ -237,6 +237,7 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
             parser_shared_resources,
             format_filter_info,
             need_only_count,
+            /*count_in_one_chunk_=*/ false,
             /*lazy_row_index_registry_=*/ nullptr,
             top_k_query_condition_cache_key,
             shared_reader_pool));
@@ -398,6 +399,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         return;
     }
 
+    const bool count_in_one_chunk = need_only_count && readsOnlyRowCount(query_info, info);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
@@ -414,6 +417,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             parser_shared_resources,
             format_filter_info,
             need_only_count,
+            count_in_one_chunk,
             lazy_row_index_registry,
             top_k_query_condition_cache_key);
 

@@ -1764,6 +1764,7 @@ StorageFileSource::StorageFileSource(
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
     bool need_only_count_,
+    bool count_in_one_chunk_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
     LazyFileRegistryPtr lazy_row_index_registry_,
@@ -1790,6 +1791,7 @@ StorageFileSource::StorageFileSource(
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
+    , count_in_one_chunk(count_in_one_chunk_)
     , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
     if (!storage->use_table_fd)
@@ -1954,7 +1956,9 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
     /// Instead, we use special ConstChunkGenerator that will generate chunks
     /// with max_block_size rows until total number of rows is reached.
-    auto const_chunk_generator = std::make_shared<ConstChunkGenerator>(std::make_shared<const Block>(block_for_format), *num_rows_from_cache, max_block_size);
+    /// One chunk is fine when nothing reads the columns, see `readsOnlyRowCount`.
+    auto const_chunk_generator = std::make_shared<ConstChunkGenerator>(
+        std::make_shared<const Block>(block_for_format), *num_rows_from_cache, count_in_one_chunk ? *num_rows_from_cache : max_block_size);
     QueryPipelineBuilder builder;
     builder.init(Pipe(const_chunk_generator));
     builder.addSimpleTransform([&](const SharedHeader & header)
@@ -3311,6 +3315,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             format_filter_info->column_mapper.get(),
             storage->format_settings ? &*storage->format_settings : nullptr);
 
+    const bool count_in_one_chunk = need_only_count && readsOnlyRowCount(query_info, info);
+
     /// Held until the sources are constructed, see `trySplitSingleFile`.
     RWLockImpl::LockHolder split_file_read_lock;
     auto split_file = trySplitSingleFile(format_filter_info, query_condition_cache_table_id, split_file_read_lock);
@@ -3345,6 +3351,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             files_iterator,
             std::move(read_buffer),
             need_only_count,
+            count_in_one_chunk,
             parser_shared_resources,
             format_filter_info,
             lazy_row_index_registry,
