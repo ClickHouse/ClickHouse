@@ -16,11 +16,11 @@ SET use_delta_lake_metadata_cache = 1;
 SYSTEM ENABLE FAILPOINT delta_lake_stats_scan_callback_throw;
 SELECT 'stats scan', count() FROM $DELTA;
 SELECT 'stats scan again', count() FROM $DELTA;
-" 2>&1 | grep -v "^\s*$" | sed -E 's/.*(Forced by the [a-z_]+ failpoint).*/\1/' | sort | uniq
+" 2>&1 | grep -E "^stats scan|Forced by the" | sed -E 's/.*(Forced by the [a-z_]+ failpoint).*/\1/' | awk '!seen[$0]++'
 
 $CLICKHOUSE_LOCAL -q "
 SYSTEM ENABLE FAILPOINT delta_lake_metadata_callback_throw;
 SELECT 'metadata', count() FROM $DELTA;
-" 2>&1 | grep -o "Forced by the [a-z_]* failpoint" | uniq
+" 2>&1 | grep -o "Forced by the [a-z_]* failpoint" | awk '!seen[$0]++'
 
 $CLICKHOUSE_LOCAL -q "SELECT 'metadata without failpoint', count() FROM $DELTA"
