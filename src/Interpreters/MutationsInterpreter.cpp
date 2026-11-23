@@ -1613,7 +1613,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
-                        if (!source.hasProjection(projection.name))
+                        /// A projection that stores the invalidated column is not loaded (see `IMergeTreeDataPart::loadProjections`),
+                        /// but its directory is still in the part and would be hardlinked into the new part.
+                        if (!source.hasProjection(projection.name) && !source.hasUnloadedProjection(projection.name))
                             continue;
 
                         const auto & projection_cols = projection.required_columns;
