@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -107,7 +108,8 @@ public:
         return arguments[0];
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & source_elem = arguments[0];
         const ColumnWithTypeAndName & offset_elem = arguments[1];
