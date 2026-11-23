@@ -448,7 +448,9 @@ namespace
 
     /// Builds `LEFT JOIN (SELECT id, CAST(arraySort(groupUniqArray((timestamp, value, labels))), '<type>') AS exemplars
     /// FROM <exemplars> GROUP BY id) AS __exemplars USING (id)`, giving every time series its distinct exemplars sorted by timestamp.
-    ASTPtr makeExemplarsJoinElement(const StorageID & exemplars_table_id, const NameAndTypePair & exemplars_outer_column_name_and_type)
+    /// With `JoinKind::Full` it is a `FULL JOIN`, which also keeps the time series without a row on the left side.
+    ASTPtr makeExemplarsJoinElement(
+        const StorageID & exemplars_table_id, const NameAndTypePair & exemplars_outer_column_name_and_type, JoinKind join_kind)
     {
         auto inner = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
@@ -467,7 +469,7 @@ namespace
         inner->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by);
 
         auto join = make_intrusive<ASTTableJoin>();
-        join->kind = JoinKind::Left;
+        join->kind = join_kind;
         join->strictness = JoinStrictness::All;
         auto using_list = make_intrusive<ASTExpressionList>();
         using_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
@@ -726,8 +728,9 @@ namespace
     /// when the "samples" table is not read the query anchors on the "tags" table. The subquery aggregates the rows
     /// with `FINAL` and for the tables of the earlier versions (see makeSamplesTableElement).
     /// The "tags" table is always read — it bridges "samples" (joined by id) and "metric families" (joined by matching
-    /// metric_name against the expanded member names). The "exemplars" table, when read, is joined by id after "tags"
-    /// (see makeExemplarsJoinElement), so every row of a time series gets all its exemplars.
+    /// metric_name against the expanded member names). The "exemplars" table, when read, is joined by id
+    /// (see makeExemplarsJoinElement), so every row of a time series gets all its exemplars: with a `FULL JOIN` to "samples"
+    /// before "tags" (a time series with exemplars and no samples is returned with empty samples), otherwise after "tags".
     ASTPtr buildSelectQueryFromMultipleTables(
         const StorageID & tags_table_id,
         const std::optional<StorageID> & samples_table_id,
@@ -751,14 +754,16 @@ namespace
         {
             /// Samples-anchored: samples are the (streamed) probe side, tags/metric families the smaller build sides.
             tables->children.push_back(makeSamplesTableElement(*samples_table_id, samples_outer_column_name_and_type, has_bucketed_samples, final));
+            if (exemplars_table_id)
+                tables->children.push_back(makeExemplarsJoinElement(*exemplars_table_id, *exemplars_outer_column_name_and_type, JoinKind::Full));
             tables->children.push_back(makeTagsJoinElement(tags_table_id));
         }
         else
         {
             tables->children.push_back(makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ final));
+            if (exemplars_table_id)
+                tables->children.push_back(makeExemplarsJoinElement(*exemplars_table_id, *exemplars_outer_column_name_and_type, JoinKind::Left));
         }
-        if (exemplars_table_id)
-            tables->children.push_back(makeExemplarsJoinElement(*exemplars_table_id, *exemplars_outer_column_name_and_type));
         if (metric_families_table_id)
             tables->children.push_back(makeMetricFamiliesFullJoinElement(*metric_families_table_id, metric_family_column_name));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
