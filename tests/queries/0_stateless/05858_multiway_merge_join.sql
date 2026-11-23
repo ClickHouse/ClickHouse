@@ -6,49 +6,24 @@
 
 SET join_algorithm = 'full_sorting_merge', max_rows_in_set_to_optimize_join = 0, optimize_read_in_order = 1, max_threads = 4;
 
-DROP TABLE IF EXISTS t1;
-DROP TABLE IF EXISTS t2;
-DROP TABLE IF EXISTS t3;
-DROP TABLE IF EXISTS t4;
-DROP TABLE IF EXISTS t5;
-DROP TABLE IF EXISTS t_even;
-DROP TABLE IF EXISTS t_three;
-DROP TABLE IF EXISTS d1;
-DROP TABLE IF EXISTS d2;
-DROP TABLE IF EXISTS d3;
-DROP TABLE IF EXISTS w;
-DROP TABLE IF EXISTS n1;
-DROP TABLE IF EXISTS n2;
-DROP TABLE IF EXISTS n3;
-DROP TABLE IF EXISTS m1;
-DROP TABLE IF EXISTS m2;
-DROP TABLE IF EXISTS m3;
-DROP TABLE IF EXISTS s1;
-DROP TABLE IF EXISTS s2;
-DROP TABLE IF EXISTS s3;
-DROP TABLE IF EXISTS e;
+DROP TABLE IF EXISTS t1, t2, t3, t4, t5, t_even, t_three, d1, d2, d3, w, n1, n2, n3, m1, m2, m3, s1, s2, s3, e;
 
 CREATE TABLE t1 (id UInt64, v1 UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, v2 UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t3 (id UInt64, v3 UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t4 (id UInt64, v4 UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t5 (id UInt64, v5 UInt64) ENGINE = MergeTree ORDER BY id;
--- Three parts per table.
-INSERT INTO t1 SELECT number, number * 3 + 1 FROM numbers(30000) WHERE number % 3 = 0;
-INSERT INTO t1 SELECT number, number * 3 + 1 FROM numbers(30000) WHERE number % 3 = 1;
-INSERT INTO t1 SELECT number, number * 3 + 1 FROM numbers(30000) WHERE number % 3 = 2;
-INSERT INTO t2 SELECT number, number * 5 + 2 FROM numbers(30000) WHERE number % 3 = 0;
-INSERT INTO t2 SELECT number, number * 5 + 2 FROM numbers(30000) WHERE number % 3 = 1;
-INSERT INTO t2 SELECT number, number * 5 + 2 FROM numbers(30000) WHERE number % 3 = 2;
-INSERT INTO t3 SELECT number, number * 7 + 3 FROM numbers(30000) WHERE number < 10000;
-INSERT INTO t3 SELECT number, number * 7 + 3 FROM numbers(30000) WHERE number >= 10000 AND number < 20000;
-INSERT INTO t3 SELECT number, number * 7 + 3 FROM numbers(30000) WHERE number >= 20000;
-INSERT INTO t4 SELECT number, number * 11 + 4 FROM numbers(30000) WHERE number % 2 = 0;
-INSERT INTO t4 SELECT number, number * 11 + 4 FROM numbers(30000) WHERE number % 2 = 1;
-INSERT INTO t4 SELECT number + 30000, number FROM numbers(100);
-INSERT INTO t5 SELECT number, number * 13 + 5 FROM numbers(30000) WHERE number % 5 = 0;
-INSERT INTO t5 SELECT number, number * 13 + 5 FROM numbers(30000) WHERE number % 5 IN (1, 2);
-INSERT INTO t5 SELECT number, number * 13 + 5 FROM numbers(30000) WHERE number % 5 >= 3;
+-- Two parts per table. t4 has 100 more keys than the others.
+INSERT INTO t1 SELECT number, number * 3 + 1 FROM numbers(1000) WHERE number % 3 = 0;
+INSERT INTO t1 SELECT number, number * 3 + 1 FROM numbers(1000) WHERE number % 3 != 0;
+INSERT INTO t2 SELECT number, number * 5 + 2 FROM numbers(1000) WHERE number % 2 = 0;
+INSERT INTO t2 SELECT number, number * 5 + 2 FROM numbers(1000) WHERE number % 2 = 1;
+INSERT INTO t3 SELECT number, number * 7 + 3 FROM numbers(1000) WHERE number < 500;
+INSERT INTO t3 SELECT number, number * 7 + 3 FROM numbers(1000) WHERE number >= 500;
+INSERT INTO t4 SELECT number, number * 11 + 4 FROM numbers(1000) WHERE number % 2 = 0;
+INSERT INTO t4 SELECT number, if(number < 1000, number * 11 + 4, number - 1000) FROM numbers(1100) WHERE number % 2 = 1 OR number >= 1000;
+INSERT INTO t5 SELECT number, number * 13 + 5 FROM numbers(1000) WHERE number % 5 IN (0, 1, 2);
+INSERT INTO t5 SELECT number, number * 13 + 5 FROM numbers(1000) WHERE number % 5 >= 3;
 
 SELECT '1. aligned unique keys';
 SELECT count(), sum(cityHash64(id, v1, v2, v3, v4, v5)) FROM t1 JOIN t2 USING (id) JOIN t3 USING (id) JOIN t4 USING (id) JOIN t5 USING (id) SETTINGS query_plan_join_multiway_merge = 0;
@@ -60,10 +35,10 @@ FROM (EXPLAIN SELECT count(), sum(cityHash64(id, v1, v2, v3, v4, v5)) FROM t1 JO
 
 CREATE TABLE t_even (id UInt64, ve UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_three (id UInt64, vt UInt64) ENGINE = MergeTree ORDER BY id;
-INSERT INTO t_even SELECT number * 2, number FROM numbers(15000) WHERE number % 2 = 0;
-INSERT INTO t_even SELECT number * 2, number FROM numbers(15000) WHERE number % 2 = 1;
-INSERT INTO t_three SELECT number * 3, number FROM numbers(10000) WHERE number < 5000;
-INSERT INTO t_three SELECT number * 3, number FROM numbers(10000) WHERE number >= 5000;
+INSERT INTO t_even SELECT number * 2, number FROM numbers(500) WHERE number % 2 = 0;
+INSERT INTO t_even SELECT number * 2, number FROM numbers(500) WHERE number % 2 = 1;
+INSERT INTO t_three SELECT number * 3, number FROM numbers(334) WHERE number < 167;
+INSERT INTO t_three SELECT number * 3, number FROM numbers(334) WHERE number >= 167;
 
 SELECT '2. sparse and missing keys';
 SELECT count(), sum(cityHash64(id, v1, ve, vt, v2)) FROM t1 JOIN t_even USING (id) JOIN t_three USING (id) JOIN t2 USING (id) SETTINGS query_plan_join_multiway_merge = 0;
@@ -76,9 +51,9 @@ CREATE TABLE d1 (id UInt64, x1 UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE d2 (id UInt64, x2 UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE d3 (id UInt64, x3 UInt64) ENGINE = MergeTree ORDER BY id;
 -- Every key three times in d1 and twice in d2. d3 has the keys of d1, with the same duplicates.
-INSERT INTO d1 SELECT intDiv(number, 3) * 5, number FROM numbers(3000);
-INSERT INTO d2 SELECT intDiv(number, 2) * 5, number FROM numbers(2000);
-INSERT INTO d3 SELECT intDiv(number, 3) * 5, number + 7 FROM numbers(3000);
+INSERT INTO d1 SELECT intDiv(number, 3) * 5, number FROM numbers(300);
+INSERT INTO d2 SELECT intDiv(number, 2) * 5, number FROM numbers(200);
+INSERT INTO d3 SELECT intDiv(number, 3) * 5, number + 7 FROM numbers(300);
 
 SELECT '3. duplicate keys';
 SELECT count(), sum(cityHash64(id, x1, x2, v1)) FROM d1 JOIN d2 USING (id) JOIN t1 USING (id) SETTINGS query_plan_join_multiway_merge = 0;
@@ -116,9 +91,9 @@ FROM (EXPLAIN SELECT sum(x < 4) FROM (
 CREATE TABLE n1 (id Nullable(UInt64), y1 UInt64) ENGINE = MergeTree ORDER BY id SETTINGS allow_nullable_key = 1;
 CREATE TABLE n2 (id Nullable(UInt64), y2 UInt64) ENGINE = MergeTree ORDER BY id SETTINGS allow_nullable_key = 1;
 CREATE TABLE n3 (id Nullable(UInt64), y3 UInt64) ENGINE = MergeTree ORDER BY id SETTINGS allow_nullable_key = 1;
-INSERT INTO n1 SELECT if(number % 4 = 0, NULL, number), number FROM numbers(1000);
-INSERT INTO n2 SELECT if(number % 3 = 0, NULL, number), number FROM numbers(1000);
-INSERT INTO n3 SELECT if(number % 5 = 0, NULL, number), number FROM numbers(1000);
+INSERT INTO n1 SELECT if(number % 4 = 0, NULL, number), number FROM numbers(300);
+INSERT INTO n2 SELECT if(number % 3 = 0, NULL, number), number FROM numbers(300);
+INSERT INTO n3 SELECT if(number % 5 = 0, NULL, number), number FROM numbers(300);
 
 SELECT '4. nullable keys';
 SELECT count(), sum(cityHash64(n1.id, y1, y2, y3)) FROM n1 JOIN n2 ON n1.id = n2.id JOIN n3 ON n2.id = n3.id SETTINGS query_plan_join_multiway_merge = 0;
@@ -128,20 +103,20 @@ SELECT countIf(explain ILIKE '%MultiwayMergeJoin%')
 FROM (EXPLAIN SELECT sum(cityHash64(n1.id, y1, y2, y3)) FROM n1 JOIN n2 ON n1.id = n2.id JOIN n3 ON n2.id = n3.id SETTINGS query_plan_join_multiway_merge = 1);
 
 SELECT '5. a subquery input';
-SELECT count(), sum(cityHash64(id, v1, s, v2)) FROM t1 JOIN (SELECT number * 4 AS id, number AS s FROM numbers(10000)) AS q USING (id) JOIN t2 USING (id)
+SELECT count(), sum(cityHash64(id, v1, s, v2)) FROM t1 JOIN (SELECT number * 4 AS id, number AS s FROM numbers(400)) AS q USING (id) JOIN t2 USING (id)
 SETTINGS query_plan_join_multiway_merge = 0;
-SELECT count(), sum(cityHash64(id, v1, s, v2)) FROM t1 JOIN (SELECT number * 4 AS id, number AS s FROM numbers(10000)) AS q USING (id) JOIN t2 USING (id)
+SELECT count(), sum(cityHash64(id, v1, s, v2)) FROM t1 JOIN (SELECT number * 4 AS id, number AS s FROM numbers(400)) AS q USING (id) JOIN t2 USING (id)
 SETTINGS query_plan_join_multiway_merge = 1;
 SELECT countIf(explain ILIKE '%MultiwayMergeJoin%')
-FROM (EXPLAIN SELECT sum(cityHash64(id, v1, s, v2)) FROM t1 JOIN (SELECT number * 4 AS id, number AS s FROM numbers(10000)) AS q USING (id) JOIN t2 USING (id)
+FROM (EXPLAIN SELECT sum(cityHash64(id, v1, s, v2)) FROM t1 JOIN (SELECT number * 4 AS id, number AS s FROM numbers(400)) AS q USING (id) JOIN t2 USING (id)
     SETTINGS query_plan_join_multiway_merge = 1);
 
 CREATE TABLE m1 (a UInt32, b UInt64, z1 UInt64) ENGINE = MergeTree ORDER BY (a, b);
 CREATE TABLE m2 (a UInt32, b UInt64, z2 UInt64) ENGINE = MergeTree ORDER BY (a, b);
 CREATE TABLE m3 (a UInt32, b UInt64, z3 UInt64) ENGINE = MergeTree ORDER BY (a, b);
-INSERT INTO m1 SELECT number % 10, intDiv(number, 10), number FROM numbers(5000);
-INSERT INTO m2 SELECT number % 10, intDiv(number, 10) * 2, number FROM numbers(5000);
-INSERT INTO m3 SELECT number % 7, intDiv(number, 7), number FROM numbers(5000);
+INSERT INTO m1 SELECT number % 10, intDiv(number, 10), number FROM numbers(1000);
+INSERT INTO m2 SELECT number % 10, intDiv(number, 10) * 2, number FROM numbers(1000);
+INSERT INTO m3 SELECT number % 7, intDiv(number, 7), number FROM numbers(1000);
 
 SELECT '6. two key columns';
 -- The join order optimizer may list the conditions of a join in another order, and then the inputs are not sorted alike.
@@ -195,24 +170,4 @@ SELECT count(), sum(cityHash64(a.id, a.v4, b.v4, c.v4)) FROM t4 AS a JOIN t4 AS 
 SELECT countIf(explain ILIKE '%MultiwayMergeJoin%')
 FROM (EXPLAIN SELECT sum(cityHash64(a.id, a.v4, b.v4, c.v4)) FROM t4 AS a JOIN t4 AS b USING (id) JOIN t4 AS c USING (id) SETTINGS query_plan_join_multiway_merge = 1);
 
-DROP TABLE t1;
-DROP TABLE t2;
-DROP TABLE t3;
-DROP TABLE t4;
-DROP TABLE t5;
-DROP TABLE t_even;
-DROP TABLE t_three;
-DROP TABLE d1;
-DROP TABLE d2;
-DROP TABLE d3;
-DROP TABLE w;
-DROP TABLE n1;
-DROP TABLE n2;
-DROP TABLE n3;
-DROP TABLE m1;
-DROP TABLE m2;
-DROP TABLE m3;
-DROP TABLE s1;
-DROP TABLE s2;
-DROP TABLE s3;
-DROP TABLE e;
+DROP TABLE t1, t2, t3, t4, t5, t_even, t_three, d1, d2, d3, w, n1, n2, n3, m1, m2, m3, s1, s2, s3, e;
