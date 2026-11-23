@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <base/MemorySanitizer.h>
+#include <base/sanitizer_defs.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -59,11 +60,13 @@ std::string_view ecbEquivalentCipherName(std::string_view mode);
 
 /// Constant-time byte comparisons for PKCS#7 padding validation: 0xFF when the condition
 /// holds, 0 otherwise, with no data-dependent branches.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline UInt8 constantTimeGE(UInt8 a, UInt8 b)
 {
     return static_cast<UInt8>(~((static_cast<unsigned int>(a) - b) >> 8));
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline UInt8 constantTimeEQ(UInt8 a, UInt8 b)
 {
     return static_cast<UInt8>((static_cast<unsigned int>(a ^ b) - 1) >> 8);
@@ -74,7 +77,7 @@ inline UInt8 constantTimeEQ(UInt8 a, UInt8 b)
 /// cipher setup and key schedule expansion that dominate the per-row cost in OpenSSL 3.x.
 struct CachedKeyState
 {
-    bool matches(std::string_view key_value) const
+    [[nodiscard]] bool matches(std::string_view key_value) const
     {
         return initialized && key_value.size() == key_size
             && memcmp(key_value.data(), key.data(), key_size) == 0;
@@ -92,7 +95,7 @@ struct CachedKeyState
     /// that, a key change only needs the new key (with a null cipher), which replaces
     /// the key schedule but keeps the provider context and its parameters; re-passing
     /// the cipher would repeat the full context setup.
-    bool hasContext() const { return initialized; }
+    [[nodiscard]] bool hasContext() const { return initialized; }
 
     void reset() { initialized = false; }
 
@@ -159,7 +162,7 @@ enum class CipherMode : uint8_t
 template <CipherMode mode>
 struct KeyHolder
 {
-    std::string_view setKey(size_t cipher_key_size, std::string_view key) const
+    [[nodiscard]] std::string_view setKey(size_t cipher_key_size, std::string_view key) const
     {
         if (key.size() != cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size(), cipher_key_size);
@@ -245,14 +248,16 @@ public:
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty key is not valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
             return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
@@ -262,12 +267,12 @@ private:
                    " [IV StringOrFixedString]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
@@ -651,16 +656,29 @@ private:
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
                     // 1.a.1: Init CTX with custom IV length and optionally with AAD
-                    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
+                    if (!ctx_key_state.hasContext() && EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("EVP_EncryptInit_ex");
 
                     if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size()), nullptr) != 1)
                         onError("EVP_CIPHER_CTX_ctrl");
 
-                    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const unsigned char*>(key_value.data()),
-                            reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
-                        onError("EVP_EncryptInit_ex");
+                    if (ctx_key_state.matches(key_value))
+                    {
+                        /// The context already holds the expanded key schedule for this
+                        /// key: reset only the IV, skipping the cipher setup and key
+                        /// schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+                        if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_EncryptInit_ex");
+                    }
+                    else
+                    {
+                        if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(key_value.data()),
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_EncryptInit_ex");
+                        ctx_key_state.remember(key_value);
+                    }
 
                     // 1.a.2 Set AAD
                     if (aad_column)
@@ -754,14 +772,16 @@ public:
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty key is not valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const String ret = use_null_when_decrypt_fail ? "Nullable(String)" : "String";
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
@@ -772,12 +792,12 @@ private:
                    " [IV StringOrFixedString]) -> " + ret;
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
@@ -1062,18 +1082,12 @@ private:
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
                 size_t string_size = input_reader[row_idx].size();
-                resulting_size += string_size;
 
+                /// Too short GCM input is rejected in the row loop below.
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
-                {
-                    if (string_size > 0)
-                    {
-                        if (string_size < tag_size)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.");
+                    string_size = string_size < tag_size ? 0 : string_size - tag_size;
 
-                        resulting_size -= tag_size;
-                    }
-                }
+                resulting_size += string_size;
             }
 
             decrypted_result_column_data.resize(resulting_size);
@@ -1082,7 +1096,7 @@ private:
         auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder{};
-        [[maybe_unused]] CachedKeyState ctx_key_state;
+        CachedKeyState ctx_key_state;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -1099,18 +1113,26 @@ private:
             }
 
             auto input_value = input_reader[row_idx];
+            /// Taken before the GCM tag is cut off: the ciphertext of an empty plaintext
+            /// is a bare tag, which still has to be verified.
+            const bool input_is_empty = input_value.empty();
+            bool decrypt_fail = false;
+            /// Where the output of this row starts, to drop it if the row fails.
+            auto * const row_start = decrypted;
 
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
-                if (!input_value.empty())
+                // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
+                if (input_value.size() < tag_size)
                 {
-                    // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
-                    if (input_value.size() < tag_size)
+                    if constexpr (!use_null_when_decrypt_fail)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
                                 "should contain at least {} bytes of a tag.",
                                 input_value.size(), tag_size);
-                    input_value.remove_suffix(tag_size);
+                    decrypt_fail = true;
                 }
+                else
+                    input_value.remove_suffix(tag_size);
             }
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
@@ -1127,15 +1149,14 @@ private:
                 }
             }
 
-            bool decrypt_fail = false;
             /// Avoid extra work on empty ciphertext/plaintext. Always decrypt empty to empty.
             /// This makes sense for default implementation for NULLs.
-            if (!input_value.empty())
+            if (!input_is_empty && !decrypt_fail)
             {
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
+                    if (!ctx_key_state.hasContext() && EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("EVP_DecryptInit_ex");
 
                     // 1.a.1 : Set custom IV length
@@ -1143,10 +1164,23 @@ private:
                         onError("EVP_CIPHER_CTX_ctrl");
 
                     // 1.a.1 : Init CTX with key and IV
-                    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const unsigned char*>(key_value.data()),
-                            reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
-                        onError("EVP_DecryptInit_ex");
+                    if (ctx_key_state.matches(key_value))
+                    {
+                        /// The context already holds the expanded key schedule for this
+                        /// key: reset only the IV, skipping the cipher setup and key
+                        /// schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+                        if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_DecryptInit_ex");
+                    }
+                    else
+                    {
+                        if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(key_value.data()),
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_DecryptInit_ex");
+                        ctx_key_state.remember(key_value);
+                    }
 
                     // 1.a.2: Set AAD if present
                     if (aad_column)
@@ -1224,10 +1258,15 @@ private:
                 }
             }
 
-            /// A failed EVP_DecryptUpdate / EVP_DecryptFinal_ex can leave buffered input
-            /// in the context, so force a full re-initialization on the next row.
             if (decrypt_fail)
+            {
+                /// `EVP_DecryptUpdate` may have written plaintext before `EVP_DecryptFinal_ex` failed, e.g. when
+                /// the GCM tag does not match. It is not authenticated, so it must not be kept under the NULL.
+                decrypted = row_start;
+                /// A failed EVP_DecryptUpdate / EVP_DecryptFinal_ex can leave buffered input
+                /// in the context, so force a full re-initialization on the next row.
                 ctx_key_state.reset();
+            }
 
             decrypted_result_column_offsets.push_back(decrypted - decrypted_result_column_data.data());
             if constexpr (use_null_when_decrypt_fail)

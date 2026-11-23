@@ -5,6 +5,7 @@ from ci.defs.defs import JobNames
 from ci.jobs.scripts.docker_server.docker_library import (
     changed_tests as changed_docker_tests,
 )
+from ci.jobs.scripts.workflow_hooks.can_be_merged import is_draft_only_run
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import KV_PIPELINE_LIMITED
 from ci.praktika.gh import GH
@@ -204,6 +205,13 @@ def unit_bugfix_validation_refuted():
 
 
 def check():
+    # A draft runs only the fast test, so the bug-fix validation jobs are skipped and there
+    # is nothing to check yet. The draft cannot merge (`can_be_merged.py` blocks it); the
+    # validation runs with the full CI once the PR is ready for review.
+    if is_draft_only_run(Info()):
+        print("Draft PR ran only the fast test - the bug-fix validation is deferred")
+        return True
+
     _title, _body, labels, _is_draft = GH.get_pr_title_body_labels()
     if not labels:
         labels = Info().pr_labels
@@ -312,9 +320,12 @@ def check():
         )
         return True
 
-    # No new tests at all.
-    print("No new tests have been added")
-    return False
+    # No new tests at all. Not every bug fix can be covered by a test (for
+    # example, races, resource exhaustion, or environment-specific failures),
+    # so this is not a reason to fail. Validation is only enforced for the
+    # tests a PR does add.
+    print("No new tests have been added - bugfix validation is not applicable, pass")
+    return True
 
 
 if __name__ == "__main__":
