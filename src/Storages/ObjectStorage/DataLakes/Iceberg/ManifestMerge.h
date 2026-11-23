@@ -54,17 +54,17 @@ class IManifestEntriesSource
 {
 public:
     virtual ~IManifestEntriesSource() = default;
-    virtual void addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const = 0;
+    virtual void appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const = 0;
 };
 
 using ManifestEntriesSources = std::vector<std::unique_ptr<IManifestEntriesSource>>;
 
-class NewDataFiles final : public IManifestEntriesSource
+class SingleInsertDataFiles final : public IManifestEntriesSource
 {
 public:
-    NewDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_);
+    SingleInsertDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_);
 
-    void addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
+    void appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
 
 private:
     const Row partition_value;
@@ -72,10 +72,10 @@ private:
     const std::optional<Int32> sort_order_id;
 };
 
-class CarriedOverDataFiles final : public IManifestEntriesSource
+class MergeWindowDataFiles final : public IManifestEntriesSource
 {
 public:
-    static std::unique_ptr<CarriedOverDataFiles> collect(
+    static std::unique_ptr<MergeWindowDataFiles> collect(
         const ManifestMergeSettings & merge_settings,
         const ManifestFileCacheKeys & parent_manifests,
         const Row & partition_value,
@@ -87,13 +87,13 @@ public:
         ObjectStoragePtr object_storage,
         ContextPtr context);
 
-    void addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
+    void appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
 
     const std::unordered_set<String> & getReplacedManifestPaths() const { return replaced_manifest_paths; }
 
 private:
     std::unordered_set<String> replaced_manifest_paths;
-    ManifestEntries carried_over;
+    ManifestEntries window;
     Int64 rows_count = 0;
     Int64 min_sequence_number = std::numeric_limits<Int64>::max();
 };

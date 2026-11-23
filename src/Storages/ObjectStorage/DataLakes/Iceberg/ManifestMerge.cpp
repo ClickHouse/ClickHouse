@@ -114,63 +114,55 @@ std::optional<ManifestMergeSettings> getManifestMergeSettings(const Poco::JSON::
 namespace
 {
 
-std::optional<String> getSinglePartitionKey(const PartitionFieldSummaries & summaries, size_t partition_fields_count)
-{
-    if (summaries.size() != partition_fields_count)
-        return std::nullopt;
+using SinglePartition = std::vector<std::optional<String>>;
 
-    String key;
+std::optional<SinglePartition> getSinglePartition(const PartitionFieldSummaries & summaries)
+{
+    SinglePartition result;
     for (const auto & field : summaries)
     {
         if (field.contains_nan)
             return std::nullopt;
-        if (!field.lower_bound && !field.upper_bound && field.contains_null)
-        {
-            key += 'N';
-        }
-        else if (field.lower_bound && field.upper_bound && *field.lower_bound == *field.upper_bound && !field.contains_null)
-        {
-            key += 'V';
-            key += std::to_string(field.lower_bound->size());
-            key += ':';
-            key += *field.lower_bound;
-        }
+        if (field.contains_null && !field.lower_bound && !field.upper_bound)
+            result.emplace_back();
+        else if (!field.contains_null && field.lower_bound && field.lower_bound == field.upper_bound)
+            result.emplace_back(*field.lower_bound);
         else
-        {
             return std::nullopt;
-        }
     }
-    return key;
+    return result;
 }
 
-PartitionFieldSummaries toPartitionFieldSummaries(const ManifestPartitionSummary & summary)
+std::optional<SinglePartition> getSinglePartition(const Row & partition_value, const DataTypes & partition_types)
 {
-    PartitionFieldSummaries result;
+    ManifestPartitionSummary summary(partition_types);
+    summary.add(partition_value);
+    SinglePartition result;
     for (const auto & field : summary.getFields())
     {
-        PartitionFieldSummary & converted = result.emplace_back();
-        converted.contains_null = field.contains_null;
-        converted.contains_nan = field.contains_nan;
-        if (field.bounds_unavailable || !field.lower_bound || !field.upper_bound)
+        if (field.contains_nan || field.bounds_unavailable)
+            return std::nullopt;
+        if (field.contains_null)
+        {
+            result.emplace_back();
             continue;
-        auto lower = dumpFieldToBytes(*field.lower_bound, field.type);
-        auto upper = dumpFieldToBytes(*field.upper_bound, field.type);
-        converted.lower_bound = String(lower.begin(), lower.end());
-        converted.upper_bound = String(upper.begin(), upper.end());
+        }
+        auto bytes = dumpFieldToBytes(*field.lower_bound, field.type);
+        result.emplace_back(String(bytes.begin(), bytes.end()));
     }
     return result;
 }
 
 }
 
-NewDataFiles::NewDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_)
+SingleInsertDataFiles::SingleInsertDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_)
     : partition_value(std::move(partition_value_))
     , writer(writer_)
     , sort_order_id(sort_order_id_)
 {
 }
 
-void NewDataFiles::addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const
+void SingleInsertDataFiles::appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const
 {
     const auto & files = writer.getDataFiles();
     const auto & row_counts = writer.getDataFileRowCounts();
@@ -202,23 +194,23 @@ void NewDataFiles::addTo(ManifestEntries & entries, ManifestListEntryCounts & co
     }
 }
 
-void CarriedOverDataFiles::addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const
+void MergeWindowDataFiles::appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const
 {
     auto append = [](auto & to, const auto & from) { to.insert(to.end(), from.begin(), from.end()); };
-    append(entries.paths, carried_over.paths);
-    append(entries.row_counts, carried_over.row_counts);
-    append(entries.byte_counts, carried_over.byte_counts);
-    append(entries.partition_values, carried_over.partition_values);
-    append(entries.fresh_statistics, carried_over.fresh_statistics);
-    append(entries.carried_over_statistics, carried_over.carried_over_statistics);
-    append(entries.sort_order_ids, carried_over.sort_order_ids);
-    append(entries.lineage, carried_over.lineage);
-    counts.existing_files_count += static_cast<Int64>(carried_over.paths.size());
+    append(entries.paths, window.paths);
+    append(entries.row_counts, window.row_counts);
+    append(entries.byte_counts, window.byte_counts);
+    append(entries.partition_values, window.partition_values);
+    append(entries.fresh_statistics, window.fresh_statistics);
+    append(entries.carried_over_statistics, window.carried_over_statistics);
+    append(entries.sort_order_ids, window.sort_order_ids);
+    append(entries.lineage, window.lineage);
+    counts.existing_files_count += static_cast<Int64>(window.paths.size());
     counts.existing_rows_count += rows_count;
     counts.min_sequence_number = std::min(counts.min_sequence_number, min_sequence_number);
 }
 
-std::unique_ptr<CarriedOverDataFiles> CarriedOverDataFiles::collect(
+std::unique_ptr<MergeWindowDataFiles> MergeWindowDataFiles::collect(
     const ManifestMergeSettings & merge_settings,
     const ManifestFileCacheKeys & parent_manifests,
     const Row & partition_value,
@@ -230,10 +222,8 @@ std::unique_ptr<CarriedOverDataFiles> CarriedOverDataFiles::collect(
     ObjectStoragePtr object_storage,
     ContextPtr context)
 {
-    ManifestPartitionSummary partition_summary(partition_types);
-    partition_summary.add(partition_value);
-    const auto partition_key = getSinglePartitionKey(toPartitionFieldSummaries(partition_summary), partition_types.size());
-    if (!partition_key)
+    const auto partition = getSinglePartition(partition_value, partition_types);
+    if (!partition)
         return nullptr;
 
     std::vector<const ManifestFileCacheKey *> candidates;
@@ -242,7 +232,7 @@ std::unique_ptr<CarriedOverDataFiles> CarriedOverDataFiles::collect(
     {
         if (it->content_type != ManifestFileContentType::DATA || it->partition_spec_id != partition_spec_id)
             continue;
-        if (getSinglePartitionKey(it->partition_summaries, partition_types.size()) != partition_key)
+        if (getSinglePartition(it->partition_summaries) != partition)
             continue;
         if (candidates_size + it->manifest_file_byte_size > merge_settings.target_size_bytes)
             break;
@@ -252,8 +242,8 @@ std::unique_ptr<CarriedOverDataFiles> CarriedOverDataFiles::collect(
     if (candidates.empty() || candidates.size() + 1 < merge_settings.min_count_to_merge)
         return nullptr;
 
-    auto result = std::make_unique<CarriedOverDataFiles>();
-    auto & carried_over = result->carried_over;
+    auto result = std::make_unique<MergeWindowDataFiles>();
+    auto & window = result->window;
     auto log = getLogger("IcebergManifestMerge");
     for (const auto * manifest : candidates)
     {
@@ -277,14 +267,14 @@ std::unique_ptr<CarriedOverDataFiles> CarriedOverDataFiles::collect(
             auto lineage = getEntryLineageForRewrite(entry, *manifest);
             result->min_sequence_number = std::min(result->min_sequence_number, *lineage.sequence_number);
             result->rows_count += entry.record_count;
-            carried_over.paths.push_back(entry.file_path_key);
-            carried_over.row_counts.push_back(static_cast<UInt64>(entry.record_count));
-            carried_over.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
-            carried_over.partition_values.push_back(partition_value);
-            carried_over.fresh_statistics.push_back(nullptr);
-            carried_over.carried_over_statistics.push_back(getColumnStatisticsForRewrite(entry));
-            carried_over.sort_order_ids.push_back(entry.sort_order_id);
-            carried_over.lineage.push_back(std::move(lineage));
+            window.paths.push_back(entry.file_path_key);
+            window.row_counts.push_back(static_cast<UInt64>(entry.record_count));
+            window.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
+            window.partition_values.push_back(partition_value);
+            window.fresh_statistics.push_back(nullptr);
+            window.carried_over_statistics.push_back(getColumnStatisticsForRewrite(entry));
+            window.sort_order_ids.push_back(entry.sort_order_id);
+            window.lineage.push_back(std::move(lineage));
         }
     }
 
@@ -295,7 +285,7 @@ std::unique_ptr<CarriedOverDataFiles> CarriedOverDataFiles::collect(
         log,
         "Merging {} manifest files with {} data files into the new manifest",
         result->replaced_manifest_paths.size(),
-        carried_over.paths.size());
+        window.paths.size());
     return result;
 }
 

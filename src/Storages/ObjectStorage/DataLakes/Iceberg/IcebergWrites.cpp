@@ -1821,7 +1821,7 @@ bool IcebergStorageSink::initializeMetadata()
             {
                 if (merge_settings)
                 {
-                    auto carried_over = Iceberg::CarriedOverDataFiles::collect(
+                    auto merge_window = Iceberg::MergeWindowDataFiles::collect(
                         *merge_settings,
                         parent_manifests,
                         partition_key,
@@ -1832,11 +1832,11 @@ bool IcebergStorageSink::initializeMetadata()
                         persistent_table_components,
                         object_storage,
                         context);
-                    if (carried_over)
+                    if (merge_window)
                     {
                         replaced_manifest_paths.insert(
-                            carried_over->getReplacedManifestPaths().begin(), carried_over->getReplacedManifestPaths().end());
-                        sources.push_back(std::move(carried_over));
+                            merge_window->getReplacedManifestPaths().begin(), merge_window->getReplacedManifestPaths().end());
+                        sources.push_back(std::move(merge_window));
                     }
                 }
 
@@ -1845,7 +1845,7 @@ bool IcebergStorageSink::initializeMetadata()
                 counts.min_sequence_number = std::numeric_limits<Int64>::max();
                 counts.counts_are_added = true;
                 for (const auto & source : sources)
-                    source->addTo(entries, counts);
+                    source->appendToManifest(entries, counts);
                 sources.clear();
 
                 auto manifest_entry_path = filename_generator.generateManifestEntryName();
@@ -1899,7 +1899,7 @@ bool IcebergStorageSink::initializeMetadata()
             /// Either one manifest for every partition the insert touched, or one manifest per partition.
             for (const auto & [partition_key, writer] : writer_per_partition_key)
             {
-                sources.push_back(std::make_unique<Iceberg::NewDataFiles>(partition_key, writer, data_file_sort_order_id));
+                sources.push_back(std::make_unique<Iceberg::SingleInsertDataFiles>(partition_key, writer, data_file_sort_order_id));
                 if (partitioner)
                 {
                     if (!partition_summary)
