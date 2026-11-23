@@ -171,8 +171,10 @@ size_t skipPartitionsInQueryForShard(const ASTPtr & ast, const StorageID & table
             Strings column = identifier.tryGetAlias().empty() ? identifier.name_parts : Strings{identifier.tryGetAlias()};
             column.push_back("_partition_id");
 
+            /// A column `_partition_id` of the table on a shard would hide the virtual column: `__virtualColumn` makes the shard reject it.
             ASTPtr filter = makeASTFunction("notIn",
-                make_intrusive<ASTIdentifier>(std::move(column)), make_intrusive<ASTLiteral>(Array(partitions.begin(), partitions.end())));
+                makeASTFunction("__virtualColumn", make_intrusive<ASTIdentifier>(std::move(column))),
+                make_intrusive<ASTLiteral>(Array(partitions.begin(), partitions.end())));
 
             if (auto where = select_query->where())
                 filter = makeASTFunction("and", where, filter);

@@ -29,6 +29,12 @@ REGISTER_FUNCTION(ScalarSubqueryResult)
     factory.registerFunction("__scalarSubqueryResult", [](ContextPtr){ return FunctionIdentityBase::create({}, "__scalarSubqueryResult", false); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
+REGISTER_FUNCTION(VirtualColumn)
+{
+    /// The analyzer rejects the argument if it is a column of a table that hides the virtual column of the same name.
+    factory.registerFunction("__virtualColumn", [](ContextPtr){ return FunctionIdentityBase::create({}, "__virtualColumn", false); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+}
+
 REGISTER_FUNCTION(ActionName)
 {
     factory.registerFunction("__actionName", [](ContextPtr){ return FunctionActionName::create({}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);

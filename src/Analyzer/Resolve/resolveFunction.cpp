@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int SUPPORT_IS_DISABLED;
     extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace Setting
@@ -3120,6 +3121,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
+    }
+
+    /// `__virtualColumn` must read a virtual column, which a column of the table with the same name hides.
+    if (function_name == "__virtualColumn" && function_arguments_size == 1)
+    {
+        const auto * column_node = function_arguments[0]->as<ColumnNode>();
+        auto column_source = column_node ? column_node->getColumnSourceOrNull() : nullptr;
+        const auto * table_node = column_source ? column_source->as<TableNode>() : nullptr;
+        if (table_node && table_node->getStorageSnapshot()->metadata->getColumns().has(column_node->getColumnName()))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column {} of table {} hides the virtual column of the same name",
+                column_node->getColumnName(), table_node->getStorageID().getNameForLogs());
     }
 
     /// Calculate function projection name

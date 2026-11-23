@@ -1,0 +1,16 @@
+-- without a move both shards read the partition
+2
+2
+2
+2
+-- the first shard does not skip the partition by the values of the column
+hides the virtual column
+hides the virtual column
+hides the virtual column
+hides the virtual column
+application-id
+-- and skips it by the virtual column when the column is dropped
+1
+1
+1
+1
