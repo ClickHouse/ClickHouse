@@ -15,6 +15,7 @@ class SipHash;
 namespace DB
 {
 
+class AggregatingStep;
 class JoinStepLogical;
 class ReadFromMergeTree;
 
@@ -80,6 +81,8 @@ struct Optimization
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
         bool top_k_optimization_shared_boundary{};
+        /// The heap refuses it, and `MergingAggregatedStep` does not carry it.
+        UInt64 max_rows_to_group_by{};
         bool enable_group_by_top_k_dynamic_filtering{};
         bool use_query_condition_cache_for_top_k{};
         bool is_explain{};
@@ -261,6 +264,19 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// On a parallel replicas follower, the heap of `distributed_group_by_top_k` on the partial aggregation.
+void applyGroupByTopKOfInitiator(
+    QueryPlan::Node & root, QueryPlan::Nodes & nodes, size_t limit, const Optimization::ExtraSettings & settings);
+
+/// When plan-based parallel replicas split the aggregation of `GROUP BY ... ORDER BY ... LIMIT n` below `limit_node`, gives
+/// the partial aggregation the heap `tryOptimizeGroupByTopK` would give the whole one, so that the shipped fragment runs it.
+void applyOrderedGroupByTopKToSplit(
+    QueryPlan::Node * limit_node,
+    QueryPlan::Node * aggregating_node,
+    AggregatingStep & partial_aggregating_step,
+    QueryPlan::Nodes & nodes,
+    const Optimization::ExtraSettings & settings);
+
 /// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
 size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
@@ -370,6 +386,10 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 void useShuffleForOrderByRand(QueryPlan::Node & node);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
+/// Descends from `node` through order-preserving steps to the reading step below it and marks that
+/// read as preferring multiple streams, so `PrefetchingConcatProcessor` does not collapse the
+/// per-stream pipeline into a single stream and serialize per-stream work above the read.
+void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
