@@ -1,0 +1,30 @@
+UInt8	1	1
+UInt8	2	0
+UInt8	1	1
+UInt8	2	0
+Bool	false
+Bool	true
+Array(UInt8)	[1]
+Array(UInt8)	[2]
+Nullable(UInt8)	1
+Nullable(UInt8)	2
+Tuple(UInt8)	(1)
+Tuple(UInt8)	(2)
+Map(String, UInt8)	{'a':1}
+Map(String, UInt8)	{'a':2}
+LowCardinality(UInt8)	1
+LowCardinality(UInt8)	2
+UInt8	1
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+Bool	UInt8	UInt8
+[1,2]	Array(UInt8)	[2,1]	Array(UInt8)	[true,false]	Array(Bool)
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+UInt8	UInt8	UInt8
+UInt8	1
+UInt8	2

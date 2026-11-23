@@ -2276,7 +2276,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 continue;
 
             auto resolved_type = explicit_resolve_result.resolved_identifier->getResultType();
-            if (resolved_type->equals(*matched_column_node_typed.getColumnType()))
+            if (equalsIncludingBool(*resolved_type, *matched_column_node_typed.getColumnType()))
                 continue;
 
             auto it = node_to_projection_name.find(matched_column_node);
@@ -8293,7 +8293,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                 {
                     DataTypes types_to_merge = {temporary_table_columns[col].type, recursive_projection[col].type};
                     auto merged_type = getLeastSupertype(types_to_merge);
-                    if (!merged_type->equals(*temporary_table_columns[col].type))
+                    if (!equalsIncludingBool(*merged_type, *temporary_table_columns[col].type))
                     {
                         temporary_table_columns[col].type = merged_type;
                         types_changed = true;

@@ -30,6 +30,9 @@ enum class LeastSupertypeOnError : uint8_t
 template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
 DataTypePtr getLeastSupertype(const DataTypes & types);
 
+/// Whether `lhs.equals(rhs)` and both have `Bool` in the same places: `equals` does not tell `Bool` from `UInt8`.
+bool equalsIncludingBool(const IDataType & lhs, const IDataType & rhs);
+
 /// Same as above but return String type instead of throwing exception.
 /// All types can be cast to String, because they can be serialized to String.
 DataTypePtr getLeastSupertypeOrString(const DataTypes & types);

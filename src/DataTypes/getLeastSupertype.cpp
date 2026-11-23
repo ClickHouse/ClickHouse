@@ -10,6 +10,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -241,6 +242,27 @@ void convertUInt64toInt64IfPossible(const DataTypes & types, TypeIndexSet & type
     }
 }
 
+bool hasBoolLabel(const IDataType & type)
+{
+    return (type.hasCustomName() && type.getName() == "Bool") || isSimpleAggregateFunctionOfBool(type);
+}
+
+/// Only through the types whose common type is built from their children below.
+bool haveBoolInSamePlaces(const IDataType & lhs, const IDataType & rhs)
+{
+    checkStackSize();
+    if (hasBoolLabel(lhs) != hasBoolLabel(rhs))
+        return false;
+    const WhichDataType which(lhs);
+    if (!which.isArray() && !which.isTuple() && !which.isMap() && !which.isNullable() && !which.isLowCardinality()
+        && !which.isObject())
+        return true;
+    for (size_t i = 0; i < lhs.getNumberOfChildren(); ++i)
+        if (!haveBoolInSamePlaces(*lhs.getChild(i), *rhs.getChild(i)))
+            return false;
+    return true;
+}
+
 DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &types_set)
 {
     auto min_interval = IntervalKind::Kind::Year;
@@ -274,6 +296,11 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
 
     return smallest_type;
 }
+}
+
+bool equalsIncludingBool(const IDataType & lhs, const IDataType & rhs)
+{
+    return lhs.equals(rhs) && haveBoolInSamePlaces(lhs, rhs);
 }
 
 template <LeastSupertypeOnError on_error>
@@ -380,7 +407,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         bool all_equal = true;
         for (size_t i = 1, size = types.size(); i < size; ++i)
         {
-            if (!types[i]->equals(*types[0]))
+            if (!equalsIncludingBool(*types[i], *types[0]))
             {
                 all_equal = false;
                 break;

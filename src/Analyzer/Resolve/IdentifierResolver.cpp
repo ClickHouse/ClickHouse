@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -135,7 +136,7 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
         if (resolved_column.hasExpression())
         {
             auto & resolved_expression = resolved_column.getExpression();
-            if (!resolved_expression->getResultType()->equals(*result_type))
+            if (!equalsIncludingBool(*resolved_expression->getResultType(), *result_type))
                 resolved_expression = buildCastFunction(resolved_expression, result_type, scope.context, true);
         }
         if (!nullable_resolved_identifier->isEqual(*resolved_identifier))
@@ -2030,7 +2031,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         if (isNullableOrLowCardinalityNullable(current_type) && !isNullableOrLowCardinalityNullable(result_type))
             result_type = makeNullableOrLowCardinalityNullableSafe(result_type);
 
-        if (!result_type->equals(*current_type))
+        if (!equalsIncludingBool(*result_type, *current_type))
         {
             auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
 
