@@ -736,3 +736,20 @@ def test_insert_unsupported_type_follows_setting():
         assert result == TSV([["[1,2,3]", "accepted"]])
     finally:
         node.query("DROP TABLE IF EXISTS arrow_qbit_test SYNC")
+
+
+def test_binary_column_with_geo_metadata_keeps_its_bytes():
+    """The GeoParquet `geo` metadata of a Flight schema is not interpreted: a binary column keeps the bytes the
+    server sent, both for an explicit `String` column and with schema inference."""
+    wkb = "0101000000000000000000F03F0000000000000040"
+    node.query("DROP TABLE IF EXISTS arrow_geo")
+    node.query("CREATE TABLE arrow_geo (geom String) ENGINE=ArrowFlight('arrowflight1:5005', 'GEO')")
+    try:
+        assert node.query("SELECT hex(geom) FROM arrow_geo") == f"{wkb}\n"
+        type_name, value = node.query(
+            "SELECT toTypeName(geom), hex(geom) FROM arrowFlight('arrowflight1:5005', 'GEO')"
+        ).strip().split("\t")
+        assert type_name in ("String", "Nullable(String)"), type_name
+        assert value == wkb
+    finally:
+        node.query("DROP TABLE arrow_geo")

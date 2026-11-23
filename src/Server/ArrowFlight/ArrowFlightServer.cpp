@@ -170,11 +170,40 @@ namespace
         return bytes;
     }
 
+    /// Whether the field is a `date64`: milliseconds since the epoch, which the reader decodes as `DateTime`, so a
+    /// date before 1970 or after 2106 would not survive. A parameter of this type is decoded as its `Int64` value.
+    bool isDate64(const ArrowIPC::ArrowField & field)
+    {
+        return field.type.kind == ArrowIPC::TypeKind::Date && field.type.unit == ArrowIPC::flatbuf::DateUnit_MILLISECOND;
+    }
+
+    /// The date of a `date64` value as Arrow formats it: the day of the milliseconds in the proleptic Gregorian
+    /// calendar (http://howardhinnant.github.io/date_algorithms.html#civil_from_days).
+    String date64ToSQLLiteral(Int64 milliseconds)
+    {
+        constexpr Int64 milliseconds_per_day = 86'400'000;
+        Int64 days = milliseconds / milliseconds_per_day;
+        if (milliseconds % milliseconds_per_day < 0)
+            --days;
+        const Int64 z = days + 719468;
+        const Int64 era = (z >= 0 ? z : z - 146096) / 146097;
+        const Int64 doe = z - era * 146097;
+        const Int64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        const Int64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        const Int64 mp = (5 * doy + 2) / 153;
+        const Int64 day = doy - (153 * mp + 2) / 5 + 1;
+        const Int64 month = mp < 10 ? mp + 3 : mp - 9;
+        const Int64 year = yoe + era * 400 + (month <= 2);
+        return quoteString(fmt::format("{:04}-{:02}-{:02}", year, month, day));
+    }
+
     /// Converts the value of a bound parameter to a ClickHouse SQL literal, by the Arrow type of the parameter.
     String parameterToSQLLiteral(const ArrowIPC::ArrowField & field, const ColumnWithTypeAndName & column)
     {
         if (column.column->isNullAt(0))
             return "NULL";
+        if (isDate64(field))
+            return date64ToSQLLiteral(column.column->getInt(0));
 
         WriteBufferFromOwnString text;
         column.type->getDefaultSerialization()->serializeText(*column.column, 0, text, FormatSettings{});
@@ -398,12 +427,35 @@ namespace
 
         const auto schema = ArrowIPC::parseSchemaMessage(schema_message.header);
 
+        /// Parameters are positional, but the reader matches the columns of a batch by name: the fields are renamed
+        /// by their position, so that equal names (or names equal up to case) cannot make two parameters read the
+        /// same column. A `date64` is read as its `Int64` milliseconds, see `isDate64`. Both keep the layout of the
+        /// data, so the batches are read as they are.
+        {
+            auto decoded_schema = schema;
+            for (size_t i = 0; i < decoded_schema.fields.size(); ++i)
+            {
+                auto & field = decoded_schema.fields[i];
+                field.name = "p" + std::to_string(i);
+                if (isDate64(field))
+                {
+                    field.type = ArrowIPC::ArrowType{};
+                    field.type.kind = ArrowIPC::TypeKind::Int;
+                    field.type.bit_width = 64;
+                    field.type.is_signed = true;
+                }
+            }
+            schema_message.header = std::move(ArrowIPC::splitStream(ArrowIPC::serializeSchemaMessage(decoded_schema)).front().header);
+        }
+
         /// The value of a parameter must not depend on the preferences of the session for importing data. A field
         /// is `Nullable` if Arrow declares it nullable: with `schema_inference_make_columns_nullable = 0` a bound
         /// `NULL` would be read into a type that cannot hold it, and replaced by a default value or rejected.
         auto format_settings = getFormatSettings(context);
         format_settings.schema_inference_make_columns_nullable = 2;
         format_settings.null_as_default = true;
+        format_settings.arrow.case_insensitive_column_matching = false;
+        format_settings.parquet.allow_geoparquet_parser = false;
 
         Block header;
         {

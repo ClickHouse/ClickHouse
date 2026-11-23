@@ -465,6 +465,42 @@ def test_prepared_statement_null_parameter_with_non_nullable_schema_inference():
     stmt.close()
 
 
+def test_prepared_statement_parameters_are_positional_whatever_the_column_matching():
+    """Parameters named equally up to case keep their own values, also with case-insensitive column matching."""
+    client = get_client()
+    client.set_session_options({"input_format_arrow_case_insensitive_column_matching": "1"})
+
+    stmt = client.prepare("SELECT ? + ? AS result")
+    stmt.bind_parameters(
+        pa.record_batch([pa.array([1], type=pa.int32()), pa.array([2], type=pa.int32())], names=["A", "a"])
+    )
+    result = stmt.execute()
+    assert result.column("result").to_pylist() == [3]
+
+    stmt.close()
+
+
+def test_prepared_statement_date64_parameter_keeps_its_date():
+    """A date64 parameter is bound as its date, also before 1970 and after the range of DateTime."""
+    client = get_client()
+
+    stmt = client.prepare("SELECT ? AS before_epoch, ? AS after_datetime")
+    stmt.bind_parameters(
+        pa.record_batch(
+            [
+                pa.array([datetime.date(1960, 1, 1)], type=pa.date64()),
+                pa.array([datetime.date(2200, 1, 1)], type=pa.date64()),
+            ],
+            names=["0", "1"],
+        )
+    )
+    result = stmt.execute()
+    assert result.column("before_epoch").to_pylist() == ["1960-01-01"]
+    assert result.column("after_datetime").to_pylist() == ["2200-01-01"]
+
+    stmt.close()
+
+
 def test_prepared_statement_multiple_parameter_sets_are_rejected():
     """Only one row of parameters can be bound; the following rows are rejected."""
     client = get_client()

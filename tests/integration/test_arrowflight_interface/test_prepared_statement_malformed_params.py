@@ -175,3 +175,41 @@ def test_prepared_statement_malformed_string_param_is_rejected():
     flight_info = alive.execute("SELECT 1 AS x")
     table = alive.do_get(flight_info.endpoints[0].ticket).read_all()
     assert table.column("x")[0].as_py() == 1
+
+
+def _oversized_body_int32_param_messages():
+    """A one-row Int32 batch whose header declares a body of 1 GiB and a values buffer of 1 GiB, sent with the
+    four bytes of the value only. Returns the schema metadata, the patched record-batch metadata, and the body."""
+    batch = pa.record_batch([pa.array([1], type=pa.int32())], names=["param_1"])
+    sink = pa.BufferOutputStream()
+    with ipc.new_stream(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+    reader = ipc.MessageReader.open_stream(sink.getvalue())
+    schema_msg = reader.read_next_message()
+    batch_msg = reader.read_next_message()
+
+    metadata = bytearray(batch_msg.metadata)
+    # Message.bodyLength, and the length of buffers[1] (the values) of the record batch.
+    body_length_off, values_len_off = 32, 104
+    assert struct.unpack_from("<q", metadata, body_length_off)[0] == 8, "unexpected IPC layout"
+    assert struct.unpack_from("<q", metadata, values_len_off)[0] == 4, "unexpected IPC layout"
+    struct.pack_into("<q", metadata, body_length_off, 1 << 30)
+    struct.pack_into("<q", metadata, values_len_off, 1 << 30)
+    return bytes(schema_msg.metadata), bytes(metadata), bytes(batch_msg.body)[:4]
+
+
+def test_prepared_statement_param_body_shorter_than_declared_is_rejected():
+    session_id = "".join(random.choices(string.ascii_letters + string.digits, k=16))
+    client = _make_client(session_id)
+
+    stmt = client.prepare("SELECT ?")
+    schema_header, batch_header, batch_body = _oversized_body_int32_param_messages()
+
+    # The message is rejected as it arrives: the server neither allocates the declared size nor waits for more
+    # messages to fill it (the gRPC timeout would fail the test).
+    with pytest.raises(Exception) as exc_info:
+        _raw_bind_parameters(session_id, stmt.handle, schema_header, batch_header, batch_body)
+    message = str(exc_info.value)
+    assert "declares a body of 1073741824 bytes, but 4 bytes were received" in message, message
+
+    stmt.close()

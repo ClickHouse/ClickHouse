@@ -369,6 +369,16 @@ bool IPCMessagesReadBuffer::nextImpl()
     }
     else
     {
+        /// A framed message keeps only the length of its body that the header declares, so the body received with
+        /// it has to have that length: a reader would otherwise allocate the declared size and take the following
+        /// messages as the rest of the body. Extra bytes after the declared length are not part of the message.
+        const Int64 body_length = verifiedMessage(message.header).bodyLength();
+        if (body_length < 0 || static_cast<UInt64>(body_length) > message.body.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "The Arrow IPC message declares a body of {} bytes, but {} bytes were received with it",
+                body_length, message.body.size());
+        message.body.resize(static_cast<size_t>(body_length));
         current = frameMessage(message);
     }
     working_buffer = Buffer(current.data(), current.data() + current.size());

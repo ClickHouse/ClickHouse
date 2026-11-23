@@ -202,7 +202,10 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
         done = true;
         return true;
     });
-    ArrowIPCSchemaReader schema_reader(buffer, /* stream_ */ true, getFormatSettings(context_));
+    auto format_settings = getFormatSettings(context_);
+    /// The `geo` metadata of a schema is not interpreted: a binary column stays binary, as `ArrowFlightSource` reads it.
+    format_settings.parquet.allow_geoparquet_parser = false;
+    ArrowIPCSchemaReader schema_reader(buffer, /* stream_ */ true, format_settings);
     return ColumnsDescription(schema_reader.readSchema());
 }
 

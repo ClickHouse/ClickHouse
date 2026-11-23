@@ -62,11 +62,12 @@ Block buildOutputHeader(const Block & sample_block_, const Block & virtual_heade
 }
 
 /// The columns of the sample block that are not in the data are filled with defaults, and NULLs of non-nullable
-/// columns become defaults.
+/// columns become defaults. The `geo` metadata of a schema is not interpreted, so binary columns keep their bytes.
 FormatSettings readSettings()
 {
     FormatSettings settings;
     settings.arrow.allow_missing_columns = true;
+    settings.parquet.allow_geoparquet_parser = false;
     settings.null_as_default = true;
     settings.date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
     return settings;
