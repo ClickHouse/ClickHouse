@@ -4,6 +4,7 @@ import logging
 import os
 import time
 
+import boto3
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -870,3 +871,131 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
         drop_table_stopping_any_merge(node, table)
         if optimize is not None:
             optimize.get_answer_and_error()
+
+
+def test_failed_dry_run_retries_multipart_abort(cluster, broken_s3):
+    """A failed `OPTIMIZE ... DRY RUN PARTS` must abort the multipart uploads of its merge, also
+    when the first attempt of an abort fails.
+
+    A dry run merges in the thread group of its query. When the merge fails, the dry run cancels
+    its query and then the merge, so the merge aborts the uploads of its writers in a thread whose
+    query is cancelled. The S3 client does not retry a request in such a thread, so one transient
+    error of the abort leaves the upload incomplete in the bucket. The writer that fails aborts its
+    own upload earlier, in `WriteBuffer::next`, while the query still runs, so the error of the
+    abort hits another writer of the merge.
+    """
+    node = cluster.instances["node"]
+    table = "t_failed_dry_run_abort"
+    rows_per_part = 16384
+    # The endpoint prefix of the disk `broken_s3_multipart`, which no other test uses.
+    prefix = "data_multipart/"
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=f"http://{cluster.minio_ip}:{cluster.minio_port}",
+        aws_access_key_id=cluster.minio_access_key,
+        aws_secret_access_key=cluster.minio_secret_key,
+        region_name="us-east-1",
+    )
+
+    def incomplete_uploads():
+        # MinIO takes a non-empty prefix of this listing as an exact key, so filter here.
+        return [
+            upload
+            for page in s3.get_paginator("list_multipart_uploads").paginate(
+                Bucket=cluster.minio_bucket
+            )
+            for upload in page.get("Uploads", [])
+            if upload["Key"].startswith(prefix)
+        ]
+
+    def object_keys():
+        return {
+            obj.object_name
+            for obj in cluster.minio_client.list_objects(
+                cluster.minio_bucket, prefix=prefix, recursive=True
+            )
+        }
+
+    aborts_query = (
+        "SELECT sumIf(value, event = 'DiskS3AbortMultipartUpload') FROM system.events"
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    # The size limits keep the background merges away from the parts. `DRY RUN` ignores them.
+    node.query(
+        f"""
+        CREATE TABLE {table} (id UInt64, a String, b String) ENGINE = MergeTree ORDER BY id
+        SETTINGS storage_policy = 'broken_s3_multipart', min_bytes_for_wide_part = 0,
+                 enable_vertical_merge_algorithm = 0,
+                 max_bytes_to_merge_at_max_space_in_pool = 1,
+                 max_bytes_to_merge_at_min_space_in_pool = 1
+        """
+    )
+    try:
+        # The merged `a.bin` takes about 32 MiB and `b.bin` about 16 MiB. The merge writes both
+        # columns row by row, so the writer of `a` opens its multipart upload at about 10 MiB, and
+        # the writer of `b` opens its own one later.
+        for part in range(2):
+            node.query(
+                f"INSERT INTO {table} SELECT number + {part} * {rows_per_part}, "
+                f"randomString(1024), randomString(512) FROM numbers({rows_per_part})"
+            )
+        parts = node.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active ORDER BY name"
+        ).split()
+        assert len(parts) == 2, parts
+        assert not incomplete_uploads()
+        keys_before = object_keys()
+        aborts_before = int(node.query(aborts_query).strip() or 0)
+
+        # The upload of `b` fails to start. Not retryable, so the merge fails with the upload of
+        # `a` open.
+        broken_s3.setup_at_create_multi_part_upload(
+            after=1, count=1, action="no_such_upload"
+        )
+        # Retryable. The writer of `b` has no upload to abort, so this is the abort of `a`.
+        broken_s3.setup_at_abort_multi_part_upload(count=1, action="slow_down")
+
+        error = node.query_and_get_error(
+            f"OPTIMIZE TABLE {table} DRY RUN PARTS '{parts[0]}', '{parts[1]}'"
+        )
+        assert "upload does not exist" in error, error
+
+        # Vacuity guard: the merge aborted an upload. Nothing else aborts one here, so the first
+        # abort got the injected error.
+        assert (
+            int(node.query(aborts_query).strip() or 0) > aborts_before
+        ), "the failed dry run aborted no upload, so the assertions below would be vacuous"
+
+        # The merge failed while it wrote, before its finalization uploaded any file, so no object
+        # of it may stay. A failure in the finalization would leave the small files: nothing
+        # removes them, and the writers are cancelled inside the merge, before the query.
+        new_keys = object_keys() - keys_before
+        assert not new_keys, f"the failed dry run left objects: {new_keys}"
+
+        # The merge waits for the abort before the query returns, so there is nothing to wait for.
+        uploads = incomplete_uploads()
+        assert not uploads, f"the failed dry run left incomplete uploads: {uploads}"
+
+        # A failed merge keeps its source parts, so no data is lost.
+        assert int(node.query(f"SELECT count() FROM {table}")) == 2 * rows_per_part
+        assert (
+            int(
+                node.query(
+                    f"SELECT count() FROM system.parts "
+                    f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+                )
+            )
+            == 2
+        )
+    finally:
+        broken_s3.reset()
+        drop_table_stopping_any_merge(node, table)
+        # A failure above must not leave the uploads to the next test.
+        for upload in incomplete_uploads():
+            s3.abort_multipart_upload(
+                Bucket=cluster.minio_bucket,
+                Key=upload["Key"],
+                UploadId=upload["UploadId"],
+            )

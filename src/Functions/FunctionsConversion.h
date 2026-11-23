@@ -23,6 +23,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -68,6 +69,7 @@
 #include <Functions/toFixedString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/readFloatText.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
@@ -76,8 +78,10 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
+#include <Common/digits10.h>
 #include <Common/quoteString.h>
 #include <base/wide_integer_to_string.h>
 
@@ -590,7 +594,7 @@ struct ToDateTime64TransformFromTime
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
-    DateTime64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
+    [[nodiscard]] DateTime64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
     {
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(d, 0, scale_multiplier);
     }
@@ -709,7 +713,7 @@ struct ToDateTime64TransformUnsigned
         , max_ticks(maxTicksForDateTime64(scale_multiplier))
     {}
 
-    NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    [[nodiscard]] NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
         /// `Int64::max` (e.g. `18446744073709551615`) would first be converted to a negative `time_t` and
@@ -750,7 +754,7 @@ struct ToDateTime64TransformSigned
         , max_ticks(maxTicksForDateTime64(scale_multiplier))
     {}
 
-    NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    [[nodiscard]] NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         const bool below = accurate::lessOp(from, min_whole);
         const bool above = accurate::greaterOp(from, max_whole);
@@ -792,7 +796,7 @@ struct ToDateTime64TransformFloat
         , max_ticks_in_source_domain(floatBoundNotAbove<FromType>(max_ticks))
     {}
 
-    NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    [[nodiscard]] NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         /// Compare in the tick domain, the same way convertToDecimal computes the result below. Every comparison
         /// with a NaN is false, so a NaN falls through to convertToDecimal, which reports it as before.
@@ -819,7 +823,7 @@ struct ToDateTime64TransformFloat
     }
 
     /// A `BFloat16` source is widened to the carrier type the transform computes in; the conversion is exact.
-    DateTime64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
+    [[nodiscard]] DateTime64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
     {
         return execute(static_cast<FromType>(from), time_zone);
     }
@@ -836,7 +840,7 @@ struct ToDateTime64Transform
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
-    DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
+    [[nodiscard]] DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
         /*
          * Previous implementation delegated to ToDateTimeImpl, which returns a
@@ -851,7 +855,7 @@ struct ToDateTime64Transform
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
-    DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
+    [[nodiscard]] DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
         Int64 dt = static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
         /// Date32 reaches 9999-12-31, whose whole-seconds value (253402214400) overflows the Int64 DateTime64 ticks
@@ -877,7 +881,7 @@ struct ToDateTime64Transform
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
-    DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
+    [[nodiscard]] DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
@@ -897,7 +901,7 @@ struct ToTime64TransformUnsigned
         : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
     {}
 
-    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
+    [[nodiscard]] NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -923,7 +927,7 @@ struct ToTime64TransformSigned
         : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
     {}
 
-    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
+    [[nodiscard]] NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -968,7 +972,7 @@ struct ToTime64TransformFloat
         , max_ticks_in_source_domain(floatBoundNotAbove<FromType>(max_ticks))
     {}
 
-    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
+    [[nodiscard]] NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         /// Compare in the tick domain, the same way convertToDecimal computes the result below. Every comparison
         /// with a NaN is false, so a NaN falls through to convertToDecimal, which reports it as before.
@@ -995,7 +999,7 @@ struct ToTime64TransformFloat
     }
 
     /// A `BFloat16` source is widened to the carrier type the transform computes in; the conversion is exact.
-    Time64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
+    [[nodiscard]] Time64::NativeType execute(BFloat16 from, const DateLUTImpl & time_zone) const
     {
         return execute(static_cast<FromType>(from), time_zone);
     }
@@ -1011,19 +1015,19 @@ struct ToTime64Transform
         : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
     {}
 
-    Time64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
+    [[nodiscard]] Time64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
         const auto dt = ToTimeImpl<>::execute(d, time_zone);
         return execute(dt, time_zone);
     }
 
-    Time64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
+    [[nodiscard]] Time64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
     {
         // DataTypeTime stores seconds (or total seconds for hhh:mm:ss). Preserve value and add scale
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(d, 0, scale_multiplier);
     }
 
-    Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const
+    [[nodiscard]] Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const
     {
         /// Compute local seconds-of-day using timezone offset at this moment.
         Int64 offset = time_zone.timezoneOffset(dt);
@@ -1429,6 +1433,7 @@ struct ConvertThroughParsing
     static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
     static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
 
     static bool isAllRead(ReadBuffer & in)
     {
@@ -1580,8 +1585,35 @@ struct ConvertThroughParsing
                 }
             }
 
-            ReadBufferFromMemory read_buffer(string_begin, string_size);
-            read_buffer.setPaddedStorage(*chars, current_offset, string_size);
+            std::string_view text(string_begin, string_size);
+            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && to_decimal
+                && exception_mode != ConvertFromStringExceptionMode::Throw)
+            {
+                /// The non-throwing `Decimal` parser rejects any byte that is not part of the number,
+                /// including the zero padding of a `FixedString`. Every other parser stops at the padding,
+                /// and `isAllRead` skips it.
+                trimRight(text, '\0');
+            }
+            if constexpr (std::is_same_v<FromDataType, DataTypeString> && is_floating_point<typename ToDataType::FieldType>)
+            {
+                if (settings.precise_float_parsing)
+                {
+                    /// Same verdict as the generic path below; a rejected row goes there only in `Throw` mode, for the message.
+                    if constexpr (exception_mode != ConvertFromStringExceptionMode::Throw)
+                        vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
+                    const bool parsed = tryParseFloatFromPaddedRange(vec_to[i], PaddedRange(*chars, current_offset, text.size()));
+                    if (parsed || exception_mode != ConvertFromStringExceptionMode::Throw)
+                    {
+                        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                            (*vec_null_map_to)[i] = !parsed;
+                        current_offset = next_offset;
+                        continue;
+                    }
+                }
+            }
+
+            ReadBufferFromMemory read_buffer(text);
+            read_buffer.setPaddedStorage(*chars, current_offset, text.size());
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
@@ -2064,7 +2096,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
             return std::forward<ColTo>(col_to);
         }
     }
-    /// Scalar fallback for remaining conversions (decimal-to-number, DateTime64, Time64)
+    /// Scalar fallback for remaining conversions (accurate decimal-to-number, DateTime64, Time64)
     else if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
     {
         using ToFieldType = typename ToDataType::FieldType;
@@ -2118,14 +2150,18 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
 
         return std::forward<ColTo>(col_to);
     }
+    /// Batch path for decimal-to-number, also from DateTime64 and Time64, with the default overflow behavior (an exception)
+    else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+    {
+        convertFromDecimalBatch<FromDataType, ToDataType>(vec_from.data(), vec_to.data(), input_rows_count, col_from->getScale());
+        return std::forward<ColTo>(col_to);
+    }
     else
     {
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
-            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale());
             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                 vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale());
             else
@@ -2167,10 +2203,54 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
         return std::move(col_to);
     }
 
+    /// NaN/Inf cannot be converted from float to integer. Unless they become NULL, look for them in a separate
+    /// pass over the column: the check is then a reduction without a branch, and the conversion loop below
+    /// has neither a check nor an exit per row (`intDiv` #2, `toUInt32` of `Float64`).
+    /// Not for the result types narrower than 32 bits: the conversion of a value outside of their range is undefined,
+    /// and without the check per row clang 23 lowers it differently, so `toInt16` of a big `Float64` would return
+    /// another value than before (`00950_test_double_delta_codec`).
+    constexpr bool is_float_to_int = is_floating_point<FromFieldType> && !is_floating_point<ToFieldType>;
+    constexpr bool check_finite_in_separate_pass = is_float_to_int && sizeof(ToFieldType) >= 4
+        && !std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>;
+
+    if constexpr (check_finite_in_separate_pass)
+    {
+        bool all_finite = true;
+        for (size_t i = 0; i < input_rows_count; ++i)
+            all_finite &= isFinite(vec_from[i]);
+
+        if (!all_finite)
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+
+        if constexpr (!std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+        {
+#if defined(__aarch64__)
+            /// A vector instruction wraps a `Float64` outside of the range of a 32-bit integer, while the scalar one saturates it.
+            /// Clamping gives the saturated value in every row, so this loop can be vectorized.
+            if constexpr (std::is_same_v<FromFieldType, Float64> && is_any_of<ToFieldType, Int32, UInt32>)
+            {
+                constexpr auto lower = static_cast<Float64>(std::numeric_limits<ToFieldType>::min());
+                constexpr auto upper = static_cast<Float64>(std::numeric_limits<ToFieldType>::max());
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<ToFieldType>(std::fmin(std::fmax(vec_from[i], lower), upper));
+                return std::move(col_to);
+            }
+#endif
+            /// The loop must remain scalar. A value outside of the range of the result type wraps around here,
+            /// while the vector instructions saturate or return another value, and the result of a row
+            /// would depend on whether it is converted by the vectorized body or by the scalar remainder.
+            #pragma clang loop vectorize(disable)
+            for (size_t i = 0; i < input_rows_count; ++i)
+                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+
+            return std::move(col_to);
+        }
+    }
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         /// Handle NaN/Inf when converting from float to integer
-        if constexpr (is_floating_point<FromFieldType> && !is_floating_point<ToFieldType>)
+        if constexpr (is_float_to_int && !check_finite_in_separate_pass)
         {
             if (!isFinite(vec_from[i]))
             {
@@ -3382,7 +3462,7 @@ struct ConvertImpl
             /// Bool conversion
             if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
             {
-                if (isBool(result_type))
+                if (isBool(result_type) || isSimpleAggregateFunctionOfBool(*result_type))
                 {
                     convertToBool<FromFieldType>(vec_to, vec_from, input_rows_count);
                     RETURN_NULLABLE_IF_NEEDED(col_to);
@@ -3776,10 +3856,12 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 ///
 /// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
 ///   instants have the same local wall-clock representation;
-/// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
-///   tables compare floating-point keys bitwise and keep distinct payloads apart;
+/// - a floating-point number, also as a `QBit` element, because every `NaN` payload is rendered as the
+///   same `nan`, while hash tables compare floating-point keys bitwise and keep distinct payloads apart;
 /// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
 ///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
+/// - a `Time` or `Time64`, saturated to `-999:59:59`..`999:59:59` when formatted;
+/// - a `DateTime64`, saturated to `0000-01-01`..`9999-12-31` when formatted;
 /// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
 ///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
 /// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
@@ -3795,10 +3877,11 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
     {
         if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
             collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
-        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
-            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
-        else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
+        else if (isFloat(nested) || isDate32(nested) || isDateTime64(nested) || isTime(nested) || isTime64(nested)
+                 || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
+        else if (const auto * qbit = typeid_cast<const DataTypeQBit *>(&nested))
+            collapses = collapses || isFloat(qbit->getElementType());
         else if (isUInt8(nested) && nested.getName() == "Bool")
             collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
     };
@@ -3838,16 +3921,16 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
     void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
         if constexpr (std::is_same_v<Name, NameToString>)
         {
@@ -3863,7 +3946,7 @@ public:
         else
             return false;
     }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
     }
@@ -3874,7 +3957,7 @@ public:
     /// `signature` constant describing the simple non-Nullable shape; the override
     /// continues to handle Nullable propagation and the (optional) trailing
     /// scale/timezone arguments.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Name::signature; })
             return Name::signature;
@@ -3906,7 +3989,7 @@ public:
         }
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Every conversion `Name` is authoritative: the per-`Name` declarative signature owns the
         /// (non-Nullable) result type, and signaturePropagatesNullability() re-wraps Nullable /
@@ -3928,7 +4011,7 @@ public:
 
     /// The types-only entry point must agree with the column-aware one above, so it applies the
     /// same `cast_keep_nullable` rule before deferring to the declarative path.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         checkLegacyToTimeArity(arguments);
 
@@ -3946,17 +4029,17 @@ public:
     /// See IFunction::signaturePropagatesNullability. The conversion functions do not use
     /// useDefaultImplementationForNulls, so the declarative path must propagate Nullable itself
     /// for the authoritative `Name`s.
-    bool signaturePropagatesNullability() const override
+    [[nodiscard]] bool signaturePropagatesNullability() const override
     {
         return requires { Name::authoritative; };
     }
 
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     /// A NULL input converts to NULL only when the target is Nullable.
-    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeString>)
             return {};
@@ -3966,9 +4049,9 @@ public:
             return {1, 2};
         return {1};
     }
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & weird_result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & weird_result_type, size_t input_rows_count) const override
     {
         /// FunctionCast does something complicated and sometimes ends up calling FunctionConvert::executeImpl
         /// with `result_type` argument that doesn't come from a corresponding getReturnTypeImpl call.
@@ -4153,7 +4236,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
     {
         return convertIsCompilableImpl(types, result_type);
     }
@@ -4164,22 +4247,22 @@ public:
     }
 #endif
 
-    bool hasInformationAboutMonotonicity() const override
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override
     {
         return Monotonic::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return Monotonic::get(type, left, right);
     }
 
-    bool hasInformationAboutPreimage() const override
+    [[nodiscard]] bool hasInformationAboutPreimage() const override
     {
         return std::is_same_v<ToDataType, DataTypeDate>;
     }
 
-    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    [[nodiscard]] FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
             return Monotonic::getPreimage(type, point);
@@ -4190,7 +4273,7 @@ public:
 private:
     const FunctionConvertSettings settings;
 
-    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool to_nullable) const
+    [[nodiscard]] ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool to_nullable) const
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
@@ -4457,27 +4540,27 @@ public:
 
     explicit FunctionConvertFromString(const FunctionConvertSettings & settings_) : settings(settings_) {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
     void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     /// Documentation-only — same opt-in mechanism as `FunctionConvert`:
     /// the `Name` may expose a `signature` constant. The override below
     /// retains authoritative control over Nullable / scale / timezone
     /// argument handling; the string is surfaced via `system.functions`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Name::signature; })
             return Name::signature;
@@ -4490,7 +4573,7 @@ public:
         return isStringOrFixedString(type) || isNativeInteger(type);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// The toX*OrZero / toX*OrNull / parse*BestEffort* names are authoritative: their declarative
         /// signature drives the result type (the framework propagates a Nullable argument around it;
@@ -4610,7 +4693,7 @@ public:
     }
 
     template <typename ConvertToDataType>
-    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
+    [[nodiscard]] ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
     {
         const IDataType * from_type = arguments[0].type.get();
 
@@ -4639,7 +4722,7 @@ public:
       * but values out of range of the result type produce NULL instead of saturation or an exception.
       */
     template <typename ConvertToDataType>
-    ColumnPtr executeIntegerInput(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
+    [[nodiscard]] ColumnPtr executeIntegerInput(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
     {
         auto convert = [&]<typename FromDataType>(const FromDataType *) -> ColumnPtr
         {
@@ -4691,7 +4774,7 @@ public:
     /// Conversion of a native integer (Unix timestamp in whole seconds) to Nullable(DateTime64):
     /// NULL for values out of the [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP] range of DateTime64.
     template <typename FromDataType>
-    ColumnPtr convertIntegerToDateTime64OrNull(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale) const
+    [[nodiscard]] ColumnPtr convertIntegerToDateTime64OrNull(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale) const
     {
         using FromFieldType = typename FromDataType::FieldType;
 
@@ -4736,7 +4819,7 @@ public:
         return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr result_column;
 
@@ -4921,10 +5004,10 @@ struct ToNumberMonotonicity
             Float64 left_float = left.safeGet<Float64>();
             Float64 right_float = right.safeGet<Float64>();
 
-            if (left_float >= static_cast<Float64>(std::numeric_limits<T>::min())
-                && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
-                && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
-                && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
+            if (accurate::greaterOrEqualsOp(left_float, std::numeric_limits<T>::min())
+                && accurate::lessOrEqualsOp(left_float, std::numeric_limits<T>::max())
+                && accurate::greaterOrEqualsOp(right_float, std::numeric_limits<T>::min())
+                && accurate::lessOrEqualsOp(right_float, std::numeric_limits<T>::max()))
                 return { .is_monotonic = true };
 
             return {};
@@ -5410,16 +5493,22 @@ struct ToStringMonotonicity
         if (left.getType() == Field::Types::UInt64
             && right.getType() == Field::Types::UInt64)
         {
-            return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
-                || (floor(log10(left.safeGet<UInt64>())) == floor(log10(right.safeGet<UInt64>())))
+            /// 0 stays apart from 1..9: a `Bool` renders 0 and 1 as configurable strings.
+            const UInt64 left_value = left.safeGet<UInt64>();
+            const UInt64 right_value = right.safeGet<UInt64>();
+            return (left_value == 0 && right_value == 0)
+                || (left_value > 0 && right_value > 0 && common::digits10(left_value) == common::digits10(right_value))
                 ? positive : not_monotonic;
         }
 
         if (left.getType() == Field::Types::Int64
             && right.getType() == Field::Types::Int64)
         {
-            return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
-                || (left.safeGet<Int64>() > 0 && right.safeGet<Int64>() > 0 && floor(log10(left.safeGet<Int64>())) == floor(log10(right.safeGet<Int64>())))
+            const Int64 left_value = left.safeGet<Int64>();
+            const Int64 right_value = right.safeGet<Int64>();
+            return (left_value == 0 && right_value == 0)
+                || (left_value > 0 && right_value > 0
+                    && common::digits10(static_cast<UInt64>(left_value)) == common::digits10(static_cast<UInt64>(right_value)))
                 ? positive : not_monotonic;
         }
 
@@ -6047,8 +6136,10 @@ private:
     template <typename ToDataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-    template <typename ToDataType>
-    WrapperType createBoolWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
+    /// Parses text with the text serialization of the result type. `requested_result_is_nullable` parses into
+    /// a `Nullable` result, in which `accurateCastOrNull` turns malformed input into NULL; otherwise it
+    /// throws.
+    WrapperType createStringParsingWrapper(bool requested_result_is_nullable) const;
 
     WrapperType createUInt8ToBoolWrapper(DataTypePtr from_type, DataTypePtr to_type) const;
 
@@ -6071,7 +6162,7 @@ private:
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
-    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const;
+    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type, bool requested_result_is_nullable) const;
 
     WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const;
 
@@ -6115,10 +6206,11 @@ private:
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const;
 
-    /// Create wrapper only if we support this conversion.
-    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to) const;
+    /// Create wrapper only if we support this conversion. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createWrapperIfCanConvert(const DataTypePtr & from, const DataTypePtr & to, bool report_failures_as_null) const;
 
-    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const;
+    WrapperType createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
     static ColumnPtr createVariantFromDescriptorsAndOneNonEmptyVariant(const DataTypes & variant_types, const ColumnPtr & discriminators, const ColumnPtr & variant, ColumnVariant::Discriminator variant_discr);
 
@@ -6126,10 +6218,11 @@ private:
 
     WrapperType createColumnToVariantWrapper(const DataTypePtr & from_type, const DataTypeVariant & to_variant) const;
 
-    /// Wrapper for conversion to/from Variant type
-    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// Wrapper for conversion to/from Variant type. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createVariantWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
-    WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const;
+    WrapperType createDynamicToColumnWrapper(const DataTypePtr &, bool report_failures_as_null) const;
 
     WrapperType createStringToDynamicThroughParsingWrapper() const;
 
@@ -6139,17 +6232,18 @@ private:
 
     WrapperType createDynamicToDynamicWrapper(const DataTypeDynamic & from_dynamic, const DataTypeDynamic & to_dynamic) const;
 
-    /// Wrapper for conversion to/from Dynamic type
-    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// Wrapper for conversion to/from Dynamic type. `report_failures_as_null` is as in
+    /// `prepareUnpackDictionaries`.
+    WrapperType createDynamicWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null) const;
 
     template <typename FieldType>
-    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const;
+    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type, bool requested_result_is_nullable) const;
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
     void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type) const;
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper() const;
+    WrapperType createStringToEnumWrapper(bool requested_result_is_nullable) const;
 
     template <typename ColumnNumberType, typename EnumType>
     WrapperType createNumberToEnumWrapper() const;
@@ -6175,12 +6269,19 @@ private:
         };
     }
 
-    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const;
+    /// `report_failures_as_null` asks the conversion to report a value that it cannot convert as NULL in a
+    /// nullable result, even when `to_type` cannot hold NULL. Under `accurateCastOrNull`, a tuple asks this
+    /// of the conversions of its elements and takes the NULLs out into its own null map (see
+    /// `createTupleWrapper`). The elements of an array or a map could not keep such NULLs, so their
+    /// conversions are not asked and convert strictly.
+    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null = false) const;
 
-    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const;
+    WrapperType prepareRemoveNullable(
+        const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const;
 
-    /// 'from_type' and 'to_type' are nested types in case of Nullable.
-    /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
+    /// `from_type` and `to_type` have their outer `Nullable` wrappers removed.
+    /// `requested_result_is_nullable` includes declared nullable targets and intermediate
+    /// `accurateCastOrNull` results that use NULL to report conversion failures.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const;
 };
 

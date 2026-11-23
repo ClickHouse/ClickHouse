@@ -210,6 +210,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze_subquery;
+        options.view_source_in_subqueries = view_source_in_subqueries;
 
         /// Scalar subqueries may reference materialized CTEs that haven't been populated yet.
         /// Force CTE materialization in the sub-plan so that the pipeline execution
@@ -224,7 +225,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         /// The inner query of an ordinary view referenced by the view query reads the table itself,
         /// not the inserted block.
-        if (auto storage = subquery_context->getViewSource(); storage && !subquery_context->isViewInnerQuery())
+        if (auto storage = getViewSourceIfRead(subquery_context, view_source_in_subqueries))
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 
@@ -300,7 +301,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
             if (execute_for_exists)
             {
-                if (optimizePlanForExists(query_plan))
+                if (optimizePlanForExists(query_plan, /*is_correlated=*/false))
                     skip_execution_for_exists = true;
                 else
                 {
@@ -393,7 +394,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
                 else
                 {
-                    auto block = executor->getHeader().cloneWithColumns(chunk.getColumns());
+                    /// Detach columns from the chunk so that the resulting block holds
+                    /// uniquely-owned columns. `wrap_with_nullable_or_tuple` calls
+                    /// `materializeBlock` (which goes through `IColumn::mutate` for
+                    /// `Const` / `LowCardinality` columns) and may construct a
+                    /// `ColumnTuple`, both of which require `use_count() == 1` for
+                    /// the inputs in debug/sanitizer builds.
+                    auto block = executor->getHeader().cloneWithColumns(chunk.detachColumns());
                     wrap_with_nullable_or_tuple(block);
                     scalar_block = std::move(block);
                 }
