@@ -12,6 +12,8 @@
 #include <Common/StringValueFilter.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
+
+#include <Common/memcpySmall.h>
 #include <base/unaligned.h>
 #include <IO/VarInt.h>
 
@@ -26,6 +28,29 @@ namespace DB::ErrorCodes
 
 namespace DB::Parquet
 {
+
+template <typename Get>
+static void appendStrings(ColumnString & col, size_t n, size_t total_bytes, const char * source_end, Get && get)
+{
+    auto & chars = col.getChars();
+    auto & col_offsets = col.getOffsets();
+
+    size_t pos = chars.size();
+    const size_t old_rows = col_offsets.size();
+    chars.resize(pos + total_bytes);
+    col_offsets.resize(old_rows + n);
+    char * out = reinterpret_cast<char *>(chars.data());
+    for (size_t i = 0; i < n; ++i)
+    {
+        std::string_view s = get(i);
+        if (likely(size_t(source_end - s.data()) >= s.size() + 15))
+            memcpySmallAllowReadWriteOverflow15(out + pos, s.data(), s.size());
+        else
+            memcpy(out + pos, s.data(), s.size());
+        pos += s.size();
+        col_offsets[old_rows + i] = pos;
+    }
+}
 
 namespace
 {
@@ -736,6 +761,55 @@ struct PlainStringDecoder : public PageDecoder
         {
             /// Fast path for directly appending to ColumnString.
             auto & col_str = assert_cast<ColumnString &>(col);
+            if (!value_filter || !value_filter->isEnabled())
+            {
+                auto & chars = col_str.getChars();
+                auto & col_offsets = col_str.getOffsets();
+                const size_t old_bytes = chars.size();
+                const size_t old_rows = col_offsets.size();
+                size_t pos = old_bytes;
+                size_t row = old_rows;
+                chars.resize(chars.capacity());
+                col_offsets.resize(old_rows + (filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values));
+                char * out = reinterpret_cast<char *>(chars.data());
+                for (size_t i = 0; i < num_values; ++i)
+                {
+                    if (unlikely(end - data < 4))
+                    {
+                        chars.resize(old_bytes);
+                        col_offsets.resize(old_rows);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");
+                    }
+                    UInt32 x = 0;
+                    memcpy(&x, data, 4);
+                    size_t len = 4 + size_t(x);
+                    if (unlikely(len > size_t(end - data)))
+                    {
+                        chars.resize(old_bytes);
+                        col_offsets.resize(old_rows);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Encoded string is out of bounds");
+                    }
+                    if (!filter || filter[filter_offset + i])
+                    {
+                        if (unlikely(pos + x > chars.size()))
+                        {
+                            chars.resize(std::max(pos + x, chars.size() * 2));
+                            out = reinterpret_cast<char *>(chars.data());
+                        }
+                        if (likely(size_t(end - data) >= len + 15))
+                            memcpySmallAllowReadWriteOverflow15(out + pos, data + 4, x);
+                        else
+                            memcpy(out + pos, data + 4, x);
+                        pos += x;
+                        col_offsets[row++] = pos;
+                    }
+                    data += len;
+                }
+                chars.resize(pos);
+                col_offsets.resize(row);
+                return;
+            }
+
             size_t to_reserve = filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values;
             col_str.reserve(col_str.size() + to_reserve);
 
@@ -2052,14 +2126,15 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 accountStringValueFilterRows(n, values_replaced, bytes_skipped);
                 break;
             }
+            size_t total_bytes = 0;
             for (size_t i = 0; i < n; ++i)
+                total_bytes += offsets[indexes[i]] - offsets[ssize_t(indexes[i]) - 1] - 4;
+            appendStrings(c, n, total_bytes, data.data() + data.size(), [&](size_t i)
             {
                 UInt32 idx = indexes[i];
                 size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
-                size_t len = offsets[idx] - start;
-                /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
-                c.insertData(data.data() + start, len);
-            }
+                return std::string_view(data.data() + start, offsets[idx] - start);
+            });
             break;
         }
         case Mode::Column:
