@@ -7331,16 +7331,6 @@ With `enable_cleanup_old_data_files_compaction`, the time after which a snapshot
 expired, together with the files that only it references. The longer of this and `iceberg_outdated_snapshot_lifetime_seconds` applies.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
-    DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
-Number of merged data files that background Iceberg compaction accumulates before publishing them in a new snapshot.
-
-Compaction results are published in any case once there are no candidates left to compact, so this setting only bounds
-how long already merged files stay unpublished while compaction keeps finding new work. `0` restores the old behaviour
-of publishing only when compaction runs out of candidates - a state that is never reached while the table keeps
-receiving new data files, so every merged output is then written to object storage and never referenced by a snapshot.
-)", 0, \
-        {"26.9", 100, 100, "New setting"}, \
-        {"26.8", 100, 100, "New setting"}) \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](/concepts/features/performance/caches/query-cache). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
@@ -11893,6 +11883,10 @@ Enable table function `eval`.
         {"26.11", 512 * 1024 * 1024, 512 * 1024 * 1024, "Obsolete: a compaction merge of Iceberg data files writes one output file, without a limit on its size."}) \
     MAKE_OBSOLETE(M, UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, \
         {"26.11", 512ULL * 1024 * 1024 * 9 / 5, 512ULL * 1024 * 1024 * 9 / 5, "Obsolete: compaction no longer splits big data files, because a compaction merge writes one output file without a limit on its size."}) \
+    MAKE_OBSOLETE(M, UInt64, iceberg_compaction_commit_batch_size, 100, \
+        {"26.12", 100, 100, "Obsolete: the background compaction of Iceberg tables publishes the result of every merge in a new snapshot as soon as the merge finishes, instead of accumulating merged files."}, \
+        {"26.9", 100, 100, "New setting"}, \
+        {"26.8", 100, 100, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, enable_optimize_predicate_expression, true, \
         {"18.12.17", 0, 1, "Optimize predicates to subqueries by default"}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_only_with_analyzer, true, \
