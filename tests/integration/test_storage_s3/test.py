@@ -3982,12 +3982,9 @@ def test_read_object_version(started_cluster):
             f"SELECT count(), sum(x) FROM {s3(old.version_id)}", settings=settings
         )
         assert "current\n" == instance.query(f"SELECT * FROM {s3(new.version_id)}", settings=settings)
-        assert "x\tUInt64\n" == instance.query(
-            f"SELECT name, type FROM (DESCRIBE TABLE {s3(old.version_id)})", settings=settings
-        )
-        assert "s\tString\n" == instance.query(
-            f"SELECT name, type FROM (DESCRIBE TABLE {s3(new.version_id)})", settings=settings
-        )
+        describe_settings = {**settings, "describe_compact_output": 1}
+        assert "x\tUInt64\n" == instance.query(f"DESCRIBE TABLE {s3(old.version_id)}", settings=describe_settings)
+        assert "s\tString\n" == instance.query(f"DESCRIBE TABLE {s3(new.version_id)}", settings=describe_settings)
         assert f"{old.size}\n" == instance.query(
             f"SELECT DISTINCT _size FROM {s3(old.version_id)}", settings=settings
         )
@@ -4019,7 +4016,8 @@ def test_gcs_read_object_version(started_cluster):
         )
         assert "9\n" == instance.query(f"SELECT * FROM s3('{url}?versionId=1700000000000002', {auth}, 'CSV', 'x UInt64')")
         assert "c1\tNullable(Int64)\n" == instance.query(
-            f"SELECT name, type FROM (DESCRIBE TABLE s3('{url}?versionId=1700000000000001', {auth}, 'CSV'))"
+            f"DESCRIBE TABLE s3('{url}?versionId=1700000000000001', {auth}, 'CSV')",
+            settings={"describe_compact_output": 1},
         )
         # The object has no live version.
         instance.query_and_get_error(f"SELECT * FROM s3('{url}', {auth}, 'CSV', 'x UInt64')")
