@@ -59,13 +59,13 @@ IMetadataStorage::BlobsToReplicate findBlobsToReplicate(
     try
     {
         auto blobs_to_replicate = metadata_storage->getBlobsToReplicate(cluster, request_batch);
-        ProfileEvents::increment(ProfileEvents::BlobCopierThreadLockedBlobs, blobs_to_replicate.size());
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobCopierThreadLockedBlobs, blobs_to_replicate.size());
         return blobs_to_replicate;
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        ProfileEvents::increment(ProfileEvents::BlobCopierThreadLockBlobsErrors);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobCopierThreadLockBlobsErrors);
         return {};
     }
 }
@@ -86,14 +86,14 @@ bool replicateBlob(
         const auto from_object_storage = object_storages->takePointingTo(from_location);
         const auto to_object_storage = object_storages->takePointingTo(to_location);
         from_object_storage->copyObjectToAnotherObjectStorage(blob, blob, read_settings, write_settings, *to_object_storage);
-        ProfileEvents::increment(ProfileEvents::BlobCopierThreadReplicatedBlobs);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobCopierThreadReplicatedBlobs);
 
         return true;
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        ProfileEvents::increment(ProfileEvents::BlobCopierThreadReplicateBlobsErrors);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobCopierThreadReplicateBlobsErrors);
         return false;
     }
 }
@@ -131,12 +131,12 @@ void recordBlobsReplication(
     try
     {
         int64_t recorded_count = metadata_storage->recordAsReplicated(replicated_blobs);
-        ProfileEvents::increment(ProfileEvents::BlobCopierThreadRecordedBlobs, recorded_count);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobCopierThreadRecordedBlobs, recorded_count);
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        ProfileEvents::increment(ProfileEvents::BlobCopierThreadRecordBlobsErrors);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobCopierThreadRecordBlobsErrors);
     }
 }
 
@@ -177,7 +177,7 @@ void executeBlobsReplication(
     const ObjectStorageRouterPtr & object_storages,
     const LoggerPtr & log) noexcept
 {
-    ProfileEvents::increment(ProfileEvents::BlobCopierThreadRuns);
+    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::BlobCopierThreadRuns);
     auto blobs_to_replicate = findBlobsToReplicate(max_to_replicate, cluster, metadata, log);
     replicateBlobs(std::move(blobs_to_replicate), replication_tasks_runner, metadata, object_storages, log);
 }
@@ -198,6 +198,16 @@ BlobCopierThread::BlobCopierThread(
     , replication_tasks_pool(CurrentMetrics::BlobCopierThreads, CurrentMetrics::BlobCopierThreadsActive, CurrentMetrics::BlobCopierThreadsScheduled, 0, 0, 0)
     , replication_tasks_runner(replication_tasks_pool, ThreadName::BLOB_COPIER_TASK)
 {
+    /// These server-level metrics can be published by fresh workers and during shutdown.
+    /// Reserve once for this configured feature, independently of any worker counter scope.
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobCopierThreadRuns);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobCopierThreadLockedBlobs);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobCopierThreadReplicatedBlobs);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobCopierThreadRecordedBlobs);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobCopierThreadLockBlobsErrors);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobCopierThreadReplicateBlobsErrors);
+    ProfileEvents::global_counters.preallocate(ProfileEvents::BlobCopierThreadRecordBlobsErrors);
+
     task = context->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
     task->deactivate();
 }

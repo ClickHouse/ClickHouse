@@ -202,7 +202,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             {
                 LOG_WARNING(log, "File {} will NOT be marked as 'Failed' and will remain in '{}' state.",
                             path, file_status->state.load());
-                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExclusiveModeProcessingErrors);
+                ProfileEvents::incrementNonAllocating(ProfileEvents::ObjectStorageQueueExclusiveModeProcessingErrors);
             }
         }
         else
