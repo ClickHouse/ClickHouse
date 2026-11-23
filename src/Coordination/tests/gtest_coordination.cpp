@@ -21,6 +21,7 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
+#include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/RaftServerConfig.h>
 
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
@@ -356,6 +357,17 @@ TEST_P(CoordinationTest, RaftServerClusterConfigParse)
     EXPECT_EQ(
         parse("server.1=host:80,server.2=host:81"),
         (Servers{Cfg{1, "host:80"}, Cfg{2, "host:81"}}));
+}
+
+TEST_P(CoordinationTest, ReconfigPriorityUpdateSerialize)
+{
+    auto config = std::make_shared<nuraft::cluster_config>();
+    config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(1, 0, "host:80", "", false, 1));
+    config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(2, 0, "host:81", "", false, 1));
+
+    auto updates = DB::joiningToClusterUpdates(config, "server.2=host:81;participant;5");
+    ASSERT_EQ(updates.size(), 1);
+    EXPECT_EQ(DB::serializeClusterConfig(config, updates), "server.2=host:81;participant;5\nserver.1=host:80;participant;1");
 }
 
 TEST_P(CoordinationTest, BuildTest)
