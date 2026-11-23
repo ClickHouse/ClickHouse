@@ -34,6 +34,8 @@ SELECT 'version 3 uncached', count(), sum(id) FROM $VERSIONED SETTINGS delta_lak
 SELECT 'latest uncached', count(), sum(id) FROM $VERSIONED SETTINGS use_delta_lake_metadata_cache = 0;
 
 SELECT 'before recreate', count(), sum(cityHash64(id, str)) FROM $RECREATED;
+CREATE TABLE persistent ENGINE = DeltaLakeLocal('$WORK_DIR/table/delta');
+SELECT 'persistent before recreate', count(), sum(cityHash64(id, str)) FROM persistent;
 
 SET engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION file('$TABLE_LOG/00000000000000000000.json', RawBLOB)
@@ -43,13 +45,17 @@ INSERT INTO FUNCTION file('$TABLE_LOG/00000000000000000001.json', RawBLOB)
 
 SELECT 'after recreate', count(), sum(cityHash64(id, str)) FROM $RECREATED;
 SELECT 'after recreate uncached', count(), sum(cityHash64(id, str)) FROM $RECREATED SETTINGS use_delta_lake_metadata_cache = 0;
+SELECT 'persistent after recreate', count(), sum(cityHash64(id, str)) FROM persistent;
 
 SYSTEM CLEAR DELTA LAKE METADATA CACHE;
+CREATE TABLE scanned (step UInt8, value UInt64) ENGINE = Memory;
+INSERT INTO scanned SELECT 0, $SCANNED;
 SELECT 'count cold', count() FROM $RECREATED;
-CREATE TABLE scanned (value UInt64) ENGINE = Memory;
-INSERT INTO scanned SELECT $SCANNED;
+INSERT INTO scanned SELECT 1, $SCANNED;
 SELECT 'count warm', count() FROM $RECREATED;
-SELECT 'warm count scanned files', $SCANNED - (SELECT value FROM scanned);
+INSERT INTO scanned SELECT 2, $SCANNED;
+SELECT 'cold count scanned files', (SELECT value FROM scanned WHERE step = 1) - (SELECT value FROM scanned WHERE step = 0) > 0;
+SELECT 'warm count scanned files', (SELECT value FROM scanned WHERE step = 2) - (SELECT value FROM scanned WHERE step = 1);
 "
 
 rm -rf "$WORK_DIR"

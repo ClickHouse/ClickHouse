@@ -44,6 +44,8 @@ public:
     /// Get snapshot version.
     size_t getVersion() const;
 
+    std::string getTableId() const;
+
     std::optional<size_t> getTotalRows(const DB::ContextPtr & context) const;
     std::optional<size_t> getTotalBytes(const DB::ContextPtr & context) const;
 

@@ -62,6 +62,8 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
+    extern const char delta_lake_stats_scan_callback_throw[];
+    extern const char delta_lake_metadata_callback_throw[];
 }
 
 namespace DeltaLake
@@ -746,6 +748,12 @@ size_t TableSnapshot::getVersion() const
     return getVersionUnlocked();
 }
 
+std::string TableSnapshot::getTableId() const
+{
+    std::lock_guard lock(mutex);
+    return getKernelSnapshotState()->table_id;
+}
+
 size_t TableSnapshot::getVersionUnlocked() const
 {
     return getKernelSnapshotState()->snapshot_version;
@@ -869,25 +877,43 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
                 transform_handle.emplace(transform.some._0);
 
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
-            visitor->total_data_files += 1;
-            visitor->total_bytes += static_cast<size_t>(size);
-            if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
-                visitor->total_rows.value() += stats->num_records;
-            else
-                visitor->total_rows = std::nullopt;
-
-            if (visitor->collector && visitor->collector->isActive())
+            try
             {
-                auto file = std::make_shared<ScannedDataFile>();
-                file->path = KernelUtils::fromDeltaString(path);
-                file->size = size;
-                if (stats)
-                    file->num_records = stats->num_records;
-                file->dv_info = std::move(dv_info_handle);
-                file->transform = std::move(transform_handle);
-                visitor->collector->add(file);
+                visitor->total_data_files += 1;
+                visitor->total_bytes += static_cast<size_t>(size);
+                if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
+                    visitor->total_rows.value() += stats->num_records;
+                else
+                    visitor->total_rows = std::nullopt;
+
+                if (visitor->collector)
+                {
+                    ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
+                    fiu_do_on(DB::FailPoints::delta_lake_stats_scan_callback_throw,
+                    {
+                        throw DB::Exception(
+                            DB::ErrorCodes::DELTA_KERNEL_ERROR, "Forced by the delta_lake_stats_scan_callback_throw failpoint");
+                    });
+                }
+
+                if (visitor->collector && visitor->collector->isActive())
+                {
+                    auto file = std::make_shared<ScannedDataFile>();
+                    file->path = KernelUtils::fromDeltaString(path);
+                    file->size = size;
+                    if (stats)
+                        file->num_records = stats->num_records;
+                    file->dv_info = std::move(dv_info_handle);
+                    file->transform = std::move(transform_handle);
+                    visitor->collector->add(file);
+                }
+                return true;
             }
-            return true;
+            catch (...)
+            {
+                visitor->exception = std::current_exception();
+                return false;
+            }
         }
 
         static void visitData(void * engine_context, ffi::SharedScanMetadata * scan_metadata)
@@ -1068,9 +1094,15 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
 
     using KernelMetadata = KernelPointerWrapper<ffi::SharedMetadata, ffi::free_metadata>;
     KernelMetadata metadata(ffi::snapshot_get_metadata(snapshot.get()));
+    struct TableIdVisitor
+    {
+        std::string id;
+        std::exception_ptr exception;
+    };
+    TableIdVisitor table_id_visitor;
     ffi::visit_metadata(
         metadata.get(),
-        &table_id,
+        &table_id_visitor,
         [](ffi::NullableCvoid context,
            ffi::KernelStringSlice id,
            ffi::OptionalValue<ffi::KernelStringSlice> /* name */,
@@ -1079,8 +1111,24 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
            bool /* has_created_time */,
            int64_t /* created_time_ms */)
         {
-            *static_cast<std::string *>(context) = KernelUtils::fromDeltaString(id);
+            auto * visitor = static_cast<TableIdVisitor *>(context);
+            try
+            {
+                fiu_do_on(DB::FailPoints::delta_lake_metadata_callback_throw,
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::DELTA_KERNEL_ERROR, "Forced by the delta_lake_metadata_callback_throw failpoint");
+                });
+                visitor->id = KernelUtils::fromDeltaString(id);
+            }
+            catch (...)
+            {
+                visitor->exception = std::current_exception();
+            }
         });
+    if (table_id_visitor.exception)
+        std::rethrow_exception(table_id_visitor.exception);
+    table_id = std::move(table_id_visitor.id);
 
     scan = KernelUtils::unwrapResult(
         ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),

@@ -124,6 +124,7 @@ private:
     const std::string format_name;
 
     mutable TableSnapshotCache snapshots TSA_GUARDED_BY(snapshots_mutex);
+    std::string latest_table_id TSA_GUARDED_BY(snapshots_mutex);
     mutable std::mutex snapshots_mutex;
     mutable std::optional<SnapshotVersion> latest_snapshot_version;
 

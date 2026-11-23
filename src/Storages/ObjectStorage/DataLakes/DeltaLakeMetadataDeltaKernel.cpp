@@ -280,6 +280,10 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
                 log);
 
         size_t version = latest_snapshot->getVersion();
+        auto table_id = latest_snapshot->getTableId();
+        if (!latest_table_id.empty() && table_id != latest_table_id)
+            snapshots.clear();
+        latest_table_id = std::move(table_id);
         snapshots.getOrSet(version, [&]() { return latest_snapshot; });
 
         LOG_TEST(
