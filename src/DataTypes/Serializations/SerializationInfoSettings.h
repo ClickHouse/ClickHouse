@@ -46,9 +46,6 @@ struct SerializationInfoSettings
 
     [[nodiscard]] bool canUseSparseSerialization(const IDataType & type) const;
 
-    /// Whether serialization info is needed either for the column itself or for one of its subcolumns.
-    [[nodiscard]] bool shouldCollectSerializationInfo(const IDataType & type) const;
-
     void updateHash(SipHash & hash) const;
 
     /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
