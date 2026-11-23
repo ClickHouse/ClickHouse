@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 
 #include <functional>
 
