@@ -85,10 +85,10 @@ public:
     ~DirectoryWatcherBase();
 
     /// Returns the value of the eventMask passed to the constructor.
-    int eventMask() const { return event_mask; }
+    [[nodiscard]] int eventMask() const { return event_mask; }
 
     /// Returns the directory being watched.
-    const std::string & directory() const;
+    [[nodiscard]] const std::string & directory() const;
 
 private:
     friend class DirectoryWatchReactor;
@@ -123,13 +123,13 @@ private:
     std::chrono::steady_clock::time_point pairing_deadline;
 
     /// The inotify mask for the events the watcher is interested in.
-    uint32_t watchMask() const;
+    [[nodiscard]] uint32_t watchMask() const;
 
     /// Reactor thread only. `onEvent` decodes one event; `hasUnpairedMoves` is checked after each read of inotify. If
     /// every rename is complete, the reactor calls `commitEvents` to hand the events to `owner`, otherwise it calls
     /// `onPairingTimeout` unless the rest of the events come in time.
     void onEvent(const inotify_event & event);
-    bool hasUnpairedMoves() const;
+    [[nodiscard]] bool hasUnpairedMoves() const;
     void onPairingTimeout();
     /// The kernel has dropped the watch of the directory (`IN_IGNORED`), because it was deleted or unmounted.
     void onWatchRemoved();

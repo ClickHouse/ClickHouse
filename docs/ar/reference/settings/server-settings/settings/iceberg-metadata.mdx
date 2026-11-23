@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُستخدم هذه الإعدادات لتهيئة خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
 
-<div id="iceberg_metadata_files_cache_max_entries">
-  ## iceberg_metadata_files_cache_max_entries
-</div>
+## iceberg_metadata_files_cache_max_entries {#iceberg_metadata_files_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />الحد الأقصى لذاكرة التخزين المؤقت لملفات البيانات الوصفية لـ Iceberg، محسوبًا بعدد الإدخالات. يشير الصفر إلى أنها معطّلة.
 
-<div id="iceberg_metadata_files_cache_policy">
-  ## iceberg_metadata_files_cache_policy
-</div>
+## iceberg_metadata_files_cache_policy {#iceberg_metadata_files_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة ذاكرة التخزين المؤقت للبيانات الوصفية في Iceberg.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت للبيانات الوصفية في Iceberg. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
 
-<div id="iceberg_metadata_files_cache_size">
-  ## iceberg_metadata_files_cache_size
-</div>
+## iceberg_metadata_files_cache_size {#iceberg_metadata_files_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" changeable_without_restart="Yes" />الحد الأقصى لحجم ذاكرة التخزين المؤقت للبيانات الوصفية في Iceberg، بالبايت. وتعني القيمة صفر أنه معطّل.
 
-<div id="iceberg_metadata_files_cache_size_ratio">
-  ## iceberg_metadata_files_cache_size_ratio
-</div>
+## iceberg_metadata_files_cache_size_ratio {#iceberg_metadata_files_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم الطابور المحمي (في حالة سياسة SLRU) في ذاكرة التخزين المؤقت للبيانات الوصفية لـ iceberg، كنسبة من الحجم الإجمالي لذاكرة التخزين المؤقت.
 

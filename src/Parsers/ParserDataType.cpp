@@ -131,7 +131,7 @@ bool parseEnumValues(
 class DynamicArgumentParser : public IParserBase
 {
 private:
-    const char * getName() const override { return "Dynamic data type optional argument"; }
+    [[nodiscard]] const char * getName() const override { return "Dynamic data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         ASTPtr identifier;
@@ -161,7 +161,7 @@ private:
 class ObjectArgumentParser : public IParserBase
 {
 private:
-    const char * getName() const override { return "JSON data type optional argument"; }
+    [[nodiscard]] const char * getName() const override { return "JSON data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         auto argument = make_intrusive<ASTObjectTypeArgument>();
@@ -278,8 +278,13 @@ bool isValidDataTypeName(std::string_view name)
     /// column attribute rather than type name.
     String n(name);
     toUpperASCII(n);
-    return !(n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO"
-        || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC" || n == "SETTINGS" || n == "STATISTICS");
+    if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO"
+        || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC" || n == "SETTINGS" || n == "STATISTICS")
+        return false;
+
+    /// Bareword literals (Bool and inf/nan Float64): in data type argument position
+    /// literals are parsed before nested types, so these names cannot round-trip.
+    return !(n == "TRUE" || n == "FALSE" || n == "INF" || n == "INFINITY" || n == "NAN");
 }
 
 std::string_view getCanonicalNameOfDataTypeWithArguments(std::string_view name)
@@ -306,6 +311,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ///  * Array(`x.y`) -> Array(x.y) -> fails to parse
     ///  * `Null` -> Null -> parses as keyword instead of type name
     ///  * `8` -> 8 -> parses as a numeric literal instead of a type name
+    ///  * Nullable(`true`) -> Nullable(true) -> the argument parses back as a bool literal
     /// Here we check for these cases and reject.
     if (!isValidDataTypeName(type_name))
     {

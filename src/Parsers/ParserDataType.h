@@ -23,7 +23,7 @@ std::string_view getCanonicalNameOfDataTypeWithArguments(std::string_view name);
 class ParserDataType : public IParserBase
 {
 protected:
-    const char * getName() const override { return "data type"; }
+    [[nodiscard]] const char * getName() const override { return "data type"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
