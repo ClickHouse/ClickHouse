@@ -53,7 +53,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
+[[clang::no_destroy]] static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password",
     "db", "database", "table", "schema",
     "update_field", "invalidate_query", "priority",
@@ -158,7 +158,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             else
             {
                 size_t max_addresses = global_context->getSettingsRef()[Setting::glob_expansion_max_elements];
-                addresses = parseRemoteDescriptionForExternalDatabase(addresses_expr, max_addresses, 3306);
+                addresses = parseRemoteDescriptionForExternalDatabase(
+                    addresses_expr, max_addresses, 3306, globCaller("MySQL dictionary source"));
             }
 
             for (auto & address : addresses)
@@ -348,7 +349,11 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
 </Note>
 
-MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`.
+MySQL can be connected to on a local host via sockets. To do this, set `host` to `localhost` and `socket`. For any other `host`, `socket` is ignored and the connection goes over TCP. Without `socket`, the connection goes over TCP to `port`, also for `localhost`.
+
+<Note>
+`remote_url_allow_hosts` checks only `host` and `port`: the path in `socket` is not checked.
+</Note>
 
 Example of settings:
 

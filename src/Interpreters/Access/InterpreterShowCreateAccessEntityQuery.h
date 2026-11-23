@@ -23,17 +23,17 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
+    [[nodiscard]] bool ignoreQuota() const override { return true; }
+    [[nodiscard]] bool ignoreLimits() const override { return true; }
 
     static ASTPtr getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control);
     static ASTPtr getAttachQuery(const IAccessEntity & entity);
 
 private:
     QueryPipeline executeImpl();
-    std::vector<AccessEntityPtr> getEntities() const;
-    ASTs getCreateQueries() const;
-    AccessRightsElements getRequiredAccess() const;
+    [[nodiscard]] std::vector<AccessEntityPtr> getEntities() const;
+    [[nodiscard]] ASTs getCreateQueries() const;
+    [[nodiscard]] AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
 };

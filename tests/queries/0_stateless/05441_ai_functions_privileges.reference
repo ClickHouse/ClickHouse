@@ -1,0 +1,4 @@
+--- no grant
+--- GRANT aiGenerate
+--- GRANT AI FUNCTIONS
+--- REVOKE aiClassify

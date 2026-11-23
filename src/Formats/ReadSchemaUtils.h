@@ -53,10 +53,10 @@ struct IReadBufferIterator
     virtual void setFormatName(const String & /*format_name*/) {}
 
     /// Get last processed file path for better exception messages.
-    virtual String getLastFilePath() const { return ""; }
+    [[nodiscard]] virtual String getLastFilePath() const { return ""; }
 
     /// Return true if method recreateLastReadBuffer is implemented.
-    virtual bool supportsLastReadBufferRecreation() const { return false; }
+    [[nodiscard]] virtual bool supportsLastReadBufferRecreation() const { return false; }
 
     /// Recreate last read buffer to read data from the same file again.
     /// Used to detect format from the file content to avoid
