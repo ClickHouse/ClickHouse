@@ -7,8 +7,6 @@ description: 'Deploy ClickHouse on your own cloud infrastructure'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Overview {#overview}
 
 Bring Your Own Cloud (BYOC) empowers you to deploy ClickHouse services and store your data directly within your own cloud accounts, rather than relying on the default ClickHouse Cloud infrastructure. This approach is particularly well-suited for organizations with stringent security policies or regulatory compliance requirements that demand complete control and sovereignty over their data.
@@ -50,6 +48,8 @@ The following requirements are fundamental to how BYOC is built and operated. Th
   - View services and status.
 - **Managed backup and restore**
 - **Manual vertical and horizontal scaling.**
+- **Automatic horizontal scaling:** Available only for deployments with autoscaling enabled. It adjusts replica count within configured limits while keeping each replica's size fixed. Contact support to confirm availability for your deployment.
+- **Vertical autoscaling:** Available only when enabled for your organization. Contact support to confirm availability.
 - **Auto Idling/Wake up**
 - **Warehouses**: Compute-Compute Separation
 - **Zero Trust Network via Tailscale.**
@@ -67,7 +67,6 @@ The following requirements are fundamental to how BYOC is built and operated. Th
 The following features have limitations or are not fully supported in Bring Your Own Cloud (BYOC) deployments.    
 - SQL Console: Not available for BYOC deployments, but on the roadmap.
 - ClickPipes: Not available for BYOC deployments, but on the roadmap.
-- Autoscaling: On the roadmap to add to future releases.
 - MySQL interface
 - AWS KMS aka CMEK (customer-managed encryption keys)
 - Advanced Dashboard: The client-only UI that requires your browser to have direct access and be able to connect directly to your ClickHouse server using its endpoint. If your VPC network policies restrict inbound browser access to the ClickHouse endpoint, the advanced dashboard will not function.

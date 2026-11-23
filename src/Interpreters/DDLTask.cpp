@@ -21,6 +21,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
@@ -141,46 +142,43 @@ bool HostID::isLoopbackHost() const
 
 void DDLLogEntry::assertVersion() const
 {
-    if (version == 0
-    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
-    || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
-    || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}. "
-                                                            "Maximum supported version is {}", version, DDL_ENTRY_FORMAT_MAX_VERSION);
+    /// Older servers write version-1 empty entries to a `Replicated` database log; drop this when no supported release does.
+    bool is_old_empty_entry = version > 0 && version < NORMALIZE_CREATE_ON_INITIATOR_VERSION && query.empty();
+    if ((version < NORMALIZE_CREATE_ON_INITIATOR_VERSION && !is_old_empty_entry) || version > DDL_ENTRY_FORMAT_MAX_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported DDLLogEntry format version: {}. "
+                                                            "Supported versions are from {} to {}",
+                        version, NORMALIZE_CREATE_ON_INITIATOR_VERSION, DDL_ENTRY_FORMAT_MAX_VERSION);
 }
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
     version = context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
-    if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}. "
-                                                            "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
+    if (version < NORMALIZE_CREATE_ON_INITIATOR_VERSION || version > DDL_ENTRY_FORMAT_MAX_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported distributed_ddl_entry_format_version: {}. "
+                                                            "Supported versions are from {} to {}",
+                        version, NORMALIZE_CREATE_ON_INITIATOR_VERSION, DDL_ENTRY_FORMAT_MAX_VERSION);
+
+    /// Older servers reject entry version 3, because they wrote the setting value 3 as version 2.
+    version = std::max(version, OPENTELEMETRY_ENABLED_VERSION);
 
     parent_table_uuid = context->getParentTable();
     if (parent_table_uuid.has_value())
         version = std::max(version, PARENT_TABLE_UUID_VERSION);
 
-    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
-    if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
-        version = SETTINGS_IN_ZK_VERSION;
+    settings.emplace(context->getSettingsRef().changes());
 
-    if (version >= SETTINGS_IN_ZK_VERSION)
+    /// Use the same initiator-only names as the query-text path, so new settings cannot leak
+    /// through the `DDL` settings packet when they are already stripped from the queued query.
+    std::erase_if(*settings, [](const SettingChange & change)
     {
-        settings.emplace(context->getSettingsRef().changes());
+        return ClusterProxy::isInitiatorOnlyDDLSettingName(change.name);
+    });
 
-        /// Use the same initiator-only names as the query-text path, so new settings cannot leak
-        /// through the `DDL` settings packet when they are already stripped from the queued query.
-        std::erase_if(*settings, [](const SettingChange & change)
-        {
-            return ClusterProxy::isInitiatorOnlyDDLSettingName(change.name);
-        });
-
-        /// The initiator has already parsed and normalized the query to the `ClickHouse` dialect. Forwarding
-        /// parser selection settings is unnecessary, and can make an older worker reject the entry with
-        /// `UNKNOWN_SETTING` during a rolling upgrade before it gets a chance to parse the normalized query.
-        for (const auto name : getDDLQueryParserOnlySettingNames())
-            settings->removeSetting(name);
-    }
+    /// The initiator has already parsed and normalized the query to the `ClickHouse` dialect. Forwarding
+    /// parser selection settings is unnecessary, and can make an older worker reject the entry with
+    /// `UNKNOWN_SETTING` during a rolling upgrade before it gets a chance to parse the normalized query.
+    for (const auto name : getDDLQueryParserOnlySettingNames())
+        settings->removeSetting(name);
 }
 
 String DDLLogEntry::toString() const
@@ -190,8 +188,7 @@ String DDLLogEntry::toString() const
     wb << "version: " << version << "\n";
     wb << "query: " << escape << query << "\n";
 
-    bool write_hosts = version == OLDEST_VERSION || !hosts.empty();
-    if (write_hosts)
+    if (!hosts.empty())
     {
         Strings host_id_strings(hosts.size());
         std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
@@ -200,8 +197,7 @@ String DDLLogEntry::toString() const
 
     wb << "initiator: " << initiator << "\n";
 
-    bool write_settings = SETTINGS_IN_ZK_VERSION <= version && settings && !settings->empty();
-    if (write_settings)
+    if (settings && !settings->empty())
     {
         ASTSetQuery ast;
         ast.is_standalone = false;
@@ -247,36 +243,35 @@ void DDLLogEntry::parse(const String & data)
     ReadBufferFromString rb(data);
 
     rb >> "version: " >> version >> "\n";
+    rb >> "query: " >> escape >> query >> "\n";
+
+    if (version > 0 && version < NORMALIZE_CREATE_ON_INITIATOR_VERSION && !query.empty())
+    {
+        /// Only to report the rejection under the host ID the initiator waits for; the entry is still rejected below.
+        Strings legacy_host_id_strings;
+        if (!rb.eof() && *rb.position() == 'h')
+            rb >> "hosts: " >> legacy_host_id_strings >> "\n";
+        hosts.resize(legacy_host_id_strings.size());
+        std::transform(legacy_host_id_strings.begin(), legacy_host_id_strings.end(), hosts.begin(), HostID::fromString);
+    }
+
     assertVersion();
 
     Strings host_id_strings;
-    rb >> "query: " >> escape >> query >> "\n";
-    if (version == OLDEST_VERSION)
-    {
+    if (!rb.eof() && *rb.position() == 'h')
         rb >> "hosts: " >> host_id_strings >> "\n";
-
-        if (!rb.eof())
-            rb >> "initiator: " >> initiator >> "\n";
-        else
-            initiator.clear();
-    }
-    else if (version >= SETTINGS_IN_ZK_VERSION)
+    if (!rb.eof() && *rb.position() == 'i')
+        rb >> "initiator: " >> initiator >> "\n";
+    if (!rb.eof() && *rb.position() == 's')
     {
-        if (!rb.eof() && *rb.position() == 'h')
-            rb >> "hosts: " >> host_id_strings >> "\n";
-        if (!rb.eof() && *rb.position() == 'i')
-            rb >> "initiator: " >> initiator >> "\n";
-        if (!rb.eof() && *rb.position() == 's')
-        {
-            String settings_str;
-            rb >> "settings: " >> settings_str >> "\n";
-            ParserSetQuery parser{true};
-            constexpr UInt64 max_depth = 16;
-            constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-            ASTPtr settings_ast = parseQuery(
-                parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef()[Setting::max_query_size], max_depth, max_backtracks);
-            settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
-        }
+        String settings_str;
+        rb >> "settings: " >> settings_str >> "\n";
+        ParserSetQuery parser{true};
+        constexpr UInt64 max_depth = 16;
+        constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+        ASTPtr settings_ast = parseQuery(
+            parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef()[Setting::max_query_size], max_depth, max_backtracks);
+        settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
     }
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
@@ -836,6 +831,12 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
+    else if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
+    {
+        /// The entry may still name the initiator's local database.
+        rename->resetDatabases();
+        rename->setDatabaseIfNotExists(database->getDatabaseName());
+    }
     formatRewrittenQuery(context);
 }
 
@@ -962,7 +963,9 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     if (name.empty())
         return {};
 
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
+    /// Hold the database during the call. Otherwise a concurrent `DROP DATABASE` could destroy it.
+    auto database = DatabaseCatalog::instance().tryGetDatabase(name);
+    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(database.get()))
     {
         if (all_groups)
             return replicated_db->tryGetAllGroupsCluster();
