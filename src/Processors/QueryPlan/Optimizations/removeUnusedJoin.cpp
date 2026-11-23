@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 
 #include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -44,7 +45,7 @@ bool outputsPreservedRowsOnce(const JoinStepLogical & join, const QueryPlan::Nod
 /// is replaced with one that can be executed only when its reference is found in the plan.
 bool hasCommonSubplanReference(const QueryPlan::Node & root)
 {
-    std::vector<const QueryPlan::Node *> nodes_to_visit{&root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> nodes_to_visit{&root};
     while (!nodes_to_visit.empty())
     {
         const auto * current = nodes_to_visit.back();
