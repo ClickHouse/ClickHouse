@@ -1278,6 +1278,12 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadRequestQueueLockWaitMicroseconds, "Time spent waiting for acquiring Keeper read request queue lock", ValueType::Microseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds, "Time spent waiting for acquiring Keeper process and responses lock", ValueType::Microseconds) \
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
+    M(KeeperLogStoreAppend, "Number of entries appended to the Keeper log store", ValueType::Number) \
+    M(KeeperLogStoreAppendMicroseconds, "Time spent appending entries to the Keeper log store (lock wait included; background flush and fsync are counted in KeeperChangelogFileSyncMicroseconds)", ValueType::Microseconds) \
+    M(KeeperStateMachineCommit, "Number of committed log batches applied by the Keeper state machine", ValueType::Number) \
+    M(KeeperStateMachineCommitMicroseconds, "Time spent applying committed log batches in the Keeper state machine", ValueType::Microseconds) \
+    M(KeeperSnapshotWriteMicroseconds, "Time spent writing a Keeper snapshot to disk (serialization, compression and fsync)", ValueType::Microseconds) \
+    M(KeeperSnapshotApplyMicroseconds, "Time spent applying a Keeper snapshot to the Keeper state machine", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of batches that hit max_requests_batch_size limit", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of batches that hit max_requests_batch_bytes_size limit", ValueType::Number) \
     M(KeeperBatchMaxReadCount, "Number of batches that hit max_read_batch_size limit", ValueType::Number) \
