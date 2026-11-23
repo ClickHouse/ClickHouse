@@ -11662,7 +11662,6 @@ Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prun
 The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
 
 With `FINAL` on the probe side, granules are pruned only by a join key that is a sorting key column of the table; a skip index is used for that only if `use_skip_indexes_if_final = 1`.
-With `query_plan_optimize_lazy_final = 1`, the reads built by that optimization are not pruned.
 
 The granule pruning is also skipped for a table with pending data or `ALTER` mutations or patch parts. This case is a no-op in the same sense.
 )", 0, \

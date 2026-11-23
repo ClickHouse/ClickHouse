@@ -26,7 +26,7 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 'false';
 SET enable_parallel_replicas = 0;
 SET make_distributed_plan = 0;
--- Lazy `FINAL` can answer the query with reads that have no runtime filters to prune by.
+-- Lazy `FINAL` replaces the read; `05830_join_runtime_filters_index_analysis_lazy_final` covers it.
 SET query_plan_optimize_lazy_final = 0;
 
 -- Control: without `FINAL` the local read prunes (both versions of the hot rows are joined).
