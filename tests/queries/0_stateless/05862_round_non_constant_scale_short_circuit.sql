@@ -16,6 +16,11 @@ SELECT s, multiIf(s >= 100, 0, floor(toDecimal256(1.25, 2), s)) FROM (SELECT arr
 
 SELECT s, s < 100 AND round(1.55, s) > 1 FROM (SELECT arrayJoin([toUInt64(1), toUInt64(18446744073709551614)]) AS s) ORDER BY s;
 
+-- Unused LowCardinality dictionary entries and values under NULL are not evaluated either.
+SELECT s, if(s < 100, round(1.55, s), 0) FROM (SELECT toLowCardinality(arrayJoin([toUInt32(1), toUInt32(40000)])) AS s) ORDER BY s;
+SELECT s, if(s > -100, round(1234, s), 0) FROM (SELECT toLowCardinality(arrayJoin([toInt32(-2), toInt32(-40000)])) AS s) ORDER BY s;
+SELECT s, round(1.55, nullIf(s, 40000)) FROM (SELECT arrayJoin([toUInt32(1), toUInt32(40000)]) AS s) ORDER BY s;
+
 -- Rows that are evaluated still throw.
 SELECT round(1.55, s) FROM (SELECT arrayJoin([toUInt64(1), toUInt64(18446744073709551614)]) AS s); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT if(s > 0, round(1.55, s), 0) FROM (SELECT arrayJoin([toUInt64(1), toUInt64(18446744073709551614)]) AS s); -- { serverError ARGUMENT_OUT_OF_BOUND }
