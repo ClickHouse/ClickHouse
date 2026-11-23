@@ -232,6 +232,15 @@ public:
     [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
+    /// For a join planned as `full_sorting_merge`: the output column its result is sorted by, and whether it is sharded.
+    struct PlannedMergeOrder
+    {
+        String column;
+        bool sharded = false;
+    };
+    [[nodiscard]] const std::optional<PlannedMergeOrder> & getPlannedMergeOrder() const { return planned_merge_order; }
+    void setPlannedMergeOrder(PlannedMergeOrder order) { planned_merge_order = std::move(order); }
+
     /// Swap left and right sides
     void swapInputs();
 
@@ -335,6 +344,7 @@ private:
 
     bool disjunctions_optimization_applied = false;
     std::optional<JoinAlgorithm> planned_algorithm;
+    std::optional<PlannedMergeOrder> planned_merge_order;
 };
 
 
@@ -368,13 +378,13 @@ private:
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
 
-/// Whether the IEJoin algorithm is preferred for this join: `ie_join` is listed first in
+/// Whether the InequalityJoin algorithm is preferred for this join: `inequality` is listed first in
 /// `join_algorithm` and the ON expression has two inequality conditions the operator can take.
 /// For optimization passes that would otherwise claim the join for a hash-family algorithm
 /// (e.g. runtime filters). The condition eligibility is the same one the conversion to the
-/// physical step applies, so `true` means IEJoin takes the join unless the right side is a
+/// physical step applies, so `true` means InequalityJoin takes the join unless the right side is a
 /// prepared `Join` storage (which those passes exclude on their own).
-bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
+bool isInequalityJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
 
 }
