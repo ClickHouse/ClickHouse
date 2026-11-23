@@ -96,6 +96,27 @@ const Field * tryGetProperty(const Properties & properties, std::string_view nam
     return nullptr;
 }
 
+/// `SettingsChanges::setSettings` replaces an entry only when the name matches exactly.
+/// `user` and `USER` are the same property, so the later scope replaces the earlier value.
+/// This list is only the in-memory config. The stored statement keeps the spelling on the AST.
+void mergeProperties(Properties & base, const Properties & overlay)
+{
+    for (const auto & change : overlay)
+    {
+        bool replaced = false;
+        for (auto & existing : base)
+        {
+            if (!equalsCaseInsensitive(existing.name, change.name))
+                continue;
+            existing.value = change.value;
+            replaced = true;
+            break;
+        }
+        if (!replaced)
+            base.push_back(change);
+    }
+}
+
 bool isCredentialProperty(std::string_view name)
 {
     return equalsCaseInsensitive(name, "user") || equalsCaseInsensitive(name, "password");
@@ -479,7 +500,7 @@ ClusterPtr SQLClusterFactory::materializeCluster(
         ++shard_num;
         const auto & shard = shard_ast->as<const ASTSQLClusterShard &>();
         Properties shard_properties = definition.cluster_properties;
-        shard_properties.setSettings(shard.properties);
+        mergeProperties(shard_properties, shard.properties);
 
         if (shard.replicas.empty())
         {
@@ -501,7 +522,7 @@ ClusterPtr SQLClusterFactory::materializeCluster(
                 ++replica_num;
                 const auto & replica = replica_ast->as<const ASTSQLClusterReplica &>();
                 Properties replica_properties = shard_properties;
-                replica_properties.setSettings(replica.properties);
+                mergeProperties(replica_properties, replica.properties);
                 applyReplicaProperties(*config, shard_prefix + ".replica" + std::to_string(replica_num), replica_properties);
             }
         }
