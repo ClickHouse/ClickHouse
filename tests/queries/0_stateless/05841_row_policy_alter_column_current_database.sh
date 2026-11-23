@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# no-replicated-database: a `Replicated` database runs the ALTER in its own database, not in the current database of the session
 # a policy subquery column that binds to the policy table in the current database of a reader is correlated: that read fails also before the ALTER
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
