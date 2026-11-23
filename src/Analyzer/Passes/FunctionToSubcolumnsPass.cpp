@@ -765,7 +765,7 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
     node = std::move(array_exists);
 }
 
-std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
+[[clang::no_destroy]] std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
     {
         {TypeIndex::String, "length"}, optimizeFunctionStringLength,
@@ -970,7 +970,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 /// primary key, partition key, or secondary index expressions. The rewritten
 /// subcolumn form will be handled by index analysis (or the index simply
 /// won't be used, which is safe — just potentially slower).
-std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
+[[clang::no_destroy]] std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 {
     {TypeIndex::Map, "arrayElement"},
 };
@@ -992,7 +992,7 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// the filter. Keep this set limited to transformers that make that behavior safe.
 /// Note: this exception does NOT apply to HAVING or other clauses where the
 /// subcolumn would need to appear in GROUP BY.
-std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
+[[clang::no_destroy]] std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
     {TypeIndex::Map, "mapContainsKey"},
@@ -1230,7 +1230,7 @@ void optimizeJSONArrayElementChain(
         node = buildCastFunction(node, original_result_type, ctx.context);
 }
 
-std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chained_node_transformers =
+[[clang::no_destroy]] std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chained_node_transformers =
 {
     {
         {TypeIndex::Dynamic, "tupleElement"}, optimizeJSONArrayElement,

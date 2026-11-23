@@ -24,7 +24,7 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString DOMParser::FEATURE_FILTER_WHITESPACE = toXMLString("http://www.appinf.com/features/no-whitespace-in-element-content");
+[[clang::no_destroy]] const XMLString DOMParser::FEATURE_FILTER_WHITESPACE = toXMLString("http://www.appinf.com/features/no-whitespace-in-element-content");
 
 
 DOMParser::DOMParser(NamePool* pNamePool):

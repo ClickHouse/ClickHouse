@@ -211,6 +211,13 @@ MatchedTrees::Matches matchTrees(
         inner_dag, outer_dag, check_monotonicity, max_size_for_sets_from_tuple_to_compare, /*outer_to_inner_input_names=*/nullptr);
 }
 
+const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node;
+}
+
 static MatchedTrees::Matches matchTreesImpl(
     const ActionsDAG::NodeRawConstPtrs & inner_dag,
     const ActionsDAG & outer_dag,
@@ -241,6 +248,7 @@ static MatchedTrees::Matches matchTreesImpl(
 
                 for (const auto * child : node->children)
                 {
+                    child = skipAliases(child);
                     auto [it, inserted] = inner_parents.emplace(child, Parents());
                     it->second.emplace(node);
 
@@ -400,7 +408,7 @@ static MatchedTrees::Matches matchTreesImpl(
                                                     max_size_for_sets_from_tuple_to_compare);
                                         }
                                         else
-                                            all_children_matched = frame.mapped_children[i] == children[i];
+                                            all_children_matched = frame.mapped_children[i] == skipAliases(children[i]);
                                     }
 
                                     if (all_children_matched

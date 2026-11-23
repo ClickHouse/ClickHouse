@@ -1512,7 +1512,9 @@ const SymbolIndex & SymbolIndex::instance()
     ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
     ///
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
-    static SymbolIndex instance;
+    /// Intentionally leaked: an exception can be logged with its stack trace at any point of the shutdown,
+    /// after the destructors of the objects with static storage duration have run.
+    static const SymbolIndex & instance = *new SymbolIndex;
     /// Published only after the constructor has finished, which is what lets `instanceIfInitialized`
     /// hand out the object without touching the static's guard.
     initialized_instance.store(&instance, std::memory_order_release);
