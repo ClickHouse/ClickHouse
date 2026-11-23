@@ -129,6 +129,18 @@ private:
 
     void lockSlow()
     {
+        bool acquired = false;
+        silk::spinWait([&]
+        {
+            uint32_t current = state.load(std::memory_order_relaxed);
+            if (current & (THREAD_WAITERS | FIBER_WAITERS))
+                return true;
+            acquired = !(current & LOCKED) && state.compare_exchange_weak(current, LOCKED, std::memory_order_acquire, std::memory_order_relaxed);
+            return acquired;
+        });
+        if (acquired)
+            return;
+
         const bool fiber = needSilkAwareWait();
         const uint32_t contended = LOCKED | (fiber ? FIBER_WAITERS : THREAD_WAITERS);
         uint32_t previous = state.fetch_or(contended, std::memory_order_acquire);
