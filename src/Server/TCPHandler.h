@@ -22,6 +22,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/StringWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
@@ -56,6 +57,7 @@ class NativeWriter;
 class NativeReader;
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = VectorWithMemoryTracking<ClusterFunctionReadTaskResponsePtr>;
 
 /// TCPHandlerPocoChunkedWriter is used in TCPHandler
 /// and it uses `sync` api for explicit protocol delivery.
