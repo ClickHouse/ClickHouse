@@ -3117,6 +3117,9 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
     D = f"dist_{test_ref}"
     D2 = f"dist2_{test_ref}"
     S = f"set_{test_ref}"
+    L = f"local_{test_ref}"
+    M = f"merge_{test_ref}"
+    DM = f"dist_merge_{test_ref}"
     worker = "worker_default_database_demo"
 
     catalog = load_catalog_impl(started_cluster)
@@ -3175,12 +3178,31 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
             )
         )
         assert result == 5, f"set through a serialized plan: expected 5 rows, got {result}"
+
+        # a `Merge` table `default.M` (2 rows), while the catalog has a table `default.M` (1 row) too
+        create_table(catalog, "default", M).append(pa.Table.from_pylist([generate_record()]))
+        node2.query(f"CREATE TABLE default.{L} (symbol Nullable(String)) ENGINE = MergeTree ORDER BY tuple()")
+        node2.query(f"INSERT INTO default.{L} VALUES ('a'), ('b')")
+        node2.query(f"CREATE TABLE default.{M} (symbol Nullable(String)) ENGINE = Merge(default, '^{L}$')")
+        for table in (f"default.{M}", f"default.{L}", f"{CATALOG_NAME}.`default.{M}`"):
+            node2.query(f"GRANT SELECT ON {table} TO {worker}")
+        node1.query(
+            f"CREATE TABLE default.{DM} (symbol Nullable(String)) "
+            f"ENGINE = Distributed(cluster_worker_default_database_demo, default, {M})"
+        )
+        # a `Merge` table is read through a synthesized `SELECT`, which reads `default`.`M` as written too
+        result = int(node1.query(f"SELECT count() FROM default.{DM}", settings={**on, "serialize_query_plan": 1}))
+        assert result == 2, f"`Merge` table through a serialized plan: expected 2 rows, got {result}"
     finally:
         node1.query(f"DROP TABLE IF EXISTS default.{D}")
         node1.query(f"DROP TABLE IF EXISTS default.{D2}")
+        node1.query(f"DROP TABLE IF EXISTS default.{DM}")
         for node in (node1, node2):
             node.query(f"DROP TABLE IF EXISTS default.{S}")
+        node2.query(f"DROP TABLE IF EXISTS default.{M}")
+        node2.query(f"DROP TABLE IF EXISTS default.{L}")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{S}`")
+        node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{M}`")
 
 
 def test_three_part_identifier(started_cluster):
