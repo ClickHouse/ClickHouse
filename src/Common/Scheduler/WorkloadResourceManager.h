@@ -16,6 +16,7 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <future>
@@ -174,6 +175,10 @@ private:
         const String & getName() const { return resource_name; }
         CostUnit getUnit() const { return unit; }
 
+        /// A dropped resource stays alive while classifiers reference it, but is not handed out to new requests
+        void markDropped() { dropped.store(true); }
+        [[nodiscard]] bool isDropped() const { return dropped.load(); }
+
         /// Hierarchy management
         void createNode(const NodeInfo & info);
         void deleteNode(const NodeInfo & info);
@@ -272,6 +277,7 @@ private:
         ASTPtr resource_entity;
         const String resource_name;
         const CostUnit unit;
+        std::atomic<bool> dropped{false};
         SchedulerNodePtr scheduler;
 
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
@@ -333,6 +339,9 @@ private:
             WorkloadSettings settings;
         };
         std::unordered_map<String, Attachment> attachments; // TSA_GUARDED_BY(mutex);
+
+        /// Returns nullptr if the resource is not attached or was dropped. Requires `mutex`.
+        [[nodiscard]] const Attachment * findAttachment(const String & resource_name) const;
     };
 
     void createOrUpdateWorkload(const String & workload_name, const ASTPtr & ast);

@@ -2662,6 +2662,76 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
     }
 }
 
+// A query keeps its classifier while a resource it uses is dropped and recreated with another cost unit.
+// The classifier must not hand out the old link: the consumers of the new resource expect the new unit.
+TEST(SchedulerWorkloadResourceManager, RecreateResourceMemoryToIO)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE r (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = '1Ti'");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    EXPECT_NE(c->get("r").allocation_queue, nullptr);
+
+    t.query("DROP RESOURCE r");
+    t.query("CREATE RESOURCE r (READ DISK d, WRITE DISK d)");
+
+    EXPECT_FALSE(c->has("r"));
+    ResourceLink link = c->get("r");
+    EXPECT_FALSE(link);
+    {
+        ResourceGuard guard(ResourceGuard::Metrics::getIORead(), link);
+        guard.consume(1);
+    }
+
+    ClassifierPtr c_new = t.manager->acquire("all");
+    EXPECT_NE(c_new->get("r").queue, nullptr);
+    ResourceGuard guard(ResourceGuard::Metrics::getIORead(), c_new->get("r"));
+}
+
+TEST(SchedulerWorkloadResourceManager, RecreateResourceIOToMemory)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE r (READ DISK d, WRITE DISK d)");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
+
+    ClassifierSettings settings;
+    settings.throw_on_unknown_workload = true;
+    ClassifierPtr c = t.manager->acquire("all", settings);
+    EXPECT_NE(c->get("r").queue, nullptr);
+
+    // A request granted before the drop is finished on the old resource
+    std::optional<ResourceGuard> in_flight;
+    in_flight.emplace(ResourceGuard::Metrics::getIORead(), c->get("r"));
+
+    t.query("DROP RESOURCE r");
+    t.query("CREATE RESOURCE r (MEMORY RESERVATION)");
+
+    // Unlimited, not an error: the workload existed when the classifier was acquired
+    ResourceLink link;
+    EXPECT_NO_THROW(link = c->get("r"));
+    EXPECT_FALSE(link);
+    in_flight.reset();
+
+    ClassifierPtr c_new = t.manager->acquire("all", settings);
+    EXPECT_NE(c_new->get("r").allocation_queue, nullptr);
+}
+
+// A link to a space-shared resource is not scheduled by `ResourceGuard`, which needs a time-shared queue
+TEST(SchedulerWorkloadResourceManager, ResourceGuardIgnoresSpaceSharedLink)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = '1Ti'");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceGuard guard(ResourceGuard::Metrics::getIORead(), c->get("memory"));
+    EXPECT_FALSE(guard.link);
+}
+
 // Multiple root workloads on a space-shared resource (MEMORY RESERVATION). Each parentless workload
 // becomes a child of the resource's implicit anonymous root workload (the scheduler's single child)
 // and enforces its own limit independently.

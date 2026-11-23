@@ -351,6 +351,9 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
     std::unique_lock lock{mutex};
     if (auto resource_iter = resources.find(resource_name); resource_iter != resources.end())
     {
+        // Running queries keep their classifiers, which reference this resource. They must not get its links any longer:
+        // a resource recreated under the same name may have another cost unit, and consumers expect the new one.
+        resource_iter->second->markDropped();
         resources.erase(resource_iter);
     }
     else // Resource to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
@@ -421,39 +424,40 @@ std::future<void> WorkloadResourceManager::Resource::detachClassifier(VersionPtr
     return future;
 }
 
+const WorkloadResourceManager::Classifier::Attachment * WorkloadResourceManager::Classifier::findAttachment(const String & resource_name) const
+{
+    auto iter = attachments.find(resource_name);
+    if (iter == attachments.end() || iter->second.resource->isDropped())
+        return nullptr;
+    return &iter->second;
+}
+
 bool WorkloadResourceManager::Classifier::has(const String & resource_name)
 {
     std::unique_lock lock{mutex};
-    return attachments.contains(resource_name);
+    return findAttachment(resource_name) != nullptr;
 }
 
 ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_name)
 {
     std::unique_lock lock{mutex};
-    if (auto iter = attachments.find(resource_name); iter != attachments.end())
+    if (const auto * attachment = findAttachment(resource_name))
     {
-        ResourceLink link = iter->second.link;
+        ResourceLink link = attachment->link;
         link.scheduling_context = scheduling_context.get();
         return link;
     }
-    else
-    {
-        if (settings.throw_on_unknown_workload)
-            throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Could not access resource '{}'. Please check `throw_on_unknown_workload` setting", resource_name);
-        else
-            return ResourceLink{}; // unlimited access
-    }
+    // The workload existed when the query started, so a resource dropped since then is unlimited rather than an error
+    if (settings.throw_on_unknown_workload && !attachments.contains(resource_name))
+        throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Could not access resource '{}'. Please check `throw_on_unknown_workload` setting", resource_name);
+    return ResourceLink{}; // unlimited access
 }
 
 WorkloadSettings WorkloadResourceManager::Classifier::getWorkloadSettings(const String & resource_name) const
 {
     std::unique_lock lock{mutex};
-    auto iter = attachments.find(resource_name);
-    if (iter != attachments.end())
-    {
-        // Extract settings from the attached resource
-        return iter->second.settings;
-    }
+    if (const auto * attachment = findAttachment(resource_name))
+        return attachment->settings;
     return {};
 }
 
