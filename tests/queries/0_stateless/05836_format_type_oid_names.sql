@@ -6,16 +6,28 @@
 -- into the precision and scale for `numeric` and into the fractional-second precision for
 -- `timestamp`; an array type renders its element name with a `[]` suffix; an unknown OID is `text`.
 
--- Of the range types only `int4range`, `numrange` and `int8range` are checked. For the other range
--- and multirange OIDs `pgFormatType` does not agree with the PostgreSQL catalog (there 3905 is
--- `int4range[]` and `int4multirange` is 4451; 3908 is `tsrange`, 3910 is `tstzrange` and 3912 is
--- `daterange`), so the names it returns for them today are not asserted here.
 SELECT '--- scalar type OIDs, no modifier';
 SELECT oid, format_type(oid, -1) AS type_name
 FROM
 (
-    SELECT arrayJoin([16, 17, 18, 19, 20, 21, 23, 25, 26, 700, 701, 1042, 1043, 1082, 1114, 1184,
-                      1700, 2950, 3904, 3906, 3926, 40000]) AS oid
+    SELECT arrayJoin([16, 17, 19, 20, 21, 23, 25, 26, 700, 701, 1043, 1082, 1114, 1184,
+                      1700, 2950, 3904, 3905, 3906, 3907, 3910, 3911, 3912, 3913, 3914, 3915,
+                      3926, 3927, 40000]) AS oid
+)
+ORDER BY oid;
+
+-- The OIDs 18 and 1042 are both rendered as `character` by `pgFormatType`, which does not match
+-- PostgreSQL: OID 18 is PostgreSQL's internal `"char"` type, and a bare OID 1042 (no modifier) is
+-- `bpchar` there, with `character(n)` reserved for the case where a modifier is present
+-- (postgres src/include/catalog/pg_type.dat, src/backend/utils/adt/format_type.c). The spelling of
+-- these two OIDs is therefore deliberately not pinned here, so that a later compatibility fix of
+-- `pgFormatType` does not have to change this test. Asserted is only that both OIDs are mapped,
+-- i.e. that they do not fall through to the unknown-OID fallback `text`.
+SELECT '--- OIDs 18 and 1042 are mapped (their spelling is not pinned, see the comment)';
+SELECT oid, format_type(oid, -1) != 'text' AS is_mapped
+FROM
+(
+    SELECT arrayJoin([18, 1042]) AS oid
 )
 ORDER BY oid;
 
