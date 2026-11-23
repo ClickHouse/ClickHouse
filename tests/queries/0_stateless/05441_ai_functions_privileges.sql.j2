@@ -5,6 +5,7 @@
 
 {% set text_params = "map('credentials', 'nc_05441', 'model', 'm')" %}
 {% set embed_params = "map('credentials', 'nc_05441')" %}
+{% set rerank_params = "map('credentials', 'nc_05441_rerank')" %}
 {% set fns = [
     ('aiClassify', "x, ['a'], " ~ text_params),
     ('aiEmbed', "x, 'm', " ~ embed_params),
@@ -12,6 +13,7 @@
     ('aiFilter', "x, 'c', " ~ text_params),
     ('aiGenerate', "x, " ~ text_params),
     ('aiRedact', "x, ['a'], " ~ text_params),
+    ('aiRelevance', "'q', x, " ~ rerank_params),
     ('aiSimilarity', "x, x, 'm', " ~ embed_params),
     ('aiTranslate', "x, 'fr', " ~ text_params),
 ] %}
@@ -30,6 +32,7 @@ EXECUTE AS u_05441 SELECT udf_05441(x) FROM (SELECT '' AS x WHERE 0);{% if invok
 
 DROP USER IF EXISTS u_05441, definer_05441;
 DROP NAMED COLLECTION IF EXISTS nc_05441;
+DROP NAMED COLLECTION IF EXISTS nc_05441_rerank;
 DROP FUNCTION IF EXISTS udf_05441;
 
 CREATE NAMED COLLECTION nc_05441 AS
@@ -37,8 +40,17 @@ CREATE NAMED COLLECTION nc_05441 AS
     endpoint = 'http://localhost:1/v1/chat/completions',
     api_key = 'fake-key';
 
+-- `aiRelevance` checks that the provider supports reranking even for zero rows.
+CREATE NAMED COLLECTION nc_05441_rerank AS
+    provider = 'cohere',
+    endpoint = 'http://localhost:1/v2/rerank',
+    model = 'm',
+    api_key = 'fake-key';
+
+SET allow_experimental_ai_relevance_function = 1;
+
 CREATE USER u_05441, definer_05441 IDENTIFIED WITH no_password;
-GRANT NAMED COLLECTION ON nc_05441 TO u_05441, definer_05441;
+GRANT NAMED COLLECTION ON nc_05441, nc_05441_rerank TO u_05441, definer_05441;
 GRANT SELECT ON * TO u_05441;
 GRANT AI FUNCTIONS ON *.* TO definer_05441;
 
@@ -68,3 +80,4 @@ DROP VIEW v_invoker;
 DROP FUNCTION udf_05441;
 DROP USER u_05441, definer_05441;
 DROP NAMED COLLECTION nc_05441;
+DROP NAMED COLLECTION nc_05441_rerank;
