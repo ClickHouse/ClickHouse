@@ -22,14 +22,17 @@ size_t displayWidth(std::string_view text, size_t prefix = 0)
 /// Lines indented by more than `max_indent` spaces are not checked.
 bool fitsWidth(std::string_view text, size_t column, size_t width, size_t max_indent = std::string_view::npos)
 {
-    for (size_t newline = 0; newline != std::string_view::npos; text.remove_prefix(newline + 1), column = 0)
+    while (true)
     {
-        newline = text.find('\n');
+        const size_t newline = text.find('\n');
         const std::string_view line = text.substr(0, newline);
         if (line.find_first_not_of(' ') <= max_indent && column + displayWidth(line, column) > width)
             return false;
+        if (newline == std::string_view::npos)
+            return true;
+        text.remove_prefix(newline + 1);
+        column = 0;
     }
-    return true;
 }
 
 /// Lines indented deeper than `indent` levels are not checked (see ASTFormatting.h).
