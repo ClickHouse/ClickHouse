@@ -41,10 +41,12 @@ wait_until()
 # invalidation value. Otherwise a later reload could pass without comparison.
 $CLIENT -q "SELECT dictGet('dict_sparse_local', 'val', toUInt64(1))"
 $CLIENT -q "SELECT dictGet('dict_sparse_remote', 'val', toUInt64(1))"
-# For the local source, the initial background refresh advances the last
-# successful reload timestamp.
-last_update=$($CLIENT -q "SELECT toUnixTimestamp(last_successful_update_time) FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_sparse_local'")
-wait_until "SELECT toUnixTimestamp(last_successful_update_time) > $last_update FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_sparse_local'"
+# The first periodic refresh resets each dictionary's `query_count` to zero.
+# Unlike a timestamp sampled after priming, this condition remains observable
+# if the refresh finished before polling began.
+for kind in local remote; do
+    wait_until "SELECT query_count = 0 FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_sparse_$kind'"
+done
 
 # A remote invalidate check may leave the reload timestamp unchanged when the
 # response matches the cached value. Observe completed invalidate queries
