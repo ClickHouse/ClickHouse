@@ -5425,7 +5425,7 @@ ActionsDAG ActionsDAG::deserialize(
         UInt8 action_type{0};
         readIntBinary(action_type, in);
         if (action_type > static_cast<UInt8>(ActionType::FUNCTION))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type {}", size_t(action_type));
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown action type {}", size_t(action_type));
         node.type = static_cast<ActionType>(action_type);
 
         readStringBinary(node.result_name, in);
@@ -5471,6 +5471,10 @@ ActionsDAG ActionsDAG::deserialize(
             /// Column is already deserialized
             if (!node.children.empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized column can't have children");
+            /// A constant node is evaluated by reading its column (e.g. when a step builds its header),
+            /// so a serialized plan without the value is malformed.
+            if (!node.column)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized column {} has no value", node.result_name);
         }
         else if (node.type == ActionType::ALIAS)
         {
