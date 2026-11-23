@@ -204,7 +204,7 @@ static bool hasRowDependentFunctions(const ActionsDAG & dag)
     });
 }
 
-/// The reader fills the default of a column missing in a part after PREWHERE, on the rows that passed it.
+/// The reader fills the default of a column that is missing in a part, or NULL in it, after PREWHERE, on the rows that passed it.
 static bool hasStatefulDefaultOfMissingColumn(
     const String & column_name,
     const ColumnsDescription & columns,
@@ -225,16 +225,31 @@ static bool hasStatefulDefaultOfMissingColumn(
     if (!column_default || !column_default->expression)
         return false;
 
-    auto is_present_in_part = [&](const auto & part)
+    auto current_column = columns.tryGetPhysical(name_in_storage);
+
+    /// Like the reader, find the column in the part, following pending renames and drops.
+    auto is_read_without_default = [&](const auto & part)
     {
-        if (!part.data_part->getColumnsDescription().has(name_in_storage))
+        String name_in_part = name_in_storage;
+        if (mutations_snapshot)
+        {
+            AlterConversions conversions(
+                mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part), PatchPartsForReader{}, context);
+            if (conversions.isColumnRenamed(name_in_storage))
+                name_in_part = conversions.getColumnOldName(name_in_storage);
+            if (conversions.isColumnDropped(name_in_part) || conversions.isColumnDropped(name_in_storage))
+                return false;
+        }
+
+        auto column_in_part = part.data_part->getColumnsDescription().tryGetPhysical(name_in_part);
+        if (!column_in_part)
             return false;
-        if (!mutations_snapshot)
-            return true;
-        AlterConversions conversions(mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part), PatchPartsForReader{}, context);
-        return !conversions.isColumnDropped(name_in_storage);
+
+        /// Reading a Nullable column as a non-Nullable one replaces NULLs with the default.
+        return !current_column || !isNullableOrLowCardinalityNullable(column_in_part->type)
+            || isNullableOrLowCardinalityNullable(current_column->type);
     };
-    if (std::ranges::all_of(parts, is_present_in_part))
+    if (std::ranges::all_of(parts, is_read_without_default))
         return false;
 
     /// Like the reader, check the default with all experimental settings on, since they may be disabled in the current context.

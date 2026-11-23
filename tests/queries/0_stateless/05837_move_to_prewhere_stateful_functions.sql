@@ -67,3 +67,28 @@ SELECT n FROM t_prewhere_stateful_deprecated WHERE a >= 5 ORDER BY a;
 SELECT n FROM t_prewhere_stateful_deprecated WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
 
 DROP TABLE t_prewhere_stateful_deprecated;
+
+DROP TABLE IF EXISTS t_prewhere_stateful_renamed;
+CREATE TABLE t_prewhere_stateful_renamed (a UInt64, n UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_stateful_renamed SELECT number, 999 FROM numbers(10);
+ALTER TABLE t_prewhere_stateful_renamed ADD COLUMN c UInt64 DEFAULT rowNumberInAllBlocks();
+SYSTEM STOP MERGES t_prewhere_stateful_renamed;
+ALTER TABLE t_prewhere_stateful_renamed RENAME COLUMN n TO old_n, RENAME COLUMN c TO n;
+
+SELECT '-- stateful default of a column renamed by a pending mutation';
+SELECT n FROM t_prewhere_stateful_renamed WHERE a >= 5 ORDER BY a SETTINGS apply_mutations_on_fly = 1;
+SELECT n FROM t_prewhere_stateful_renamed WHERE a >= 5 ORDER BY a SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0;
+
+DROP TABLE t_prewhere_stateful_renamed;
+
+DROP TABLE IF EXISTS t_prewhere_stateful_nullable;
+CREATE TABLE t_prewhere_stateful_nullable (a UInt64, n Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_stateful_nullable SELECT number, NULL FROM numbers(10);
+SYSTEM STOP MERGES t_prewhere_stateful_nullable;
+ALTER TABLE t_prewhere_stateful_nullable MODIFY COLUMN n UInt64 DEFAULT rowNumberInAllBlocks();
+
+SELECT '-- stateful default used by a pending conversion from Nullable';
+SELECT n FROM t_prewhere_stateful_nullable WHERE a >= 5 ORDER BY a;
+SELECT n FROM t_prewhere_stateful_nullable WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
+
+DROP TABLE t_prewhere_stateful_nullable;

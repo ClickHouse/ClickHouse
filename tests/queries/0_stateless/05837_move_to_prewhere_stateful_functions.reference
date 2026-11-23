@@ -74,3 +74,25 @@
 1
 1
 1
+-- stateful default of a column renamed by a pending mutation
+5
+6
+7
+8
+9
+5
+6
+7
+8
+9
+-- stateful default used by a pending conversion from Nullable
+5
+6
+7
+8
+9
+5
+6
+7
+8
+9
