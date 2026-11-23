@@ -116,3 +116,16 @@ SELECT toStartOfHour(toDateTime('2024-03-31 03:40:00', 'Europe/Berlin'));
 SELECT toStartOfHour(toDateTime('2024-10-27 03:40:00', 'Europe/Berlin'));
 SELECT toStartOfHour(toDateTime('2024-04-07 12:58:30', 'Australia/Adelaide'));
 SELECT toStartOfHour(toDateTime('2024-04-07 12:58:30', 'Asia/Kolkata'));
+
+SELECT 'a local time at the edge of the calendar keeps its own hour';
+-- These instants are outside of the calendar range in UTC, but their local time is inside of it.
+SET enable_extended_results_for_datetime_functions = 1;
+WITH toDateTime64('9999-12-31 23:00:00', 0, 'America/Caracas') AS t
+SELECT t, toStartOfHour(t), dateTrunc('hour', t), toStartOfInterval(t, INTERVAL 1 HOUR);
+WITH toDateTime64('9999-12-31 23:59:59', 0, 'America/Caracas') AS t
+SELECT t, toStartOfHour(t), dateTrunc('hour', t), toStartOfInterval(t, INTERVAL 1 HOUR);
+WITH reinterpret(toInt64(-62167240408), 'DateTime64(0, \'Asia/Kolkata\')') AS t
+SELECT t, toStartOfHour(t), dateTrunc('hour', t), toStartOfInterval(t, INTERVAL 1 HOUR);
+WITH reinterpret(toInt64(-62167240408 + 3700), 'DateTime64(0, \'Asia/Kolkata\')') AS t
+SELECT t, toStartOfHour(t), dateTrunc('hour', t), toStartOfInterval(t, INTERVAL 1 HOUR);
+SET enable_extended_results_for_datetime_functions = 0;

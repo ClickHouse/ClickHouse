@@ -476,7 +476,11 @@ DateLUTImpl::Time DateLUTImpl::toStartOfHourOutOfRange(Time t) const
     /// an offset change by a fraction of an hour. The clock itself is used instead of a grid counted from the
     /// start of the day, because a day can start after such a change: on 1899-05-01 `Australia/Adelaide`
     /// skipped the half hour after midnight, so that day starts at 00:30 on the clock.
-    t = std::clamp(t, min_representable_time, max_representable_time);
+    ///
+    /// Only the chrono-safe bounds are applied to `t`, as in `toDateTimeComponentsOutOfRange`: a time whose
+    /// local calendar value is representable can be up to a day outside of the UTC calendar range
+    /// (`9999-12-31 23:00:00` in `America/Caracas`), and it must keep its own hour.
+    t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
     const Time offset = timezoneOffsetOutOfRange(t);
     const Time clock = t + offset;
     Time clock_hour = clock / 3600 * 3600;
