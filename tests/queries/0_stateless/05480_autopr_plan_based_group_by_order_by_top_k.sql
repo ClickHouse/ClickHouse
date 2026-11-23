@@ -19,6 +19,9 @@ SET enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation
 SET max_threads = 4, max_threads_min_free_memory_per_thread = 0;
 -- Statistics of a previous run can take the heap away from the aggregation.
 SET collect_hash_table_stats_during_aggregation = 0;
+-- The aggregation of `GROUP BY ... LIMIT` without `ORDER BY` always disables the top-K freeze. CI may disable it for the
+-- other queries too, which makes their aggregation step equal, so the statistics they collect are found for it.
+SET group_by_top_k_optimization_observation_rows = 65536;
 -- The top-K boundary of a run can leave an entry in the query condition cache, so that the next run reads fewer rows,
 -- which looks like changed data and recollects the statistics instead of pricing.
 SET use_query_condition_cache = 0;
