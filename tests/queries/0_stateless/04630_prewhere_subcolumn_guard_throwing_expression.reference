@@ -32,7 +32,7 @@ runtime filter, cast guarded by IS NOT NULL
 runtime filter, cast guarded by IS NOT NULL, runtime filters off
 333
 runtime filter reaches the probe side read
-1
+0
 runtime filter absent when the feature is off
 1
 guarded cast selected as an output, no join
@@ -40,12 +40,12 @@ guarded cast selected as an output, no join
 runtime filter, LowCardinality(Nullable) key
 33333
 runtime filter reaches the LowCardinality probe side read
-1
+0
 runtime filter, parsing conversion guarded by LIKE
 2501	2501
 runtime filter, parsing conversion guarded by LIKE, runtime filters off
 2501	2501
 runtime filter reaches the parsing conversion probe side read
-1
+0
 pending MODIFY COLUMN, guard over the same storage column
 3266
