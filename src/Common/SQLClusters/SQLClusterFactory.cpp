@@ -1,6 +1,7 @@
 #include <Common/SQLClusters/SQLClusterFactory.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -14,8 +15,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/sleep.h>
 
-#include <cctype>
-#include <cstring>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
@@ -72,16 +71,10 @@ const std::unordered_set<String> & replicaPropertyKeys()
 
 /// Property names keep the spelling from the query. Comparisons and the keys written into the
 /// in-memory cluster config use the canonical lowercase name.
-bool propertyNamesEqual(std::string_view left, std::string_view right)
-{
-    return left.size() == right.size()
-        && 0 == strncasecmp(left.data(), right.data(), left.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
-}
-
 bool containsProperty(const std::unordered_set<String> & keys, std::string_view name)
 {
     for (const auto & key : keys)
-        if (propertyNamesEqual(key, name))
+        if (equalsCaseInsensitive(key, name))
             return true;
     return false;
 }
@@ -90,36 +83,28 @@ std::string_view canonicalPropertyName(std::string_view name)
 {
     for (const auto * keys : {&clusterPropertyKeys(), &shardOnlyPropertyKeys(), &replicaPropertyKeys()})
         for (const auto & key : *keys)
-            if (propertyNamesEqual(key, name))
+            if (equalsCaseInsensitive(key, name))
                 return key;
     return name;
-}
-
-String foldedPropertyName(std::string_view name)
-{
-    String folded(name.size(), '\0');
-    for (size_t i = 0; i < name.size(); ++i)
-        folded[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(name[i])));
-    return folded;
 }
 
 const Field * tryGetProperty(const Properties & properties, std::string_view name)
 {
     for (const auto & change : properties)
-        if (propertyNamesEqual(change.name, name))
+        if (equalsCaseInsensitive(change.name, name))
             return &change.value;
     return nullptr;
 }
 
 bool isCredentialProperty(std::string_view name)
 {
-    return propertyNamesEqual(name, "user") || propertyNamesEqual(name, "password");
+    return equalsCaseInsensitive(name, "user") || equalsCaseInsensitive(name, "password");
 }
 
 bool isBoolProperty(std::string_view name)
 {
-    return propertyNamesEqual(name, "secure") || propertyNamesEqual(name, "compression")
-        || propertyNamesEqual(name, "internal_replication") || propertyNamesEqual(name, "allow_distributed_ddl_queries");
+    return equalsCaseInsensitive(name, "secure") || equalsCaseInsensitive(name, "compression")
+        || equalsCaseInsensitive(name, "internal_replication") || equalsCaseInsensitive(name, "allow_distributed_ddl_queries");
 }
 
 void validateAndNormalizeBoolProperty(Field & value, std::string_view name)
@@ -169,7 +154,7 @@ void validateNoDuplicateProperties(const Properties & properties, std::string_vi
     std::unordered_set<String> seen;
     for (const auto & change : properties)
     {
-        if (!seen.insert(foldedPropertyName(change.name)).second)
+        if (!seen.insert(toLowerCopyASCII(change.name)).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate property `{}` {}", change.name, scope);
     }
 }
@@ -224,11 +209,11 @@ void validateShardProperties(const Properties & properties, bool has_replicas)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in SHARD", change.name);
         }
 
-        if (propertyNamesEqual(change.name, "port"))
+        if (equalsCaseInsensitive(change.name, "port"))
             validatePortProperty(change.value);
-        else if (propertyNamesEqual(change.name, "weight"))
+        else if (equalsCaseInsensitive(change.name, "weight"))
             validateIntProperty(change.value, change.name, 0, std::numeric_limits<Int32>::max());
-        else if (propertyNamesEqual(change.name, "priority"))
+        else if (equalsCaseInsensitive(change.name, "priority"))
             validateIntProperty(change.value, change.name, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
         else if (isBoolProperty(change.name))
             validateBoolProperty(change.value, change.name);
@@ -244,9 +229,9 @@ void validateReplicaProperties(const Properties & properties)
         if (!containsProperty(replicaPropertyKeys(), change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in REPLICA", change.name);
 
-        if (propertyNamesEqual(change.name, "port"))
+        if (equalsCaseInsensitive(change.name, "port"))
             validatePortProperty(change.value);
-        else if (propertyNamesEqual(change.name, "priority"))
+        else if (equalsCaseInsensitive(change.name, "priority"))
             validateIntProperty(change.value, change.name, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
         else if (isBoolProperty(change.name))
             validateBoolProperty(change.value, change.name);
@@ -413,7 +398,7 @@ void applyShardOnlyProperties(Poco::Util::AbstractConfiguration & config, const 
 {
     for (const auto & change : properties)
     {
-        if (propertyNamesEqual(change.name, "weight") || propertyNamesEqual(change.name, "internal_replication"))
+        if (equalsCaseInsensitive(change.name, "weight") || equalsCaseInsensitive(change.name, "internal_replication"))
         {
             const auto canonical = String(canonicalPropertyName(change.name));
             setSQLClusterConfigValue(config, prefix + "." + canonical, canonical, change.value);
@@ -425,7 +410,7 @@ void applyClusterProperties(Poco::Util::AbstractConfiguration & config, const St
 {
     for (const auto & change : properties)
     {
-        if (propertyNamesEqual(change.name, "secret") || propertyNamesEqual(change.name, "allow_distributed_ddl_queries"))
+        if (equalsCaseInsensitive(change.name, "secret") || equalsCaseInsensitive(change.name, "allow_distributed_ddl_queries"))
         {
             const auto canonical = String(canonicalPropertyName(change.name));
             setSQLClusterConfigValue(config, prefix + "." + canonical, canonical, change.value);
