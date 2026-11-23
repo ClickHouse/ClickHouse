@@ -225,6 +225,8 @@ namespace JSONUtils
         bool first = true;
         NamesAndTypesList names_and_types;
         NameSet row_field_names;
+        const String name_read_before_key
+            = settings.skip_duplicated_fields ? getColumnMatchingKeyForSchemaInference(name_read_before, settings) : String{};
         const size_t row_start_bytes = in.count();
         while (!in.eof() && *in.position() != '}')
         {
@@ -234,11 +236,12 @@ namespace JSONUtils
                 first = false;
 
             auto name = readFieldName(in, settings.json);
-            if (settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+            const String key = settings.skip_duplicated_fields ? getColumnMatchingKeyForSchemaInference(name, settings) : String{};
+            if (settings.skip_duplicated_fields && !row_field_names.insert(key).second)
             {
                 skipJSONField(in, name, settings.json);
             }
-            else if (settings.skip_duplicated_fields && !name_read_before.empty() && name == name_read_before)
+            else if (settings.skip_duplicated_fields && !name_read_before.empty() && key == name_read_before_key)
             {
                 skipJSONField(in, name, settings.json);
                 names_and_types.emplace_back(name, nullptr);

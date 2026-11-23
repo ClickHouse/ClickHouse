@@ -334,11 +334,13 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
     NamesAndTypesList result = getStaticNamesAndTypes();
-    const NameSet static_names = result.getNameSet();
+    NameSet static_names;
+    for (const auto & [name, _] : result)
+        static_names.insert(getColumnMatchingKeyForSchemaInference(name, format_settings));
     for (auto & name : names_order)
     {
         /// The row reader fills a static column before the row's fields, so a field of the same name is a repeated one.
-        if (format_settings.skip_duplicated_fields && static_names.contains(name))
+        if (format_settings.skip_duplicated_fields && static_names.contains(getColumnMatchingKeyForSchemaInference(name, format_settings)))
             continue;
 
         auto & type = names_to_types[name];

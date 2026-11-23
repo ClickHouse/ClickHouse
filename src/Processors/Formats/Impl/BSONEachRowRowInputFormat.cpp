@@ -1052,7 +1052,8 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
         auto bson_type = getBSONType(readBSONType(in));
         String name;
         readNullTerminated(name, in);
-        if (depth == 1 && format_settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+        if (depth == 1 && format_settings.skip_duplicated_fields
+            && !row_field_names.insert(getColumnMatchingKeyForSchemaInference(name, format_settings)).second)
         {
             skipBSONField(in, bson_type);
             continue;

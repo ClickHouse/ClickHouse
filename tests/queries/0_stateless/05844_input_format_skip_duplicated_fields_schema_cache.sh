@@ -14,4 +14,12 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('$F') SETTINGS input_format_skip_duplicated_fields = 1;
     DESC file('$F') SETTINGS input_format_skip_duplicated_fields = 0;" 2>&1 | grep -oE 'Nullable\(String\)|CANNOT_EXTRACT_TABLE_STRUCTURE'
 
+# Nor by a query with another input_format_column_name_matching_mode.
+echo '{"a":1,"A":"x"}' > "$F"
+touch -d "2000-01-01 00:00:00" "$F"
+
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('$F') SETTINGS input_format_skip_duplicated_fields = 1, input_format_column_name_matching_mode = 'ignore_case';
+    DESC file('$F') SETTINGS input_format_skip_duplicated_fields = 1, input_format_column_name_matching_mode = 'auto';" | cut -f1
+
 rm -f "$F"

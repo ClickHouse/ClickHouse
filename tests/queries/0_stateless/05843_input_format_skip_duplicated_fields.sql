@@ -41,6 +41,12 @@ SELECT * FROM format(Form, concat('a=1&a=', repeat('[', 30), repeat(']', 30))) S
 SELECT * FROM format(JSONObjectEachRow, concat('{"r":{"id":', repeat('[', 30), repeat(']', 30), ',"b":"x"}}')) SETTINGS input_format_skip_duplicated_fields = 1, format_json_object_each_row_column_for_object_name = 'id', max_parser_depth = 20;
 SELECT * FROM format(BSONEachRow, x'13000000106100010000000b61007800690000') SETTINGS input_format_skip_duplicated_fields = 1;
 
+-- Names that differ only in case are one field with input_format_column_name_matching_mode = 'ignore_case', also for schema inference, and two columns with 'auto'.
+SELECT * FROM format(JSONEachRow, '{"a":1,"A":"discarded","b":2}') SETTINGS input_format_skip_duplicated_fields = 1, input_format_column_name_matching_mode = 'ignore_case';
+SELECT * FROM format(JSONEachRow, '{"a":1,"A":"x","b":2}') SETTINGS input_format_skip_duplicated_fields = 1, input_format_column_name_matching_mode = 'auto';
+SELECT * FROM format(BSONEachRow, x'1700000002610002000000780002410002000000790000') SETTINGS input_format_skip_duplicated_fields = 1, input_format_column_name_matching_mode = 'ignore_case';
+SELECT * FROM format(JSONObjectEachRow, '{"row":{"ID":"discarded","b":"ok"}}') SETTINGS input_format_skip_duplicated_fields = 1, input_format_column_name_matching_mode = 'ignore_case', format_json_object_each_row_column_for_object_name = 'id';
+
 CREATE TABLE t (name String, url String) ENGINE = Memory;
 INSERT INTO t SETTINGS input_format_skip_duplicated_fields = 1 FORMAT JSONEachRow {"url":"a","url":"b","name":"x"};
 

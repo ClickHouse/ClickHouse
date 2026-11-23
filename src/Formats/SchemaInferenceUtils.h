@@ -137,6 +137,10 @@ DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & s
 /// in the block and return names and types.
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings);
 
+/// The key by which the readers that follow `input_format_column_name_matching_mode` match a field to a column
+/// of the inferred schema: the name in lowercase with `ignore_case`, the name itself otherwise.
+String getColumnMatchingKeyForSchemaInference(std::string_view name, const FormatSettings & settings);
+
 /// Check if type contains Nothing, like Array(Tuple(Nullable(Nothing), String))
 bool checkIfTypeIsComplete(const DataTypePtr & type);
 
