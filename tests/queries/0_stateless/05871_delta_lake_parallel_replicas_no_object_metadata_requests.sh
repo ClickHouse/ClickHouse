@@ -18,7 +18,7 @@ TABLE="t_${CLICKHOUSE_DATABASE}"
 TABLE_PATH="${CLICKHOUSE_TEST_UNIQUE_NAME}/t0"
 Q="${CLICKHOUSE_TEST_UNIQUE_NAME}_"
 DELTA_SETTINGS="--allow_experimental_delta_kernel_rs 1 --allow_delta_lake_writes 1 --allow_delta_lake_create_table 1"
-PARALLEL_REPLICAS_SETTINGS="--allow_experimental_delta_kernel_rs 1 --enable_parallel_replicas 1 --max_parallel_replicas 3 --cluster_for_parallel_replicas test_cluster_one_shard_three_replicas_localhost --parallel_replicas_for_object_storage_tables 1 --use_query_condition_cache 0"
+PARALLEL_REPLICAS_SETTINGS="--allow_experimental_delta_kernel_rs 1 --enable_parallel_replicas 1 --max_parallel_replicas 3 --cluster_for_parallel_replicas test_cluster_one_shard_three_replicas_localhost --parallel_replicas_for_object_storage_tables 1 --automatic_parallel_replicas_mode 0 --use_query_condition_cache 0"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 # shellcheck disable=SC2086
