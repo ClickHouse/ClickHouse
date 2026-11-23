@@ -16,6 +16,8 @@ struct RuntimeFilterBuildOptions
     bool track_key_range;
     std::optional<UInt64> distinct_keys_hint;
     bool distinct_keys_hint_matches_filter_key;
+    /// The distinct build-side keys in the latest run; `distinct_keys_hint` is the maximum the statistics keep.
+    std::optional<UInt64> distinct_keys_in_last_run = std::nullopt;
 };
 
 }

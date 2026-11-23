@@ -1385,6 +1385,14 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             "JOIN with mixed conditions supports only hash join or grace hash join");
     }
 
+    /// Whichever algorithm runs, only a `HashJoin` that finishes its build records the size of this run.
+    if (params.collect_hash_table_stats_during_joins && params.hash_table_key_hash)
+        getHashTablesStatistics<HashJoinLastRunEntry>().remove(
+            {params.hash_table_key_hash,
+             /*enable_=*/true,
+             params.max_entries_for_hash_table_stats,
+             params.max_size_to_preallocate_for_joins});
+
     /// JOIN with Join engine.
     if (auto storage = table_join->getStorageJoin())
     {

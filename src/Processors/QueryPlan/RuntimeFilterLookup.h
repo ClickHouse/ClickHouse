@@ -321,7 +321,8 @@ public:
         const DataTypePtr & filter_column_target_type_,
         const RuntimeFilterGeometry & geometry_,
         std::optional<UInt64> distinct_keys_hint_,
-        bool distinct_keys_hint_matches_filter_key_);
+        bool distinct_keys_hint_matches_filter_key_,
+        std::optional<UInt64> distinct_keys_in_last_run_ = std::nullopt);
 
     void insert(ColumnPtr values);
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
@@ -391,6 +392,8 @@ private:
     const std::optional<UInt64> distinct_keys_hint;
     /// Whether the hint counts distinct values of this complete filter key, rather than only providing an upper bound.
     const bool distinct_keys_hint_matches_filter_key;
+    /// The distinct build-side keys in the latest run, while `distinct_keys_hint` is the maximum the statistics keep.
+    const std::optional<UInt64> distinct_keys_in_last_run;
 
     detail::RuntimeFilterIndexAnalysis key_range;
     Filter filter;

@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_rf_left;
 DROP TABLE IF EXISTS t_rf_right;
 DROP TABLE IF EXISTS t_rf_left_pair;
 DROP TABLE IF EXISTS t_rf_right_pair;
+DROP TABLE IF EXISTS t_rf_latest;
 CREATE TABLE t_rf_left (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_rf_right (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_rf_left_pair (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -37,7 +38,28 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE '%SELECT count() FROM t_rf_left% SEMI LEFT JOIN t_rf_right%' AND query NOT LIKE '%query_log%'
 ORDER BY event_time_microseconds;
 
+-- The statistics keep the maximum key count, so the prediction uses the count of the latest run: 1M build keys
+-- saturate the 4 MiB filter at this ratio, half of them would not.
+CREATE TABLE t_rf_latest (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_rf_latest SELECT number * 2 FROM numbers(1000000);
+SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
+SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
+-- 550000 keys, more than half of the kept maximum but too few to saturate the filter: the first run is predicted from
+-- the previous count, the second one from its own and gets the filter built.
+TRUNCATE TABLE t_rf_latest;
+INSERT INTO t_rf_latest SELECT number * 2 FROM numbers(550000);
+SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
+SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
+
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['RuntimeFiltersCreated'], ProfileEvents['RuntimeFilterBloomFilterBuildsSkipped'] > 0, ProfileEvents['RuntimeFilterRowsChecked'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE '%SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest%'
+    AND query NOT LIKE '%query_log%'
+ORDER BY event_time_microseconds;
+
 DROP TABLE t_rf_left;
 DROP TABLE t_rf_right;
 DROP TABLE t_rf_left_pair;
 DROP TABLE t_rf_right_pair;
+DROP TABLE t_rf_latest;

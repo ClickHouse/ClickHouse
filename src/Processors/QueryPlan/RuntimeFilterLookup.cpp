@@ -830,13 +830,15 @@ AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     const DataTypePtr & filter_column_target_type_,
     const RuntimeFilterGeometry & geometry_,
     std::optional<UInt64> distinct_keys_hint_,
-    bool distinct_keys_hint_matches_filter_key_)
+    bool distinct_keys_hint_matches_filter_key_,
+    std::optional<UInt64> distinct_keys_in_last_run_)
     : filter_column_target_type(filter_column_target_type_)
     , bloom_filter_bytes(geometry_.bloom_filter_bytes)
     , bloom_filter_hash_functions(geometry_.bloom_filter_hash_functions)
     , max_ratio_of_set_bits_in_bloom_filter(geometry_.max_ratio_of_set_bits_in_bloom_filter)
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
+    , distinct_keys_in_last_run(distinct_keys_in_last_run_)
     , key_range(filter_column_target_type_, /*positive_filter_=*/true)
     , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, geometry_.exact_bytes_limit, geometry_.exact_values_limit)
 {
@@ -1042,10 +1044,12 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         /// that `checkApproximateFilterWorthiness` discards. Predict that fill rate before constructing it.
         if (distinct_keys_hint_matches_filter_key)
         {
-            const double least_distinct_keys
-                = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
+            /// Without the count of the latest run, only half of the kept maximum is certain.
+            const double predicted_distinct_keys = distinct_keys_in_last_run
+                ? static_cast<double>(*distinct_keys_in_last_run)
+                : static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
             const double predicted_fill_rate = estimateRuntimeBloomFilterSetBitsRatio(
-                least_distinct_keys, RuntimeBloomFilterParameters{grown_bloom_filter_bytes, bloom_filter_hash_functions});
+                predicted_distinct_keys, RuntimeBloomFilterParameters{grown_bloom_filter_bytes, bloom_filter_hash_functions});
             if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
             {
                 ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);

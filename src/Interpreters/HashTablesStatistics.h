@@ -102,6 +102,16 @@ struct HashJoinEntry
     size_t source_rows; // the number of rows in the source table
 };
 
+/// The size of the shared hash table in the latest run of a join. `HashJoinEntry::ht_size` keeps the maximum instead.
+struct HashJoinLastRunEntry
+{
+    [[nodiscard]] bool shouldBeUpdated(const HashJoinLastRunEntry & new_entry) const { return new_entry.ht_size != ht_size; }
+
+    [[nodiscard]] std::string dump() const { return fmt::format("ht_size={}", ht_size); }
+
+    size_t ht_size;
+};
+
 struct HashJoinMatchEntry
 {
     [[nodiscard]] bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }
@@ -155,6 +165,9 @@ public:
 
     /// Collection and use of the statistics should be enabled.
     void update(const Entry & new_entry, const Params & params);
+
+    /// Collection and use of the statistics should be enabled.
+    void remove(const Params & params);
 
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const;
 

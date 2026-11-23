@@ -50,6 +50,16 @@ void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params &
 }
 
 template <typename Entry>
+void HashTablesStatistics<Entry>::remove(const Params & params)
+{
+    if (!params.isCollectionAndUseEnabled())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+    if (const auto cache = getHashTableStatsCache(params))
+        cache->remove(params.key);
+}
+
+template <typename Entry>
 std::optional<HashTablesCacheStatistics> HashTablesStatistics<Entry>::getCacheStats() const
 {
     std::lock_guard lock(mutex);
@@ -97,6 +107,12 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.entries += hash_join_stats->entries;
         res.hits += hash_join_stats->hits;
         res.misses += hash_join_stats->misses;
+    }
+    if (auto hash_join_last_run_stats = getHashTablesStatistics<HashJoinLastRunEntry>().getCacheStats())
+    {
+        res.entries += hash_join_last_run_stats->entries;
+        res.hits += hash_join_last_run_stats->hits;
+        res.misses += hash_join_last_run_stats->misses;
     }
     if (auto hash_join_match_stats = getHashTablesStatistics<HashJoinMatchEntry>().getCacheStats())
     {
@@ -177,6 +193,7 @@ std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollecting
 
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
+template class HashTablesStatistics<HashJoinLastRunEntry>;
 template class HashTablesStatistics<HashJoinMatchEntry>;
 template class HashTablesStatistics<RadixUniqExactEntry>;
 }
