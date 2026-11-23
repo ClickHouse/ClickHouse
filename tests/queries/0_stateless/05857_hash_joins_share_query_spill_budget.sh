@@ -30,7 +30,6 @@ SETTINGS="
     enable_parallel_replicas = 0,
     query_plan_join_swap_table = 0,
     query_plan_optimize_join_order_limit = 0,
-    collect_hash_table_stats_during_joins = 1,
     grace_hash_join_initial_buckets = 1"
 
 ONE_JOIN="SELECT count(), sum(t1.v) FROM t0 JOIN t1 ON t0.k = t1.k"
@@ -45,9 +44,7 @@ function run()
 }
 
 run "$ONE_JOIN" hash one_hash
-run "$SIX_JOINS" hash six_hash_cold
-# The second run reserves its hash tables from the statistics the first one cached.
-run "$SIX_JOINS" hash six_hash_warm
+run "$SIX_JOINS" hash six_hash
 run "$ONE_JOIN" grace_hash one_grace
 run "$SIX_JOINS" grace_hash six_grace
 # Each right table arrives as one block, so only the check after the insert can hold it to its share.

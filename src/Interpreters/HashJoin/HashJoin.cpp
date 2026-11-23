@@ -284,8 +284,7 @@ HashJoin::HashJoin(
     size_t reserve_num_,
     const String & instance_id_,
     HashJoinBuildLayout build_layout_,
-    const HashJoinStatsCollectingParams & stats_collecting_params_,
-    std::optional<size_t> max_reserve_bytes_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -472,12 +471,8 @@ HashJoin::HashJoin(
     if (!size_hint && build_layout.two_level && table_join->oneDisjunct())
         if (const auto hint = getSizeHint(stats_collecting_params.build))
             size_hint = hint->ht_size;
-    const size_t cell_size = data->tables.front()->cellSize();
-    size_t keys_to_reserve = 0;
-    if (!max_reserve_bytes_)
-        keys_to_reserve = capReserveAtSpillBudget(size_hint, table_join->maxBytesBeforeExternalJoin(), cell_size);
-    else if (*max_reserve_bytes_)
-        keys_to_reserve = capReserveAtSpillBudget(size_hint, *max_reserve_bytes_, cell_size);
+    const size_t keys_to_reserve
+        = capReserveAtSpillBudget(size_hint, table_join->maxBytesBeforeExternalJoin(), data->tables.front()->cellSize());
     for (auto & table : data->tables)
         table->reserve(keys_to_reserve);
 

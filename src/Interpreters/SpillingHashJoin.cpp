@@ -8,13 +8,11 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Common/FailPoint.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <atomic>
-#include <optional>
 
 namespace ProfileEvents
 {
@@ -56,16 +54,10 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    std::optional<size_t> max_reserve_bytes;
     if (const size_t query_budget = table_join->maxBytesInQueryBeforeExternalJoin())
-    {
         spill_budget = std::make_shared<QueryJoinSpillBudget>(query_budget, max_bytes_before_external_join);
-        const size_t query_memory = static_cast<size_t>(std::max<Int64>(0, getCurrentQueryMemoryUsage()));
-        max_reserve_bytes = std::min(max_bytes_before_external_join, query_budget - std::min(query_budget, query_memory));
-    }
 
-    hash_join = HashJoin::create(
-        table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_, max_reserve_bytes);
+    hash_join = HashJoin::create(table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_);
     /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
     hash_join->keepRightBlocksForAnotherAlgorithm();
     supports_parallel_non_joined_blocks_processing = hash_join->supportParallelNonJoinedBlocksProcessing();
