@@ -304,6 +304,19 @@ struct DeleteStatement
 
 }
 
+/// A synchronous `DELETE FROM`: each partition is scanned and committed under its own transaction, so the statement is
+/// atomic per partition, not as a whole.
+///
+/// The predicate must evaluate completely: a set built from another table's rows can be cut short by its own limits, and
+/// a truncated `NOT IN` set would delete rows that should stay.
+/// - Supported: the table's columns, constants and functions, e.g. `id = 5`, `startsWith(s, 'a')`, `has(arr, id)`,
+///   `dictGet(...)`; `IN` / `NOT IN` with constants: `id IN (1, 2)`, `id IN [1, 2]`, `id IN {ids:Array(UInt64)}`,
+///   `id IN CAST([1, 2], 'Array(UInt64)')`.
+/// - Refused: a subquery (`IN (SELECT ...)`, scalar, `EXISTS`); anything else on the right of `IN`: a table, a table
+///   function, a column, a lambda parameter, a computed list such as `(1, x + 1)`.
+/// - Refused: any DELETE on a table where an `ALIAS`, `DEFAULT` or `MATERIALIZED` column expression breaks these rules,
+///   whether or not the predicate names the column.
+/// - Refused before this point: `ON CLUSTER`, a table in a Replicated database.
 void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr query_context)
 {
     assertNotReadonly();
