@@ -1,0 +1,5 @@
+native records inherited context before override
+http records inherited context before override
+http session preserves peak, settings and query admission
+rejected admission balances with another active query
+synchronous setup cleanup balances in both batching modes
