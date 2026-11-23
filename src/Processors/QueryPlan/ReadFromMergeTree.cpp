@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/KeyCountPruning.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -91,6 +93,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/JSONBuilder.h>
@@ -5843,8 +5846,97 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
     return result.split_parts.layers.size();
 }
 
+bool ReadFromMergeTree::readRewritesColumnValues() const
+{
+    return mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()
+        || data.hasEnabledMaskingPolicies(context);
+}
+
+void ReadFromMergeTree::setKeyCountLowerBound(const NameSet & key_columns, UInt64 min_count)
+{
+    const auto & metadata = *storage_snapshot->metadata;
+    const auto & primary_key = metadata.getPrimaryKey();
+    if (primary_key.column_names.empty() || !key_columns.contains(primary_key.column_names.front()))
+        return;
+
+    /// The index must hold the column's own values, not those of a key expression named like it.
+    if (!metadata.getColumns().hasPhysical(primary_key.column_names.front()))
+        return;
+    if (!primary_key.expression_list_ast || primary_key.expression_list_ast->children.empty()
+        || !primary_key.expression_list_ast->children.front()->as<ASTIdentifier>())
+        return;
+
+    /// The sweep reads the values of a granule assuming the column ascends within a part.
+    const auto reverse_flags = metadata.getSortingKeyReverseFlags();
+    if (!reverse_flags.empty() && reverse_flags.front())
+        return;
+
+    /// The index orders NULL and NaN by conventions the comparisons of the sweep would have to repeat, also inside
+    /// `Tuple`, `Array`, ...
+    const auto type = removeLowCardinality(primary_key.data_types.front());
+    if (!type->isComparable() || anyInTypeTree(*type, [](const IDataType & node) { return node.isNullable() || isFloat(node); }))
+        return;
+
+    key_count_lower_bound = min_count;
+}
+
+/// Whether the query applies a row policy anywhere, also above a read rather than in it.
+static bool queryAppliesRowPolicy(const ContextPtr & context)
+{
+    if (!context->hasQueryContext())
+        return false;
+    const auto & access_info = context->getQueryContext()->getQueryAccessInfo();
+    std::lock_guard<std::mutex> lock(access_info.mutex);
+    return !access_info.row_policies.empty();
+}
+
+void ReadFromMergeTree::pruneRangesByKeyCountLowerBound()
+{
+    if (isQueryWithFinal() || isQueryWithSampling() || is_parallel_reading_from_replicas || distributed_read_bucket_count > 0)
+        return;
+    for (const auto & prewhere : {query_info.prewhere_info, deferred_prewhere_info})
+        if (prewhere && QueryPlanOptimizations::isSensitiveToEvaluationCount(prewhere->prewhere_actions))
+            return;
+    /// The granules' row counts include the rows a row policy hides, so pruning by them would make the number of
+    /// rows read, which the client sees, depend on the hidden rows.
+    if (query_info.row_level_filter || deferred_row_level_filter || getEffectiveRowPolicyFilter(data, context))
+        return;
+    /// So would a policy applied above this read: one on an enclosing view, or one a wrapper cannot push into it. A
+    /// `SQL SECURITY DEFINER` / `NONE` body has a query context of its own, which does not record the policies above it.
+    if (context->isViewInnerQuery() || context->isSQLSecurityOverriddenBody() || queryAppliesRowPolicy(context))
+        return;
+    if (readRewritesColumnValues())
+        return;
+    /// The statistics price the parallel-replicas plan, whose reads are not pruned.
+    if (dataflow_cache_updater)
+        return;
+
+    const auto & result = getAnalysisResult();
+    if (result.parts_with_ranges.empty() || !result.split_parts.layers.empty() || result.has_exact_ranges || result.readFromProjection()
+        || result.index_analysis_was_already_done_on_initiator || !result.isUsable())
+        return;
+
+    auto parts_with_ranges = DB::pruneRangesByKeyCountLowerBound(result.parts_with_ranges, key_count_lower_bound, context, log);
+    if (!parts_with_ranges)
+        return;
+
+    auto pruned = std::make_shared<AnalysisResult>(result);
+    pruned->parts_with_ranges = std::move(*parts_with_ranges);
+    pruned->selected_parts = pruned->parts_with_ranges.size();
+    pruned->selected_marks = pruned->parts_with_ranges.getMarksCountAllParts();
+    pruned->selected_rows = pruned->parts_with_ranges.getRowsCountAllParts();
+    pruned->selected_ranges = 0;
+    for (const auto & part : pruned->parts_with_ranges)
+        pruned->selected_ranges += part.ranges.size();
+
+    analyzed_result_ptr = std::move(pruned);
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
+    if (key_count_lower_bound)
+        pruneRangesByKeyCountLowerBound();
+
     auto & result = getAnalysisResult();
 
     /// The parts this read finally reads are the ones the lazy read of the columns it leaves out reads its rows from.
@@ -6223,10 +6315,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// Now check if we have to use primary-key or skip indexes for join pruning
     bool runtime_prune_primary_key = false;
     bool runtime_prune_global_row_index = false;
-    /// A masking policy rewrites columns at read time like a pending mutation, so the on-disk primary index
-    /// does not describe the values the query sees and must not be used to prune granules during the read.
-    const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-        || mutations_snapshot->hasPatchParts() || data.hasEnabledMaskingPolicies(context);
+    const bool pending_mutations = readRewritesColumnValues();
     MergeTreeIndices runtime_skip_indexes;
     if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
         /// Not implemented for `FINAL` reads (which merge row versions across parts in their own

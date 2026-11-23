@@ -2,11 +2,15 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+#include <limits>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -179,6 +183,67 @@ size_t tryPushHavingPrefilterIntoAggregation(
     }
 
     return 0;
+}
+
+
+/// Runs behind `tryPushHavingPrefilterIntoAggregation`, whose bound it reads: that pass sets one only on a final
+/// aggregation of its own whole groups. Expressions and filters below it pass each row on at most once, so a group
+/// whose rows the granules of the read cannot hold `min_count` times is rejected by the bound whatever else is read.
+size_t tryPushHavingCountBoundIntoReading(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
+{
+    if (settings.make_distributed_plan || settings.serialize_query_plan)
+        return 0;
+
+    const auto * aggregating = typeid_cast<const AggregatingStep *>(parent_node->step.get());
+    if (!aggregating || parent_node->children.size() != 1)
+        return 0;
+
+    const auto & params = aggregating->getParams();
+    UInt64 min_count = 0;
+    if (params.having_prefilter_op == Op::Greater && params.having_prefilter_threshold < std::numeric_limits<UInt64>::max())
+        min_count = params.having_prefilter_threshold + 1;
+    else if (params.having_prefilter_op == Op::GreaterOrEqual)
+        min_count = params.having_prefilter_threshold;
+    /// Past `max_rows_to_group_by` the groups depend on the order of the rows, which skipping rows changes.
+    if (min_count <= 1 || params.max_rows_to_group_by)
+        return 0;
+
+    NameSet keys(params.keys.begin(), params.keys.end());
+    QueryPlan::Node * node = parent_node->children.front();
+    while (true)
+    {
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            reading->setKeyCountLowerBound(keys, min_count);
+            return 0;
+        }
+
+        const ActionsDAG * dag = nullptr;
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
+            dag = &expression->getExpression();
+        else if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get()))
+            dag = &filter->getExpression();
+
+        /// Any other step may add rows, and an expression that observes which rows it is evaluated on would see fewer.
+        if (!dag || node->children.size() != 1 || dag->hasArrayJoin() || isSensitiveToEvaluationCount(*dag))
+            return 0;
+
+        /// Follow the keys down to the input columns they are passed on from unchanged.
+        NameSet input_keys;
+        for (const auto * output : dag->getOutputs())
+        {
+            if (!keys.contains(output->result_name))
+                continue;
+            const auto * source = unwrapAlias(output);
+            if (source && source->type == ActionsDAG::ActionType::INPUT)
+                input_keys.insert(source->result_name);
+        }
+        if (input_keys.empty())
+            return 0;
+
+        keys = std::move(input_keys);
+        node = node->children.front();
+    }
 }
 
 }

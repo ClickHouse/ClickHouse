@@ -280,6 +280,10 @@ void applyOrderedGroupByTopKToSplit(
 /// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
 size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Let the read below a final aggregation whose HAVING bound requires a minimum count() skip the granules that cannot
+/// hold a group with that many rows, when the first primary key column is an aggregation key
+size_t tryPushHavingCountBoundIntoReading(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 /// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
 /// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
 /// the preserved-side input must produce before joining.

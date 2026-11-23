@@ -1076,6 +1076,13 @@ void optimizeTreeSecondPass(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
 
+    /// Behind the pass above, whose bound it reads.
+    if (optimization_settings.aggregation_having_count_pruning)
+    {
+        traverseQueryPlan(
+            stack, root, [&](auto & frame_node) { tryPushHavingCountBoundIntoReading(&frame_node, nodes, extra_settings); });
+    }
+
     /// After every pass that changes the plan, so that the plan it measures and switches is the settled one.
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 

@@ -8162,6 +8162,19 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.10", false, true, "New setting to toggle the plan optimization that skips a group's key materialization while a two-level bucket of a final aggregation is converted, when a HAVING bound on that aggregation's own no-argument count() already rejects the group. A skipped group is neither filtered nor finalized, so a HAVING conjunct written before the bound, and a sibling aggregate's finalization, stop being evaluated on the groups the bound rejects. A query that raised an exception from one of those can now succeed; `compatibility` below 26.10 keeps the previous behavior."}) \
+    DECLARE(Bool, query_plan_aggregation_having_count_pruning, true, R"(
+Toggles a query-plan-level optimization for `HAVING count() > <constant>` (or `>=`) over a `GROUP BY` whose keys include the first column of the table's primary key. Before reading, the granules whose values of that column cannot belong to a group with enough rows are skipped: the primary index bounds how many rows of the selected granules can have each value. Speeds up "groups above a threshold" queries where the small groups hold a large share of the rows. It is left out for a column in descending order, inside a view, for reads that run under SQL SECURITY DEFINER or NONE (such as those of a materialized view), and when the query applies a row policy. The check runs in one thread before reading, so, to stay small next to the reading, it is also left out for reads of more than 1048576 marks, of fewer than 4096 rows per mark on average, or that would have to load more primary index entries than they read marks.
+
+Skipped rows are not read, so this is not only a performance toggle: expressions evaluated before the aggregation, such as a `WHERE` condition or an aggregate's argument, stop being evaluated on the rows of groups the bound rejects, and a query that raised an exception from one of those can return rows instead. Applies only together with [query_plan_aggregation_having_prefilter](#query_plan_aggregation_having_prefilter).
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.12", false, true, "New setting to toggle skipping, before reading, the granules whose values of the first primary key column cannot belong to a group that satisfies a HAVING count() lower bound of a GROUP BY on that column."}) \
     DECLARE(Bool, query_plan_split_filter, true, R"(
 <Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.

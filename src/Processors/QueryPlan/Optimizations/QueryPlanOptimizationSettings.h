@@ -140,6 +140,7 @@ struct QueryPlanOptimizationSettings
     bool enable_group_by_top_k_optimization;
     bool enable_group_by_top_k_dynamic_filtering;
     bool aggregation_having_prefilter;
+    bool aggregation_having_count_pruning = false;
     UInt64 top_k_optimization_observation_rows = 65536;
     bool top_k_optimization_shared_boundary = true;
     /// The `distributed_group_by_top_k` of the initiator, on a parallel replicas follower only.

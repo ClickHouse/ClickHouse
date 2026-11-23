@@ -643,6 +643,10 @@ public:
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
 
+    /// Skip, before reading, the granules in which no value of the first primary key column can have `min_count` rows
+    /// of the read, if that column is one of `key_columns` (see `tryPushHavingCountBoundIntoReading`).
+    void setKeyCountLowerBound(const NameSet & key_columns, UInt64 min_count);
+
     /// Gate this read on the seal of a join marked with enableSealGatedProbeReading: nothing
     /// is read until the seal arrives, and the given filters (covering a primary key prefix)
     /// then prune mark ranges at task-cut time (see RuntimeFilterReadRangesRefiner).
@@ -884,6 +888,14 @@ private:
     FilterDAGInfoPtr deferred_row_level_filter;
     PrewhereInfoPtr deferred_prewhere_info;
     bool skip_partition_pruning = false;
+
+    /// See `setKeyCountLowerBound`, 0 if not set.
+    UInt64 key_count_lower_bound = 0;
+    void pruneRangesByKeyCountLowerBound();
+
+    /// A masking policy rewrites columns at read time like a pending mutation, so the on-disk primary index
+    /// does not describe the values the query sees and must not be used to prune granules during the read.
+    bool readRewritesColumnValues() const;
 
     LoggerPtr log;
     UInt64 selected_parts = 0;
