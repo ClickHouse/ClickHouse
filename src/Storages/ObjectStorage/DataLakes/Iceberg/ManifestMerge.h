@@ -40,10 +40,8 @@ struct CarriedOverDataFiles
 {
     std::unordered_set<String> manifest_paths;
     std::vector<IcebergPathFromMetadata> paths;
-    std::vector<Row> partition_values;
     std::vector<UInt64> row_counts;
     std::vector<UInt64> byte_counts;
-    std::vector<String> formats;
     std::vector<DataFileColumnStatistics> statistics;
     std::vector<std::optional<Int32>> sort_order_ids;
     std::vector<DataFileEntryLineage> lineage;
@@ -56,9 +54,9 @@ CarriedOverDataFiles collectDataFilesToMerge(
     const ManifestFileCacheKeys & parent_manifests,
     const ManifestPartitionSummary * new_manifest_partition_summary,
     size_t partition_fields_count,
-    bool single_manifest_for_all_partitions,
     Int32 partition_spec_id,
     Int32 schema_id,
+    const String & write_format,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     ContextPtr context);

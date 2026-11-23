@@ -10704,25 +10704,26 @@ previous snapshot, the way `MergeAppend` of Iceberg Java does, instead of only a
 number of manifest files that many small inserts leave behind, which otherwise grows with every insert and slows down
 reading until `OPTIMIZE TABLE ... MANIFEST` is run.
 
-Manifest files are packed into bins of at most [iceberg_insert_manifest_target_size_bytes](#iceberg_insert_manifest_target_size_bytes)
-bytes, newest first. The bin holding the new manifest file is merged once it holds at least
-[iceberg_insert_manifest_min_count_to_merge](#iceberg_insert_manifest_min_count_to_merge) manifest files, older bins are
-merged whenever they hold more than one. Only manifest files with the partition spec and the schema of the insert are merged,
-and, unless [iceberg_insert_single_manifest_for_all_partitions](#iceberg_insert_single_manifest_for_all_partitions) is set,
-only manifest files of the same single partition, so that `ALTER TABLE ... DROP PARTITION` keeps working.
+The new manifest file of a partition takes over the entries of the newest manifest files of the previous snapshot with the
+same single partition, up to [iceberg_insert_manifest_target_size_bytes](#iceberg_insert_manifest_target_size_bytes) bytes
+of them, once there are at least [iceberg_insert_manifest_min_count_to_merge](#iceberg_insert_manifest_min_count_to_merge)
+manifest files together with the new one. Only manifest files with the partition spec, the schema and the file format of the
+insert are merged, and only of a single partition, so that `ALTER TABLE ... DROP PARTITION` keeps working. Nothing is merged
+with [iceberg_insert_single_manifest_for_all_partitions](#iceberg_insert_single_manifest_for_all_partitions).
 
 The table properties `commit.manifest-merge.enabled`, `commit.manifest.min-count-to-merge` and `commit.manifest.target-size-bytes`
 take precedence over the settings.
 )", 0, \
         {"26.12", false, false, "New setting."}) \
     DECLARE(UInt64, iceberg_insert_manifest_min_count_to_merge, 100, R"(
-The minimum number of manifest files in the bin holding the new manifest file of an `INSERT` into an Iceberg table before
-they are merged, see [iceberg_insert_merge_manifests](#iceberg_insert_merge_manifests). The default is the one of the
+The minimum number of manifest files of a partition, the new manifest file of an `INSERT` into an Iceberg table included,
+before they are merged, see [iceberg_insert_merge_manifests](#iceberg_insert_merge_manifests). The default is the one of the
 Iceberg table property `commit.manifest.min-count-to-merge`, which takes precedence when set.
 )", 0, \
         {"26.12", 100, 100, "New setting."}) \
     DECLARE(UInt64, iceberg_insert_manifest_target_size_bytes, 8388608, R"(
-The target size of a merged manifest file of an `INSERT` into an Iceberg table, see
+The maximum total size of the manifest files of the previous snapshot that the new manifest file of an `INSERT` into an
+Iceberg table takes over, see
 [iceberg_insert_merge_manifests](#iceberg_insert_merge_manifests). The default is the one of the Iceberg table property
 `commit.manifest.target-size-bytes`, which takes precedence when set.
 )", 0, \

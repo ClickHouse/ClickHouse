@@ -1795,8 +1795,7 @@ bool IcebergStorageSink::initializeMetadata()
         if (manifest_entries.empty())
         {
             const auto merge_settings = Iceberg::getManifestMergeSettings(metadata, context->getSettingsRef());
-            const Int64 new_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
-            Iceberg::ManifestFileCacheKeys parent_manifests;
+            ManifestFileCacheKeys parent_manifests;
             if (merge_settings && parent_snapshot != -1)
             {
                 std::optional<IcebergPathFromMetadata> parent_manifest_list;
@@ -1867,7 +1866,6 @@ bool IcebergStorageSink::initializeMetadata()
                 manifest_entry_row_counts.push_back(manifest_row_count);
                 manifest_entry_file_counts.push_back(static_cast<Int64>(data_file_names.size()));
 
-                std::vector<String> data_file_formats;
                 std::vector<DataFileColumnStatistics> carried_over_statistics;
                 std::vector<DataFileEntryLineage> entry_lineage;
                 if (merge_settings)
@@ -1877,9 +1875,9 @@ bool IcebergStorageSink::initializeMetadata()
                         parent_manifests,
                         partition_summary ? &*partition_summary : nullptr,
                         partitioner ? partitioner->getColumns().size() : 0,
-                        single_manifest,
                         static_cast<Int32>(partition_spec_id),
                         static_cast<Int32>(current_schema_id),
+                        write_format,
                         persistent_table_components,
                         object_storage,
                         context);
@@ -1887,29 +1885,26 @@ bool IcebergStorageSink::initializeMetadata()
                     manifest_entry_counts.push_back(ManifestListEntryCounts{
                         .files_count = static_cast<Int64>(data_file_names.size()),
                         .rows_count = manifest_row_count,
-                        .min_sequence_number = std::min(new_sequence_number, carried_over.min_sequence_number),
+                        .min_sequence_number
+                        = std::min(new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number), carried_over.min_sequence_number),
                         .counts_are_added = true,
                         .existing_files_count = static_cast<Int64>(carried_over.paths.size()),
                         .existing_rows_count = carried_over.rows_count});
 
                     if (!carried_over.paths.empty())
                     {
-                        data_file_formats.assign(data_file_names.size(), write_format);
                         carried_over_statistics.resize(data_file_names.size());
                         entry_lineage.resize(data_file_names.size(), DataFileEntryLineage{.added_by_new_snapshot = true});
                         auto append = [](auto & to, auto & from) { to.insert(to.end(), std::make_move_iterator(from.begin()), std::make_move_iterator(from.end())); };
                         append(data_file_names, carried_over.paths);
                         append(data_file_row_counts, carried_over.row_counts);
                         append(data_file_byte_counts, carried_over.byte_counts);
-                        append(data_file_formats, carried_over.formats);
                         append(carried_over_statistics, carried_over.statistics);
                         append(data_file_sort_order_ids, carried_over.sort_order_ids);
                         append(entry_lineage, carried_over.lineage);
                         per_file_fresh_statistics.resize(data_file_names.size(), nullptr);
-                        if (partition_summary)
-                            for (const auto & partition_value : carried_over.partition_values)
-                                partition_summary->add(partition_value);
-                        append(per_file_partition_values, carried_over.partition_values);
+                        const Row partition_value = per_file_partition_values.front();
+                        per_file_partition_values.resize(data_file_names.size(), partition_value);
                         replaced_manifest_paths.merge(carried_over.manifest_paths);
                     }
                 }
@@ -1937,7 +1932,7 @@ bool IcebergStorageSink::initializeMetadata()
                     Iceberg::FileContentType::DATA,
                     /*user_defined_sequence_number=*/std::nullopt,
                     /*user_defined_snapshot_id=*/std::nullopt,
-                    data_file_formats,
+                    /*data_file_formats=*/{},
                     carried_over_statistics,
                     data_file_sort_order_ids,
                     entry_lineage,
