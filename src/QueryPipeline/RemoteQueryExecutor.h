@@ -42,7 +42,8 @@ class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
+/// Takes the number of the replica and a flag that becomes true when the replica's query executor is cancelled or finished.
+using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t, const std::atomic_bool &)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -178,7 +179,7 @@ public:
             chassert(type != Type::Data && type != Type::FileDescriptor);
         }
 
-        Type getType() const { return type; }
+        [[nodiscard]] Type getType() const { return type; }
 
         Block getBlock()
         {
@@ -186,7 +187,7 @@ public:
             return std::move(block);
         }
 
-        int getFileDescriptor() const
+        [[nodiscard]] int getFileDescriptor() const
         {
             chassert(type == Type::FileDescriptor);
             return fd;
@@ -352,6 +353,10 @@ private:
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
     /// Notified when `was_cancelled` is set, to interrupt the wait before a retry after a network error.
     std::condition_variable retry_backoff_cv;
+
+    /// Set by `cancel` and `finish` before they take `was_cancelled_mutex`, which is held while the task iterator
+    /// chooses a task, so that it can stop waiting for one.
+    std::atomic_bool stop_waiting_for_read_task = false;
 
     /// Non-zero while a thread is inside `finish`, the state in which `cancel` has nothing to add:
     /// `finish` reaches its drain only after `tryCancel` sent the Cancel packet, and on every earlier

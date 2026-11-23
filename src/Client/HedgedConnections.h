@@ -1,6 +1,7 @@
 #pragma once
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <atomic>
 #include <functional>
 #include <queue>
 #include <optional>
@@ -202,7 +203,8 @@ private:
     std::queue<int> offsets_queue;
 
     /// The current number of valid connections to the replicas of this shard.
-    size_t active_connection_count = 0;
+    /// Atomic: `hasActiveConnections` reads it without `cancel_mutex` while `receivePacket` runs on another thread.
+    std::atomic<size_t> active_connection_count = 0;
 
     /// Addresses of the replicas whose connection failed (a receive timeout, or an exception while
     /// receiving a packet from or sending to the replica), remembered for `getFailedReplicaAddresses`.

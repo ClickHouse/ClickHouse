@@ -9,7 +9,6 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -35,8 +34,12 @@
 #include <Storages/StorageMemory.h>
 
 #include <Columns/ColumnBLOB.h>
+#include <Common/assert_cast.h>
 
 #include <base/scope_guard.h>
+
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -84,6 +87,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int ACCESS_DENIED;
 }
 
@@ -440,20 +444,50 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
   */
-static Block adaptBlockStructure(const Block & block, const Block & header)
+static Block adaptBlockStructure(Block block, const Block & header)
 {
     /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
     if (header.empty())
         return block;
 
+    /// Columns may be moved out of `block` below, so compute the number of rows up front.
+    const size_t num_rows = block.rows();
+
+    /// Both `block` and `header` may contain several columns with the same name. Match the same-named elements
+    /// of `header` to the same-named columns of `block` in order, so that each of them reads its own column.
+    /// If `block` has fewer columns with this name, the remaining elements of `header` read the last of them.
+    UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<size_t>> block_positions_by_name;
+    for (size_t i = 0; i < block.columns(); ++i)
+        block_positions_by_name[block.getByPosition(i).name].push_back(i);
+
+    VectorWithMemoryTracking<std::optional<size_t>> source_positions;
+    source_positions.reserve(header.columns());
+    /// A column may be moved out of `block` only on its last use.
+    VectorWithMemoryTracking<size_t> remaining_uses(block.columns());
+    {
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
+        for (const auto & elem : header)
+        {
+            const size_t occurrence = occurrences[elem.name]++;
+            auto it = block_positions_by_name.find(elem.name);
+            if (it == block_positions_by_name.end())
+            {
+                source_positions.emplace_back();
+                continue;
+            }
+            const size_t position = it->second[std::min(occurrence, it->second.size() - 1)];
+            source_positions.emplace_back(position);
+            ++remaining_uses[position];
+        }
+    }
+
     Block res;
     res.info = block.info;
 
-    /// `ColumnBLOB::addCast` modifies the column in place, and header entries with the same name share a column of `block`.
-    UnorderedSetWithMemoryTracking<const IColumn *> blobs_with_cast;
-
-    for (const auto & elem : header)
+    for (size_t header_position = 0; header_position < header.columns(); ++header_position)
     {
+        const auto & elem = header.getByPosition(header_position);
+        const auto source_position = source_positions[header_position];
         ColumnPtr column;
 
         if (elem.column && isColumnConst(*elem.column))
@@ -461,13 +495,13 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
             /// We expect constant column in block.
             /// If block is not empty, then get value for constant from it,
             /// because it may be different for remote server for functions like version(), uptime(), ...
-            if (block.rows() > 0 && block.has(elem.name))
+            if (num_rows > 0 && source_position)
             {
                 /// Const column is passed as materialized. Get first value from it.
                 ///
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
-                auto col = block.getByName(elem.name);
+                auto col = block.getByPosition(*source_position);
                 if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
                     col.column = blob->convertFrom();
                 col.column = col.column->cut(0, 1);
@@ -475,22 +509,29 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
                 column = castColumn(col, elem.type);
 
                 if (!isColumnConst(*column))
-                    column = ColumnConst::create(column, block.rows());
+                    column = ColumnConst::create(column, num_rows);
                 else
                     /// It is not possible now. Just in case we support const columns serialization.
-                    column = column->cloneResized(block.rows());
+                    column = column->cloneResized(num_rows);
             }
             else
-                column = elem.column->cloneResized(block.rows());
+                column = elem.column->cloneResized(num_rows);
         }
         else
         {
-            const auto & col = block.getByName(elem.name);
-            if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
+            if (!source_position)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", elem.name, block.dumpNames());
+
+            auto & col = block.getByPosition(*source_position);
+            const bool is_last_use = --remaining_uses[*source_position] == 0;
+            if (typeid_cast<const ColumnBLOB *>(col.column.get()))
             {
-                if (blobs_with_cast.insert(blob).second)
-                    blob->addCast(col.type, elem.type);
-                column = col.column;
+                /// The block is owned here, so move the column out on its last use to let `IColumn::mutate`
+                /// reuse it without a copy when it is not shared with anyone else.
+                ColumnPtr blob = is_last_use ? std::move(col.column) : col.column;
+                auto mutable_blob = IColumn::mutate(std::move(blob));
+                assert_cast<ColumnBLOB &>(*mutable_blob).addCast(col.type, elem.type);
+                column = std::move(mutable_blob);
             }
             else
                 column = castColumn(col, elem.type);
@@ -1213,7 +1254,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 got_data_from_replica = true;
                 /// A retry is no longer possible: the deferred progress can be reported.
                 flushDeferredProgress();
-                return ReadResult(adaptBlockStructure(packet.block, *header));
+                return ReadResult(adaptBlockStructure(std::move(packet.block), *header));
             }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
@@ -1287,17 +1328,17 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::Totals:
             /// Also a part of the suffix of a completed query, see `Protocol::Server::ProfileInfo`.
             finishRetryWindow();
-            totals = packet.block;
+            totals = std::move(packet.block);
             if (!totals.empty())
-                totals = adaptBlockStructure(totals, *header);
+                totals = adaptBlockStructure(std::move(totals), *header);
             break;
 
         case Protocol::Server::Extremes:
             /// Also a part of the suffix of a completed query, see `Protocol::Server::ProfileInfo`.
             finishRetryWindow();
-            extremes = packet.block;
+            extremes = std::move(packet.block);
             if (!extremes.empty())
-                extremes = adaptBlockStructure(packet.block, *header);
+                extremes = adaptBlockStructure(std::move(extremes), *header);
             break;
 
         case Protocol::Server::Log:
@@ -1388,7 +1429,7 @@ void RemoteQueryExecutor::processReadTaskRequest()
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
 
-    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica);
+    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica, stop_waiting_for_read_task);
     connections->sendClusterFunctionReadTaskResponse(*response);
 }
 
@@ -1421,6 +1462,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
+    stop_waiting_for_read_task = true;
     {
         std::lock_guard gate(finish_gate_mutex);
         ++finish_in_progress;
@@ -1594,6 +1636,7 @@ void RemoteQueryExecutor::finishUnlocked()
 
 void RemoteQueryExecutor::cancel()
 {
+    stop_waiting_for_read_task = true;
     /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
     /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
     /// gate is what makes the check meaningful: a `finish` that owns it already incremented the counter.
