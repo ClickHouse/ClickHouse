@@ -6,17 +6,19 @@
 -- The encryption header used to be read with an unbounded request, which was reopened when the reader set its range.
 -- Parts in packed storage are excluded with `min_bytes_for_full_part_storage = 0`: a file inside the packed archive
 -- does not start at the archive's header, so its header is read with a request of its own.
+-- Nothing may load the marks or the primary key before the queries, so that both queries load them themselves:
+-- otherwise the shared caches decide whether a query reads them.
 
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_encrypted;
 
 CREATE TABLE t_plain (k UInt64, s String) ENGINE = MergeTree ORDER BY k
 SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-    index_granularity = 1024;
+    prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024;
 
 CREATE TABLE t_encrypted (k UInt64, s String) ENGINE = MergeTree ORDER BY k
 SETTINGS storage_policy = 's3_no_cache_encrypted', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-    index_granularity = 1024;
+    prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024;
 
 INSERT INTO t_plain SELECT number, toString(number) FROM numbers(100000);
 INSERT INTO t_plain SELECT number, toString(number) FROM numbers(100000, 100000);
@@ -28,10 +30,12 @@ OPTIMIZE TABLE t_encrypted FINAL;
 -- A mark range, with the randomized settings that change how the data is read pinned.
 SELECT sum(length(s)) FROM t_plain WHERE k BETWEEN 10000 AND 60000
 SETTINGS max_threads = 1, remote_filesystem_read_method = 'threadpool', remote_filesystem_read_prefetch = 1, use_uncompressed_cache = 0,
-    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, enable_parallel_replicas = 0, log_comment = '05871_plain';
+    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0,
+    enable_parallel_replicas = 0, log_comment = '05871_plain';
 SELECT sum(length(s)) FROM t_encrypted WHERE k BETWEEN 10000 AND 60000
 SETTINGS max_threads = 1, remote_filesystem_read_method = 'threadpool', remote_filesystem_read_prefetch = 1, use_uncompressed_cache = 0,
-    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, enable_parallel_replicas = 0, log_comment = '05871_encrypted';
+    use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0,
+    enable_parallel_replicas = 0, log_comment = '05871_encrypted';
 
 SYSTEM FLUSH LOGS part_log, query_log;
 
