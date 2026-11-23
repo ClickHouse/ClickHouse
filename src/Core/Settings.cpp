@@ -2823,7 +2823,7 @@ Possible values:
 - Positive floating-point number in the range [0..1]. For example, if the setting value is `0.1`, the plans of about one in ten queries are captured.
 - 1 — The plan of every query is captured.
 )", EXPERIMENTAL, \
-        {"26.11", 1., 1., "New setting to capture the query plan of only a random sample of queries when `log_query_plans` is enabled."}) \
+        {"26.12", 1., 1., "New setting to capture the query plan of only a random sample of queries when `log_query_plans` is enabled."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 
