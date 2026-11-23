@@ -36,8 +36,7 @@ check()
     local delta="deltaLakeLocal('$DATA/$table')"
     QUERIES+="
 SELECT '$table', \$\$$condition\$\$, count() FROM $delta WHERE $condition SETTINGS use_delta_lake_metadata_cache = 0;
-SELECT '$table', \$\$$condition\$\$, count() FROM $delta WHERE $condition SETTINGS use_delta_lake_metadata_cache = 1;
-SELECT 'pruned files', $PRUNED;"
+SELECT '$table', \$\$$condition\$\$, count(), $PRUNED FROM $delta WHERE $condition SETTINGS use_delta_lake_metadata_cache = 1;"
 }
 
 check kernel_data/cdf-table-non-partitioned "id = 3"
