@@ -1,4 +1,4 @@
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
