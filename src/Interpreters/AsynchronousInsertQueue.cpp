@@ -111,7 +111,6 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
-    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }

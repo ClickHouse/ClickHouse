@@ -108,7 +108,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/Access/ASTCheckGrantQuery.h>
-#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
