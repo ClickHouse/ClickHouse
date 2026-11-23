@@ -138,6 +138,23 @@ private:
 namespace ArrowIPC
 {
 
+/// The distinct types of the header columns that share a normalized name (`RequestedType::shared`), in header order.
+using SharedRequestedHeaderTypes = UnorderedMapWithMemoryTracking<String, DataTypes>;
+
+/// Fills `requested_types` with the type of each column of `header` by its normalized name (lower-cased with
+/// case-insensitive matching), for the decoder. A name several header columns of different types share is marked
+/// as shared and keeps the decoding requirements of all of them; their types are recorded in
+/// `shared_header_types` for `resolveSharedRequestedTypes`.
+void collectRequestedTypes(
+    const Block & header, bool case_insensitive, RequestedTypes & requested_types, SharedRequestedHeaderTypes & shared_header_types);
+
+/// Re-merges the requested types of each shared name once the schema is known, so that a named and an unnamed
+/// `Tuple` are matched with the fields of the struct as the decoder matches them. `keep_top_level_fields` are the
+/// normalized names of the top-level fields that are decoded (all of them when null).
+void resolveSharedRequestedTypes(
+    const ArrowSchema & schema, const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields, bool case_insensitive,
+    const SharedRequestedHeaderTypes & shared_header_types, RequestedTypes & requested_types);
+
 /// Converts the decoded columns of a record batch into a chunk of `header`: matches the columns by name (or
 /// case-insensitively), extracts the subcolumns of `Nested` and struct fields, parses GeoParquet geometry,
 /// reinterprets raw bytes and casts to the requested types. A header column absent from the batch is filled

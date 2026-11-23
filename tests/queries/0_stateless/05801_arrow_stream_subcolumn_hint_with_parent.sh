@@ -276,6 +276,15 @@ SELECT CAST(map(tuple('abcdefghijklmnop'), toUInt8(7)) AS Map(Tuple(s String), U
 SELECT * FROM file('data.arrows', 'ArrowStream', '`t.keys.s` Array(IPv6), `t.key_(''6162:6364:6566:6768:696a:6b6c:6d6e:6f70'')` UInt8');
 SELECT * FROM file('data.arrows', 'ArrowStream', '`t.key_(''6162:6364:6566:6768:696a:6b6c:6d6e:6f70'')` UInt8, `t.keys.s` Array(IPv6)');
 
+SELECT 'map lookup of a raw-byte key below a struct';
+-- The key is parsed in the type the keys are converted to: it is not a key of the decoded `FixedString(16)` or `String` ones.
+SELECT CAST(tuple(map(toFixedString('abcdefghijklmnop', 16), toUInt8(7))) AS Tuple(m Map(FixedString(16), UInt8))) AS t INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream SETTINGS output_format_arrow_fixed_string_as_fixed_byte_array = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(m Map(IPv6, UInt8)), `t.m.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70` UInt8') SETTINGS input_format_arrow_allow_missing_columns = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.m.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70` UInt8, t Tuple(m Map(IPv6, UInt8))') SETTINGS input_format_arrow_allow_missing_columns = 0;
+SELECT CAST(tuple(map('abcdefghijklmnop', toUInt8(7))) AS Tuple(m Map(String, UInt8))) AS t INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(m Map(IPv6, UInt8)), `t.m.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70` UInt8') SETTINGS input_format_arrow_allow_missing_columns = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.m.key_6162:6364:6566:6768:696a:6b6c:6d6e:6f70` UInt8, t Tuple(m Map(IPv6, UInt8))') SETTINGS input_format_arrow_allow_missing_columns = 0;
+
 SELECT 'case-insensitive names of structs with different field names';
 SELECT CAST(tuple(toDate32('2024-01-01')) AS Tuple(x Date32)) AS t, CAST(tuple(d) AS Tuple(d Date32)) AS T FROM format(RowBinary, 'd Date32', unhex('c0c62d00')) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
 SELECT * FROM file('data.arrows', 'ArrowStream', 'T Tuple(d String), t Tuple(Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;

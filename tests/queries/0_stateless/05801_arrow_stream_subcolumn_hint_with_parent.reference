@@ -171,6 +171,11 @@ map without the requested key below an unnamed struct
 map lookup of a raw-byte key requested through a subcolumn of the keys
 ['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	7
 7	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+map lookup of a raw-byte key below a struct
+({'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7})	7
+7	({'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7})
+({'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7})	7
+7	({'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7})
 case-insensitive names of structs with different field names
 ('9999-12-31')	(3000000)
 (3000000)	('9999-12-31')

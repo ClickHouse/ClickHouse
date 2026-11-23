@@ -1,0 +1,12 @@
+T String, t Int32
+9999-12-31	3000000
+t Int32, T String
+3000000	9999-12-31
+S Tuple(d String), s Tuple(d Int32)
+('9999-12-31')	(3000000)
+s Tuple(d Int32), S Tuple(d String)
+(3000000)	('9999-12-31')
+A Array(String), a Array(Int32)
+['9999-12-31']	[3000000]
+a Array(Int32), A Array(String)
+[3000000]	['9999-12-31']

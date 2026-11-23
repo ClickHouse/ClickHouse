@@ -620,22 +620,59 @@ DataTypePtr nameTuplesAsDecoded(const DataTypePtr & hint, const ArrowIPC::ArrowF
 
 }
 
-void ArrowIPCBlockInputFormat::resolveSharedRequestedTypes()
+void ArrowIPC::collectRequestedTypes(
+    const Block & header, bool case_insensitive, RequestedTypes & requested_types, SharedRequestedHeaderTypes & shared_header_types)
+{
+    requested_types.clear();
+    shared_header_types.clear();
+    for (const auto & header_column : header)
+    {
+        String name = header_column.name;
+        if (case_insensitive)
+            boost::to_lower(name);
+        /// Record each requested column's target type by (normalized) name so the decoder can read a
+        /// `date32` mapped to a numeric target as the raw day number — recursively for a `date32` nested in
+        /// an Array/Tuple/Map, and for one addressed as a subcolumn (e.g. `t.d`). Mirrors the Apache Arrow
+        /// library reader's recursive numeric type-hint handling.
+        ///
+        /// With case-insensitive matching, several header columns can share a normalized name (`T String` and
+        /// `t Tuple(s IPv6)`). They are all taken from the one decoded field, so its raw bytes must not follow
+        /// any one of them: the name is marked as shared, and each column is converted by its own type after
+        /// decoding. The type that decoding depends on the most is kept (`T Tuple(s IPv6)` keeps the null map
+        /// of the struct for `t String`, `T Int32` reads a `date32` as the day number for `t Int64` too), recursively
+        /// for the elements of composites (see `mergeDecodingRequirements`).
+        auto [it, inserted] = requested_types.try_emplace(std::move(name), RequestedType{.type = header_column.type});
+        if (!inserted && !it->second.type->equals(*header_column.type))
+        {
+            auto & header_types = shared_header_types[it->first];
+            if (header_types.empty())
+                header_types.push_back(it->second.type);
+            if (std::ranges::none_of(header_types, [&](const auto & type) { return type->equals(*header_column.type); }))
+                header_types.push_back(header_column.type);
+            it->second.shared = true;
+            it->second.type = mergeDecodingRequirements(it->second.type, header_column.type, case_insensitive);
+        }
+    }
+}
+
+void ArrowIPC::resolveSharedRequestedTypes(
+    const ArrowSchema & schema, const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields, bool case_insensitive,
+    const SharedRequestedHeaderTypes & shared_requested_header_types, RequestedTypes & requested_field_target_types)
 {
     if (shared_requested_header_types.empty())
         return;
 
-    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
-    /// The top-level fields the reader decodes, by normalized name: of the fields with the same normalized name
-    /// only the last (see `RecordBatchDecoder::shadowedTopLevelFields`), and only the requested ones.
+    /// The top-level fields that supply the columns, by normalized name: of the fields with the same normalized
+    /// name only the last (see `RecordBatchDecoder::shadowedTopLevelFields` and `buildChunk`), and only the kept ones.
     UnorderedMapWithMemoryTracking<String, const ArrowIPC::ArrowField *> decoded_top_level;
     Strings decoded_top_level_names;
-    for (const auto & top_level : arrow_schema->fields | std::views::reverse)
+    for (const auto & top_level : schema.fields | std::views::reverse)
     {
         String top_level_name = top_level.name;
         if (case_insensitive)
             boost::to_lower(top_level_name);
-        if (requested_top_level_fields.contains(top_level_name) && decoded_top_level.emplace(top_level_name, &top_level).second)
+        if ((!keep_top_level_fields || keep_top_level_fields->contains(top_level_name))
+            && decoded_top_level.emplace(top_level_name, &top_level).second)
             decoded_top_level_names.push_back(top_level_name);
     }
 
@@ -696,6 +733,13 @@ void ArrowIPCBlockInputFormat::resolveSharedRequestedTypes()
     }
 }
 
+void ArrowIPCBlockInputFormat::resolveSharedRequestedTypes()
+{
+    ArrowIPC::resolveSharedRequestedTypes(
+        *arrow_schema, &requested_top_level_fields, format_settings.arrow.case_insensitive_column_matching,
+        shared_requested_header_types, requested_field_target_types);
+}
+
 void ArrowIPCBlockInputFormat::prepareReader()
 {
     /// Determine which top-level Arrow fields the requested header needs, so the reader can skip the rest
@@ -707,37 +751,14 @@ void ArrowIPCBlockInputFormat::prepareReader()
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
     requested_top_level_fields.clear();
-    requested_field_target_types.clear();
-    shared_requested_header_types.clear();
     visibility_only_structs.clear();
     for (const auto & header_column : getPort().getHeader())
     {
         requested_top_level_fields.insert(normalize(header_column.name));
         requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
-        /// Record each requested column's target type by (normalized) name so the decoder can read a
-        /// `date32` mapped to a numeric target as the raw day number — recursively for a `date32` nested in
-        /// an Array/Tuple/Map, and for one addressed as a subcolumn (e.g. `t.d`). Mirrors the Apache Arrow
-        /// library reader's recursive numeric type-hint handling.
-        ///
-        /// With case-insensitive matching, several header columns can share a normalized name (`T String` and
-        /// `t Tuple(s IPv6)`). They are all taken from the one decoded field, so its raw bytes must not follow
-        /// any one of them: the name is marked as shared, and each column is converted by its own type after
-        /// decoding. The type that decoding depends on the most is kept (`T Tuple(s IPv6)` keeps the null map
-        /// of the struct for `t String`, `T Int32` reads a `date32` as the day number for `t Int64` too), recursively
-        /// for the elements of composites (see `mergeDecodingRequirements`).
-        auto [it, inserted] = requested_field_target_types.try_emplace(
-            normalize(header_column.name), ArrowIPC::RequestedType{.type = header_column.type});
-        if (!inserted && !it->second.type->equals(*header_column.type))
-        {
-            auto & header_types = shared_requested_header_types[it->first];
-            if (header_types.empty())
-                header_types.push_back(it->second.type);
-            if (std::ranges::none_of(header_types, [&](const auto & type) { return type->equals(*header_column.type); }))
-                header_types.push_back(header_column.type);
-            it->second.shared = true;
-            it->second.type = mergeDecodingRequirements(it->second.type, header_column.type, case_insensitive);
-        }
     }
+    /// Each requested column's target type by (normalized) name, for the decoder.
+    ArrowIPC::collectRequestedTypes(getPort().getHeader(), case_insensitive, requested_field_target_types, shared_requested_header_types);
 
     if (stream)
         prepareStreamReader();
@@ -1478,6 +1499,14 @@ bool isDeclaredSubcolumn(const DataTypePtr & type, std::string_view subcolumn, b
     return false;
 }
 
+/// The type a column of the decoded type `type` gets when its raw bytes are reinterpreted for `hint` (see
+/// `reinterpretRawBytes`).
+DataTypePtr typeConvertedByHint(const DataTypePtr & type, const DataTypePtr & hint, bool case_insensitive, const FormatSettings & format_settings)
+{
+    return reinterpretRawBytes(
+        type->createColumn(), type, hint, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr, format_settings).second;
+}
+
 /// The requested type of the whole decoded column of type `type` implied by a requested subcolumn of it:
 /// `subcolumn` is the dotted name below the column (`key_1`, `u.key_1`, `values.key_1`) and `subcolumn_type`
 /// is its requested type. Returns null unless the path goes through a dynamic key lookup of a map (`key_1`).
@@ -1500,7 +1529,7 @@ bool isDeclaredSubcolumn(const DataTypePtr & type, std::string_view subcolumn, b
 DataTypePtr keyLookupSourceHint(
     const DataTypePtr & type, std::string_view subcolumn, const DataTypePtr & subcolumn_type,
     DataTypePtr requested, const String & path, size_t array_depth, const FindRequestedType & find_requested,
-    bool case_insensitive)
+    bool case_insensitive, const FormatSettings & format_settings)
 {
     if (!requested)
         requested = peelArrays(find_requested(path), array_depth);
@@ -1520,7 +1549,7 @@ DataTypePtr keyLookupSourceHint(
             return nullptr;
         DataTypePtr element_hint = keyLookupSourceHint(
             array->getNestedType(), subcolumn, subcolumn_array->getNestedType(), ArrowIPC::arrayElementHint(requested_stripped),
-            path, array_depth + 1, find_requested, case_insensitive);
+            path, array_depth + 1, find_requested, case_insensitive, format_settings);
         if (!element_hint)
             return nullptr;
         return std::make_shared<DataTypeArray>(element_hint);
@@ -1541,15 +1570,23 @@ DataTypePtr keyLookupSourceHint(
                 || !subcolumn.starts_with(element_name))
                 continue;
             const std::string_view element_subcolumn = subcolumn.substr(element_name.size() + 1);
-            if (!tuple->getElement(i)->tryGetSubcolumnType(element_subcolumn))
-                continue;
             DataTypePtr element_hint = keyLookupSourceHint(
                 tuple->getElement(i), element_subcolumn, subcolumn_type,
                 tuple->hasExplicitNames() ? ArrowIPC::tupleElementHint(requested_stripped, element_name, i, case_insensitive)
                                           : ArrowIPC::tupleElementHintByPosition(requested_stripped, i),
-                child_path(element_name), array_depth, find_requested, case_insensitive);
-            if (!element_hint)
-                return nullptr;
+                child_path(element_name), array_depth, find_requested, case_insensitive, format_settings);
+            /// Whether the element resolves the rest of the name is decided with its type as converted by the
+            /// hint, which is what the subcolumn is extracted from: a key lookup parses the key in the type of
+            /// the keys, and `key_6162:...:6f70` is a key of the `IPv6` keys the `FixedString(16)` ones become,
+            /// not of the decoded ones.
+            if (!element_hint || !typeConvertedByHint(tuple->getElement(i), element_hint, case_insensitive, format_settings)
+                    ->tryGetSubcolumnType(element_subcolumn))
+            {
+                /// Not converted: the element is taken as decoded if it resolves the name, and skipped otherwise.
+                if (tuple->getElement(i)->tryGetSubcolumnType(element_subcolumn))
+                    return nullptr;
+                continue;
+            }
             /// A named tuple hint with only this element: `reinterpretRawBytes` leaves the other elements as
             /// decoded. An unnamed tuple is matched by position, so the other elements get their decoded types,
             /// which keep them as they are.
@@ -1585,7 +1622,7 @@ DataTypePtr keyLookupSourceHint(
                 requested_elements = std::make_shared<DataTypeArray>(keys ? requested_map->getKeyType() : requested_map->getValueType());
             DataTypePtr elements_hint = keyLookupSourceHint(
                 std::make_shared<DataTypeArray>(element_type), rest, subcolumn_type, requested_elements, child_path(component),
-                array_depth, find_requested, case_insensitive);
+                array_depth, find_requested, case_insensitive, format_settings);
             if (!elements_hint)
                 return nullptr;
             const DataTypePtr element_hint = assert_cast<const DataTypeArray &>(*elements_hint).getNestedType();
@@ -1748,7 +1785,7 @@ Chunk ArrowIPC::buildChunk(
                 if (!isDeclaredSubcolumn(decoded[nested_it->second].type, subcolumn, case_insensitive))
                     key_lookup_hint = keyLookupSourceHint(
                         decoded[nested_it->second].type, subcolumn, header_column.type, /*requested=*/nullptr, search_nested,
-                        /*array_depth=*/0, find_requested, case_insensitive);
+                        /*array_depth=*/0, find_requested, case_insensitive, format_settings);
             }
             if (key_lookup_hint)
             {

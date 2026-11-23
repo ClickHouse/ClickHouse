@@ -487,18 +487,9 @@ void VortexBlockInputFormat::prepareReader()
         auto geo_it = file_schema->custom_metadata.find("geo");
         geo_columns = parseGeoMetadataEncoding(geo_it != file_schema->custom_metadata.end() ? &geo_it->second : nullptr);
     }
-    requested_types.clear();
-    for (const auto & header_column : getPort().getHeader())
-    {
-        String name = header_column.name;
-        if (format_settings.arrow.case_insensitive_column_matching)
-            boost::to_lower(name);
-        /// With case-insensitive matching, header columns of different types can share a name. They are all
-        /// taken from the one decoded field, so it must not be decoded for the type of any one of them.
-        auto [it, inserted] = requested_types.try_emplace(std::move(name), ArrowIPC::RequestedType{.type = header_column.type});
-        if (!inserted && !it->second.type->equals(*header_column.type))
-            it->second.shared = true;
-    }
+    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    ArrowIPC::SharedRequestedHeaderTypes shared_requested_header_types;
+    ArrowIPC::collectRequestedTypes(getPort().getHeader(), case_insensitive, requested_types, shared_requested_header_types);
 
     const VortexScanPlan plan = planVortexScan(getPort().getHeader(), *file_schema, format_filter_info.get(), format_settings, log);
 
@@ -575,6 +566,10 @@ void VortexBlockInputFormat::prepareReader()
         new_scan_schema->fields.push_back(*it);
     }
     scan_schema = std::move(new_scan_schema);
+    /// With case-insensitive matching, header columns of different types can share a name. They are all taken
+    /// from the one decoded field, which is then decoded with the requirements of all of them, as in `Arrow`.
+    ArrowIPC::resolveSharedRequestedTypes(
+        *scan_schema, /*keep_top_level_fields=*/nullptr, case_insensitive, shared_requested_header_types, requested_types);
     {
         /// The batches are decoded with all the fields of the scan schema (see `importRecordBatchFromC`).
         ArrowIPC::DictionaryRegistry registry;
