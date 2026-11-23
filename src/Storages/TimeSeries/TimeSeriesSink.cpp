@@ -19,7 +19,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -72,6 +74,16 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Another replica can truncate a replicated target table without this server clearing its caches,
+    /// unless a `Replicated` database runs the `TRUNCATE` of the TimeSeries table on every replica.
+    bool canBeTruncatedByAnotherReplica(const StorageTimeSeries & time_series_storage, const IStorage & target_table)
+    {
+        if (!target_table.supportsReplication())
+            return false;
+        auto database = DatabaseCatalog::instance().getDatabase(time_series_storage.getStorageID().database_name);
+        return database->getEngineName() != "Replicated";
+    }
+
     /// Sorts tags by name, removes exact duplicates and tags with empty values,
     /// and throws if the `__name__` tag is missing or appears with conflicting values.
     void sortTagsAndRemoveDuplicates(std::vector<std::pair<std::string_view, std::string_view>> & tags)
@@ -1010,7 +1022,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
     /// A TTL of the tags table removes rows without the cache knowing, so the cache is not used with it.
-    if (!tags_target_metadata->hasAnyTTL())
+    if (!tags_target_metadata->hasAnyTTL() && !canBeTruncatedByAnotherReplica(time_series_storage, *tags_target))
         tags_deduplication_cache = time_series_storage.getTagsDeduplicationCache();
 
     /// The time ranges table (if any) receives the time range of every time series with samples.
@@ -1288,9 +1300,9 @@ void TimeSeriesSink::initMetricFamiliesPipeline()
     metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header);
 
     /// A TTL of the metric families table removes rows without the cache knowing, so the cache is not used with it.
-    auto metric_families_target_metadata = time_series_storage.getTargetTable(ViewTarget::MetricFamilies, getContext())
-        ->getInMemoryMetadataPtr(getContext(), false);
-    if (!metric_families_target_metadata->hasAnyTTL())
+    auto metric_families_target = time_series_storage.getTargetTable(ViewTarget::MetricFamilies, getContext());
+    auto metric_families_target_metadata = metric_families_target->getInMemoryMetadataPtr(getContext(), false);
+    if (!metric_families_target_metadata->hasAnyTTL() && !canBeTruncatedByAnotherReplica(time_series_storage, *metric_families_target))
         metric_families_deduplication_cache = time_series_storage.getMetricFamiliesDeduplicationCache();
 }
 
