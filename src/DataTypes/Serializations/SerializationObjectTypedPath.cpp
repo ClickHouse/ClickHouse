@@ -43,6 +43,7 @@ void SerializationObjectTypedPath::enumerateStreams(
     auto path_data = SubstreamData(nested_serialization)
                          .withType(data.type)
                          .withColumn(data.column)
+                         .withSerializationInfo(data.serialization_info)
                          .withDeserializeState(data.deserialize_state);
     nested_serialization->enumerateStreams(settings, callback, path_data);
     settings.path.pop_back();

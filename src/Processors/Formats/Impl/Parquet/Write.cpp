@@ -1889,8 +1889,8 @@ void writeColumnImpl(
         }
 
         /// A `DataPageV2` must hold whole records. A record that doesn't fit a page at all (see
-        /// `max_record_bytes`) is split anyway, and from that page on the column chunk is written as
-        /// V1, so that no V2 page follows a page that ends in the middle of a record.
+        /// `max_record_bytes` and `max_page_levels`) is split anyway, and from that page on the column chunk
+        /// is written as V1, so that no V2 page follows a page that ends in the middle of a record.
         const bool data_page_v2 = options.use_data_page_v2 && s.indexes.offset_index_valid;
 
         /// Concatenate encoded rep, def, and data. The levels of a V1 page have a length prefix,
@@ -2131,10 +2131,15 @@ void writeColumnImpl(
 
     static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
 
+    /// `num_values`, `num_nulls` and `num_rows` of a page header count levels and are 32-bit. The bytes don't
+    /// bound them: the levels of nulls and empty arrays take a fraction of a byte each. A record with more
+    /// levels is split like a record past `max_record_bytes`.
+    static constexpr size_t max_page_levels = std::numeric_limits<Int32>::max();
+
     /// The converter materializes every value it is given, so a long record is handed to it in
     /// slices of this many values. The slices of a record go into the same page, unless the page
-    /// would grow past `max_record_bytes`.
-    const size_t max_batch_values = std::max(options.write_batch_size, 64uz << 10);
+    /// would grow past `max_record_bytes` or `max_page_levels`.
+    const size_t max_batch_values = std::min(std::max(options.write_batch_size, 64uz << 10), max_page_levels);
 
     auto max_levels_size = [&](size_t count)
     {
@@ -2224,7 +2229,7 @@ void writeColumnImpl(
         while (true)
         {
             /// Bite off a batch of defs and corresponding data values.
-            size_t def_count = std::min(options.write_batch_size, num_values - next_def_offset);
+            size_t def_count = std::min({options.write_batch_size, max_page_levels, num_values - next_def_offset});
             size_t data_count = 0;
             if (s.max_def == 0) // no arrays or nullables
                 data_count = def_count;
@@ -2294,7 +2299,8 @@ void writeColumnImpl(
                     ? max_dictionary_indexes_size(page_values, dictionary_entries() + data_count)
                     : estimated_data_encoded_size() + batch_size.encoded;
 
-                if (page_values_bytes + max_levels_size(next_def_offset - def_offset + def_count) > max_record_bytes)
+                const size_t page_levels = next_def_offset - def_offset + def_count;
+                if (page_levels > max_page_levels || page_values_bytes + max_levels_size(page_levels) > max_record_bytes)
                 {
                     flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                     break;
