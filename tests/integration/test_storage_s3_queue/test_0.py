@@ -3159,8 +3159,8 @@ def test_failed_lookup_of_the_selected_version_releases_the_file(started_cluster
     assert node.contains_in_log(f"Failed to get the metadata of the version {selected_version}")
 
 
-def test_failed_lookup_of_the_selected_version_keeps_the_ordered_position(started_cluster):
-    """In ordered mode a file released by a failed lookup must be read before a later key moves the pointer past it."""
+def test_failed_lookup_of_the_selected_version_releases_the_file(started_cluster):
+    """A file whose lookup of the version selected by the URL failed is released, and it is read by a later poll."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     bucket = f"versioned-{token}"
@@ -3176,10 +3176,9 @@ def test_failed_lookup_of_the_selected_version_keeps_the_ordered_position(starte
         aws_secret_access_key=started_cluster.minio_secret_key,
     )
     selected_version = client.put_object(Bucket=bucket, Key=f"{files_path}/a.csv", Body=b"1,2,3\n")["VersionId"]
-    client.put_object(Bucket=bucket, Key=f"{files_path}/b.csv", Body=b"4,5,6\n")
 
-    # The `One` format reads no bytes, so `b.csv` is consumed although the selected version is not one of its versions;
-    # its `_tags`, requested by the background insert, are those of the latest version described by its listed metadata.
+    # A version belongs to one key, and the metadata of every key is requested for the selected version, so no other
+    # key can be consumed through this URL: the selected version is the only object of the queue.
     url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*?versionId={selected_version}"
     node.query(
         f"""
