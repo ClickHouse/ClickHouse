@@ -39,6 +39,10 @@ SELECT sum(a) FROM t_05837_outer SETTINGS additional_table_filters = {'t_05837_o
 SELECT 'join with the buffer';
 SELECT count() FROM t_05837_mv AS x INNER JOIN t_05837_buf AS y USING (a); -- { serverError NOT_IMPLEMENTED }
 SELECT count() FROM t_05837_alias AS x INNER JOIN t_05837_buf AS y USING (a); -- { serverError NOT_IMPLEMENTED }
+SELECT 'two forwarding tables';
+SELECT count() FROM t_05837_alias AS x INNER JOIN t_05837_mv AS y USING (a);
+SELECT sum(x.a) FROM t_05837_mv AS x INNER JOIN t_05837_alias AS y USING (a);
+SELECT count() FROM t_05837_alias WHERE a IN (SELECT a FROM t_05837_mv);
 
 DROP TABLE t_05837_outer;
 DROP TABLE t_05837_alias;
