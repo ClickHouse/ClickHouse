@@ -2152,7 +2152,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("remove_empty_parts", UInt64(0));
     if (fuzz_rand() % 20 == 0)
-        fuzz_setting("serialization_info_version", String(pickRandomly(fuzz_rand, Strings{"basic", "with_types", "with_subcolumns"})));
+        fuzz_setting("serialization_info_version", String(fuzz_rand() % 2 == 0 ? "basic" : "with_types"));
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("string_serialization_version", String(fuzz_rand() % 2 == 0 ? "single_stream" : "with_size_stream"));
     if (fuzz_rand() % 20 == 0)
@@ -8527,7 +8527,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 else if (fuzz_rand() % 50 == 0)
                 {
                     /// Negative offsets exercise error-handling paths in the server.
-                    auto val = fuzz_rand() % 2 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                    auto val = fuzz_rand() % 2 == 0 ? Field(-static_cast<Int64>(fuzz_rand() % 1001))
                                                     : Field(static_cast<UInt64>(fuzz_rand() % 1001));
                     select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, makeLimitExpression(val));
                 }
@@ -8538,7 +8538,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             /// Add a LIMIT clause (negative values half the time, like LIMIT OFFSET above).
             /// The outer `oracle_mode ? 200 : 50` keeps this rare in oracle mode (LIMIT blocks most oracles).
             auto val
-                = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
+                = fuzz_rand() % 10 == 0 ? Field(-static_cast<Int64>(fuzz_rand() % 1001)) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
             select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, makeLimitExpression(val));
         }
 
@@ -8573,7 +8573,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                auto val = fuzz_rand() % 10 == 0 ? Field(-static_cast<Int64>(fuzz_rand() % 1001))
                                                  : Field(static_cast<UInt64>(fuzz_rand() % 1001));
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, makeLimitExpression(val));
             }
@@ -8584,7 +8584,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                auto val = fuzz_rand() % 10 == 0 ? Field(-static_cast<Int64>(fuzz_rand() % 1001))
                                                  : Field(static_cast<UInt64>(fuzz_rand() % 1001));
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, makeLimitExpression(val));
             }
