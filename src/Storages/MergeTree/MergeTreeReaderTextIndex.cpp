@@ -670,6 +670,8 @@ void MergeTreeReaderTextIndex::setReadRangesRegistry(ReadRangesRegistryPtr regis
     if (fallback_reader)
         fallback_reader->setReadRangesRegistry(registry);
     IMergeTreeReader::setReadRangesRegistry(std::move(registry));
+    if (!read_ranges_registry)
+        return;
     /// The streams created later get their sink when they are created.
     for (auto & [_, stream] : postings_streams)
         stream->setRangesReadSink(&postings_ranges_read.ranges);
@@ -689,17 +691,31 @@ void MergeTreeReaderTextIndex::registerReadRanges()
     if (positions_stream)
         positions_stream->recordBytesConsumed();
 
-    auto count = [&](FileRangesRead & file, std::string_view kind)
+    ReadRangesRegistry::Batch batch;
+    auto register_file = [&](FileRangesRead & file, std::string_view kind)
     {
         if (file.ranges.empty())
             return;
         if (!file.read_ranges)
             file.read_ranges = &read_ranges_registry->getReadRanges(fmt::format(
                 "{}/{}.{}", data_part_info_for_read->getDataPartStorage()->getFullPath(), index_read_task.index.index->getFileName(), kind));
-        read_ranges_registry->registerRanges(*file.read_ranges, file.ranges);
+        read_ranges_registry->registerRanges(batch, *file.read_ranges, file.ranges);
     };
-    count(postings_ranges_read, "postings");
-    count(positions_ranges_read, "positions");
+    register_file(postings_ranges_read, "postings");
+    register_file(positions_ranges_read, "positions");
+    read_ranges_registry->commit(batch);
+
+    if (read_ranges_registry->stopped())
+    {
+        /// The streams created later get no sink either.
+        for (auto & [_, stream] : postings_streams)
+            stream->setRangesReadSink(nullptr);
+        if (positions_stream)
+            positions_stream->setRangesReadSink(nullptr);
+        postings_ranges_read = {};
+        positions_ranges_read = {};
+        read_ranges_registry.reset();
+    }
 }
 
 MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info)
