@@ -2891,16 +2891,16 @@ SELECT * FROM VALUES(
     (2951, 11, '_uuid',       0, 0, 'b', 0, 2950, 0, 'A'),
     (3904, 11, 'int4range',      0, 0, 'r', 0, 0, 0, 'R'),
     (3906, 11, 'numrange',       0, 0, 'r', 0, 0, 0, 'R'),
-    (3910, 11, 'tsrange',        0, 0, 'r', 0, 0, 0, 'R'),
-    (3912, 11, 'tstzrange',      0, 0, 'r', 0, 0, 0, 'R'),
-    (3914, 11, 'daterange',      0, 0, 'r', 0, 0, 0, 'R'),
+    (3908, 11, 'tsrange',        0, 0, 'r', 0, 0, 0, 'R'),
+    (3910, 11, 'tstzrange',      0, 0, 'r', 0, 0, 0, 'R'),
+    (3912, 11, 'daterange',      0, 0, 'r', 0, 0, 0, 'R'),
     (3926, 11, 'int8range',      0, 0, 'r', 0, 0, 0, 'R'),
-    (3905, 11, 'int4multirange', 0, 0, 'm', 0, 0, 0, 'R'),
-    (3907, 11, 'nummultirange',  0, 0, 'm', 0, 0, 0, 'R'),
-    (3911, 11, 'tsmultirange',   0, 0, 'm', 0, 0, 0, 'R'),
-    (3913, 11, 'tstzmultirange', 0, 0, 'm', 0, 0, 0, 'R'),
-    (3915, 11, 'datemultirange', 0, 0, 'm', 0, 0, 0, 'R'),
-    (3927, 11, 'int8multirange', 0, 0, 'm', 0, 0, 0, 'R'),
+    (4451, 11, 'int4multirange', 0, 0, 'm', 0, 0, 0, 'R'),
+    (4532, 11, 'nummultirange',  0, 0, 'm', 0, 0, 0, 'R'),
+    (4533, 11, 'tsmultirange',   0, 0, 'm', 0, 0, 0, 'R'),
+    (4534, 11, 'tstzmultirange', 0, 0, 'm', 0, 0, 0, 'R'),
+    (4535, 11, 'datemultirange', 0, 0, 'm', 0, 0, 0, 'R'),
+    (4536, 11, 'int8multirange', 0, 0, 'm', 0, 0, 0, 'R'),
     (40000, 11, 'mood',          0, 0, 'e', 0, 0, 0, 'E')
 ))");
 
@@ -3127,12 +3127,12 @@ SELECT * FROM VALUES(
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_range SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'rngtypid UInt32, rngsubtype UInt32, rngmultitypid UInt32',
-    (3904, 23,   3905),
-    (3906, 1700, 3907),
-    (3910, 1114, 3911),
-    (3912, 1184, 3913),
-    (3914, 1082, 3915),
-    (3926, 20,   3927)
+    (3904, 23,   4451),
+    (3906, 1700, 4532),
+    (3908, 1114, 4533),
+    (3910, 1184, 4534),
+    (3912, 1082, 4535),
+    (3926, 20,   4536)
 ))");
 
     /// The built-in rows describe each emulated catalog view with exactly the columns, order and types the

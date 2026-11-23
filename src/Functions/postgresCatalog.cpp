@@ -21,6 +21,8 @@
 
 #include <fmt/format.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -65,6 +67,21 @@ String pgFormatTimestamp(Int64 typmod, const char * suffix)
     return fmt::format("timestamp({}) {}", typmod, suffix);
 }
 
+/// Render the name of the blank-padded character type (OID 1042). PostgreSQL prints `character(n)` when
+/// a length is given: the modifier is the length plus `VARHDRSZ`. Without a length it does not print
+/// `character`, which by the SQL standard means `character(1)`: a modifier of -1 gives `bpchar`, and only
+/// a `NULL` modifier, which says nothing about the length, gives the bare `character`.
+String pgFormatBlankPaddedCharacter(std::optional<Int64> typmod)
+{
+    if (!typmod)
+        return "character";
+    if (*typmod < 0)
+        return "bpchar";
+    if (*typmod <= VARHDRSZ)
+        return "character";
+    return fmt::format("character({})", *typmod - VARHDRSZ);
+}
+
 /// PostgreSQL type OID -> human readable name, in the spelling produced by PostgreSQL's `format_type`.
 /// The set mirrors the built-in types advertised by ClickHouse's `pg_type` emulation (see PostgreSQLHandler).
 /// Unknown OIDs are rendered as `text`, matching how the counterpart mapping in
@@ -76,13 +93,18 @@ String pgFormatTimestamp(Int64 typmod, const char * suffix)
 /// Array types are rendered as `<element>[]` (regardless of the number of dimensions, which PostgreSQL
 /// carries separately in `attndims`); for a `numeric` array the modifier applies to the element type, so
 /// e.g. `numeric(20, 0)[]` round-trips back to `Array(Decimal(20, 0))`.
-String pgFormatType(Int64 oid, Int64 typmod)
+/// A `NULL` type modifier is the same as -1 for every type except the blank-padded character type.
+/// The OIDs are the ones of PostgreSQL's `pg_type.dat`. The OID that follows the OID of a range type
+/// there is the array of that range type; the multirange types have OIDs of their own (4451, 4532 - 4536).
+String pgFormatType(Int64 oid, std::optional<Int64> typmod_or_null)
 {
+    const Int64 typmod = typmod_or_null.value_or(-1);
     switch (oid)
     {
         case 16: return "boolean";
         case 17: return "bytea";
-        case 18: return "character";
+        /// The internal one-byte type, which PostgreSQL prints in quotes to tell it from `character`.
+        case 18: return "\"char\"";
         case 19: return "name";
         case 20: return "bigint";
         case 21: return "smallint";
@@ -91,7 +113,7 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 26: return "oid";
         case 700: return "real";
         case 701: return "double precision";
-        case 1042: return "character";
+        case 1042: return pgFormatBlankPaddedCharacter(typmod_or_null);
         case 1043: return "character varying";
         case 1082: return "date";
         case 1114: return pgFormatTimestamp(typmod, "without time zone");
@@ -99,17 +121,17 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1700: return pgFormatNumeric(typmod);
         case 2950: return "uuid";
         case 3904: return "int4range";
-        case 3905: return "int4multirange";
         case 3906: return "numrange";
-        case 3907: return "nummultirange";
-        case 3910: return "tsrange";
-        case 3911: return "tsmultirange";
-        case 3912: return "tstzrange";
-        case 3913: return "tstzmultirange";
-        case 3914: return "daterange";
-        case 3915: return "datemultirange";
+        case 3908: return "tsrange";
+        case 3910: return "tstzrange";
+        case 3912: return "daterange";
         case 3926: return "int8range";
-        case 3927: return "int8multirange";
+        case 4451: return "int4multirange";
+        case 4532: return "nummultirange";
+        case 4533: return "tsmultirange";
+        case 4534: return "tstzmultirange";
+        case 4535: return "datemultirange";
+        case 4536: return "int8multirange";
         case 40000: return "mood";
 
         /// Array types (element OID + "[]").
@@ -124,6 +146,12 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1182: return "date[]";
         case 1231: return pgFormatNumeric(typmod) + "[]";
         case 2951: return "uuid[]";
+        case 3905: return "int4range[]";
+        case 3907: return "numrange[]";
+        case 3909: return "tsrange[]";
+        case 3911: return "tstzrange[]";
+        case 3913: return "daterange[]";
+        case 3927: return "int8range[]";
 
         default: return "text";
     }
@@ -136,8 +164,8 @@ String pgFormatType(Int64 oid, Int64 typmod)
 /// queries issued by libpq/pqxx clients - in particular by ClickHouse itself when the `postgresql`
 /// table function or engine points at another ClickHouse instance.
 /// As in PostgreSQL, the function is not strict: a `NULL` type modifier means that no specific modifier
-/// is known (the same as `-1`), so `format_type(t.oid, NULL)` renders the base type name, and only a
-/// `NULL` type OID gives `NULL`.
+/// is known (the same as `-1`, except for the blank-padded character type, see `pgFormatBlankPaddedCharacter`),
+/// so `format_type(t.oid, NULL)` renders the base type name, and only a `NULL` type OID gives `NULL`.
 class FunctionFormatType final : public IFunction
 {
 public:
@@ -217,7 +245,9 @@ public:
                 continue;
             }
 
-            const Int64 type_modifier = typmod.isNull(i) ? -1 : typmod.values->getInt(i);
+            std::optional<Int64> type_modifier;
+            if (!typmod.isNull(i))
+                type_modifier = typmod.values->getInt(i);
             const String type_name = pgFormatType(oid.values->getInt(i), type_modifier);
             result->insertData(type_name.data(), type_name.size());
         }
