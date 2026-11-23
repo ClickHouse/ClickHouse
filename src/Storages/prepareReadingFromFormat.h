@@ -57,6 +57,7 @@ namespace DB
         /// True if `format_header` has a hive partition column. Its values in the file are not the values
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
+        bool hasDefaultOfColumnOrParent(const String & name) const;
         /// The filter without the conjuncts on hive partition and virtual columns:
         /// they are added after the format, and a column of the data file with the same name holds other values.
         std::shared_ptr<const ActionsDAG> getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const;

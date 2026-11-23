@@ -3071,6 +3071,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     if (query_info.row_level_filter)
         return {};
 
+    if (std::ranges::any_of(top_k_filter->columns_deciding_threshold, [&](const String & name) { return info.hasDefaultOfColumnOrParent(name); }))
+        return {};
+
     auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
     size_t condition_hash = 0;
     if (filter_actions_dag)

@@ -561,22 +561,14 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     /// input, not the expression (which may be `queryID()`, `now()`, or depend on other columns). So
     /// the same files and filter could let other rows through from query to query. The sort column
     /// itself never has one (see `supportsTopKDynamicFilter`).
-    auto has_default = [&](const String & name)
-    {
-        if (info.columns_description.hasDefault(name))
-            return true;
-        /// A subcolumn (`t.a`) is read from its column.
-        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
-            if (info.columns_description.hasDefault(name.substr(0, pos)))
-                return true;
-        return false;
-    };
+    auto has_default = [&](const String & name) { return info.hasDefaultOfColumnOrParent(name); };
     auto filter_reads_column_with_default = [&](const ActionsDAG & dag)
     {
         return std::ranges::any_of(dag.getInputs(), [&](const auto * input) { return has_default(input->result_name); });
     };
     if ((filter_actions_dag && filter_reads_column_with_default(*filter_actions_dag))
-        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions)))
+        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions))
+        || std::ranges::any_of(top_k_filter->columns_deciding_threshold, has_default))
         return {};
 
     /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,

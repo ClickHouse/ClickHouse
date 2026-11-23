@@ -454,6 +454,16 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
     return false;
 }
 
+bool ReadFromFormatInfo::hasDefaultOfColumnOrParent(const String & name) const
+{
+    if (columns_description.hasDefault(name))
+        return true;
+    for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+        if (columns_description.hasDefault(name.substr(0, pos)))
+            return true;
+    return false;
+}
+
 std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const
 {
     if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))

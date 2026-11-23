@@ -29,6 +29,7 @@
 #include <Common/logger_useful.h>
 
 #include <optional>
+#include <unordered_set>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -93,6 +94,33 @@ static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, cons
     return node->result_name;
 }
 
+static NameSet inputsOfOutputs(const ActionsDAG & dag, const NameSet & names)
+{
+    NameSet inputs;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack;
+    for (const auto & name : names)
+    {
+        if (const auto * output = dag.tryFindInOutputs(name))
+            stack.push_back(output);
+        else
+            inputs.insert(name);
+    }
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            inputs.insert(node->result_name);
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return inputs;
+}
+
 static UInt64 groupByTopKPlanHash(
     const String & key_name,
     const DataTypePtr & key_type,
@@ -145,6 +173,7 @@ static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
     int direction,
     int nulls_direction,
     UInt64 plan_hash,
+    const NameSet & columns_deciding_threshold,
     bool has_non_deterministic_filter,
     const Optimization::ExtraSettings & settings,
     const LoggerPtr & log)
@@ -203,6 +232,7 @@ static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
     info->threshold_tracker = threshold_tracker;
     info->plan_hash = plan_hash;
     info->filter_rows = true;
+    info->columns_deciding_threshold.assign(columns_deciding_threshold.begin(), columns_deciding_threshold.end());
     source_step->setTopKFilter(std::move(info));
 
     LOG_TRACE(log, "Filtering rows and skipping row groups of {} by the top-K boundary of the aggregation", key_name);
@@ -257,6 +287,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     bool has_non_deterministic_filter = false;
     /// The expressions between the read and the aggregation, for the query condition cache salt below.
     VectorWithMemoryTracking<const ActionsDAG *> path_expressions;
+    const auto & aggregation_keys = aggregating_step.getParams().keys;
+    NameSet columns_deciding_threshold(aggregation_keys.begin(), aggregation_keys.end());
 
     while (!read_step)
     {
@@ -278,6 +310,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             }
             key_name = std::move(*input_name);
             path_expressions.push_back(&expression_step->getExpression());
+            columns_deciding_threshold = inputsOfOutputs(expression_step->getExpression(), columns_deciding_threshold);
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
@@ -298,6 +331,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             key_name = std::move(*input_name);
             closest_filter_step = filter_step;
             path_expressions.push_back(&filter_step->getExpression());
+            columns_deciding_threshold.insert(filter_step->getFilterColumnName());
+            columns_deciding_threshold = inputsOfOutputs(filter_step->getExpression(), columns_deciding_threshold);
 
             const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
             if (!filter_node || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(filter_node))
@@ -315,7 +350,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
                 aggregating_step.getInputHeaders().front()->getByName(aggregating_step.getParams().keys.front()).type,
                 num_key_columns, limit, aggregating_step, path_expressions, directions, nulls_directions);
             return tryAttachFormatDynamicFilter(
-                *node->step, key_name, direction, nulls_direction, plan_hash, has_non_deterministic_filter, settings, log);
+                *node->step, key_name, direction, nulls_direction, plan_hash, columns_deciding_threshold,
+                has_non_deterministic_filter, settings, log);
         }
         else
         {
