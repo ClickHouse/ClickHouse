@@ -886,8 +886,6 @@ void KeeperServer::shutdownRaftServer()
         raft_instance->create_snapshot(options);
     }
 
-    raft_instance.reset();
-
     for (const auto & asio_listener : asio_listeners)
     {
         if (asio_listener)
@@ -916,6 +914,9 @@ void KeeperServer::shutdownRaftServer()
 
     if (asio_service->get_active_workers() != 0)
         LOG_WARNING(log, "Failed to shutdown RAFT server in {} seconds", timeout);
+
+    /// The asio workers run Raft callbacks that use `raft_instance`, so it is destroyed only after they are stopped.
+    raft_instance.reset();
 }
 
 
