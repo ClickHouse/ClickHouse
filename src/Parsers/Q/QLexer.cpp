@@ -180,12 +180,6 @@ private:
         return line;
     }
 
-    void skipToLineEnd()
-    {
-        while (pos < text.size() && text[pos] != '\n')
-            ++pos;
-    }
-
     /// Skips spaces, tabs, and comments, but not line breaks. Returns whether anything was skipped
     /// (a comment counts as whitespace).
     bool skipWhitespaceAndComments()
@@ -201,43 +195,16 @@ private:
                 continue;
             }
 
-            if (atLineStart(pos))
-            {
-                std::string_view line = lineAt(pos);
-                if (line == "/")
-                {
-                    /// A block comment: from a line with a lone `/` to a line with a lone `\`.
-                    while (pos < text.size())
-                    {
-                        skipToLineEnd();
-                        if (pos < text.size())
-                            ++pos;
-                        if (pos < text.size() && lineAt(pos) == "\\")
-                        {
-                            skipToLineEnd();
-                            break;
-                        }
-                    }
-                    skipped = true;
-                    continue;
-                }
-                if (line == "\\")
-                {
-                    /// A lone `\` at the top level ends the script: the rest is a comment.
-                    pos = text.size();
-                    return true;
-                }
-                if (c == '\\')
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "System commands (lines starting with '\\') are not supported in the q dialect");
-            }
+            /// A line starting with `\` is a system command, unless it is a lone `\`, which ends the script.
+            if (c == '\\' && atLineStart(pos) && lineAt(pos) != "\\")
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "System commands (lines starting with '\\') are not supported in the q dialect");
 
-            /// `/` after whitespace starts a comment. So does `--` followed by whitespace: this is not q,
-            /// but it lets the queries be annotated like SQL (`- -x` is still a double negation).
-            bool sql_comment = c == '-' && pos + 1 < text.size() && text[pos + 1] == '-'
-                && (pos + 2 == text.size() || isWhitespaceASCII(text[pos + 2]));
-            if ((c == '/' || sql_comment) && skipped)
+            const char * data = text.data();
+            const char * after = skipQComment(data, data + pos, data + text.size());
+            if (after != data + pos)
             {
-                skipToLineEnd();
+                pos = static_cast<size_t>(after - data);
+                skipped = true;
                 continue;
             }
             break;
@@ -253,18 +220,23 @@ private:
         if (depth > 0 || tokens.empty() || tokens.back().type == QTokenType::StatementBreak)
             return;
 
-        size_t next = pos;
-        while (next < text.size())
+        /// Lines with nothing but whitespace and comments (of every kind that the dialect accepts) do not count.
+        const char * data = text.data();
+        const char * end = data + text.size();
+        const char * next = data + pos;
+        while (next < end)
         {
-            std::string_view line = lineAt(next);
-            if (!line.empty() && line[0] != '/')
+            if (isWhitespaceASCII(*next))
+            {
+                ++next;
+                continue;
+            }
+            const char * after = skipQComment(data, next, end);
+            if (after == next)
                 break;
-            size_t end = text.find('\n', next);
-            if (end == std::string_view::npos)
-                return;
-            next = end + 1;
+            next = after;
         }
-        if (next >= text.size() || isWhitespaceASCII(text[next]))
+        if (next >= end || !atLineStart(static_cast<size_t>(next - data)))
             return;
 
         QToken token;
@@ -417,6 +389,60 @@ private:
 QTokens tokenizeQ(std::string_view text)
 {
     return QLexer(text).tokenize();
+}
+
+const char * skipQComment(const char * begin, const char * at, const char * end)
+{
+    if (at >= end)
+        return at;
+
+    auto line_end = [&](const char * from)
+    {
+        while (from < end && *from != '\n')
+            ++from;
+        return from;
+    };
+
+    /// Whether the line starting at `from` consists of the character `c` alone (trailing whitespace is allowed).
+    auto is_lone = [&](const char * from, char c)
+    {
+        if (from >= end || *from != c)
+            return false;
+        for (const char * rest = from + 1; rest < end && *rest != '\n'; ++rest)
+            if (!isWhitespaceASCII(*rest))
+                return false;
+        return true;
+    };
+
+    bool line_start = at == begin || at[-1] == '\n';
+    if (line_start)
+    {
+        if (is_lone(at, '/'))
+        {
+            /// A block comment: from a line with a lone `/` to a line with a lone `\`.
+            const char * line = at;
+            while (true)
+            {
+                line = line_end(line);
+                if (line == end)
+                    return end;
+                ++line;
+                if (is_lone(line, '\\'))
+                    return line_end(line);
+            }
+        }
+        /// A lone `\` ends the script: the rest is a comment.
+        if (is_lone(at, '\\'))
+            return end;
+    }
+
+    if (!line_start && !isWhitespaceASCII(at[-1]))
+        return at;
+
+    bool sql_comment = *at == '-' && at + 1 < end && at[1] == '-' && (at + 2 == end || isWhitespaceASCII(at[2]));
+    if (*at == '/' || sql_comment)
+        return line_end(at);
+    return at;
 }
 
 }

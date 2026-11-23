@@ -1,6 +1,7 @@
 #include <Parsers/Q/parseQQuery.h>
 
 #include <Parsers/Q/ASTQQuery.h>
+#include <Parsers/Q/QLexer.h>
 #include <Parsers/Q/QParser.h>
 
 #include <Parsers/ParserSetQuery.h>
@@ -22,29 +23,6 @@ namespace ErrorCodes
 namespace
 {
 
-bool isLineStart(const char * begin, const char * at)
-{
-    return at == begin || at[-1] == '\n';
-}
-
-/// Whether a comment starts at `at`: `/` after whitespace, or `--` followed by whitespace.
-bool isCommentStart(const char * begin, const char * at, const char * end)
-{
-    bool after_space = isLineStart(begin, at) || isWhitespaceASCII(at[-1]);
-    if (!after_space)
-        return false;
-    if (*at == '/')
-        return true;
-    return *at == '-' && at + 1 < end && at[1] == '-' && (at + 2 == end || isWhitespaceASCII(at[2]));
-}
-
-const char * skipToLineEnd(const char * at, const char * end)
-{
-    while (at < end && *at != '\n')
-        ++at;
-    return at;
-}
-
 /// Skips whitespace and comments.
 const char * skipInsignificant(const char * begin, const char * at, const char * end)
 {
@@ -52,8 +30,8 @@ const char * skipInsignificant(const char * begin, const char * at, const char *
     {
         if (isWhitespaceASCII(*at))
             ++at;
-        else if (isCommentStart(begin, at, end))
-            at = skipToLineEnd(at, end);
+        else if (const char * after = skipQComment(begin, at, end); after != at)
+            at = after;
         else
             break;
     }
@@ -89,9 +67,10 @@ QueryBounds findQueryEnd(const char * begin, const char * pos, const char * end)
                 ++at;
             continue;
         }
-        if ((c == '/' || c == '-') && isCommentStart(begin, at, end))
+        /// The comments are those of the lexer, so that a `;` in a comment of any kind does not end the query.
+        if (const char * after = skipQComment(begin, at, end); after != at)
         {
-            at = skipToLineEnd(at, end);
+            at = after;
             continue;
         }
         if (c == '(' || c == '[' || c == '{')
@@ -103,7 +82,7 @@ QueryBounds findQueryEnd(const char * begin, const char * pos, const char * end)
             const char * after = at + 1;
             while (after < end && (*after == ' ' || *after == '\t' || *after == '\r'))
                 ++after;
-            if (after == end || *after == '\n' || isCommentStart(begin, after, end))
+            if (after == end || *after == '\n' || skipQComment(begin, after, end) != after)
                 return {at, at + 1};
         }
         ++at;

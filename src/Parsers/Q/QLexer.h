@@ -64,4 +64,15 @@ using QTokens = std::vector<QToken>;
 /// Splits a q program into tokens. Throws `SYNTAX_ERROR` on malformed input.
 QTokens tokenizeQ(std::string_view text);
 
+/// The comment grammar of the dialect, shared by the lexer and by the code that finds the boundaries of a query in a script.
+///
+/// If a comment starts at `at`, returns the position after it, otherwise returns `at`. The comments are:
+/// - a block comment: from a line with a lone `/` to a line with a lone `\` (or to the end of the text);
+/// - a lone `\` on a line, which ends the script: everything up to `end` is a comment;
+/// - `/` after whitespace or at the beginning of a line, up to the end of the line;
+/// - `--` followed by whitespace, after whitespace or at the beginning of a line, up to the end of the line
+///   (this is not q, but it lets the queries be annotated like SQL).
+/// The line break that ends a comment is not a part of it. `begin` is the beginning of the text.
+const char * skipQComment(const char * begin, const char * at, const char * end);
+
 }
