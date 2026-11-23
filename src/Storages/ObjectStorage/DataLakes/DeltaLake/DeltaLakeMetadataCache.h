@@ -7,6 +7,7 @@
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeletionVector.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include "delta_kernel_ffi.hpp"
 
@@ -39,7 +40,9 @@ struct ScannedDataFile
     int64_t size = 0;
     std::optional<UInt64> num_records;
     KernelDvInfo dv_info;
+    std::optional<DeletionVectorDescriptor> deletion_vector;
     std::optional<KernelExpression> transform;
+    std::optional<std::string> stats;
 };
 
 using ScannedDataFilePtr = std::shared_ptr<const ScannedDataFile>;
@@ -50,7 +53,8 @@ struct SnapshotDataFiles
 
     [[nodiscard]] static size_t getFileWeight(const ScannedDataFile & file)
     {
-        return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity();
+        return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity()
+            + (file.deletion_vector ? file.deletion_vector->path_or_inline_dv.capacity() : 0) + (file.stats ? file.stats->capacity() : 0);
     }
 };
 

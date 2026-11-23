@@ -7226,7 +7226,7 @@ consistency between the schema used during query analysis and the schema used du
     DECLARE(Bool, use_delta_lake_metadata_cache, false, R"(
 If turned on, the `DeltaLake` table engine and table functions keep the list of data files of each version of a table in the Delta Lake metadata cache, so that the queries to the same version do not list the files from the log again.
 
-The files of a version are listed without the filter of the query, to be reused by other queries. So with this setting, the files are skipped only by the partition values, and not by the statistics in the log.
+The files of a version are listed without the filter of the query, to be reused by other queries, and each query skips the files by their partition values and by the minimum and maximum values and null counts in the log.
 
 Possible values:
 
