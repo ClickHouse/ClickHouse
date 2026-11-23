@@ -400,7 +400,7 @@ RuntimeDataflowStatisticsCacheUpdater::RuntimeDataflowStatisticsCacheUpdater(
     std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
     : block(std::move(block_))
     , duplicated(duplicated_)
-    , counted_compressed_blocks(std::make_shared<CountedCompressedBlocks>(block, duplicated))
+    , read_ranges_registry(std::make_shared<ReadRangesRegistry>(block, duplicated))
 {
 }
 

@@ -48,17 +48,19 @@ public:
     [[nodiscard]] bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
 
     /// Only the columns `fallback_reader` reads: the posting lists are not counted.
-    void flushCompressedBlocksRead() override
+    void registerReadRanges() override
     {
         if (fallback_reader)
-            fallback_reader->flushCompressedBlocksRead();
+            fallback_reader->registerReadRanges();
     }
-    void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override
+
+    void setReadRangesRegistry(ReadRangesRegistryPtr registry) override
     {
         if (fallback_reader)
-            fallback_reader->countCompressedBytesRead(counted);
-        IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+            fallback_reader->setReadRangesRegistry(registry);
+        IMergeTreeReader::setReadRangesRegistry(std::move(registry));
     }
+
     void updateAllMarkRanges(const MarkRanges & ranges) override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 

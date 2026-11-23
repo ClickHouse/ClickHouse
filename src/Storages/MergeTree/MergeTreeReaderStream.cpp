@@ -165,7 +165,7 @@ void MergeTreeReaderStream::init()
     }
 
     if (compressed_data_buffer)
-        compressed_data_buffer->setBlocksReadSink(blocks_read);
+        compressed_data_buffer->setRangesReadSink(ranges_read);
 
     announceReadRequestMap();
 
@@ -340,38 +340,38 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
-CountedCompressedBlocks::CountedCompressedBlocks(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
+ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
     : block(std::move(block_))
     , duplicated(duplicated_)
 {
 }
 
-CountedCompressedBlocks::CountedRanges & CountedCompressedBlocks::getCountedRanges(const String & path)
+ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
 {
     std::lock_guard lock(mutex);
-    if (auto it = counted.find(path); it != counted.end())
+    if (auto it = read_ranges_by_path.find(path); it != read_ranges_by_path.end())
         return it->second;
     /// A file takes a unit of the limit as a range does.
     if (!reserve(1))
-        return not_counted;
+        return not_registered;
     /// References to the elements of an unordered map stay valid when it grows.
-    return counted[path];
+    return read_ranges_by_path[path];
 }
 
-size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & ranges)
+size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
 {
     size_t bytes = 0;
     for (const auto & [begin, end] : ranges)
     {
         chassert(begin <= end);
         /// The first counted range that overlaps or touches the range.
-        auto it = counted.upper_bound(begin);
-        if (it != counted.begin() && std::prev(it)->second >= begin)
+        auto it = united_ranges.upper_bound(begin);
+        if (it != united_ranges.begin() && std::prev(it)->second >= begin)
             --it;
-        if (it == counted.end() || it->first > end)
+        if (it == united_ranges.end() || it->first > end)
         {
             bytes += end - begin;
-            counted.emplace_hint(it, begin, end);
+            united_ranges.emplace_hint(it, begin, end);
             continue;
         }
 
@@ -380,7 +380,7 @@ size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & rang
         const auto first = it;
         size_t covered = 0;
         size_t merged_end = end;
-        for (; it != counted.end() && it->first <= end; ++it)
+        for (; it != united_ranges.end() && it->first <= end; ++it)
         {
             if (it->second > begin && it->first < end)
                 covered += std::min(end, it->second) - std::max(begin, it->first);
@@ -388,19 +388,19 @@ size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & rang
         }
         bytes += end - begin - covered;
         first->second = merged_end;
-        counted.erase(std::next(first), it);
+        united_ranges.erase(std::next(first), it);
         if (begin < first->first)
         {
-            auto node = counted.extract(first);
+            auto node = united_ranges.extract(first);
             node.key() = begin;
-            counted.insert(std::move(node));
+            united_ranges.insert(std::move(node));
         }
     }
     ranges.clear();
     return bytes;
 }
 
-void CountedCompressedBlocks::count(Batch & batch, CountedRanges & file_ranges, CompressedBlockRanges & ranges)
+void ReadRangesRegistry::registerRanges(Batch & batch, ReadRanges & file_ranges, CompressedBlockRanges & ranges)
 {
     if (ranges.empty())
         return;
@@ -409,46 +409,46 @@ void CountedCompressedBlocks::count(Batch & batch, CountedRanges & file_ranges, 
     if (ranges.size() > batch.reserved && !reserve(ranges.size() - batch.reserved))
     {
         ranges.clear();
-        if (&file_ranges != &not_counted)
+        if (&file_ranges != &not_registered)
         {
             std::lock_guard lock(file_ranges.mutex);
-            file_ranges.counted.clear();
+            file_ranges.united_ranges.clear();
         }
         return;
     }
     batch.reserved = std::max(batch.reserved, ranges.size());
 
     std::lock_guard lock(file_ranges.mutex);
-    const size_t ranges_before = file_ranges.counted.size();
-    batch.bytes += file_ranges.take(ranges);
+    const size_t ranges_before = file_ranges.united_ranges.size();
+    batch.bytes += file_ranges.add(ranges);
     /// Merging can also free nodes, which go back with the rest of the reservation.
-    const size_t ranges_after = file_ranges.counted.size();
+    const size_t ranges_after = file_ranges.united_ranges.size();
     batch.reserved = batch.reserved + ranges_before - ranges_after;
 }
 
-void CountedCompressedBlocks::commit(const Batch & batch)
+void ReadRangesRegistry::commit(const Batch & batch)
 {
     if (batch.reserved && block->max_counted_ranges)
-        block->counted_ranges.fetch_sub(batch.reserved, std::memory_order_relaxed);
+        block->read_ranges.fetch_sub(batch.reserved, std::memory_order_relaxed);
     if (batch.bytes)
         (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(batch.bytes, std::memory_order_relaxed);
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, batch.watch.elapsedNanoseconds());
 }
 
-bool CountedCompressedBlocks::stopped() const
+bool ReadRangesRegistry::stopped() const
 {
     return block->counted_ranges_limit_exceeded.load(std::memory_order_relaxed);
 }
 
-bool CountedCompressedBlocks::reserve(size_t units)
+bool ReadRangesRegistry::reserve(size_t units)
 {
     if (stopped())
         return false;
     if (!block->max_counted_ranges)
         return true;
-    if (block->counted_ranges.fetch_add(units, std::memory_order_relaxed) + units <= block->max_counted_ranges)
+    if (block->read_ranges.fetch_add(units, std::memory_order_relaxed) + units <= block->max_counted_ranges)
         return true;
-    block->counted_ranges.fetch_sub(units, std::memory_order_relaxed);
+    block->read_ranges.fetch_sub(units, std::memory_order_relaxed);
     if (!block->counted_ranges_limit_exceeded.exchange(true))
         LOG_DEBUG(
             getLogger("RuntimeDataflowStatisticsCacheUpdater"),
@@ -457,14 +457,14 @@ bool CountedCompressedBlocks::reserve(size_t units)
     return false;
 }
 
-void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)
+void MergeTreeReaderStream::setRangesReadSink(CompressedBlockRanges * ranges_read_)
 {
     if (!settings.is_compressed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot count the compressed blocks read from a stream of uncompressed data");
     /// The buffer is created on the first read, see `init`.
-    blocks_read = blocks_read_;
+    ranges_read = ranges_read_;
     if (compressed_data_buffer)
-        compressed_data_buffer->setBlocksReadSink(blocks_read);
+        compressed_data_buffer->setRangesReadSink(ranges_read);
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)

@@ -65,17 +65,17 @@ protected:
     /// Adds diagnostics to the error message.
     void addDiagnostics(Exception & e) const;
 
-    /// See `setBlocksReadSink`. Maintained by the buffers that read from a file.
-    CompressedBlockRanges * blocks_read = nullptr;
+    /// See `setRangesReadSink`. Maintained by the buffers that read from a file.
+    CompressedBlockRanges * ranges_read = nullptr;
 
     /// A block that continues the last range, or that it covers already, which reading on or loading the block again
     /// gives, extends it instead of taking a range of its own.
     void recordBlockRead(size_t begin, size_t end)
     {
-        if (!blocks_read->empty() && blocks_read->back().first <= begin && begin <= blocks_read->back().second)
-            blocks_read->back().second = std::max(blocks_read->back().second, end);
+        if (!ranges_read->empty() && ranges_read->back().first <= begin && begin <= ranges_read->back().second)
+            ranges_read->back().second = std::max(ranges_read->back().second, end);
         else
-            blocks_read->emplace_back(begin, end);
+            ranges_read->emplace_back(begin, end);
     }
 
 public:
@@ -94,7 +94,7 @@ public:
 
     /// Makes the buffer append the range in the file, [offset, offset + compressed size with the header and the checksum),
     /// of every block it decompresses or takes decompressed from a cache, every time it loads it. `nullptr` stops it.
-    void setBlocksReadSink(CompressedBlockRanges * blocks_read_) { blocks_read = blocks_read_; }
+    void setRangesReadSink(CompressedBlockRanges * ranges_read_) { ranges_read = ranges_read_; }
 
     /// Identifies the column this buffer reads, see LZ4StatisticsHint.h.
     void setStatisticsHint(UInt64 hint) { statistics_hint = hint; }

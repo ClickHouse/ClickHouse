@@ -1170,39 +1170,39 @@ CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream
     return ranges_read[stream_name].ranges;
 }
 
-void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+void MergeTreeReaderWide::setReadRangesRegistry(ReadRangesRegistryPtr registry)
 {
-    IMergeTreeReader::countCompressedBytesRead(std::move(counted));
-    if (!counted_compressed_blocks)
+    IMergeTreeReader::setReadRangesRegistry(std::move(registry));
+    if (!read_ranges_registry)
         return;
     /// The streams created later get their sink in `getOrAddStream`.
-    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
+    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setRangesReadSink(&getRangesRead(stream_name)); });
 }
 
-void MergeTreeReaderWide::flushCompressedBlocksRead()
+void MergeTreeReaderWide::registerReadRanges()
 {
-    if (!counted_compressed_blocks)
+    if (!read_ranges_registry)
         return;
 
-    CountedCompressedBlocks::Batch batch;
+    ReadRangesRegistry::Batch batch;
     std::lock_guard lock(ranges_read_mutex);
     for (auto & [stream_name, stream_ranges] : ranges_read)
     {
         if (stream_ranges.ranges.empty())
             continue;
-        if (!stream_ranges.counted)
-            stream_ranges.counted = &counted_compressed_blocks->getCountedRanges(
+        if (!stream_ranges.read_ranges)
+            stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
-        counted_compressed_blocks->count(batch, *stream_ranges.counted, stream_ranges.ranges);
+        read_ranges_registry->registerRanges(batch, *stream_ranges.read_ranges, stream_ranges.ranges);
     }
-    counted_compressed_blocks->commit(batch);
+    read_ranges_registry->commit(batch);
 
-    if (counted_compressed_blocks->stopped())
+    if (read_ranges_registry->stopped())
     {
         /// The streams created later get no sink either.
-        streams.forEach([](const String &, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(nullptr); });
+        streams.forEach([](const String &, MergeTreeReaderStream & stream) { stream.setRangesReadSink(nullptr); });
         ranges_read.clear();
-        counted_compressed_blocks.reset();
+        read_ranges_registry.reset();
     }
 }
 
@@ -1266,8 +1266,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
-            if (counted_compressed_blocks)
-                stream->setBlocksReadSink(&getRangesRead(stream_name));
+            if (read_ranges_registry)
+                stream->setRangesReadSink(&getRangesRead(stream_name));
             return stream;
         };
 
