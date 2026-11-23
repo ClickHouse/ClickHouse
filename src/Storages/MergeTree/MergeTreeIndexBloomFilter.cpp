@@ -938,21 +938,26 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
-static bool isPlainString(const DataTypePtr & type)
-{
-    return isString(type) && !type->getCustomName() && !type->getCustomSerialization();
-}
-
-/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
+/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col.
+/// The index may be on the array itself or on its lossless conversion.
 static std::optional<size_t> findArrayJoinIndexPosition(
-    const RPNBuilderTreeNode & node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
+    const RPNBuilderTreeNode & wrapped_node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
 {
-    if (auto position = findIndexPosition(header, index_nodes, node))
+    auto find = [&](const RPNBuilderTreeNode & array)
+    {
+        if (auto position = findIndexPosition(header, index_nodes, array))
+            return position;
+        return findIndexPosition(header, index_nodes, unwrapLosslessConversion(array));
+    };
+
+    if (auto position = find(wrapped_node))
         return position;
+
+    const auto node = unwrapLosslessConversion(wrapped_node);
     if (!node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
         return std::nullopt;
     padded = true;
-    return findIndexPosition(header, index_nodes, node.toFunctionNode().getArgumentAt(0));
+    return find(node.toFunctionNode().getArgumentAt(0));
 }
 
 /// True if `column` holds the element LEFT ARRAY JOIN pads an empty array with: the default of `element_type`.
@@ -1145,12 +1150,16 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
     /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
-    const bool null_in = function_name == "nullIn" || function_name == "globalNullIn";
-    if ((!null_in && function_name != "in" && function_name != "globalIn") || !column)
+    /// `nullIn` over a NULL-free set selects the same rows as `in`.
+    const bool is_in = function_name == "in" || function_name == "globalIn";
+    const bool is_null_in = (function_name == "nullIn" || function_name == "globalNullIn")
+        && prepared_set && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull();
+    if (!is_in && !is_null_in)
+        return false;
+    if (!column)
         return false;
 
-    const auto array_join_key = null_in ? unwrapLosslessConversion(wrapped_key_node, /*allow_drop_nullable=*/ false) : key_node;
-    auto array_join_argument = array_join_key.getArrayJoinArgument();
+    auto array_join_argument = key_node.getArrayJoinArgument();
     if (!array_join_argument)
         return false;
 
@@ -1167,22 +1176,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const auto & array_nested_type = array_type->getNestedType();
     if (!bloomFilterHashDomainMatches(type, array_nested_type))
         return false;
-
-    if (null_in)
-    {
-        /// A computed index expression can depend on settings, e.g. CAST from Dynamic to Array(String).
-        if (index_nodes[position]->getWithoutAlias()->type != ActionsDAG::ActionType::INPUT)
-            return false;
-
-        /// The index stores string element hashes. Only use a complete set of strings with no NULLs.
-        if (!prepared_set || prepared_set->isTruncated() || prepared_set->getDataTypes().size() != 1
-            || !isPlainString(removeNullable(type)) || !isPlainString(array_nested_type))
-            return false;
-
-        const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
-        if (nullable_column && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
-            return false;
-    }
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
     if (padded && containsPaddedElement(*converted_column, *array_nested_type))
