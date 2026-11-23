@@ -267,7 +267,11 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
 {
     auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
     checkSchemaDepth(*arrow_file, format_settings);
-    return parquet::ReadMetaData(arrow_file);
+    /// The depth is already limited by `checkSchemaDepth`, so do not apply Arrow's own default limit (100).
+    /// `+ 1` because Arrow checks `depth >= limit`.
+    parquet::ReaderProperties properties = parquet::default_reader_properties();
+    properties.set_schema_depth_limit(static_cast<int32_t>(MAX_SCHEMA_DEPTH_FOR_ARROW) + 1);
+    return parquet::ParquetFileReader::Open(arrow_file, properties)->metadata();
 }
 
 ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
