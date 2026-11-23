@@ -87,31 +87,31 @@ public:
     explicit FunctionTimeSeriesHistogramBinaryMath(String name_)
         : name(std::move(name_)) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Constant columns are materialized, so executeImpl always sees plain (possibly Nullable) columns.
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Manual NULL handling: NULL is also produced for schema-incompatible inputs.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Function {} must be called with two arguments: {}(histogram, histogram)",
                             getName(), getName());
 
-        resolvePositions(arguments, 0);
-        resolvePositions(arguments, 1);
+        UNUSED(resolvePositions(arguments, 0));
+        UNUSED(resolvePositions(arguments, 1));
         return makeNullable(getTimeSeriesHistogramPayloadTupleType());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         const auto lhs_positions = resolvePositions(arguments, 0);
         const auto rhs_positions = resolvePositions(arguments, 1);
@@ -180,7 +180,7 @@ protected:
 
 private:
     /// Validates that arguments[arg_index] (after unwrapping Nullable) is a named payload tuple and returns the element positions.
-    TimeSeriesHistogramPayloadPositions resolvePositions(const ColumnsWithTypeAndName & arguments, size_t arg_index) const
+    [[nodiscard]] TimeSeriesHistogramPayloadPositions resolvePositions(const ColumnsWithTypeAndName & arguments, size_t arg_index) const
     {
         ColumnsWithTypeAndName unwrapped;
         unwrapped.emplace_back(arguments[arg_index].column, removeNullable(arguments[arg_index].type), arguments[arg_index].name);
@@ -198,16 +198,16 @@ public:
     explicit FunctionTimeSeriesHistogramScalarMath(String name_)
         : name(std::move(name_)) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Constant columns are materialized, so executeImpl always sees a plain ColumnTuple.
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -224,7 +224,7 @@ public:
         return getTimeSeriesHistogramPayloadTupleType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         const auto * tuple_column = checkAndGetColumn<ColumnTuple>(arguments[0].column.get());
         if (!tuple_column)
