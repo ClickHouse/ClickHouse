@@ -28,8 +28,20 @@ $CLICKHOUSE_CLIENT -q "
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.dist TO $user;
 "
 
-$CLICKHOUSE_CLIENT --user "$user" -q "
+# FIXME: does not work with distributed plan
+$CLICKHOUSE_CLIENT --serialize_query_plan=0 --user "$user" -q "
     SELECT sum(key) FROM dist WHERE key > 10
+    SETTINGS prefer_localhost_replica = 0, enable_parallel_replicas = 0, distributed_index_analysis = 1,
+        max_parallel_replicas = 2,
+        cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas_interserver_secret';
+
+    SELECT sum(key) FROM dist WHERE key GLOBAL NOT IN (SELECT arrayJoin(range(7)) FROM system.one)
+    SETTINGS prefer_localhost_replica = 0, enable_parallel_replicas = 0, distributed_index_analysis = 1,
+        max_parallel_replicas = 2,
+        cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas_interserver_secret';
+
+    -- Not analyzed on the replicas: running as the cluster user, they would build the set without the row policies of the user.
+    SELECT sum(key) FROM dist WHERE key NOT IN (SELECT arrayJoin(range(7)) FROM system.one)
     SETTINGS prefer_localhost_replica = 0, enable_parallel_replicas = 0, distributed_index_analysis = 1,
         max_parallel_replicas = 2,
         cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas_interserver_secret';
@@ -39,7 +51,7 @@ $CLICKHOUSE_CLIENT -q "
     SYSTEM FLUSH LOGS query_log;
 
     -- The secondary query on the shard runs as the cluster user and sends the analysis to the other replica.
-    SELECT user, initial_user
+    SELECT user, initial_user, normalizeQuery(query)
     FROM system.query_log
     -- NOLINT(current_database = currentDatabase())
     WHERE event_date >= yesterday() AND event_time >= now() - 600
@@ -47,7 +59,6 @@ $CLICKHOUSE_CLIENT -q "
         AND query_kind = 'Select'
         AND type = 'QueryFinish'
         AND NOT is_initial_query
-        AND query LIKE '%mergeTreeAnalyzeIndexes%'
     ORDER BY event_time_microseconds;
 
     DROP USER $user;

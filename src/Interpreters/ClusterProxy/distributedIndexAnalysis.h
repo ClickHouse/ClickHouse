@@ -34,6 +34,10 @@ SharedHeader indexAnalysisSampleBlock();
 /// the column types are checked only by `assert_cast`, so another structure is undefined behavior in release builds.
 void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result);
 
+/// False if the replicas would run the analysis as another user and build
+/// a set of IN from a subquery without the row policies of that initial user
+bool canAnalyzeFilterOnReplicas(const ActionsDAG * filter_actions_dag, const ContextPtr & context);
+
 /// Do index analysis on replicas from the cluster_for_parallel_replicas
 /// by sending mergeTreeAnalyzeIndexesUUID() to each replica with list of assigned parts,
 /// in case of any failures the analysis will be done on local replica.

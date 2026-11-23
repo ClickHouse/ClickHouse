@@ -4206,7 +4206,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             && (!distributed_index_analysis_min_indexes_bytes_to_activate || get_indexes_size() >= distributed_index_analysis_min_indexes_bytes_to_activate)
             /// When `distributed_index_analysis_only_on_coordinator` is set, restrict distributed index analysis to the coordinator (initial query).
             /// Otherwise, subqueries in the predicate (e.g. `IN (SELECT ...)`) on follower replicas would each independently trigger distributed index analysis, causing O(N^2) queries.
-            && (is_initial_query || !settings[Setting::distributed_index_analysis_only_on_coordinator]);
+            && (is_initial_query || !settings[Setting::distributed_index_analysis_only_on_coordinator])
+            && canAnalyzeFilterOnReplicas(query_info_.filter_actions_dag.get(), context_);
 
         if (!distributed_index_analysis_enabled)
         {

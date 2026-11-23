@@ -2,8 +2,11 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #include <unordered_map>
+#include <Analyzer/Utils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
@@ -13,6 +16,8 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/PreparedSets.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #if defined(OS_LINUX) || defined(OS_DARWIN)
@@ -201,6 +206,37 @@ ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const NameSet & index
         return nullptr;
 
     return predicate;
+}
+
+/// We need to rewrite initial to current, due to Connection::sendQuery() refuse the difference for clusters with secret
+bool rewriteInitialUserToCurrent(const ContextPtr & context)
+{
+    const auto & client_info = context->getClientInfo();
+    return !client_info.current_user.empty() && client_info.current_user != client_info.initial_user
+        && !context->getClusterForParallelReplicas()->getSecret().empty();
+}
+
+/// Is there any IN subquery/table expressions?
+bool hasSetBuiltOnReplicas(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || node.children.size() != 2)
+            continue;
+
+        const auto & function_name = node.function_base->getName();
+        if (!isNameOfInFunction(function_name) || isNameOfGlobalInFunction(function_name))
+            continue;
+
+        const auto & set_column = node.children[1]->column;
+        if (!set_column)
+            continue;
+
+        if (const auto * column_set = typeid_cast<const ColumnSet *>(set_column->getDataColumnPtr().get());
+            column_set && typeid_cast<const FutureSetFromSubquery *>(column_set->getData().get()))
+            return true;
+    }
+    return false;
 }
 
 
@@ -873,6 +909,11 @@ void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
     }
 }
 
+bool canAnalyzeFilterOnReplicas(const ActionsDAG * filter_actions_dag, const ContextPtr & context)
+{
+    return !filter_actions_dag || !rewriteInitialUserToCurrent(context) || !hasSetBuiltOnReplicas(*filter_actions_dag);
+}
+
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const ActionsDAG * filter_actions_dag,
@@ -889,13 +930,10 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     /// Disable parallel replicas to avoid O(N^2) spawned queries when the predicate has a subquery,
     /// because each replica would independently spawn parallel replicas for the subquery.
     context_copy->setSetting("enable_parallel_replicas", false);
-    /// The analysis is a server-internal query, so run it as the user this node reads as.
-    /// On a shard reached over a cluster without a secret `current_user` is the cluster user, not
-    /// `initial_user`, and `Connection::sendQuery` refuses to forward such an `initial_user` over the cluster secret.
-    const auto & client_info = context_copy->getClientInfo();
-    if (const auto & current_user = client_info.current_user; !current_user.empty() && current_user != client_info.initial_user)
+    if (rewriteInitialUserToCurrent(context))
     {
-        context_copy->setInitialUserName(current_user);
+        const auto & client_info = context_copy->getClientInfo();
+        context_copy->setInitialUserName(client_info.current_user);
         context_copy->setInitialAddress(*client_info.current_address);
     }
 
