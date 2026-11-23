@@ -1814,114 +1814,65 @@ bool IcebergStorageSink::initializeMetadata()
 
             const bool single_manifest = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
 
-            /// The manifest being collected; each entry carries its own partition tuple.
-            std::vector<IcebergPathFromMetadata> data_file_names;
-            std::vector<UInt64> data_file_row_counts;
-            std::vector<UInt64> data_file_byte_counts;
-            std::vector<Row> per_file_partition_values;
-            /// Each manifest entry must describe only the data file it points at, so the writers' per-file statistics are
-            /// passed instead of a partition-wide aggregate (which can report more nulls than the file has rows).
-            std::vector<const DataFileStatistics *> per_file_fresh_statistics;
-            std::vector<std::optional<Int32>> data_file_sort_order_ids;
+            Iceberg::ManifestEntriesSources sources;
             std::optional<ManifestPartitionSummary> partition_summary;
 
-            auto add_partition = [&](const ChunkPartitioner::PartitionKey & partition_key, const MultipleFileWriter & writer)
+            auto write_manifest = [&](const ChunkPartitioner::PartitionKey & partition_key)
             {
-                const auto & files = writer.getDataFiles();
-                const auto & row_counts = writer.getDataFileRowCounts();
-                const auto & byte_counts = writer.getDataFileByteCounts();
-                const auto & file_statistics = writer.getPerFileStatistics();
-                if (row_counts.size() != files.size() || byte_counts.size() != files.size() || file_statistics.size() != files.size())
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Iceberg writer reports {} data files but {} row counts, {} byte counts and {} statistics",
-                        files.size(),
-                        row_counts.size(),
-                        byte_counts.size(),
-                        file_statistics.size());
-
-                data_file_names.insert(data_file_names.end(), files.begin(), files.end());
-                data_file_row_counts.insert(data_file_row_counts.end(), row_counts.begin(), row_counts.end());
-                data_file_byte_counts.insert(data_file_byte_counts.end(), byte_counts.begin(), byte_counts.end());
-                per_file_partition_values.insert(per_file_partition_values.end(), files.size(), partition_key);
-                data_file_sort_order_ids.insert(data_file_sort_order_ids.end(), files.size(), data_file_sort_order_id);
-                for (const auto & statistics : file_statistics)
-                    per_file_fresh_statistics.push_back(statistics.get());
-                if (partitioner)
-                {
-                    if (!partition_summary)
-                        partition_summary.emplace(partitioner->getResultTypes());
-                    partition_summary->add(partition_key);
-                }
-            };
-
-            auto write_manifest = [&]()
-            {
-                auto manifest_entry_path = filename_generator.generateManifestEntryName();
-                manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
-                manifest_entries.push_back(manifest_entry_path);
-                Int64 manifest_row_count = 0;
-                for (UInt64 data_file_row_count : data_file_row_counts)
-                    manifest_row_count += static_cast<Int64>(data_file_row_count);
-                manifest_entry_row_counts.push_back(manifest_row_count);
-                manifest_entry_file_counts.push_back(static_cast<Int64>(data_file_names.size()));
-
-                std::vector<DataFileColumnStatistics> carried_over_statistics;
-                std::vector<DataFileEntryLineage> entry_lineage;
                 if (merge_settings)
                 {
-                    auto carried_over = Iceberg::collectDataFilesToMerge(
+                    auto carried_over = Iceberg::CarriedOverDataFiles::collect(
                         *merge_settings,
                         parent_manifests,
-                        partition_summary ? &*partition_summary : nullptr,
-                        partitioner ? partitioner->getColumns().size() : 0,
+                        partition_key,
+                        partitioner ? partitioner->getResultTypes() : DataTypes{},
                         static_cast<Int32>(partition_spec_id),
                         static_cast<Int32>(current_schema_id),
                         write_format,
                         persistent_table_components,
                         object_storage,
                         context);
-
-                    manifest_entry_counts.push_back(ManifestListEntryCounts{
-                        .files_count = static_cast<Int64>(data_file_names.size()),
-                        .rows_count = manifest_row_count,
-                        .min_sequence_number
-                        = std::min(new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number), carried_over.min_sequence_number),
-                        .counts_are_added = true,
-                        .existing_files_count = static_cast<Int64>(carried_over.paths.size()),
-                        .existing_rows_count = carried_over.rows_count});
-
-                    if (!carried_over.paths.empty())
+                    if (carried_over)
                     {
-                        carried_over_statistics.resize(data_file_names.size());
-                        entry_lineage.resize(data_file_names.size(), DataFileEntryLineage{.added_by_new_snapshot = true});
-                        auto append = [](auto & to, auto & from) { to.insert(to.end(), std::make_move_iterator(from.begin()), std::make_move_iterator(from.end())); };
-                        append(data_file_names, carried_over.paths);
-                        append(data_file_row_counts, carried_over.row_counts);
-                        append(data_file_byte_counts, carried_over.byte_counts);
-                        append(carried_over_statistics, carried_over.statistics);
-                        append(data_file_sort_order_ids, carried_over.sort_order_ids);
-                        append(entry_lineage, carried_over.lineage);
-                        per_file_fresh_statistics.resize(data_file_names.size(), nullptr);
-                        const Row partition_value = per_file_partition_values.front();
-                        per_file_partition_values.resize(data_file_names.size(), partition_value);
-                        replaced_manifest_paths.merge(carried_over.manifest_paths);
+                        replaced_manifest_paths.insert(
+                            carried_over->getReplacedManifestPaths().begin(), carried_over->getReplacedManifestPaths().end());
+                        sources.push_back(std::move(carried_over));
                     }
                 }
 
+                Iceberg::ManifestEntries entries;
+                ManifestListEntryCounts counts;
+                counts.min_sequence_number = std::numeric_limits<Int64>::max();
+                counts.counts_are_added = true;
+                for (const auto & source : sources)
+                    source->addTo(entries, counts);
+                sources.clear();
+
+                auto manifest_entry_path = filename_generator.generateManifestEntryName();
+                manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
+                manifest_entries.push_back(manifest_entry_path);
+                manifest_entry_row_counts.push_back(counts.rows_count);
+                manifest_entry_file_counts.push_back(counts.files_count);
+                if (merge_settings)
+                {
+                    counts.min_sequence_number
+                        = std::min(counts.min_sequence_number, new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number));
+                    manifest_entry_counts.push_back(counts);
+                }
                 if (partition_summary)
                     entry_partition_summaries.push_back(std::move(*partition_summary));
+                partition_summary.reset();
 
                 auto buffer_manifest_entry = object_storage->writeObject(
                     StoredObject(resolver.resolve(manifest_entry_path)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
                 generateManifestFile(
                     metadata,
                     partitioner ? partitioner->getColumns() : std::vector<String>{},
-                    per_file_partition_values,
+                    entries.partition_values,
                     partitioner ? partitioner->getResultTypes() : DataTypes{},
-                    data_file_names,
-                    data_file_row_counts,
-                    data_file_byte_counts,
+                    entries.paths,
+                    entries.row_counts,
+                    entries.byte_counts,
                     /*data_file_statistics=*/std::nullopt,
                     sample_block,
                     new_snapshot,
@@ -1933,35 +1884,33 @@ bool IcebergStorageSink::initializeMetadata()
                     /*user_defined_sequence_number=*/std::nullopt,
                     /*user_defined_snapshot_id=*/std::nullopt,
                     /*data_file_formats=*/{},
-                    carried_over_statistics,
-                    data_file_sort_order_ids,
-                    entry_lineage,
+                    entries.carried_over_statistics,
+                    entries.sort_order_ids,
+                    entries.lineage,
                     /*schema_to_serialize=*/nullptr,
-                    &per_file_fresh_statistics);
+                    &entries.fresh_statistics);
                 buffer_manifest_entry->finalize();
                 auto size = buffer_manifest_entry->count();
                 if (size == 0)
                     size = object_storage->getObjectMetadata(resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
                 manifest_entry_sizes.push_back(size);
-
-                data_file_names.clear();
-                data_file_row_counts.clear();
-                data_file_byte_counts.clear();
-                per_file_partition_values.clear();
-                per_file_fresh_statistics.clear();
-                data_file_sort_order_ids.clear();
-                partition_summary.reset();
             };
 
             /// Either one manifest for every partition the insert touched, or one manifest per partition.
             for (const auto & [partition_key, writer] : writer_per_partition_key)
             {
-                add_partition(partition_key, writer);
+                sources.push_back(std::make_unique<Iceberg::NewDataFiles>(partition_key, writer, data_file_sort_order_id));
+                if (partitioner)
+                {
+                    if (!partition_summary)
+                        partition_summary.emplace(partitioner->getResultTypes());
+                    partition_summary->add(partition_key);
+                }
                 if (!single_manifest)
-                    write_manifest();
+                    write_manifest(partition_key);
             }
             if (single_manifest)
-                write_manifest();
+                write_manifest({});
         }
         {
             auto buffer_manifest_list = object_storage->writeObject(

@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <limits>
+#include <memory>
 #include <unordered_set>
 
 #if USE_AVRO
@@ -10,6 +11,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
 namespace DB
@@ -36,30 +38,65 @@ struct ManifestMergeSettings
 
 std::optional<ManifestMergeSettings> getManifestMergeSettings(const Poco::JSON::Object::Ptr & metadata, const Settings & settings);
 
-struct CarriedOverDataFiles
+struct ManifestEntries
 {
-    std::unordered_set<String> manifest_paths;
     std::vector<IcebergPathFromMetadata> paths;
     std::vector<UInt64> row_counts;
     std::vector<UInt64> byte_counts;
-    std::vector<DataFileColumnStatistics> statistics;
+    std::vector<Row> partition_values;
+    std::vector<const DataFileStatistics *> fresh_statistics;
+    std::vector<DataFileColumnStatistics> carried_over_statistics;
     std::vector<std::optional<Int32>> sort_order_ids;
     std::vector<DataFileEntryLineage> lineage;
+};
+
+class IManifestEntriesSource
+{
+public:
+    virtual ~IManifestEntriesSource() = default;
+    virtual void addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const = 0;
+};
+
+using ManifestEntriesSources = std::vector<std::unique_ptr<IManifestEntriesSource>>;
+
+class NewDataFiles final : public IManifestEntriesSource
+{
+public:
+    NewDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_);
+
+    void addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
+
+private:
+    const Row partition_value;
+    const MultipleFileWriter & writer;
+    const std::optional<Int32> sort_order_id;
+};
+
+class CarriedOverDataFiles final : public IManifestEntriesSource
+{
+public:
+    static std::unique_ptr<CarriedOverDataFiles> collect(
+        const ManifestMergeSettings & merge_settings,
+        const ManifestFileCacheKeys & parent_manifests,
+        const Row & partition_value,
+        const DataTypes & partition_types,
+        Int32 partition_spec_id,
+        Int32 schema_id,
+        const String & write_format,
+        const PersistentTableComponents & persistent_table_components,
+        ObjectStoragePtr object_storage,
+        ContextPtr context);
+
+    void addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
+
+    const std::unordered_set<String> & getReplacedManifestPaths() const { return replaced_manifest_paths; }
+
+private:
+    std::unordered_set<String> replaced_manifest_paths;
+    ManifestEntries carried_over;
     Int64 rows_count = 0;
     Int64 min_sequence_number = std::numeric_limits<Int64>::max();
 };
-
-CarriedOverDataFiles collectDataFilesToMerge(
-    const ManifestMergeSettings & merge_settings,
-    const ManifestFileCacheKeys & parent_manifests,
-    const ManifestPartitionSummary * new_manifest_partition_summary,
-    size_t partition_fields_count,
-    Int32 partition_spec_id,
-    Int32 schema_id,
-    const String & write_format,
-    const PersistentTableComponents & persistent_table_components,
-    ObjectStoragePtr object_storage,
-    ContextPtr context);
 
 }
 

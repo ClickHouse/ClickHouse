@@ -25,6 +25,7 @@ namespace DB::Setting
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::Iceberg
@@ -162,11 +163,66 @@ PartitionFieldSummaries toPartitionFieldSummaries(const ManifestPartitionSummary
 
 }
 
-CarriedOverDataFiles collectDataFilesToMerge(
+NewDataFiles::NewDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_)
+    : partition_value(std::move(partition_value_))
+    , writer(writer_)
+    , sort_order_id(sort_order_id_)
+{
+}
+
+void NewDataFiles::addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const
+{
+    const auto & files = writer.getDataFiles();
+    const auto & row_counts = writer.getDataFileRowCounts();
+    const auto & byte_counts = writer.getDataFileByteCounts();
+    const auto & statistics = writer.getPerFileStatistics();
+    if (row_counts.size() != files.size() || byte_counts.size() != files.size() || statistics.size() != files.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg writer reports {} data files but {} row counts, {} byte counts and {} statistics",
+            files.size(),
+            row_counts.size(),
+            byte_counts.size(),
+            statistics.size());
+
+    DataFileEntryLineage lineage;
+    lineage.added_by_new_snapshot = true;
+    for (size_t i = 0; i < files.size(); ++i)
+    {
+        entries.paths.push_back(files[i]);
+        entries.row_counts.push_back(row_counts[i]);
+        entries.byte_counts.push_back(byte_counts[i]);
+        entries.partition_values.push_back(partition_value);
+        entries.fresh_statistics.push_back(statistics[i].get());
+        entries.carried_over_statistics.emplace_back();
+        entries.sort_order_ids.push_back(sort_order_id);
+        entries.lineage.push_back(lineage);
+        counts.files_count += 1;
+        counts.rows_count += static_cast<Int64>(row_counts[i]);
+    }
+}
+
+void CarriedOverDataFiles::addTo(ManifestEntries & entries, ManifestListEntryCounts & counts) const
+{
+    auto append = [](auto & to, const auto & from) { to.insert(to.end(), from.begin(), from.end()); };
+    append(entries.paths, carried_over.paths);
+    append(entries.row_counts, carried_over.row_counts);
+    append(entries.byte_counts, carried_over.byte_counts);
+    append(entries.partition_values, carried_over.partition_values);
+    append(entries.fresh_statistics, carried_over.fresh_statistics);
+    append(entries.carried_over_statistics, carried_over.carried_over_statistics);
+    append(entries.sort_order_ids, carried_over.sort_order_ids);
+    append(entries.lineage, carried_over.lineage);
+    counts.existing_files_count += static_cast<Int64>(carried_over.paths.size());
+    counts.existing_rows_count += rows_count;
+    counts.min_sequence_number = std::min(counts.min_sequence_number, min_sequence_number);
+}
+
+std::unique_ptr<CarriedOverDataFiles> CarriedOverDataFiles::collect(
     const ManifestMergeSettings & merge_settings,
     const ManifestFileCacheKeys & parent_manifests,
-    const ManifestPartitionSummary * new_manifest_partition_summary,
-    size_t partition_fields_count,
+    const Row & partition_value,
+    const DataTypes & partition_types,
     Int32 partition_spec_id,
     Int32 schema_id,
     const String & write_format,
@@ -174,13 +230,11 @@ CarriedOverDataFiles collectDataFilesToMerge(
     ObjectStoragePtr object_storage,
     ContextPtr context)
 {
-    CarriedOverDataFiles result;
-
-    const auto partition_key = getSinglePartitionKey(
-        new_manifest_partition_summary ? toPartitionFieldSummaries(*new_manifest_partition_summary) : PartitionFieldSummaries{},
-        partition_fields_count);
+    ManifestPartitionSummary partition_summary(partition_types);
+    partition_summary.add(partition_value);
+    const auto partition_key = getSinglePartitionKey(toPartitionFieldSummaries(partition_summary), partition_types.size());
     if (!partition_key)
-        return result;
+        return nullptr;
 
     std::vector<const ManifestFileCacheKey *> candidates;
     size_t candidates_size = 0;
@@ -188,7 +242,7 @@ CarriedOverDataFiles collectDataFilesToMerge(
     {
         if (it->content_type != ManifestFileContentType::DATA || it->partition_spec_id != partition_spec_id)
             continue;
-        if (getSinglePartitionKey(it->partition_summaries, partition_fields_count) != partition_key)
+        if (getSinglePartitionKey(it->partition_summaries, partition_types.size()) != partition_key)
             continue;
         if (candidates_size + it->manifest_file_byte_size > merge_settings.target_size_bytes)
             break;
@@ -196,8 +250,10 @@ CarriedOverDataFiles collectDataFilesToMerge(
         candidates_size += it->manifest_file_byte_size;
     }
     if (candidates.empty() || candidates.size() + 1 < merge_settings.min_count_to_merge)
-        return result;
+        return nullptr;
 
+    auto result = std::make_unique<CarriedOverDataFiles>();
+    auto & carried_over = result->carried_over;
     auto log = getLogger("IcebergManifestMerge");
     for (const auto * manifest : candidates)
     {
@@ -214,24 +270,32 @@ CarriedOverDataFiles collectDataFilesToMerge(
                 { return file->resolved_schema_id != schema_id || Poco::icompare(file->parsed_entry->file_format, write_format) != 0; }))
             continue;
 
-        result.manifest_paths.insert(manifest->manifest_file_path.serialize());
+        result->replaced_manifest_paths.insert(manifest->manifest_file_path.serialize());
         for (const auto & file : files)
         {
             const auto & entry = *file->parsed_entry;
             auto lineage = getEntryLineageForRewrite(entry, *manifest);
-            result.min_sequence_number = std::min(result.min_sequence_number, *lineage.sequence_number);
-            result.rows_count += entry.record_count;
-            result.paths.push_back(entry.file_path_key);
-            result.row_counts.push_back(static_cast<UInt64>(entry.record_count));
-            result.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
-            result.statistics.push_back(getColumnStatisticsForRewrite(entry));
-            result.sort_order_ids.push_back(entry.sort_order_id);
-            result.lineage.push_back(std::move(lineage));
+            result->min_sequence_number = std::min(result->min_sequence_number, *lineage.sequence_number);
+            result->rows_count += entry.record_count;
+            carried_over.paths.push_back(entry.file_path_key);
+            carried_over.row_counts.push_back(static_cast<UInt64>(entry.record_count));
+            carried_over.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
+            carried_over.partition_values.push_back(partition_value);
+            carried_over.fresh_statistics.push_back(nullptr);
+            carried_over.carried_over_statistics.push_back(getColumnStatisticsForRewrite(entry));
+            carried_over.sort_order_ids.push_back(entry.sort_order_id);
+            carried_over.lineage.push_back(std::move(lineage));
         }
     }
 
-    if (!result.manifest_paths.empty())
-        LOG_DEBUG(log, "Merging {} manifest files with {} data files into the new manifest", result.manifest_paths.size(), result.paths.size());
+    if (result->replaced_manifest_paths.empty())
+        return nullptr;
+
+    LOG_DEBUG(
+        log,
+        "Merging {} manifest files with {} data files into the new manifest",
+        result->replaced_manifest_paths.size(),
+        carried_over.paths.size());
     return result;
 }
 
