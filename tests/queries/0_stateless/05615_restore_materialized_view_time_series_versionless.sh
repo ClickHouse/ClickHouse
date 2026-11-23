@@ -21,11 +21,29 @@ $CLIENT -q "INSERT INTO \`$inner_table\` (metric_name, tags, time_series) SELECT
 
 check_legacy_definition_and_rows()
 {
+    local target_table
+    # Restoring a materialized view may regenerate the physical hidden target name.
+    # Locate the only `TimeSeries` target in the isolated test database instead of
+    # assuming its pre-backup name is stable.
+    target_table=$($CLIENT -q "SELECT name FROM system.tables WHERE database = currentDatabase() AND engine = 'TimeSeries'")
+    if [[ -z "$target_table" || "$target_table" == *
+
+check_legacy_definition_and_rows
+backup_name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
+$CLIENT -q "BACKUP TABLE mv_ts_legacy TO Disk('backups', '$backup_name') FORMAT Null"
+$CLIENT -q "DROP TABLE mv_ts_legacy SYNC"
+$CLIENT -q "RESTORE TABLE mv_ts_legacy FROM Disk('backups', '$backup_name') FORMAT Null"
+check_legacy_definition_and_rows
+$CLIENT -q "DROP TABLE mv_ts_legacy SYNC"
+\\n'* ]]; then
+        echo "Expected exactly one hidden TimeSeries target, got: $target_table" >&2
+        return 1
+    fi
     # The view must not gain a `version` setting during normalization.
     $CLIENT -q "SELECT positionCaseInsensitive(create_table_query, 'version =') = 0 FROM system.tables WHERE database = currentDatabase() AND name = 'mv_ts_legacy'"
     # The hidden `TimeSeries` target must stay at version 0, not the current version.
-    $CLIENT -q "SELECT position(engine_full, 'version = 0') > 0 FROM system.tables WHERE database = currentDatabase() AND name = '$inner_table'"
-    $CLIENT -q "SELECT metric_name, tags['host'], length(time_series) FROM \`$inner_table\` ORDER BY metric_name"
+    $CLIENT -q "SELECT position(engine_full, 'version = 0') > 0 FROM system.tables WHERE database = currentDatabase() AND name = '$target_table'"
+    $CLIENT -q "SELECT metric_name, tags['host'], length(time_series) FROM \`$target_table\` ORDER BY metric_name"
 }
 
 check_legacy_definition_and_rows
