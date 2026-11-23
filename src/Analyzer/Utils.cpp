@@ -1,4 +1,5 @@
 #include <Analyzer/Utils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Core/Settings.h>
 
@@ -9,9 +10,13 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -24,7 +29,6 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
-#include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -36,12 +40,14 @@
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 #include <base/unit.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -49,6 +55,8 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -65,8 +73,6 @@
 #include <Analyzer/UnionNode.h>
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
-
-#include <Poco/String.h>
 
 #include <ranges>
 
@@ -938,7 +944,7 @@ public:
         has_function = function_node->getFunctionName() == function_name;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (has_function)
             return false;
@@ -947,7 +953,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    bool hasFunction() const
+    [[nodiscard]] bool hasFunction() const
     {
         return has_function;
     }
@@ -964,7 +970,7 @@ inline DataTypes getArgumentNodeTypes(const FunctionNode & function_node)
         | std::ranges::to<DataTypes>();
 }
 
-inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function_node, const String & function_name, AggregateFunctionStateVariant state_variant)
+inline Array getParameterValues(const FunctionNode & function_node)
 {
     Array parameters;
     for (const auto & param : function_node.getParameters())
@@ -973,9 +979,27 @@ inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function
         parameters.push_back(constant->getValue());
     }
 
+    return parameters;
+}
+
+inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function_node, const String & function_name, AggregateFunctionStateVariant state_variant)
+{
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), parameters, properties, state_variant);
+    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), getParameterValues(function_node), properties, state_variant);
+}
+
+inline GeneralWindowFunctionPtr resolveWindowFunctionImpl(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
+{
+    const auto & window_function_factory = WindowFunctionFactory::instance();
+
+    auto & arguments = function_node.getArguments().getNodes();
+    auto argument_types = window_function_factory.bindArgumentTypes(function_name, getArgumentNodeTypes(function_node));
+    for (size_t i = 0; i < arguments.size(); ++i)
+        if (!arguments[i]->getResultType()->equals(*argument_types[i]))
+            arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
+
+    return window_function_factory.get(function_name, NullsAction::EMPTY, argument_types, getParameterValues(function_node));
 }
 
 inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
@@ -983,9 +1007,14 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_nod
     return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Aggregation);
 }
 
-inline AggregateFunctionPtr resolveWindowFunction(FunctionNode & function_node, const String & function_name)
+inline AggregateFunctionPtr resolveWindowAggregateFunction(FunctionNode & function_node, const String & function_name)
 {
     return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Window);
+}
+
+inline GeneralWindowFunctionPtr resolveWindowFunction(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
+{
+    return resolveWindowFunctionImpl(function_node, function_name, context);
 }
 
 }
@@ -1054,7 +1083,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to rerun resolve of unresolved function '{}'", function_node->getFunctionName());
 
     const auto & name = function_node->getFunctionName();
-    if (function_node->isOrdinaryFunction())
+    if (function_node->isOrdinaryCall())
     {
         // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
         if (name == "grouping")
@@ -1069,21 +1098,19 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         auto function = FunctionFactory::instance().get(name, context);
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
     }
-    else if (function_node->isAggregateFunction())
+    else if (function_node->getFunctionKind() == FunctionKind::AGGREGATE)
     {
         if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
-        function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
-    }
-    else if (function_node->isWindowFunction())
-    {
-        auto & arguments = function_node->getArguments().getNodes();
-        auto argument_types = bindWindowFunctionArgumentTypes(name, getArgumentNodeTypes(*function_node));
-        for (size_t i = 0; i < arguments.size(); ++i)
-            if (!arguments[i]->getResultType()->equals(*argument_types[i]))
-                arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
 
-        function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name));
+        if (function_node->hasWindow())
+            function_node->resolveAsAggregateFunction(resolveWindowAggregateFunction(*function_node, name));
+        else
+            function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
+    }
+    else if (function_node->getFunctionKind() == FunctionKind::WINDOW)
+    {
+        function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name, context));
     }
 }
 
@@ -1220,26 +1247,11 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
-    /// A node that keeps its window definition must stay a window function: one that reports both
-    /// aggregate and window is collected by both the aggregation and the window analysis.
+    /// A node with a window definition takes the window variant of the aggregate function.
     if (function_node.hasWindow())
-        function_node.resolveAsWindowFunction(resolveWindowFunction(function_node, function_name));
+        function_node.resolveAsAggregateFunction(resolveWindowAggregateFunction(function_node, function_name));
     else
         function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
-}
-
-/// TODO(Michicosun): Move this to the window function factory.
-DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types)
-{
-    const auto function_name_lowercase = Poco::toLower(function_name);
-
-    /// For lag/lead functions the value and the default are brought to their common type, like PostgreSQL's anycompatible.
-    const bool is_lag_or_lead = function_name_lowercase == "lag" || function_name_lowercase == "laginframe"
-                             || function_name_lowercase == "lead" || function_name_lowercase == "leadinframe";
-    if (is_lag_or_lead && argument_types.size() == 3)
-        argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-
-    return argument_types;
 }
 
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
@@ -1283,7 +1295,7 @@ namespace
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    const TableExpressionNodePtr & getTableExpression() const
+    [[nodiscard]] const TableExpressionNodePtr & getTableExpression() const
     {
         return table_expression;
     }
@@ -1783,6 +1795,33 @@ String decimalFieldToText(const Field & field)
     return wb.str();
 }
 
+/// `String -> Decimal` rejects more digits than the precision of the type, while the type holds every value of
+/// its native integer, so a value beyond the precision is sent as that integer.
+template <typename T>
+ASTPtr makeDecimalLiteralASTImpl(const Field & field, const IDataType & type)
+{
+    using NativeType = typename T::NativeType;
+    const NativeType raw = field.safeGet<DecimalField<T>>().getValue().value;
+    const NativeType bound = DecimalUtils::scaleMultiplier<NativeType>(getDecimalPrecision(type));
+    if (raw > -bound && raw < bound)
+        return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(decimalFieldToText(field)), make_intrusive<ASTLiteral>(type.getName()));
+
+    auto native = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(toString(raw)), make_intrusive<ASTLiteral>(String(TypeName<NativeType>)));
+    return makeASTFunction("reinterpret", std::move(native), make_intrusive<ASTLiteral>(type.getName()));
+}
+
+ASTPtr makeDecimalLiteralAST(const Field & field, const IDataType & type)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32: return makeDecimalLiteralASTImpl<Decimal32>(field, type);
+        case Field::Types::Decimal64: return makeDecimalLiteralASTImpl<Decimal64>(field, type);
+        case Field::Types::Decimal128: return makeDecimalLiteralASTImpl<Decimal128>(field, type);
+        case Field::Types::Decimal256: return makeDecimalLiteralASTImpl<Decimal256>(field, type);
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
+    }
+}
+
 ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
 {
     auto function = make_intrusive<ASTFunction>();
@@ -1852,9 +1891,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
             /// Reconstruct with the value's exact decimal type so it stays a valid Variant member.
-            return makeASTFunction(
-                "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
-                make_intrusive<ASTLiteral>(type->getName()));
+            return makeDecimalLiteralAST((*column)[row], *type);
         case TypeIndex::QBit:
         {
             /// A QBit `Field` is its tuple of bit planes, which does not cast back to QBit. The bit patterns of its elements do,
@@ -2091,6 +2128,151 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     }
 
     return true;
+}
+
+bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context)
+{
+    auto view_source = context->getViewSource();
+    return view_source && storage == view_source && !context->isViewInnerQuery()
+        && storage_id.database_name == ITableFunction::getDatabaseName()
+        && !DatabaseCatalog::instance().isDatabaseExist(storage_id.database_name);
+}
+
+
+namespace
+{
+
+bool findPathInAST(const IAST & node, const IAST * target, std::vector<size_t> & path)
+{
+    if (&node == target)
+        return true;
+    for (size_t i = 0; i < node.children.size(); ++i)
+    {
+        path.push_back(i);
+        if (findPathInAST(*node.children[i], target, path))
+            return true;
+        path.pop_back();
+    }
+    return false;
+}
+
+/// The `SELECT` a query node was built from, if there is one with a `FROM`.
+const ASTSelectQuery * getScopeSelect(const IAST * scope_ast)
+{
+    /// A subquery's node keeps the union around its `SELECT`, which is the scope when it is the only one.
+    if (const auto * select_with_union = scope_ast ? scope_ast->as<ASTSelectWithUnionQuery>() : nullptr;
+        select_with_union && select_with_union->list_of_selects && select_with_union->list_of_selects->children.size() == 1)
+        scope_ast = select_with_union->list_of_selects->children.front().get();
+
+    const auto * select = scope_ast ? scope_ast->as<ASTSelectQuery>() : nullptr;
+    if (!select || !select->tables())
+        return nullptr;
+    return select;
+}
+
+/// The whole `SELECT` is hashed, with the role of each clause and its flags, so `WHERE` and `PREWHERE` over the
+/// same condition differ. A shallow copy without the `SETTINGS` clause leaves the query itself untouched.
+SipHash hashScopeSelect(const ASTSelectQuery & select)
+{
+    SipHash hash;
+    ASTSelectQuery scope_without_settings(select);
+    scope_without_settings.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+    scope_without_settings.updateTreeHash(hash, /*ignore_aliases=*/false);
+    return hash;
+}
+
+}
+
+TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
+{
+    TableOccurrences result;
+    std::unordered_map<UInt128, size_t> counts;
+    std::vector<const IQueryTreeNode *> stack{tree.get()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!node)
+            continue;
+
+        /// Walked by hand rather than with `extractTableExpressions`: an unresolved query, such as the argument
+        /// of a `view` table function, has an identifier for its join tree, and that is not an error here.
+        /// A scope without a `SELECT` to identify its tables by records none of them, and its subqueries are its children.
+        const auto * query_node = node->as<QueryNode>();
+        if (const auto * scope_select = query_node ? getScopeSelect(query_node->getOriginalAST().get()) : nullptr)
+        {
+            /// Taken at the first table found in this scope, and then for all of them.
+            std::optional<SipHash> scope_hash;
+            std::vector<const IQueryTreeNode *> join_tree{query_node->getJoinTreeNode().get()};
+            while (!join_tree.empty())
+            {
+                const auto * table_expression = join_tree.back();
+                join_tree.pop_back();
+                if (!table_expression)
+                    continue;
+
+                if (const auto * join_node = table_expression->as<JoinNode>())
+                {
+                    join_tree.push_back(join_node->getLeftTableExpressionNode().get());
+                    join_tree.push_back(join_node->getRightTableExpressionNode().get());
+                }
+                else if (const auto * cross_join_node = table_expression->as<CrossJoinNode>())
+                {
+                    for (const auto & cross_joined : cross_join_node->getTableExpressions())
+                        join_tree.push_back(cross_joined.get());
+                }
+                else if (const auto * array_join_node = table_expression->as<ArrayJoinNode>())
+                {
+                    join_tree.push_back(array_join_node->getTableExpressionNode().get());
+                }
+                else if (table_expression->getNodeType() == QueryTreeNodeType::TABLE)
+                {
+                    const auto & table_expression_ast = table_expression->getOriginalAST();
+                    std::vector<size_t> path;
+                    if (!table_expression_ast || !findPathInAST(*scope_select->tables(), table_expression_ast.get(), path))
+                        continue;
+
+                    if (!scope_hash)
+                        scope_hash = hashScopeSelect(*scope_select);
+                    /// Every table of one scope shares its hash: in `FROM d, t AS a, t AS b` both reads of `t` would get one
+                    /// identity, be counted twice and never be paired. The path to the table under `FROM` tells them
+                    /// apart, and it is the same in both builds: it is taken in the AST, which passes reordering the
+                    /// join tree do not touch.
+                    SipHash hash = *scope_hash;
+                    hash.update(path.size());
+                    for (size_t index : path)
+                        hash.update(index);
+                    const auto identity = hash.get128();
+
+                    ++counts[identity];
+                    result.identity_by_ast.emplace(table_expression_ast, identity);
+                }
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            stack.push_back(child.get());
+    }
+
+    std::erase_if(result.identity_by_ast, [&](const auto & table) { return counts.at(table.second) != 1; });
+    return result;
+}
+
+void removeAliasesRecursive(QueryTreeNodePtr & node)
+{
+    if (!node)
+        return;
+
+    node->removeAlias();
+
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY
+        || node_type == QueryTreeNodeType::UNION
+        || node_type == QueryTreeNodeType::LAMBDA)
+        return;
+
+    for (auto & child : node->getChildren())
+        removeAliasesRecursive(child);
 }
 
 }

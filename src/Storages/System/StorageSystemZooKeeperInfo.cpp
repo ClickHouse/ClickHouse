@@ -15,10 +15,16 @@
 #include <Common/isLocalAddress.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/Net/StreamSocket.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_NUMBER;
+}
 
 ColumnsDescription StorageSystemZooKeeperInfo::getColumnsDescription()
 {
@@ -312,7 +318,14 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
                 //* 26 */ {"zxid", std::make_shared<DataTypeInt64>(), "The ZooKeeper zxid."},
                 if (const auto it = srvr_responses_map.find("Zxid"); it != srvr_responses_map.end())
-                    res_columns[26]->insert(parseIntInBase<16, Int64>(it->second.substr(2))); /// we skip the 0x prefix
+                {
+                    std::string_view zxid = it->second;
+                    if (zxid.size() <= 2 || !zxid.starts_with("0x"))
+                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                            "Cannot parse Zxid '{}' from the srvr response of {}:{}: expected a hexadecimal number with the 0x prefix",
+                            zxid, host, port);
+                    res_columns[26]->insert(parseIntInBase<16, Int64>(zxid.substr(2)));
+                }
                 else
                     res_columns[26]->insertDefault();
 

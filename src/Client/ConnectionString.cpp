@@ -27,7 +27,7 @@ using namespace std::literals::string_view_literals;
 
 constexpr auto CONNECTION_URI_SCHEME = "clickhouse:"sv;
 
-const std::unordered_map<std::string_view, std::string_view> PROHIBITED_CLIENT_OPTIONS = {
+[[clang::no_destroy]] const std::unordered_map<std::string_view, std::string_view> PROHIBITED_CLIENT_OPTIONS = {
     /// Client option, client option long name
     {"-h", "--host"},
     {"--host", "--host"},
@@ -35,7 +35,7 @@ const std::unordered_map<std::string_view, std::string_view> PROHIBITED_CLIENT_O
     {"--connection", "--connection"},
 };
 
-std::string uriDecode(const std::string & uri_encoded_string, bool plus_as_space)
+std::string uriDecode(std::string_view uri_encoded_string, bool plus_as_space)
 {
     std::string decoded_string;
     Poco::URI::decode(uri_encoded_string, decoded_string, plus_as_space);

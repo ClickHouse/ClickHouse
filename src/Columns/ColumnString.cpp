@@ -5,12 +5,19 @@
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <base/PackedStringRef.h>
+#include <base/unaligned.h>
+#include <base/arithmeticOverflow.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -27,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -43,6 +51,12 @@ ColumnString::ColumnString(const ColumnString & src)
             last_offset, chars.size());
 }
 
+void ColumnString::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+{
+    if (options.notFull(name_buf))
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
@@ -56,17 +70,24 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
         return;
 
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
-    const size_t src_offset = src_concrete.offsets[position - 1];
+    const size_t src_offset = src_concrete.offsets[static_cast<ssize_t>(position) - 1];
     const size_t src_buf_size
-        = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+        = src_concrete.offsets[position] - src_concrete.offsets[static_cast<ssize_t>(position) - 1]; /// -1th index is Ok, see PaddedPODArray.
 
     const size_t old_rows = offsets.size();
-    const size_t new_rows = old_rows + length;
-    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
-    offsets.reserve(new_rows);
+    size_t new_rows = 0;
+    if (common::addOverflow(old_rows, length, new_rows))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many rows in string column: {} + {}", old_rows, length);
 
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + src_buf_size * length;
+    size_t added_size = 0;
+    size_t new_size = 0;
+    if (common::mulOverflow(src_buf_size, length, added_size) || common::addOverflow(old_size, added_size, new_size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too many bytes in string column: {} + {} * {}", old_size, src_buf_size, length);
+
+    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
+    offsets.reserve(new_rows);
     chars.resize(new_size);
 
     const UInt8 * src_buf = &src_concrete.chars[src_offset];
@@ -119,7 +140,7 @@ void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
     /// Each row seeds with `WEAK_HASH32_INITIAL_VALUE` and combines its finalized hash via
     /// `combineWeakHash32`. CRC32C is a hardware dependency chain with no packed form, so a
     /// plain scalar loop is used. See IColumn::computeHashInto.
-    Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
+    Offset prev_offset = row_begin == 0 ? 0 : offsets[static_cast<ssize_t>(row_begin) - 1];
     const UInt8 * pos = chars.data() + prev_offset;
 
     for (size_t i = row_begin; i < row_end; ++i)
@@ -249,8 +270,8 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < offsets_data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = offsets_data.size() - 1;
+    ssize_t index = static_cast<ssize_t>(mask.size()) - 1;
+    ssize_t from = static_cast<ssize_t>(offsets_data.size()) - 1;
     offsets_data.resize_exact(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)
@@ -406,6 +427,69 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     offsets.push_back(new_size);
 }
 
+void ColumnString::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const
+{
+    const auto gather = [&]<bool has_null_map>
+    {
+        /// The ref of a value is written right after its null byte.
+        const size_t ref_offset = field_offset + has_null_map;
+        const char * src_chars = reinterpret_cast<const char *>(chars.data());
+        constexpr size_t chunk_rows = 256;
+        UInt32 long_rows[chunk_rows];
+        for (size_t chunk_begin = 0; chunk_begin < count; chunk_begin += chunk_rows)
+        {
+            const size_t chunk_end = std::min(count, chunk_begin + chunk_rows);
+            size_t num_long = 0;
+            for (size_t row = chunk_begin; row < chunk_end; ++row)
+            {
+                char * dst = rows + row * row_length + field_offset;
+                const size_t source_row = start + row;
+                if constexpr (has_null_map)
+                    *dst = static_cast<char>(null_map[source_row]);
+
+                const UInt64 begin = offsets[static_cast<ssize_t>(source_row) - 1];
+                const size_t value_size = offsets[source_row] - begin;
+                /// Every row is written to the next place in `long_rows`, and `num_long` moves past the long rows only. So the
+                /// loop has no branch on the length: with mixed lengths such a branch would often be mispredicted.
+                long_rows[num_long] = static_cast<UInt32>(row);
+                num_long += value_size > UnhashedPackedStringRef::MAX_SMALL_LEN;
+                /// The loop below overwrites the refs of the long rows, so for them `% 16` only has to keep the index into
+                /// `short_string_masks` in range. `% 16` is one AND, while `std::min` would need a compare and a select.
+                unalignedStore<UnhashedPackedStringRef>(dst + has_null_map, UnhashedPackedStringRef::buildShort(src_chars + begin, value_size % 16));
+            }
+
+            /// The store owns its bytes: a long value is copied to the overflow buffer and the ref points there.
+            for (size_t i = 0; i < num_long; ++i)
+            {
+                const size_t row = long_rows[i];
+                const size_t source_row = start + row;
+                const UInt64 begin = offsets[static_cast<ssize_t>(source_row) - 1];
+                const size_t value_size = offsets[source_row] - begin;
+                memcpy(overflow_cursor, src_chars + begin, value_size);
+                unalignedStore<UnhashedPackedStringRef>(rows + row * row_length + ref_offset, UnhashedPackedStringRef::buildLong(overflow_cursor, value_size));
+                overflow_cursor += value_size;
+            }
+        }
+    };
+
+    if (null_map)
+        gather.template operator()<true>();
+    else
+        gather.template operator()<false>();
+}
+
+size_t ColumnString::rowStoreOverflowBytes(size_t start, size_t count) const
+{
+    size_t bytes = 0;
+    for (size_t row = start; row < start + count; ++row)
+    {
+        const size_t value_size = sizeAt(row);
+        if (value_size > UnhashedPackedStringRef::MAX_SMALL_LEN)
+            bytes += value_size;
+    }
+    return bytes;
+}
+
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
@@ -435,7 +519,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];
-        size_t string_offset = offsets[j - 1];
+        size_t string_offset = offsets[static_cast<ssize_t>(j) - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -456,7 +540,7 @@ struct ColumnString::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
             parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs),
@@ -476,7 +560,7 @@ struct ColumnString::ComparatorCollationBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = collator->compare(
             reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
@@ -606,9 +690,15 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     size_t res_chars_size = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
-        size_t string_size = offsets[i] - offsets[i - 1];
-        res_chars_size += size_to_replicate * string_size;
+        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+        size_t string_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
+        size_t replicated_size = 0;
+        if (common::mulOverflow(size_to_replicate, string_size, replicated_size)
+            || common::addOverflow(res_chars_size, replicated_size, res_chars_size))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large size of String column after replication: {} rows",
+                replicate_offsets.back());
     }
     res_chars.resize_exact(res_chars_size);
 
@@ -616,9 +706,9 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     size_t curr_offset = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
-        const size_t string_size = offsets[i] - offsets[i-1];
-        const UInt8 * src = &chars[offsets[i - 1]];
+        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+        const size_t string_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
+        const UInt8 * src = &chars[offsets[static_cast<ssize_t>(i) - 1]];
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
             memcpySmallAllowReadWriteOverflow15(
@@ -649,9 +739,12 @@ void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     size_t new_chars_size = chars.size();
     for (const auto & source_column : source_columns)
     {
-        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
-        new_size += source_string_column.size();
-        new_chars_size += source_string_column.chars.size();
+        const auto * source_string_column = typeid_cast<const ColumnString *>(source_column.get());
+        if (!source_string_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not String, but {}", getName(), source_column->getName());
+
+        new_size += source_string_column->size();
+        new_chars_size += source_string_column->chars.size();
     }
 
     offsets.reserve_exact(new_size * factor);
@@ -923,6 +1016,88 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
 bool ColumnString::hasOnlyTypeDefaults() const
 {
     return chars.empty();
+}
+
+ColumnPtr ColumnString::createWithOffsets(
+    const Offsets & positions, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    const size_t num_values = positions.size();
+    if (num_values + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", num_values, shift, size());
+
+    if (num_values > total_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} non-default values do not fit into {} rows", num_values, total_rows);
+
+    const auto & default_column = assert_cast<const ColumnString &>(column_with_default_value.getDataColumn());
+    const size_t default_size = default_column.sizeAt(0);
+    const UInt8 * default_data = &default_column.chars[default_column.offsetAt(0)];
+
+    const size_t values_begin = offsetAt(shift);
+    const size_t values_bytes = chars.size() - values_begin;
+
+    auto res = ColumnString::create();
+    res->chars.resize(values_bytes + default_size * (total_rows - num_values));
+    res->offsets.resize(total_rows);
+
+    UInt8 * res_chars = res->chars.data();
+    Offset * res_offsets = res->offsets.data();
+    size_t row = 0;
+    size_t res_size = 0;
+
+    /// The writes below go through raw pointers, so every position is checked before it is used.
+    auto check_position = [&](size_t position, size_t next_row)
+    {
+        if (position < next_row || position >= total_rows) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Offset of a non-default value {} is out of range [{}, {})", position, next_row, total_rows);
+    };
+
+    if (default_size == 0)
+    {
+        /// Defaults add no bytes, so the values keep their relative offsets.
+        if (values_bytes)
+            memcpy(res_chars, &chars[values_begin], values_bytes);
+
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            const size_t position = positions[i];
+            check_position(position, row);
+            std::fill(res_offsets + row, res_offsets + position, res_size);
+            res_size = offsets[i + shift] - values_begin;
+            res_offsets[position] = res_size;
+            row = position + 1;
+        }
+        std::fill(res_offsets + row, res_offsets + total_rows, res_size);
+    }
+    else
+    {
+        auto insert_defaults = [&](size_t end)
+        {
+            for (; row < end; ++row)
+            {
+                memcpySmallAllowReadWriteOverflow15(res_chars + res_size, default_data, default_size);
+                res_size += default_size;
+                res_offsets[row] = res_size;
+            }
+        };
+
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            const size_t position = positions[i];
+            check_position(position, row);
+            insert_defaults(position);
+            const size_t value_size = sizeAt(i + shift);
+            memcpySmallAllowReadWriteOverflow15(res_chars + res_size, &chars[offsetAt(i + shift)], value_size);
+            res_size += value_size;
+            res_offsets[position] = res_size;
+            row = position + 1;
+        }
+        insert_defaults(total_rows);
+    }
+
+    chassert(res_size == res->chars.size());
+    return res;
 }
 
 /// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].

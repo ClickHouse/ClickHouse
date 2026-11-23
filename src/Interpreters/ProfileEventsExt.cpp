@@ -119,6 +119,33 @@ static void dumpTempDataOnDiskUsage(ProfileEventsSnapshot const & snapshot, DB::
     columns[i]->insert(snapshot.temp_data_on_disk_usage);
 }
 
+void subtractIncrements(DB::Block & block, Event event, UInt64 & amount)
+{
+    using namespace DB;
+
+    if (amount == 0 || block.rows() == 0)
+        return;
+
+    const auto & types = typeid_cast<const ColumnInt8 &>(*block.getByName("type").column).getData();
+    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    auto & value_column = block.getByName("value").column;
+    auto mutable_values = IColumn::mutate(std::move(value_column));
+    auto & values = typeid_cast<ColumnInt64 &>(*mutable_values).getData();
+
+    const std::string_view event_name = getName(event);
+    for (size_t row = 0; row < values.size() && amount != 0; ++row)
+    {
+        if (types[row] != Type::INCREMENT || values[row] <= 0 || names.getDataAt(row) != event_name)
+            continue;
+
+        const UInt64 subtracted = std::min(static_cast<UInt64>(values[row]), amount);
+        values[row] -= static_cast<Int64>(subtracted);
+        amount -= subtracted;
+    }
+
+    value_column = std::move(mutable_values);
+}
+
 DB::Block getSampleBlock()
 {
     using namespace DB;

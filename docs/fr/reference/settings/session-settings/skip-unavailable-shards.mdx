@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="skip_unavailable_shards">
-  ## skip_unavailable_shards
-</div>
+## skip_unavailable_shards {#skip_unavailable_shards}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,19 +21,17 @@ Active ou désactive l’ignorance silencieuse des shards indisponibles.
 
 Le comportement de ce réglage est contrôlé par le paramètre `skip_unavailable_shards_mode`.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * 1 — ignorance activée.
 
-  Si un shard est indisponible, ClickHouse renvoie un résultat basé sur des données partielles et ne signale pas les problèmes de disponibilité des nœuds.
+  Si un shard est indisponible, ClickHouse renvoie un résultat basé sur des données partielles et ne signale pas les problèmes de disponibilité des nœuds. Lors d’une lecture, si *tous* les shards ont été ignorés avant que la moindre donnée ait été renvoyée, il ne reste aucune donnée partielle à renvoyer : la requête lève alors `ALL_CONNECTION_TRIES_FAILED` au lieu de renvoyer un résultat vide. Cette vérification ne concerne que les lectures ; `INSERT` gère de façon distincte le cas d’un cluster de destination entièrement indisponible.
 
 * 0 — ignorance désactivée.
 
   Si un shard est indisponible, ClickHouse lève une exception.
 
-<div id="skip_unavailable_shards_mode">
-  ## skip_unavailable_shards_mode
-</div>
+## skip_unavailable_shards_mode {#skip_unavailable_shards_mode}
 
 <SettingsInfoBlock type="SkipUnavailableShardsMode" default_value="unavailable_or_table_missing" />
 

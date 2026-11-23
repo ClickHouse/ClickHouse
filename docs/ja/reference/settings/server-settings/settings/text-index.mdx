@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを構成するためのもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="text_index_header_cache_max_entries">
-  ## text_index_header_cache_max_entries
-</div>
+## text_index_header_cache_max_entries {#text_index_header_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />テキスト索引ヘッダーのcacheサイズ (エントリ数) 。0 は無効を意味します。
 
-<div id="text_index_header_cache_policy">
-  ## text_index_header_cache_policy
-</div>
+## text_index_header_cache_policy {#text_index_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />テキスト索引ヘッダーキャッシュのポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />テキスト索引ヘッダーキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="text_index_header_cache_size">
-  ## text_index_header_cache_size
-</div>
+## text_index_header_cache_size {#text_index_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />テキスト索引ヘッダーの cache サイズです。0 は無効を意味します。
 
@@ -34,27 +28,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   この設定は実行時に変更でき、変更はすぐに反映されます。
 </Note>
 
-<div id="text_index_header_cache_size_ratio">
-  ## text_index_header_cache_size_ratio
-</div>
+## text_index_header_cache_size_ratio {#text_index_header_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />テキスト索引ヘッダーキャッシュにおける保護キュー (SLRUポリシーの場合) のサイズの、cache の総サイズに対する比率です。
 
-<div id="text_index_postings_cache_max_entries">
-  ## text_index_postings_cache_max_entries
-</div>
+## text_index_postings_cache_max_entries {#text_index_postings_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />テキスト索引のポスティングリスト用cacheのサイズ (エントリ数) です。0 は無効を意味します。
 
-<div id="text_index_postings_cache_policy">
-  ## text_index_postings_cache_policy
-</div>
+## text_index_postings_cache_policy {#text_index_postings_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />テキスト索引のポスティングリストキャッシュのポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />テキスト索引のポスティングリストキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="text_index_postings_cache_size">
-  ## text_index_postings_cache_size
-</div>
+## text_index_postings_cache_size {#text_index_postings_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />テキスト索引のポスティングリスト用cacheのサイズです。0 は無効を意味します。
 
@@ -62,27 +48,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   この設定は実行時に変更でき、変更は直ちに反映されます。
 </Note>
 
-<div id="text_index_postings_cache_size_ratio">
-  ## text_index_postings_cache_size_ratio
-</div>
+## text_index_postings_cache_size_ratio {#text_index_postings_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />テキスト索引のポスティングリストキャッシュの総サイズに対する、保護キュー (SLRUポリシーの場合) のサイズです。
 
-<div id="text_index_tokens_cache_max_entries">
-  ## text_index_tokens_cache_max_entries
-</div>
+## text_index_tokens_cache_max_entries {#text_index_tokens_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />テキスト索引トークン用cacheのサイズを、エントリ数で指定します。0 は無効を意味します。
 
-<div id="text_index_tokens_cache_policy">
-  ## text_index_tokens_cache_policy
-</div>
+## text_index_tokens_cache_policy {#text_index_tokens_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />テキスト索引トークンキャッシュのポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />テキスト索引トークンキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="text_index_tokens_cache_size">
-  ## text_index_tokens_cache_size
-</div>
+## text_index_tokens_cache_size {#text_index_tokens_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />テキスト索引トークンのcacheサイズ。ゼロは無効を意味します。
 
@@ -90,9 +68,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   この設定は実行時に変更でき、変更はすぐに反映されます。
 </Note>
 
-<div id="text_index_tokens_cache_size_ratio">
-  ## text_index_tokens_cache_size_ratio
-</div>
+## text_index_tokens_cache_size_ratio {#text_index_tokens_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />テキスト索引トークンキャッシュにおける protected queue (SLRU policy の場合) のサイズを、キャッシュ全体のサイズに対する比率で示します。
 
