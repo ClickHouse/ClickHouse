@@ -18,7 +18,7 @@ namespace ErrorCodes
 /// `AggregateFunctionQuantile.h`) treats the singular and plural variants as incompatible
 /// states, so `quantileXxxState` and `quantilesXxxMerge` (or vice versa) refuse to interoperate
 /// with `ILLEGAL_TYPE_OF_ARGUMENT`, and the function fusion optimization is also disabled.
-static const std::unordered_map<String, String> quantile_fuse_name_mapping =
+[[clang::no_destroy]] static const std::unordered_map<String, String> quantile_fuse_name_mapping =
 {
     {"quantile", "quantiles"},
     {"quantileBFloat16", "quantilesBFloat16"},

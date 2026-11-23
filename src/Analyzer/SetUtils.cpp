@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatSettings.h>
 
 #include <Formats/FormatFactory.h>
@@ -21,8 +23,10 @@
 #include <Interpreters/convertColumnToType.h>
 
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 #include <algorithm>
+#include <limits>
 
 namespace DB
 {
@@ -161,9 +165,10 @@ IColumn::Filter keepNotNullFilter(const NullMap & null_map, size_t & kept)
 /// Fast path for a single native-number key whose members are separate size-1 columns (e.g. a `Tuple`
 /// collection): gather them into one column, cast once, and drop the not-representable rows with a
 /// single `IColumn::filter`. Returns nullopt (caller uses the per-member loop) unless the target and
-/// every member share a plain native-number type, so no reordering or behavior change can leak in. For
-/// an `Array` collection the elements are already contiguous, so `build_from_array` converts the data
-/// column directly and never reaches here.
+/// every member are plain native numbers and the members share one type or are integers that `UInt64`
+/// or `Int64` holds exactly, so no reordering or behavior change can leak in. For an `Array` collection
+/// the elements are already contiguous, so `build_from_array` converts the data column directly and
+/// never reaches here.
 std::optional<ColumnPtr> tryConvertNativeNumberMembersBatch(const SetMembers & members, const DataTypePtr & lhs_type)
 {
     if (!isNativeNumber(lhs_type) || isBool(lhs_type))
@@ -172,17 +177,50 @@ std::optional<ColumnPtr> tryConvertNativeNumberMembersBatch(const SetMembers & m
     if (members.empty())
         return ColumnPtr(lhs_type->createColumn());
 
-    const DataTypePtr & source_type = members.front().type;
+    DataTypePtr source_type = members.front().type;
+    bool same_type = true;
+    bool all_unsigned = true;
+    bool all_fit_int64 = true;
     for (const auto & member : members)
-        if (!nativeBatchApplicable(member.type, lhs_type) || !member.type->equals(*source_type))
+    {
+        if (!nativeBatchApplicable(member.type, lhs_type))
             return std::nullopt;
+        WhichDataType which(member.type);
+        same_type = same_type && member.type->equals(*source_type);
+        all_unsigned = all_unsigned && which.isNativeUInt();
+        all_fit_int64 = all_fit_int64 && (which.isNativeInt() || (which.isNativeUInt() && !which.isUInt64()));
+    }
 
-    /// Gather the size-1 member columns into one column of the (homogeneous) source type. This is a
-    /// plain copy - no conversion - so the single accurate cast carries all the per-element cost.
-    MutableColumnPtr gathered = source_type->createColumn();
-    gathered->reserve(members.size());
-    for (const auto & member : members)
-        gathered->insertRangeFrom(*member.column, 0, 1);
+    MutableColumnPtr gathered;
+    if (same_type)
+    {
+        /// Gather the size-1 member columns into one column of the (homogeneous) source type. This is a
+        /// plain copy - no conversion - so the single accurate cast carries all the per-element cost.
+        gathered = source_type->createColumn();
+        gathered->reserve(members.size());
+        for (const auto & member : members)
+            gathered->insertRangeFrom(*member.column, 0, 1);
+    }
+    else if (all_unsigned)
+    {
+        auto column = ColumnUInt64::create();
+        column->reserve(members.size());
+        for (const auto & member : members)
+            column->insertValue(member.column->getUInt(0));
+        gathered = std::move(column);
+        source_type = std::make_shared<DataTypeUInt64>();
+    }
+    else if (all_fit_int64)
+    {
+        auto column = ColumnInt64::create();
+        column->reserve(members.size());
+        for (const auto & member : members)
+            column->insertValue(member.column->getInt(0));
+        gathered = std::move(column);
+        source_type = std::make_shared<DataTypeInt64>();
+    }
+    else
+        return std::nullopt;
 
     ColumnPtr casted = castColumnAccurateOrNull({std::move(gathered), source_type, ""}, lhs_type);
     casted = casted->convertToFullColumnIfConst();
@@ -307,7 +345,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
 
         /// Generic single-key column (all cases except `Nullable(Tuple(...))`, e.g. T / Nullable(T) / Tuple() / Tuple(T))
-        /// Fast path: all members share one native-number type -> one batch cast + a single filter.
+        /// Fast path: native-number members -> one batch cast + a single filter.
         if (auto fast = tryConvertNativeNumberMembersBatch(members, lhs_type))
         {
             ColumnsWithTypeAndName res(1);
@@ -872,6 +910,89 @@ NO_INLINE ColumnsWithTypeAndName getSetElementsForConstantValue(
         .format_settings = getFormatSettings(context),
     };
     return getSetElementsForConstantValue(lhs_expression_type, rhs_column, rhs_type, params);
+}
+
+std::optional<ColumnsWithTypeAndName> tryGetSetElementsForTupleOfPlainValues(
+    const DataTypePtr & lhs_expression_type, const Tuple & rhs_elements, bool transform_null_in)
+{
+    /// A scalar key reads the tuple as a set of members (`build_from_tuple`), converted to the key type without `LowCardinality`.
+    DataTypePtr lhs_type = lhs_expression_type;
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(lhs_type.get()))
+        lhs_type = low_cardinality_type->getDictionaryType();
+
+    if (rhs_elements.empty())
+        return std::nullopt;
+
+    if (rhs_elements.front().getType() == Field::Types::String)
+    {
+        /// A `String` member converts to a `String` key unchanged.
+        if (!isString(lhs_type) || lhs_type->hasCustomName())
+            return std::nullopt;
+
+        size_t total_size = 0;
+        for (const auto & element : rhs_elements)
+        {
+            if (element.getType() != Field::Types::String)
+                return std::nullopt;
+            total_size += element.safeGet<String>().size();
+        }
+
+        auto column = ColumnString::create();
+        column->getOffsets().reserve(rhs_elements.size());
+        column->getChars().reserve(total_size);
+        for (const auto & element : rhs_elements)
+        {
+            const auto & value = element.safeGet<String>();
+            column->insertData(value.data(), value.size());
+        }
+
+        return ColumnsWithTypeAndName{{std::move(column), lhs_type, ""}};
+    }
+
+    /// Integer members hold the same values as `UInt64` (or `Int64` if one is an `Int64` and all fit), so one accurate
+    /// cast keeps exactly the members the per-member conversion keeps, as `tryConvertNativeNumberMembersBatch` does.
+    bool has_int64 = false;
+    for (const auto & element : rhs_elements)
+    {
+        if (element.getType() == Field::Types::Int64)
+            has_int64 = true;
+        else if (element.getType() != Field::Types::UInt64)
+            return std::nullopt;
+    }
+
+    DataTypePtr source_type = has_int64 ? DataTypePtr(std::make_shared<DataTypeInt64>()) : DataTypePtr(std::make_shared<DataTypeUInt64>());
+    if (!nativeBatchApplicable(source_type, lhs_type))
+        return std::nullopt;
+
+    ColumnPtr gathered;
+    if (!has_int64)
+    {
+        auto column = ColumnUInt64::create();
+        auto & data = column->getData();
+        data.reserve(rhs_elements.size());
+        for (const auto & element : rhs_elements)
+            data.push_back(element.safeGet<UInt64>());
+        gathered = std::move(column);
+    }
+    else
+    {
+        auto column = ColumnInt64::create();
+        auto & data = column->getData();
+        data.reserve(rhs_elements.size());
+        for (const auto & element : rhs_elements)
+        {
+            if (element.getType() == Field::Types::Int64)
+                data.push_back(element.safeGet<Int64>());
+            else if (element.safeGet<UInt64>() <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                data.push_back(static_cast<Int64>(element.safeGet<UInt64>()));
+            else
+                return std::nullopt;
+        }
+        gathered = std::move(column);
+    }
+
+    return ColumnsWithTypeAndName{
+        {buildSingleNativeKey(gathered, source_type, lhs_type, /*element_null=*/nullptr, transform_null_in), lhs_type, ""}};
 }
 
 }

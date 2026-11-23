@@ -40,6 +40,9 @@ SET query_plan_max_limit_for_lazy_materialization = 0;
 -- The gate declines to size any read while the range-split fault injection is armed, which would let
 -- the rejected case through for that reason instead. `clickhouse-test` randomizes it.
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+-- Top-K filtering takes a `LIMIT` up to this value (zero means any), and plan-based parallel replicas keeps
+-- such a read local, so no statistics are collected for it: https://github.com/ClickHouse/ClickHouse/issues/131858
+SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 -- Ordering by a column outside the primary key rules out reading in order, which is what leaves the
 -- top rows to be picked by a sort and the remaining columns to be read lazily afterwards.

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -30,7 +31,7 @@ GroupExpressionPtr IOptimizationRule::addTwoStageSplit(Memo & memo, const GroupE
 }
 
 void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
-    Memo & memo, std::vector<GroupExpressionPtr> & result) const
+    Memo & memo, GroupExpressions & result) const
 {
     expression->setApplied(*this, required_properties);
     /// An expression that is made for a requirement which accepts no exchange from `DistributionEnforcer`,
@@ -65,15 +66,15 @@ void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const E
     }
 }
 
-std::vector<GroupExpressionPtr> IOptimizationRule::addPhysicalToMemo(
+GroupExpressions IOptimizationRule::addPhysicalToMemo(
     GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    std::vector<GroupExpressionPtr> result;
+    GroupExpressions result;
     addPhysicalToMemo(std::move(expression), required_properties, memo, result);
     return result;
 }
 
-std::vector<GroupExpressionPtr> IOptimizationRule::apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions IOptimizationRule::apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     auto new_expressions = applyImpl(expression, required_properties, memo);
     expression->setApplied(*this, required_properties);
