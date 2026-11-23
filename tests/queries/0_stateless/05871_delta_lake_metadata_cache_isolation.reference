@@ -1,0 +1,11 @@
+version 3	40	780
+latest	41	1470
+version 3 again	40	780
+version 3 uncached	40	780
+latest uncached	41	1470
+before recreate	100	8959083409132828418
+after recreate	100	1688435817524207307
+after recreate uncached	100	1688435817524207307
+count cold	100
+count warm	100
+warm count scanned files	0
