@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- The host names a client may connect to in `ssh_key` authentication over the native protocol.
+         `localhost` and the loopback addresses are the names the tests connect to; `127.0.0.2` is deliberately
+         not listed. The regular expression is used by `05871_ssh_key_auth_host_binding`. -->
+    <ssh_key_auth>
+        <accepted_hosts>
+            <host>localhost</host>
+            <host>127.0.0.1</host>
+            <host>::1</host>
+            <host_regexp>ssh-key-auth-test-[0-9]+\.example\.com</host_regexp>
+        </accepted_hosts>
+    </ssh_key_auth>
+</clickhouse>

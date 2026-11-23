@@ -6,12 +6,13 @@ or an old server that only knows the legacy layout. Signatures are made and chec
 `ssh-keygen -Y`, in the same SSHSIG format (namespace `clickhouse`, SHA-256) as the server.
 
 Client:
-    ssh_key_auth_peer.py client <host> <port> <user> <private key file> <announced revision> <layout> <signed revision>
+    ssh_key_auth_peer.py client <host> <port> <user> <private key file> <announced revision> <layout> <signed revision> \
+        [<signed host> [<sent host>]]
 
     Sends `Hello` with <announced revision>, requests a challenge, and signs the <layout> message
-    (`legacy` or `bound`, the latter with the `none` binding of a plaintext connection)
-    with <signed revision> as the version inside it. Prints the challenge packet it has received,
-    then `authenticated` or the name of the exception the server has sent.
+    (`legacy`, or `host` with <signed host> in it) with <signed revision> as the version inside it.
+    After `SSHChallengeWithHost`, it sends <sent host> (by default, <signed host>) after the signature.
+    Prints the challenge packet it has received, then `authenticated` or the name of the exception the server has sent.
 
 Old server:
     ssh_key_auth_peer.py old-server <port file>
@@ -36,8 +37,8 @@ CLIENT_SSH_CHALLENGE_RESPONSE = 12
 SERVER_HELLO = 0
 SERVER_EXCEPTION = 2
 SERVER_SSH_CHALLENGE = 18
-SERVER_SSH_CHALLENGE_WITH_BINDING = 19
-PACKET_NAMES = {SERVER_SSH_CHALLENGE: "SSHChallenge", SERVER_SSH_CHALLENGE_WITH_BINDING: "SSHChallengeWithBinding"}
+SERVER_SSH_CHALLENGE_WITH_HOST = 19
+PACKET_NAMES = {SERVER_SSH_CHALLENGE: "SSHChallenge", SERVER_SSH_CHALLENGE_WITH_HOST: "SSHChallengeWithHost"}
 
 
 def var_uint(value):
@@ -89,12 +90,12 @@ def error_code_name(code):
     return {516: "AUTHENTICATION_FAILED"}.get(code, str(code))
 
 
-def legacy_message(revision, database, user, challenge):
+def legacy_message(revision, database, user, challenge, host=None):
     return str(revision).encode() + database + user + challenge
 
 
-def bound_message(revision, database, user, challenge):
-    fields = [MESSAGE_TAG.encode(), str(revision).encode(), database, user, challenge, b"none", b""]
+def host_message(revision, database, user, challenge, host):
+    fields = [MESSAGE_TAG.encode(), str(revision).encode(), database, user, challenge, host.encode()]
     return b"".join(string(field) for field in fields)
 
 
@@ -120,7 +121,7 @@ def signature_is_valid(signature, message):
     return result.returncode == 0
 
 
-def run_client(host, port, user, key_file, announced_revision, layout, signed_revision):
+def run_client(host, port, user, key_file, announced_revision, layout, signed_revision, signed_host, sent_host):
     sock = socket.create_connection((host, port), timeout=60)
     reader = Reader(sock)
     database = b""
@@ -143,9 +144,12 @@ def run_client(host, port, user, key_file, announced_revision, layout, signed_re
     print("received", PACKET_NAMES.get(packet, packet))
     challenge = reader.string()
 
-    build = legacy_message if layout == "legacy" else bound_message
-    signature = sign(key_file, build(signed_revision, database, user.encode(), challenge))
-    sock.sendall(var_uint(CLIENT_SSH_CHALLENGE_RESPONSE) + string(signature))
+    build = legacy_message if layout == "legacy" else host_message
+    signature = sign(key_file, build(signed_revision, database, user.encode(), challenge, signed_host))
+    response = var_uint(CLIENT_SSH_CHALLENGE_RESPONSE) + string(signature)
+    if packet == SERVER_SSH_CHALLENGE_WITH_HOST:
+        response += string(sent_host)
+    sock.sendall(response)
 
     packet = reader.var_uint()
     if packet == SERVER_HELLO:
@@ -208,8 +212,10 @@ def run_old_server(port_file):
 
 if __name__ == "__main__":
     if sys.argv[1] == "client":
-        host, port, user, key_file, announced, layout, signed = sys.argv[2:]
-        run_client(host, int(port), user, key_file, int(announced), layout, int(signed))
+        host, port, user, key_file, announced, layout, signed = sys.argv[2:9]
+        signed_host = sys.argv[9] if len(sys.argv) > 9 else "localhost"
+        sent_host = sys.argv[10] if len(sys.argv) > 10 else signed_host
+        run_client(host, int(port), user, key_file, int(announced), layout, int(signed), signed_host, sent_host)
     elif sys.argv[1] == "old-server":
         run_old_server(sys.argv[2])
     else:

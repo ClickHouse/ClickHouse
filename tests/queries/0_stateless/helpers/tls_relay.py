@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A single-connection TCP relay that can terminate TLS on either side.
 
-Usage: tls_relay.py <front: raw|tls> <backend host> <backend port> <back: raw|tls> <cert file> <key file> <port file>
+Usage: tls_relay.py <front: raw|tls> <backend host> <backend port> <back: raw|tls> <cert file> <key file> <port file> [<listen address>]
 
 The relay accepts one connection and forwards the bytes in both directions, then exits.
 - front `tls`: the relay is the TLS server for the client (with the given certificate and key);
@@ -12,7 +12,8 @@ The relay accepts one connection and forwards the bytes in both directions, then
 With `raw` on both sides it is a passthrough: the client and the server share one TLS session.
 With `tls` on the front the client and the server are on different sessions (or the server is on plaintext).
 
-The port the relay listens on is chosen by the OS and written to the port file atomically.
+The relay listens on <listen address> (127.0.0.1 by default), on a port chosen by the OS,
+which is written to the port file atomically.
 """
 
 import os
@@ -22,12 +23,13 @@ import ssl
 import sys
 import time
 
-front, backend_host, backend_port, back, cert_file, key_file, port_file = sys.argv[1:]
+front, backend_host, backend_port, back, cert_file, key_file, port_file = sys.argv[1:8]
+listen_address = sys.argv[8] if len(sys.argv) > 8 else "127.0.0.1"
 backend_port = int(backend_port)
 
 listener = socket.socket()
 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-listener.bind(("127.0.0.1", 0))
+listener.bind((listen_address, 0))
 listener.listen(1)
 # Never hang the test if the client does not come.
 listener.settimeout(60)

@@ -35,7 +35,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/randomSeed.h>
-#include <Common/SSHKeyAuthChannelBinding.h>
+#include <Common/SSHKeyAuthMessage.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
@@ -618,7 +618,7 @@ void Connection::sendAddendum()
 void Connection::performHandshakeForSSHAuth()
 {
     String challenge;
-    bool with_channel_binding = false;
+    bool with_host = false;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
         out->next();
@@ -627,9 +627,9 @@ void Connection::performHandshakeForSSHAuth()
             throw Poco::Net::NetException("Connection reset by peer");
 
         readVarUInt(packet_type, *in);
-        if (packet_type == Protocol::Server::SSHChallengeWithBinding)
+        if (packet_type == Protocol::Server::SSHChallengeWithHost)
         {
-            with_channel_binding = true;
+            with_host = true;
             readStringBinary(challenge, *in);
         }
         else if (packet_type == Protocol::Server::SSHChallenge)
@@ -639,24 +639,31 @@ void Connection::performHandshakeForSSHAuth()
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-            throwUnexpectedPacket(packet_type, "SSHChallengeWithBinding, SSHChallenge or Exception");
+            throwUnexpectedPacket(packet_type, "SSHChallengeWithHost, SSHChallenge or Exception");
     }
 
     String to_sign;
-    if (with_channel_binding)
+    String signed_host;
+    if (with_host)
     {
-        /// A server that knows `DBMS_MIN_REVISION_WITH_SSH_CHANNEL_BINDING` sends `SSHChallengeWithBinding`.
-        /// The binding is derived from our own socket, never from what the server tells us,
-        /// so the signature is only valid on this TLS session.
-        to_sign = buildSSHKeyAuthMessage(
-            DBMS_TCP_PROTOCOL_VERSION, default_database, user, challenge, getSSHKeyAuthChannelBinding(socket->impl()));
+        /// A server that knows `DBMS_MIN_REVISION_WITH_SSH_KEY_AUTH_HOST` sends `SSHChallengeWithHost`.
+        /// We sign the name of the host we were asked to connect to, never a name the server tells us,
+        /// so the signature is only accepted by servers that accept this name.
+        signed_host = SSHKeyAuthMessage::normalizeHost(host);
+        to_sign = SSHKeyAuthMessage{
+            .protocol_version = DBMS_TCP_PROTOCOL_VERSION,
+            .default_database = default_database,
+            .user = user,
+            .challenge = challenge,
+            .host = signed_host,
+        }.serialize();
     }
     else
     {
         /// An older server sends `SSHChallenge` and verifies the legacy message.
         /// Answering it with the legacy message cannot be used to downgrade a newer server:
-        /// the newer server has received our protocol version (which is at least `DBMS_MIN_REVISION_WITH_SSH_CHANNEL_BINDING`)
-        /// and always requires the bound message from such a client. A peer that lowers the version in our `Hello`
+        /// the newer server has received our protocol version (which is at least `DBMS_MIN_REVISION_WITH_SSH_KEY_AUTH_HOST`)
+        /// and always requires the message with the host name from such a client. A peer that lowers the version in our `Hello`
         /// to make the server accept the legacy message changes the version in the message the server verifies,
         /// which then no longer matches the one we have signed.
         auto pack_string_for_ssh_sign = [&](String challenge_)
@@ -674,6 +681,8 @@ void Connection::performHandshakeForSSHAuth()
     String signature = ssh_private_key.signString(to_sign);
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
     writeStringBinary(signature, *out);
+    if (with_host)
+        writeStringBinary(signed_host, *out);
     out->next();
 }
 #endif
