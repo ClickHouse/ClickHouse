@@ -1925,6 +1925,9 @@ public:
             auto strict_settings = insert_settings;
             strict_settings.no_int_truncation_from_double = true;
             strict_settings.no_number_to_bool_conversion = true;
+            /// A child rejected by the strict pass must fail the whole alternative,
+            /// not be replaced with a default inside an `Array`, `Tuple` or `Map`.
+            strict_settings.insert_default_on_invalid_elements_in_complex_types = false;
             for (size_t i : order)
             {
                 auto & variant = column_variant.getVariantByGlobalDiscriminator(i);

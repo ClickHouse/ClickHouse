@@ -16,3 +16,10 @@ true	String
 true	Bool	false	Bool
 true	Bool
 true
+[true,true]
+(true,3)
+{'a':true}
+[('k',[true,true])]
+[true,true]
+[true,2]	String
+[1,2]

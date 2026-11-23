@@ -18,3 +18,12 @@ DROP TABLE t_json_variant_bool;
 -- Without another alternative a number still converts to Bool.
 SELECT JSONExtract('2', 'Variant(Bool)') AS v, variantType(v);
 SELECT JSONExtract('2', 'Bool');
+
+-- A child rejected by the strict pass fails the whole container instead of being replaced with a default.
+SELECT JSONExtract('[true,2]', 'Variant(Array(Bool))');
+SELECT JSONExtract('[2,3]', 'Variant(Tuple(Bool, Int64))');
+SELECT JSONExtract('{"a":2}', 'Variant(Map(String, Bool))');
+SELECT JSONExtractKeysAndValues('{"k":[true,2]}', 'Variant(Array(Bool))');
+SELECT JSONExtract('{"a":[true,2]}', 'JSON(a Variant(Array(Bool)))').a;
+SELECT JSONExtract('[true,2]', 'Variant(Array(Bool), String)') AS v, variantType(v);
+SELECT JSONExtract('[1.5,2]', 'Variant(Array(Int64))');
