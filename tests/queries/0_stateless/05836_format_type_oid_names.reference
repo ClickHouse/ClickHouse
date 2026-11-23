@@ -18,17 +18,8 @@
 1700	numeric
 2950	uuid
 3904	int4range
-3905	int4multirange
 3906	numrange
-3907	nummultirange
-3910	tsrange
-3911	tsmultirange
-3912	tstzrange
-3913	tstzmultirange
-3914	daterange
-3915	datemultirange
 3926	int8range
-3927	int8multirange
 40000	mood
 --- array type OIDs render the element name with a [] suffix
 1000	boolean[]
