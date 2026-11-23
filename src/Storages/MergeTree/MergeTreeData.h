@@ -381,9 +381,10 @@ public:
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
-    /// Shared data serialization version of `JSON` columns for a part of the given expected size and level.
+    /// Shared data serialization version of `JSON` columns for a part of the given expected size,
+    /// `is_insert` tells whether the part is created by an insert.
     MergeTreeObjectSharedDataSerializationVersion chooseObjectSharedDataSerializationVersion(
-        size_t bytes_uncompressed, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
+        size_t bytes_uncompressed, bool is_insert, ProjectionDescriptionRawPtr projection) const;
 
     MergeTreeDataPartBuilder getDataPartBuilder(
         const String & name,

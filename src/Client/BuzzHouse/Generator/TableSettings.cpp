@@ -442,11 +442,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); },
          {"0", "1"},
          false)},
-    {"min_level_for_object_shared_data_main_serialization_version",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 3)); },
-         {"0", "1"},
-         false)},
     {"min_level_for_wide_part",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); },
@@ -762,6 +757,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
     {"use_compact_variant_discriminators_serialization", trueOrFalseSetting},
     {"use_const_adaptive_granularity", trueOrFalseSetting},
+    {"use_object_shared_data_serialization_version_for_small_parts_on_insert", trueOrFalseSetting},
     {"use_primary_key_cache", trueOrFalseSetting},
     {"vertical_merge_algorithm_min_bytes_to_activate", bytesRangeSetting},
     {"vertical_merge_algorithm_min_columns_to_activate",

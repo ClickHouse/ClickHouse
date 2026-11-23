@@ -13,7 +13,7 @@ mutation
 1	8	0
 2	12	0
 3	12	1
-inserts with minimal level 0
+inserts decided by size
 4	4	0
 5	12	1
 data
@@ -22,6 +22,10 @@ data
 3	12	[['a']]	24096
 4	4	[['a']]	8032
 5	12	[['a']]	24096
+optimize_on_insert
+1	4	0
+1	4	0
+8	1
 projection
 8	[['a'],['b']]	4	8
 alias

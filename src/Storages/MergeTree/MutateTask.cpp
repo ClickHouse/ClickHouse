@@ -5542,7 +5542,7 @@ bool MutateTask::prepare()
     ctx->new_data_part = std::move(builder).build();
     ctx->new_data_part->object_shared_data_serialization_version = ctx->data->chooseObjectSharedDataSerializationVersion(
         ctx->source_part->getTotalColumnsSize().data_uncompressed,
-        ctx->future_part->part_info.level,
+        /*is_insert =*/false,
         /*projection =*/nullptr);
     ctx->new_data_part->getDataPartStorage().beginTransaction();
     if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])

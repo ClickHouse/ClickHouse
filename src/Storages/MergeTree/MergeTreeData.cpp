@@ -421,7 +421,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_small_parts;
     extern const MergeTreeSettingsUInt64 min_bytes_for_object_shared_data_main_serialization_version;
-    extern const MergeTreeSettingsUInt32 min_level_for_object_shared_data_main_serialization_version;
+    extern const MergeTreeSettingsBool use_object_shared_data_serialization_version_for_small_parts_on_insert;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 
@@ -7913,11 +7913,11 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
 }
 
 MergeTreeObjectSharedDataSerializationVersion MergeTreeData::chooseObjectSharedDataSerializationVersion(
-    size_t bytes_uncompressed, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
+    size_t bytes_uncompressed, bool is_insert, ProjectionDescriptionRawPtr projection) const
 {
     const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
-    bool is_small_part = bytes_uncompressed < (*settings)[MergeTreeSetting::min_bytes_for_object_shared_data_main_serialization_version]
-        || part_level < (*settings)[MergeTreeSetting::min_level_for_object_shared_data_main_serialization_version];
+    bool is_small_part = (is_insert && (*settings)[MergeTreeSetting::use_object_shared_data_serialization_version_for_small_parts_on_insert])
+        || bytes_uncompressed < (*settings)[MergeTreeSetting::min_bytes_for_object_shared_data_main_serialization_version];
 
     if (is_small_part)
         return (*settings)[MergeTreeSetting::object_shared_data_serialization_version_for_small_parts];
@@ -14107,7 +14107,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     }
 
     /// A part may be written with any combination of these versions: the `Map` version depends on whether the part is
-    /// inserted or merged, the JSON shared data version on the size and level of the part. A collision under any
+    /// inserted or merged, the JSON shared data version on the size of the part. A collision under any
     /// combination corrupts the parts written with it. Checked separately, as parts of different configurations never
     /// share a file.
     std::set<MergeTreeMapSerializationVersion> map_versions{
@@ -16149,7 +16149,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();
-    new_data_part->object_shared_data_serialization_version = chooseObjectSharedDataSerializationVersion(0, 0, /*projection =*/nullptr);
+    new_data_part->object_shared_data_serialization_version = chooseObjectSharedDataSerializationVersion(0, /*is_insert =*/false, /*projection =*/nullptr);
 
     /// Keep the format version and sort-key columns of the patch partition.
     if (new_part_info.isPatch())

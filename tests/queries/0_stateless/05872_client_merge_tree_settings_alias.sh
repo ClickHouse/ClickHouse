@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --allow_merge_tree_settings \
 $CLICKHOUSE_CLIENT -q "
     SELECT
         position(create_table_query, 'object_shared_data_serialization_version_for_zero_level_parts = \'advanced\'') > 0,
-        position(create_table_query, 'object_shared_data_serialization_version_for_small_parts') = 0,
+        NOT match(create_table_query, '[^0-9A-Za-z_]object_shared_data_serialization_version_for_small_parts ='),
         position(create_table_query, 'min_bytes_for_object_shared_data_main_serialization_version = 12345') > 0
     FROM system.tables WHERE database = currentDatabase() AND name = 'test'"
 
