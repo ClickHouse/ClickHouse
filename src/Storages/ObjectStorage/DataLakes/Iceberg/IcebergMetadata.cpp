@@ -1985,6 +1985,28 @@ NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) cons
     return *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
+IcebergMetadata::CurrentTableDefinition IcebergMetadata::getCurrentTableDefinition(ContextPtr local_context) const
+{
+    /// The temporary catalog storage already carries the committed metadata pointer.
+    const auto latest = fetchLatestMetadata(
+        local_context, /* force_fetch_latest_metadata */ true, /* ignore_metadata_pointer_overrides */ false);
+    auto metadata_object = getMetadataJSONObject(
+        latest.path, object_storage, persistent_components.metadata_cache, local_context, log,
+        latest.compression_method, persistent_components.table_uuid);
+    auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor);
+    CurrentTableDefinition result;
+    result.columns = *persistent_components.schema_processor->getClickHouseTableSchemaById(schema_id);
+    auto partition_by = getPartitionKeyASTFromMetadata(metadata_object);
+    auto order_by = getSortingKeyASTFromMetadata(metadata_object);
+    result.keys_representable = partition_by.has_value() && order_by.has_value();
+    if (result.keys_representable)
+    {
+        result.partition_by = *partition_by;
+        result.order_by = *order_by;
+    }
+    return result;
+}
+
 std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);

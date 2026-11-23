@@ -16,6 +16,8 @@
 namespace DB
 {
 
+class IcebergMetadata;
+
 class DatabaseDataLake final : public IDatabase, WithContext
 {
 public:
@@ -204,7 +206,9 @@ private:
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
     /// catalogs can produce completely unexpected responses. In such cases this function may throw.
     StoragePtr tryGetTableImpl(
-        const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables = true) const;
+        const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables = true, bool allow_cluster_storage = true) const;
+
+    std::shared_ptr<IcebergMetadata> getIcebergMetadata(const String & name, ContextPtr context) const;
 
     void evictStatefulTable(const String & name) const;
 

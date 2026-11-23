@@ -52,6 +52,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 
@@ -143,6 +144,7 @@ namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+    extern const DataLakeStorageSettingsUInt32 iceberg_metadata_async_prefetch_period_ms;
     extern const DataLakeStorageSettingsBool allow_experimental_iceberg_compaction;
     extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
 }
@@ -1323,7 +1325,7 @@ void DatabaseDataLake::evictStatefulTable(const String & name) const
 }
 
 StoragePtr DatabaseDataLake::tryGetTableImpl(
-    const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables) const
+    const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables, bool allow_cluster_storage) const
 {
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
@@ -1385,6 +1387,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
+    /// Temporary metadata access must not start fetching manifests in the background.
+    if (!allow_cluster_storage)
+        (*storage_settings)[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] = 0;
 
     String explicit_metadata_location;
     if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
@@ -1406,7 +1411,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto & query_settings = context_->getSettingsRef();
 
     const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = context_->canReplaceClusterEngineWithClusterVariant();
+    const auto can_use_parallel_replicas = allow_cluster_storage && context_->canReplaceClusterEngineWithClusterVariant();
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
@@ -1970,6 +1975,21 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     }
 }
 
+std::shared_ptr<IcebergMetadata> DatabaseDataLake::getIcebergMetadata(const String & name, ContextPtr context_) const
+{
+    auto table = tryGetTableImpl(
+        name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false,
+        /* use_stateful_tables */ false, /* allow_cluster_storage */ false);
+    if (!table)
+        throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
+    /// NOLINT(storage-cast): a temporary local storage constructed above.
+    auto & object_storage_table = assert_cast<StorageObjectStorage &>(*table);
+    auto metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table.getExternalMetadata(context_));
+    if (!metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Iceberg metadata for table `{}`", name);
+    return metadata;
+}
+
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr context_,
@@ -2017,7 +2037,17 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setDatabase(getDatabaseName());
 
     auto columns = getTableSchema(*catalog, table_metadata, settings);
-    if (columns.empty() && table_metadata.isDefaultReadableTable())
+    if (table_metadata.isDefaultReadableTable() && catalog->getTableFormat(table_metadata) == DataLake::DataLakeTableFormat::ICEBERG)
+    {
+        auto definition = getIcebergMetadata(name, context_)->getCurrentTableDefinition(context_);
+        columns = std::move(definition.columns);
+        if (definition.keys_representable)
+        {
+            storage->set(storage->partition_by, definition.partition_by);
+            storage->set(storage->order_by, definition.order_by);
+        }
+    }
+    else if (columns.empty() && table_metadata.isDefaultReadableTable())
     {
         /// The catalog left the schema to the table storage, which reads it from the table metadata.
         if (auto table = tryGetTableImpl(name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ false, /*use_stateful_tables*/ false))

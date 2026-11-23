@@ -19,7 +19,7 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
-from pyiceberg.transforms import DayTransform, IdentityTransform
+from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform, TruncateTransform
 from pyiceberg.types import (
     DoubleType,
     LongType,
@@ -62,7 +62,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\\nPARTITION BY icebergDay(datetime)\\nORDER BY symbol\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -1860,6 +1860,155 @@ def test_drop_table_purge_query_setting(started_cluster):
         assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/") == ([] if purge else files)
 
 
+@pytest.mark.parametrize("partitioned,sorted_table", [(False, False), (True, False), (False, True), (True, True)])
+def test_show_create_current_keys(started_cluster, partitioned, sorted_table):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"show_keys_{uuid.uuid4().hex}"
+    catalog.create_namespace(namespace)
+    schema = Schema(
+        NestedField(field_id=1, name="event time", field_type=TimestamptzType(), required=False),
+        NestedField(field_id=2, name="@symbol", field_type=StringType(), required=False),
+        NestedField(field_id=3, name="id", field_type=LongType(), required=False),
+        NestedField(
+            field_id=4, name="details", required=False,
+            field_type=StructType(NestedField(field_id=5, name="value", field_type=LongType(), required=False)),
+        ),
+    )
+    partition = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=DayTransform(), name="day"),
+        PartitionField(source_id=2, field_id=1001, transform=TruncateTransform(3), name="prefix"),
+        PartitionField(source_id=3, field_id=1002, transform=BucketTransform(8), name="bucket"),
+        PartitionField(source_id=5, field_id=1003, transform=IdentityTransform(), name="value"),
+    ) if partitioned else PartitionSpec()
+    sorting = SortOrder(
+        SortField(source_id=2, transform=IdentityTransform(), direction="asc"),
+        SortField(source_id=1, transform=DayTransform(), direction="desc"),
+    ) if sorted_table else SortOrder()
+    create_table(catalog, namespace, "keys", schema, partition, sorting)
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME,
+        {"iceberg_timezone_for_timestamptz": "Europe/Amsterdam"},
+    )
+    qualified = f"{CATALOG_NAME}.`{namespace}.keys`"
+
+    definition = node.query(f"SHOW CREATE TABLE {qualified} FORMAT TabSeparatedRaw").strip()
+    assert ("PARTITION BY" in definition) == partitioned
+    assert ("ORDER BY" in definition) == sorted_table
+    if partitioned:
+        assert "PARTITION BY (icebergDay(`event time`), icebergTruncate(3, `@symbol`), icebergBucket(8, id), `details.value`)" in definition
+    if sorted_table:
+        assert "ORDER BY (`@symbol`, icebergDay(`event time`) DESC)" in definition
+    assert "NULLS" not in definition
+    assert "Nullable(DateTime64(6, 'Europe/Amsterdam'))" in definition
+    assert minio_secret_key not in definition
+    assert "[HIDDEN]" in definition
+    node.query(f"EXPLAIN AST {definition}")
+    assert definition == node.query(
+        f"SHOW CREATE TABLE {qualified} FORMAT TabSeparatedRaw",
+        settings={
+            "parallel_replicas_for_cluster_engines": 1,
+            "enable_parallel_replicas": 2,
+            "cluster_for_parallel_replicas": "cluster_simple",
+        },
+    ).strip()
+
+
+def test_show_create_evolved_keys(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"show_evolved_keys_{uuid.uuid4().hex}"
+    catalog.create_namespace(namespace)
+    table = create_table(
+        catalog, namespace, "keys",
+        Schema(
+            NestedField(field_id=1, name="before", field_type=LongType(), required=False),
+            NestedField(field_id=2, name="legacy", field_type=LongType(), required=False),
+        ),
+        PartitionSpec(PartitionField(source_id=2, field_id=1000, transform=IdentityTransform(), name="legacy")),
+        SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+    )
+    table.append(pa.table({"before": pa.array([1], type=pa.int64()), "legacy": pa.array([2], type=pa.int64())}))
+    historical_snapshot = table.metadata.current_snapshot_id
+    with table.update_schema() as update:
+        update.rename_column("before", "after")
+    with table.update_spec() as update:
+        update.remove_field("legacy")
+        update.add_identity("after")
+    response = requests.post(
+        f"http://localhost:{started_cluster.iceberg_rest_catalog_port}/v1/namespaces/{namespace}/tables/keys",
+        json={
+            "requirements": [],
+            "updates": [
+                {"action": "add-sort-order", "sort-order": {"order-id": 2, "fields": [
+                    {"source-id": 1, "transform": "identity", "direction": "desc", "null-order": "nulls-last"},
+                ]}},
+                {"action": "set-default-sort-order", "sort-order-id": -1},
+            ],
+        },
+    )
+    response.raise_for_status()
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    definition = node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.keys` FORMAT TabSeparatedRaw",
+        settings={"iceberg_snapshot_id": historical_snapshot},
+    )
+    assert "`after` Nullable(Int64)" in definition
+    assert "before" not in definition
+    assert "PARTITION BY after" in definition
+    assert "ORDER BY after DESC" in definition
+    assert "PARTITION BY legacy" not in definition
+    assert "ORDER BY legacy" not in definition
+
+
+@pytest.mark.parametrize("key,invalid_field", [
+    ("partition-specs", {"transform": "unsupported"}),
+    ("sort-orders", {"transform": "unsupported"}),
+    ("partition-specs", {"source-id": 999}),
+    ("sort-orders", {"source-id": 999}),
+])
+def test_show_create_unsupported_keys(started_cluster, key, invalid_field):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"show_unsupported_keys_{uuid.uuid4().hex}"
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, "keys")
+    bucket, path = table.metadata_location.removeprefix("s3://").split("/", 1)
+    metadata = json.loads(get_file_contents(started_cluster.minio_client, bucket, path))
+    metadata[key][-1]["fields"][0].update(invalid_field)
+    _put_s3_object_bytes(started_cluster.minio_client, bucket, path, json.dumps(metadata).encode())
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    definition = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.keys` FORMAT TabSeparatedRaw")
+    assert "`datetime` Nullable(DateTime64(6))" in definition
+    assert "ENGINE = Iceberg(" in definition
+    assert "PARTITION BY" not in definition
+    assert "ORDER BY" not in definition
+
+
+def test_show_create_legacy_void_partition(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"show_legacy_keys_{uuid.uuid4().hex}"
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, "keys", sort_order=SortOrder())
+    bucket, path = table.metadata_location.removeprefix("s3://").split("/", 1)
+    metadata = json.loads(get_file_contents(started_cluster.minio_client, bucket, path))
+    metadata["format-version"] = 1
+    metadata["schema"] = metadata.pop("schemas")[0]
+    metadata.pop("current-schema-id")
+    metadata["partition-spec"] = metadata.pop("partition-specs")[0]["fields"]
+    metadata["partition-spec"][0]["transform"] = "void"
+    metadata.pop("default-spec-id")
+    metadata.pop("sort-orders")
+    metadata.pop("default-sort-order-id")
+    _put_s3_object_bytes(started_cluster.minio_client, bucket, path, json.dumps(metadata).encode())
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    definition = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.keys` FORMAT TabSeparatedRaw")
+    assert "`datetime` Nullable(DateTime64(6))" in definition
+    assert "PARTITION BY" not in definition
+    assert "ORDER BY" not in definition
+
+
 def test_create_table_order_by(started_cluster):
     # `ORDER BY` must reach the catalog as the table's write order.
     node = started_cluster.instances["node1"]
@@ -2341,16 +2490,12 @@ def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster
             )
             assert int(result.strip()) >= 1, f"create_table_query default, require={require}"
 
-            ## SHOW CREATE TABLE is served by InterpreterShowCreateQuery, a different code path
-            ## from the system.tables column filler above. It answers from catalog metadata and
-            ## must not fail because the storage object cannot be opened.
-            result = node.query(
+            # `SHOW CREATE TABLE` needs Iceberg metadata for the current columns and keys.
+            # Metadata access errors must propagate even when listing tables tolerates them.
+            error = node.query_and_get_error(
                 f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` {settings}"
             )
-            assert table_name in result, f"SHOW CREATE TABLE, require={require}"
-            assert (
-                "Injected metadata resolution failure" not in result
-            ), f"SHOW CREATE TABLE leaked the resolution error, require={require}"
+            assert "Injected metadata resolution failure" in error
     finally:
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
 

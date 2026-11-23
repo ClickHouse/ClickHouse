@@ -2406,79 +2406,133 @@ Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr &
     return nullptr;
 }
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description)
+namespace
 {
-    auto fields = getDefaultSortOrderFields(metadata_object);
+std::optional<ASTPtr> getKeyASTFromFields(
+    const Poco::JSON::Object::Ptr & metadata_object, const Poco::JSON::Array::Ptr & fields, bool sorting)
+{
     if (!fields || fields->size() == 0)
-        return KeyDescription{};
+        return ASTPtr{};
 
+    auto schema = metadata_object->has(f_schemas)
+        ? parseTableSchemaV2Method(metadata_object).first : parseTableSchemaV1Method(metadata_object).first;
     std::unordered_map<Int64, String> source_id_to_column_name;
-    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-
     auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
-    for (const auto & [col_name, source_id] : mapper)
-    {
-        source_id_to_column_name[source_id] = col_name;
-    }
+    for (const auto & [column_name, source_id] : mapper)
+        source_id_to_column_name.emplace(source_id, column_name);
 
-    String order_by_str;
-    std::vector<int> nulls_directions;
-
-    for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+    auto expressions = make_intrusive<ASTExpressionList>();
+    for (UInt32 i = 0; i < fields->size(); ++i)
     {
-        auto field = fields->getObject(field_index);
-        auto source_id = field->getValue<Int64>(f_source_id);
-        auto column = source_id_to_column_name.find(source_id);
-        /// No such column in the current schema: drop the sort order, as for an unknown transform.
+        auto field = fields->getObject(i);
+        auto transform_name = field->getValue<String>(f_transform);
+        if (!sorting && transform_name == "void")
+            continue;
+        /// Multi-column transforms are valid in newer metadata but cannot be displayed here.
+        if (!field->has(f_source_id))
+            return std::nullopt;
+        auto column = source_id_to_column_name.find(field->getValue<Int64>(f_source_id));
         if (column == source_id_to_column_name.end())
-            return KeyDescription{};
-        const auto & column_name = column->second;
-        int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
-        nulls_directions.push_back(field->optValue<String>(f_null_order, "") == "nulls-first" ? -direction : direction);
-        auto iceberg_transform_name = field->getValue<String>(f_transform);
-        std::optional<TransformAndArgument> clickhouse_transform_name;
+            return std::nullopt;
+
+        std::optional<TransformAndArgument> transform;
         try
         {
-            clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            transform = parseTransformAndArgument(transform_name);
         }
         catch (const Exception & e)
         {
             if (e.code() != ErrorCodes::BAD_ARGUMENTS)
                 throw;
         }
-        if (!clickhouse_transform_name.has_value())
+        if (!transform)
+            return std::nullopt;
+
+        ASTPtr expression = make_intrusive<ASTIdentifier>(column->second);
+        if (transform->transform_name != "identity")
         {
-            /// An unknown or malformed transform is not a reason to reject the table: an Iceberg
-            /// sort order is only an optimization hint, so drop it and read/write the table as unsorted.
-            return KeyDescription{};
+            auto function = make_intrusive<ASTFunction>();
+            function->name = transform->transform_name;
+            function->arguments = make_intrusive<ASTExpressionList>();
+            if (transform->argument)
+                function->arguments->children.push_back(make_intrusive<ASTLiteral>(UInt64(*transform->argument)));
+            function->arguments->children.push_back(expression);
+            function->children.push_back(function->arguments);
+            expression = function;
         }
-        /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
-        /// produce a parseable ORDER BY clause.
-        auto quoted_column_name = backQuoteIfNeed(column_name);
-        String full_argument;
-        if (clickhouse_transform_name->transform_name != "identity")
+        if (sorting)
         {
-            full_argument = clickhouse_transform_name->transform_name + "(";
-            if (clickhouse_transform_name->argument)
-            {
-                full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
-            }
-            full_argument += quoted_column_name + ")";
+            auto element = make_intrusive<ASTStorageOrderByElement>();
+            element->direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+            element->children.push_back(expression);
+            expression = element;
         }
-        else
-        {
-            full_argument = quoted_column_name;
-        }
-        if (direction == 1)
-            order_by_str += fmt::format("{} ASC,", full_argument);
-        else
-            order_by_str += fmt::format("{} DESC,", full_argument);
+        expressions->children.push_back(expression);
     }
-    order_by_str.pop_back();
-    auto key = KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
+    if (expressions->children.empty())
+        return ASTPtr{};
+    if (expressions->children.size() == 1)
+        return expressions->children.front();
+    auto tuple = make_intrusive<ASTFunction>();
+    tuple->name = "tuple";
+    tuple->arguments = expressions;
+    tuple->children.push_back(expressions);
+    return tuple;
+}
+}
+
+std::optional<ASTPtr> getPartitionKeyASTFromMetadata(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (auto specs = metadata_object->getArray(f_partition_specs))
+    {
+        const auto default_spec_id = metadata_object->getValue<Int32>(f_default_spec_id);
+        for (UInt32 i = 0; i < specs->size(); ++i)
+        {
+            auto spec = specs->getObject(i);
+            if (spec->getValue<Int32>(f_spec_id) == default_spec_id)
+                return getKeyASTFromFields(metadata_object, spec->getArray(f_fields), false);
+        }
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No partition spec with id {}", default_spec_id);
+    }
+    return getKeyASTFromFields(metadata_object, metadata_object->getArray(f_partition_spec), false);
+}
+
+std::optional<ASTPtr> getSortingKeyASTFromMetadata(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    /// Version 1 metadata may omit sorting entirely.
+    if (!metadata_object->has(f_default_sort_order_id))
+    {
+        if (metadata_object->getValue<Int32>(f_format_version) == 1)
+            return ASTPtr{};
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Default sort order id is missing from metadata");
+    }
+    if (!metadata_object->getArray(f_sort_orders))
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Sort orders are missing from metadata");
+    auto fields = getDefaultSortOrderFields(metadata_object);
+    if (!fields)
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Default sort order is missing from metadata");
+    return getKeyASTFromFields(metadata_object, fields, true);
+}
+
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description)
+{
+    auto fields = getDefaultSortOrderFields(metadata_object);
+    if (!fields || fields->size() == 0)
+        return KeyDescription{};
+
+    auto ast = getKeyASTFromFields(metadata_object, fields, true);
+    /// Unsupported sorting remains an optimization hint that readers and writers can ignore.
+    if (!ast || !*ast)
+        return KeyDescription{};
+    auto key = KeyDescription::getKeyFromAST(*ast, ColumnsDescription(ch_schema), {}, local_context);
     if (sort_description)
         for (size_t i = 0; i < key.column_names.size(); ++i)
-            sort_description->emplace_back(key.column_names[i], key.reverse_flags.empty() || !key.reverse_flags[i] ? 1 : -1, nulls_directions[i]);
+        {
+            int direction = key.reverse_flags.empty() || !key.reverse_flags[i] ? 1 : -1;
+            auto field = fields->getObject(static_cast<UInt32>(i));
+            int nulls_direction = field->optValue<String>(f_null_order, "") == "nulls-first" ? -direction : direction;
+            sort_description->emplace_back(key.column_names[i], direction, nulls_direction);
+        }
     return key;
 }
 

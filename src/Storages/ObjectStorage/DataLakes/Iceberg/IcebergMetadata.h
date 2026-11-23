@@ -86,6 +86,17 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
+    struct CurrentTableDefinition
+    {
+        NamesAndTypesList columns;
+        ASTPtr partition_by;
+        ASTPtr order_by;
+        bool keys_representable = false;
+    };
+
+    /// Current schema and default keys from one metadata file, independent of historical read settings.
+    CurrentTableDefinition getCurrentTableDefinition(ContextPtr local_context) const;
+
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override;
     std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr local_context) const override;
     SettingsChanges getSettingsToResolveState(const DataLakeTableStateSnapshot & state) const override;
