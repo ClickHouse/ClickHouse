@@ -47,6 +47,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
@@ -150,6 +151,7 @@ namespace FailPoints
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
+extern const char tcp_handler_pause_before_query_plan_deserialization[];
 }
 }
 
@@ -1730,7 +1732,8 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, state.query_context))
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
 
-    if (insert_queue && async_insert_enabled && !insert_query.select)
+    if (insert_queue && async_insert_enabled && !insert_query.select
+        && !AsynchronousInsertQueue::checkInsideTransaction(state.query_context))
     {
         auto result = processAsyncInsertQuery(state, *insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -3134,6 +3137,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         state->query_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
     }
 
+    /// The clamp above drops a passed `group_by_overflow_mode` that is equal to the value of this server, so the
+    /// explicit mode of the user would look like a default (see `explicitGroupByOverflowModeIsLost`). Mark it as
+    /// changed again. The value stays the same, so this does not get around the constraints.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && explicitGroupByOverflowModeIsLost(passed_settings, state->query_context->getSettingsRef()))
+        state->query_context->setSetting("group_by_overflow_mode", passed_settings.get("group_by_overflow_mode"));
+
     /// Sets the default database if it wasn't set earlier for the session context. This runs after
     /// the passed settings are applied, so the database explicitly carried by the query packet wins
     /// over a `database` setting that may have arrived with the passed settings; `setCurrentDatabase`
@@ -3185,6 +3195,8 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
         throwUnexpectedPacket(Protocol::Client::QueryPlan);
 
     const auto & context = state.query_context;
+
+    FailPointInjection::pauseFailPoint(FailPoints::tcp_handler_pause_before_query_plan_deserialization);
 
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));

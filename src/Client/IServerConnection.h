@@ -173,6 +173,12 @@ public:
     /// Set a callback to check for query cancellation (e.g. Ctrl+C).
     /// Used by LocalConnection to enable cancellation during query analysis.
     virtual void setCancelCallback(std::function<bool()>) {}
+
+    /// The client created an output (format and buffers) for the result of the current query.
+    virtual void onQueryOutputCreated() {}
+
+    /// The client has released that output.
+    virtual void onQueryOutputReleased() {}
 };
 
 using ServerConnectionPtr = std::unique_ptr<IServerConnection>;
