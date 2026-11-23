@@ -144,7 +144,7 @@ tryGetSummaryInfo(const IFileCachePriority::Entry & entry, const IFileCachePrior
         .key = entry.key.toString(),
         .offset = entry.offset,
         .size = size,
-        .state = FileSegment::stateToString(file_segment->state()),
+        .state = file_segment->state(),
         .split_queue = observed_queue.split_queue,
         .slru_queue = observed_queue.slru_queue,
         .user_id = key_metadata->origin->user_id,

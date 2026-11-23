@@ -4637,7 +4637,7 @@ try
             ASSERT_EQ(info.key, segment.key.toString());
             ASSERT_EQ(info.offset, segment.range.left);
             ASSERT_EQ(info.size, segment.range.size());
-            ASSERT_EQ(info.state, "DOWNLOADED");
+            ASSERT_EQ(info.state, State::DOWNLOADED);
             ASSERT_EQ(info.user_id, user.user_id);
             ASSERT_EQ(info.split_queue, segment.split_queue);
             ASSERT_EQ(info.slru_queue, segment.slru_queue);

@@ -95,7 +95,7 @@ namespace DB
         UInt64 offset;
         /// Segment size as accounted by the cache
         UInt64 size;
-        String state;
+        FileSegmentState state;
         /// See `IFileCachePriority::ObservedQueue`.
         IFileCachePriority::ObservedQueue::SplitQueue split_queue;
         IFileCachePriority::ObservedQueue::SLRUQueue slru_queue;

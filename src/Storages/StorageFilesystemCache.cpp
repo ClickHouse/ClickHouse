@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
@@ -97,7 +98,7 @@ protected:
             else if (name == "size")
                 fill([](const FileSegmentSummaryInfo & info) { return info.size; });
             else if (name == "state")
-                fill([](const FileSegmentSummaryInfo & info) { return info.state; });
+                fill([](const FileSegmentSummaryInfo & info) { return FileSegment::stateToString(info.state); });
             else if (name == "split_queue")
                 fill([](const FileSegmentSummaryInfo & info) { return queueToField(info.split_queue); });
             else if (name == "slru_queue")
