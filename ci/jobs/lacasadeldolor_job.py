@@ -529,6 +529,15 @@ def main():
     next_replica = ET.SubElement(next_shard, "replica")
     ET.SubElement(next_replica, "host").text = "node0"
     ET.SubElement(next_replica, "port").text = "9000"
+    # One shard of three replicas, all this node through different loopback addresses, as
+    # `test_cluster_one_shard_three_replicas_localhost`: BuzzHouse runs parallel replicas on it
+    pr_shard = ET.SubElement(
+        ET.SubElement(remote_servers, "parallel_replicas_localhost"), "shard"
+    )
+    for host in ("127.0.0.1", "127.0.0.2", "127.0.0.3"):
+        pr_replica = ET.SubElement(pr_shard, "replica")
+        ET.SubElement(pr_replica, "host").text = host
+        ET.SubElement(pr_replica, "port").text = "9000"
     ET.indent(ctree, space="    ", level=0)  # indent tree
     ctree.write(config_xml, encoding="utf-8", xml_declaration=True)
 
