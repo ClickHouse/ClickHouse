@@ -99,6 +99,7 @@ size_t MergeTreeReadersChain::numRowsInCurrentGranule() const
 size_t MergeTreeReadersChain::currentMark() const
 {
     /// The first reader drives the reading of the chain: take its mark, as `numReadRowsInCurrentGranule` takes its offset.
+    /// The stream of a later reader may not move at all: a PREWHERE step that reads no columns stays at mark 0.
     return range_readers.empty() ? 0 : range_readers.front().currentMark();
 }
 
