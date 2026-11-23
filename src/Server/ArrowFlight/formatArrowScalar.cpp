@@ -172,8 +172,8 @@ String formatArrowDecimal(std::string_view coefficient, Int32 scale)
 
     /// The value extended with its sign to 256 bits.
     Int256 value = (static_cast<UInt8>(coefficient.back()) & 0x80) ? -1 : 0;
-    for (size_t i = size; i-- > 0;)
-        value = (value << 8) | Int256(static_cast<UInt8>(coefficient[i]));
+    for (size_t i = size; i > 0; --i)
+        value = (value << 8) | Int256(static_cast<UInt8>(coefficient[i - 1]));
 
     String text = wide::to_string(value);
     if (scale == 0)
