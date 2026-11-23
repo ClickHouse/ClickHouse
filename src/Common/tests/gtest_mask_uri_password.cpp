@@ -56,6 +56,7 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://u:pa#ss@host", "http://u:[HIDDEN]@host"},
         {"http://u:12/ss@host", "http://u:12/ss@host"},
         {"http://u:pa/ss", "http://u:pa/ss"},
+        {"http://u:TOPSECRET|middle|more|tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
 
         /// Any `://` can start a URI, also inside a longer text.
         {"://user:password@host", "://user:[HIDDEN]@host"},
@@ -74,6 +75,8 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://user:s3cret@[", "http://user:[HIDDEN]@["},
         {"http://s3cret@[", "http://[HIDDEN]@["},
         {"https://host/}pppp:/", "https://host/}pppp:/"},
+        {"http://u:pa//ss@host/x", "http://u:[HIDDEN]@host/x"},
+
 
         /// Fails closed by default: a consumer like the MongoDB driver ends the userinfo at the first '/' only.
         {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:[HIDDEN]@localhost:27017/db"},
@@ -126,8 +129,14 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://u:unused@v:TOPSECRET@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:unused@v:TOPSECRET@v2:TOPSECRET@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:unused@v:TOPSECRET@v2@TOPSECRET@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
+        {"http://u:TOPSECRET|middle|more|tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:pa//ss@host/x", "http://u:[HIDDEN]@host/x"},
-        {"http://{u:p@host1,u:TOPSECRET@host2}/x", "http://{u:[HIDDEN]@host2}/x"},
+        {"http://{u:p@host1,u:TOPSECRET@host2}/x", "http://[HIDDEN]/x"},
+        {"http://{TOPSECRET,user:pw}@localhost:11111/x", "http://[HIDDEN]@localhost:11111/x"},
+        {"http://u:TOPSECRET|part:tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
+        {"http://u:TOPSECRET|part|long:tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
+        {"http://u:TOPSECRET|part|long:longer:tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
+        {"http://u:TOPSECRET|part|long|looooong|longer:tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
     };
 
     for (const auto & [input, expected] : cases)
