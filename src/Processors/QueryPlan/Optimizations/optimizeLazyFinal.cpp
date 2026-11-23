@@ -1,4 +1,6 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -60,7 +62,7 @@ static void exposeNodesAsDAGOutputs(ActionsDAG & dag, const NameSet & names)
     if (names.empty())
         return;
 
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
     for (const auto & node : dag.getNodes())
     {
         if (names.contains(node.result_name) && !outputs.contains(&node))
@@ -131,7 +133,7 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
 /// filter has consumed it.
 static bool exposeInputAsDAGOutput(ActionsDAG & dag, const String & column_name)
 {
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
     bool added = false;
     for (const auto * input : dag.getInputs())
     {
@@ -233,6 +235,29 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
         false);
 
     non_final_reading->disableQueryConditionCache();
+    /// The parts keep their numbering, so the lazy read of the columns the read leaves out reads these rows as well.
+    non_final_reading->shareLazyReadOf(*reading_step);
+
+    /// `optimizeReadInOrder` runs before this optimization and may have already opted the original
+    /// read out of `PrefetchingConcatProcessor` (aggregation-, distinct- or `LIMIT BY`-in-order, or a
+    /// residual filter above the read). The flag is a property of the plan around the read, not of
+    /// `SelectQueryInfo`, so a freshly constructed step starts with it unset — carry it over,
+    /// otherwise the replacement read would collapse the parallel streams the optimizer asked for.
+    if (reading_step->getPreferMultipleStreams())
+        non_final_reading->setPreferMultipleStreams();
+
+    /// Likewise, `read_in_order_requested_by_plan_optimizer` is set by `requestReadingInOrder` on the
+    /// original step, and the freshly constructed replacement starts with it unset. Carry it over so
+    /// that a read the plan optimizer put in order stays eligible for `PrefetchingConcatProcessor`.
+    if (reading_step->isReadInOrderRequestedByPlanOptimizer())
+        non_final_reading->setReadInOrderRequestedByPlanOptimizer();
+
+    non_final_reading->setQueryTaskSizeLimit(reading_step->getQueryTaskSizeLimit());
+
+    /// The virtual-row conversion is another property installed by `optimizeReadInOrder` on the
+    /// original read. Preserve it so that an inner `JOIN` read-in-order plan keeps the virtual rows
+    /// used by the sorting step to select the next probe stream after filtering.
+    non_final_reading->copyVirtualRowConversions(*reading_step);
 
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.
@@ -387,6 +412,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         return;
 
     if (!reading_step->isQueryWithFinal())
+        return;
+
+    /// The reads built below do not keep the bucket ranges of a distributed read, so every bucket would return all rows.
+    if (reading_step->getDistributedReadBucketCount() > 0)
         return;
 
     /// Only ReplacingMergeTree is supported.
@@ -671,6 +700,15 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         /// This is an internal read — don't pollute or use the query condition cache.
         set_reading->disableQueryConditionCache();
 
+        /// Same as for `non_final_reading` above: preserve the `PrefetchingConcatProcessor` opt-out
+        /// that `optimizeReadInOrder` has possibly already applied to the original read, and the
+        /// fact that reading in order was requested by the plan optimizer.
+        if (reading_step->getPreferMultipleStreams())
+            set_reading->setPreferMultipleStreams();
+        set_reading->setQueryTaskSizeLimit(reading_step->getQueryTaskSizeLimit());
+        if (reading_step->isReadInOrderRequestedByPlanOptimizer())
+            set_reading->setReadInOrderRequestedByPlanOptimizer();
+
         set_plan.addStep(std::move(set_reading));
     }
 
@@ -802,11 +840,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             true_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows);
         join_lazy_columns->setPassThrough(true);
 
-        std::vector<QueryPlanPtr> join_plans;
+        QueryPlanPtrs join_plans;
         join_plans.emplace_back(std::make_unique<QueryPlan>(std::move(true_plan)));
         join_plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
         true_plan = {};
-        true_plan.unitePlans(std::move(join_lazy_columns), {std::move(join_plans)});
+        true_plan.unitePlans(std::move(join_lazy_columns), std::move(join_plans));
 
         /// Apply row policy and prewhere as FilterSteps on top.
         const auto & query_info = reading_step->getQueryInfo();
@@ -853,11 +891,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         set_plan.getCurrentHeader(), false_plan.getCurrentHeader());
 
     QueryPlan result_plan;
-    std::vector<QueryPlanPtr> selector_plans;
+    QueryPlanPtrs selector_plans;
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(set_plan)));
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(true_plan)));
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(false_plan)));
-    result_plan.unitePlans(std::move(input_selector), {std::move(selector_plans)});
+    result_plan.unitePlans(std::move(input_selector), std::move(selector_plans));
 
     /// If we split non-intersecting parts, union them with the entire result.
     /// Both true and false branches now handle only intersecting parts.
@@ -867,10 +905,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             SharedHeaders{result_plan.getCurrentHeader(), split_result.non_intersecting_plan->getCurrentHeader()});
 
         QueryPlan combined;
-        std::vector<QueryPlanPtr> union_plans;
+        QueryPlanPtrs union_plans;
         union_plans.emplace_back(std::make_unique<QueryPlan>(std::move(result_plan)));
         union_plans.emplace_back(std::move(split_result.non_intersecting_plan));
-        combined.unitePlans(std::move(union_step), {std::move(union_plans)});
+        combined.unitePlans(std::move(union_step), std::move(union_plans));
         result_plan = std::move(combined);
     }
 

@@ -27,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -48,17 +49,17 @@ public:
 private:
     void build();
 
-    ALWAYS_INLINE UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    [[nodiscard]] ALWAYS_INLINE UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->result_row_indices[row_idx];
     }
 
-    ALWAYS_INLINE UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    [[nodiscard]] ALWAYS_INLINE UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->patch_row_indices[row_idx];
     }
 
-    ALWAYS_INLINE UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
+    [[nodiscard]] ALWAYS_INLINE UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->getNumSources() == 1 ? 0 : patches[patch_idx]->patch_block_indices[row_idx];
     }
@@ -105,7 +106,7 @@ void CombinedPatchBuilder::build()
     }
 
     for (size_t i = 0; i < all_patch_blocks.size(); ++i)
-        versions[i] = &getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name);
+        versions[i] = &getColumnUInt64Data(std::as_const(all_patch_blocks[i]), PartDataVersionColumn::name);
 
     enum class RowOp
     {
@@ -224,7 +225,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
         IColumn::Patch::Source source =
         {
             .column = *source_col,
-            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
+            .versions = getColumnUInt64Data(std::as_const(patch_block), PartDataVersionColumn::name),
         };
 
         sources.push_back(std::move(source));
@@ -294,8 +295,8 @@ PatchIndicesPtr applyPatchMerge(const Block & result_block, const Block & patch_
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesMergeMicroseconds);
 
     const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_block.getByName("_part").column);
-    const auto & patch_offset_data = getColumnUInt64Data(patch_block, "_part_offset");
-    const auto & result_offset_data = getColumnUInt64Data(result_block, "_part_offset");
+    const auto & patch_offset_data = getColumnUInt64Data(std::as_const(patch_block), "_part_offset");
+    const auto & result_offset_data = getColumnUInt64Data(std::as_const(result_block), "_part_offset");
 
     UInt64 first_result_offset = result_offset_data[0];
     UInt64 last_result_offset = result_offset_data[num_rows - 1];
@@ -307,6 +308,19 @@ PatchIndicesPtr applyPatchMerge(const Block & result_block, const Block & patch_
         first_result_offset,
         last_result_offset);
 
+    /// Patch parts are sorted by (_part, _part_offset) and a row of the source part is updated
+    /// at most once per patch part, so _part_offset must be strictly increasing. updateFrom relies
+    /// on strictly increasing destination indices: a duplicate or a descending value makes it
+    /// copy a range of negative length. _part_offset is read back from the patch part on disk,
+    /// so check it for both ways of matching the rows below.
+    for (size_t patch_row = patch_begin + 1; patch_row < patch_end; ++patch_row)
+    {
+        if (patch_offset_data[patch_row] <= patch_offset_data[patch_row - 1])
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Invalid value {} of _part_offset in patch part, expected a value greater than the previous one ({})",
+                patch_offset_data[patch_row], patch_offset_data[patch_row - 1]);
+    }
+
     size_t size_to_reserve = std::min(static_cast<size_t>(patch_end - patch_begin), num_rows);
 
     patch_indices->result_row_indices.reserve(size_to_reserve);
@@ -317,8 +331,15 @@ PatchIndicesPtr applyPatchMerge(const Block & result_block, const Block & patch_
     {
         for (size_t patch_row = patch_begin; patch_row < patch_end; ++patch_row)
         {
-            chassert(patch_offset_data[patch_row] >= first_result_offset);
-            size_t result_row = patch_offset_data[patch_row] - first_result_offset;
+            /// _part_offset is read back from the patch part on disk and cannot be trusted:
+            /// an out-of-range value underflows below and yields an out-of-bounds destination index.
+            UInt64 patch_offset = patch_offset_data[patch_row];
+            if (patch_offset < first_result_offset || patch_offset > last_result_offset)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid value {} of _part_offset in patch part, expected a value in range [{}, {}]",
+                    patch_offset, first_result_offset, last_result_offset);
+
+            size_t result_row = patch_offset - first_result_offset;
 
             patch_indices->patch_row_indices.push_back(patch_row);
             patch_indices->result_row_indices.push_back(result_row);

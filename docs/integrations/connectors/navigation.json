@@ -80,6 +80,7 @@
           "expanded": false,
           "group": "Community integrations",
           "pages": [
+            "integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse",
@@ -90,6 +91,7 @@
             "integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/hashboard-and-clickhouse",
+            "integrations/connectors/data-visualization/community-integrations/hypequery-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse",
@@ -176,6 +178,15 @@
           ]
         },
         {
+          "group": "Striim",
+          "pages": [
+            "integrations/connectors/data-ingestion/etl-tools/striim/index",
+            "integrations/connectors/data-ingestion/etl-tools/striim/get-started",
+            "integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
+          ]
+        },
+        "integrations/connectors/data-ingestion/etl-tools/workos",
+        {
           "expanded": false,
           "group": "Community integrations",
           "pages": [
@@ -236,6 +247,5 @@
       ]
     }
   ],
-  "icon": "/images/icons/icon-connectors.svg",
   "item": "Connectors"
 }

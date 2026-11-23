@@ -1,4 +1,5 @@
 -- Tags: long, no-msan
+-- Random settings limits: merge_max_block_size=(8192, None)
 -- `long` because the file builds four MergeTree tables of 300000-800000 rows and runs five timed
 -- guards, eight `EXPLAIN PIPELINE` mirrors and three identity checks over them: 5.9 s on a debug build
 -- with the CI jemalloc profiler config armed
@@ -11,6 +12,8 @@
 -- not a memory-safety one, so the debug, ASan, TSan and UBSan runs keep the guard; MSan adds nothing
 -- here except wall time. Shrinking the tables instead would move the broken-path runtime below the
 -- `max_execution_time` limit and make the guards vacuous, see point 3 below.
+-- `merge_max_block_size` has a floor because `OPTIMIZE ... FINAL` merges the two 800000-row aggregate
+-- projection parts of `t_agg_in_order_fixed_keys_merge` `merge_max_block_size` rows at a time.
 --
 -- Regression test for a quadratic blowup in aggregation in order and DISTINCT in order with a
 -- fixed-size GROUP BY key: a hashing state built per run of the sorting prefix batch-packed the whole

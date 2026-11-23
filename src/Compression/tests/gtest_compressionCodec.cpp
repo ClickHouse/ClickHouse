@@ -165,7 +165,7 @@ public:
         return current_value;
     }
 
-    size_t itemsLeft() const
+    [[nodiscard]] size_t itemsLeft() const
     {
         return reinterpret_cast<const char *>(data_end) - reinterpret_cast<const char *>(data);
     }
@@ -448,7 +448,7 @@ struct StopwatchTimer
         stopwatch.stop();
     }
 
-    const std::vector<std::tuple<const char*, UInt64>> & getResults() const
+    [[nodiscard]] const std::vector<std::tuple<const char*, UInt64>> & getResults() const
     {
         return results;
     }
@@ -461,7 +461,7 @@ private:
 CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePtr data_type)
 {
     const std::string codec_statement = "(" + codec_string + ")";
-    Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
+    Tokens tokens(codec_statement.data(), codec_statement.data() + codec_statement.size());
     IParser::Pos token_iterator(tokens, 0, 0);
 
     Expected expected;
@@ -1792,8 +1792,8 @@ TEST(CompressionCodecMultipleTest, UnconfiguredNestedCodec)
     /// A `LOGICAL_ERROR` aborts in debug and sanitizer builds.
 #ifndef DEBUG_OR_SANITIZER_BUILD
     auto decoder = std::make_shared<CompressionCodecMultiple>();
-    EXPECT_THROW(decoder->getCodecDescription(), Exception);
-    EXPECT_THROW(decoder->getFullCodecDescription(), Exception);
+    EXPECT_THROW((void)decoder->getCodecDescription(), Exception);
+    EXPECT_THROW((void)decoder->getFullCodecDescription(), Exception);
     /// Reject an unconfigured nested `Multiple` during construction, before requesting its description.
     EXPECT_THROW(CompressionCodecMultiple{Codecs{decoder}}, Exception);
 #endif
@@ -1820,6 +1820,21 @@ TEST(CompressionCodecMultipleTest, NestedCodecDescription)
     ASSERT_NE(inner_description->as<ASTExpressionList>(), nullptr);
     ASSERT_EQ(inner_description->children.size(), 2);
     EXPECT_EQ(inner_description->formatForErrorMessage(), "LZ4, ZSTD(3)");
+}
+
+TEST(CompressionCodecMultipleTest, DescriptionsHaveCodecKind)
+{
+    /// `findSecretArguments` skips `Kind::CODEC`, so programs without a secret arguments finder can format these.
+    const auto kind = [](const ASTPtr & description) { return description->as<const ASTFunction &>().getKind(); };
+
+    const auto single = CompressionCodecFactory::instance().get("ZSTD(3)");
+    const auto chain = CompressionCodecFactory::instance().get("LZ4, ZSTD(3)");
+    const CompressionCodecPtr nested = std::make_shared<CompressionCodecMultiple>(Codecs{chain});
+
+    EXPECT_EQ(kind(single->getCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(single->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(chain->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(nested->getFullCodecDescription()), ASTFunction::Kind::CODEC);
 }
 
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
@@ -2224,7 +2239,7 @@ TEST(GetCompressionCodecForFileTest, ThrowsOnCorruptSizeEvenWithoutSkip)
 
 TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeAboveLimit)
 {
-    /// size_compressed (2 GiB) is above DBMS_MAX_COMPRESSED_SIZE (1 GiB): must throw TOO_LARGE_SIZE_COMPRESSED.
+    /// size_compressed (2 GiB) is above DBMS_MAX_COMPRESSED_SIZE (512 MiB): must throw TOO_LARGE_SIZE_COMPRESSED.
     constexpr unsigned char block[] = {
         0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
         0x82, /// LZ4 method byte
