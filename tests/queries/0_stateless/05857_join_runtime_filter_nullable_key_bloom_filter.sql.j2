@@ -1,176 +1,165 @@
 -- A `Nullable` or `LowCardinality(Nullable)` key whose exact set overflows gets a Bloom filter over its nested values.
 -- The result of every query does not depend on the filter, NULL probe rows never pass it, and NULL build rows add nothing.
 
--- EXPLAIN ANALYZE rejects distributed plans, and the profile events need the filter in the initial query.
+-- `EXPLAIN ANALYZE` rejects distributed plans, and the profile events need the filter in the initial query.
 SET enable_parallel_replicas = 0;
-SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
-SET join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
-SET join_runtime_filter_from_fixed_hash_table = 0;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_runtime_filter_from_fixed_hash_table = 0;
 SET join_runtime_bloom_filter_bytes = 524288;
+SET join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET allow_suspicious_low_cardinality_types = 1;
 
-DROP TABLE IF EXISTS probe;
-DROP TABLE IF EXISTS build;
-DROP TABLE IF EXISTS build_nulls;
-DROP TABLE IF EXISTS build_empty;
-DROP TABLE IF EXISTS null_probe;
-DROP TABLE IF EXISTS results;
-DROP TABLE IF EXISTS events_log;
+{#- Every key column is computed from the key `k`; the strings map 0, the nested value of a NULL, to ''. #}
+{% set columns = [
+    ('int64', 'Nullable(Int64)', 'k'),
+    ('int32', 'Nullable(Int32)', 'k'),
+    ('int8', 'Nullable(Int8)', 'k % 100'),
+    ('uint16', 'Nullable(UInt16)', 'k'),
+    ('uint128', 'Nullable(UInt128)', 'k'),
+    ('float64', 'Nullable(Float64)', 'multiIf(k = 0, zero, k = 31, nan, k)'),
+    ('decimal', 'Nullable(Decimal(15, 2))', 'k'),
+    ('decimal76', 'Nullable(Decimal(76, 2))', 'k'),
+    ('string', 'Nullable(String)', "if(k = 0, '', toString(k))"),
+    ('plain_string', 'String', 'toString(assumeNotNull(k))'),
+    ('fixed_string', 'Nullable(FixedString(8))', 'toString(k)'),
+    ('date32', 'Nullable(Date32)', 'k'),
+    ('datetime64', "Nullable(DateTime64(3, 'UTC'))", 'k'),
+    ('uuid', 'Nullable(UUID)', "concat('00000000-0000-0000-0000-', leftPad(toString(k), 12, '0'))"),
+    ('ipv6', 'Nullable(IPv6)', "concat('::', toString(k))"),
+    ('enum8', "Nullable(Enum8('a' = 0, 'b' = 1, 'c' = 2))", 'k % 3'),
+    ('bool', 'Nullable(Bool)', 'k % 2'),
+    ('lc_string', 'LowCardinality(Nullable(String))', "if(k = 0, '', toString(k))"),
+    ('lc_fixed_string', 'LowCardinality(Nullable(FixedString(8)))', 'toString(k)'),
+    ('lc_int32', 'LowCardinality(Nullable(Int32))', 'k'),
+] %}
+{% macro insert(table, rows) -%}
+INSERT INTO {{ table }} SELECT id{% for _, _, value in columns %}, {{ value }}{% endfor %} FROM ({{ rows }});
+{%- endmacro %}
 
-CREATE TABLE probe (n UInt64, v UInt64, ki Nullable(Int64), kd Nullable(Decimal(15, 2)), ks Nullable(String), kl LowCardinality(Nullable(String)), ki32 Nullable(Int32))
-ENGINE = MergeTree ORDER BY n;
--- Keys and NULLs in two parts.
-CREATE TABLE build (id UInt64, ki Nullable(Int64), kd Nullable(Decimal(15, 2)), ks Nullable(String), kl LowCardinality(Nullable(String)), ks_plain String)
-ENGINE = MergeTree ORDER BY id;
+CREATE TABLE probe (id UInt64{% for name, type, _ in columns %}, {{ name }} {{ type }}{% endfor %}) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE probe_no_nulls AS probe;
+CREATE TABLE probe_only_nulls AS probe;
+CREATE TABLE build AS probe;
+CREATE TABLE build_only_nulls AS probe;
+CREATE TABLE build_empty AS probe;
+CREATE TABLE results (batch String, query String, variant String, rows UInt64, checksum UInt64) ENGINE = Memory;
+CREATE TABLE events (log_comment String, ProfileEvents Map(String, UInt64)) ENGINE = Memory;
+
+-- The probe side has the keys 0 to 999, a NULL in every tenth row, and the float key -0 and NaN.
+{{ insert('probe', 'SELECT number + 1 AS id, if(number % 10 = 3, NULL, number) AS k, -0. AS zero FROM numbers(1000)') }}
+INSERT INTO probe_no_nulls SELECT * FROM probe WHERE int64 IS NOT NULL;
+INSERT INTO probe_only_nulls (id) SELECT number + 1 FROM numbers(1000);
+
+-- The build side has the keys 0, 31, 62, ... in two parts, a NULL in every fifth row, and the float key +0 and NaN.
 SYSTEM STOP MERGES build;
-CREATE TABLE build_nulls AS build;
-CREATE TABLE build_empty AS build;
-CREATE TABLE null_probe (ki Nullable(Int64), ks Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE results (name String, variant String, rows UInt64, checksum UInt64) ENGINE = Memory;
-CREATE TABLE events_log (log_comment String, ProfileEvents Map(String, UInt64)) ENGINE = Memory;
+{{ insert('build', 'SELECT number + 1 AS id, if(number % 5 = 2, NULL, number * 31) AS k, 0. AS zero FROM numbers(20)') }}
+{{ insert('build', 'SELECT number + 1 AS id, if(number % 5 = 2, NULL, number * 31) AS k, 0. AS zero FROM numbers(20, 20)') }}
+INSERT INTO build_only_nulls (id) SELECT number + 100 FROM numbers(3);
 
--- Key 0 is the nested default value: '' for the strings.
-INSERT INTO probe SELECT n, n + 1, k, k, if(k = 0, '', toString(k)), if(k = 0, '', toString(k)), k
-FROM (SELECT number AS n, if(number % 10 = 3, NULL, number) AS k FROM numbers(1000));
-INSERT INTO build SELECT n + 1, k, k, if(k = 0, '', toString(k)), if(k = 0, '', toString(k)), if(n = 0, '', toString(n * 31))
-FROM (SELECT number AS n, if(number % 5 = 2, NULL, number * 31) AS k FROM numbers(20));
-INSERT INTO build SELECT n + 1, k, k, if(k = 0, '', toString(k)), if(k = 0, '', toString(k)), toString(n * 31)
-FROM (SELECT number AS n, if(number % 5 = 2, NULL, number * 31) AS k FROM numbers(20, 20));
-INSERT INTO build_nulls SELECT 100 + number, NULL, NULL, NULL, NULL, 'x' FROM numbers(3);
-INSERT INTO null_probe SELECT NULL, NULL FROM numbers(1000);
-
-{% set keys = [('int', 'ki', 'ki'), ('decimal', 'kd', 'kd'), ('string', 'ks', 'ks'), ('lc', 'kl', 'kl'), ('int32_int64', 'ki32', 'ki'), ('lc_string', 'kl', 'ks_plain')] %}
-{% set both = 'ifNull(p.v, 0), ifNull(b.id, 0)' %}
-{% set kinds = [
-    ('inner', 'INNER JOIN', '', both, 0),
-    ('right', 'RIGHT JOIN', '', both, 0),
-    ('left_semi', 'LEFT SEMI JOIN', '', 'p.v', 0),
-    ('right_semi', 'RIGHT SEMI JOIN', '', 'b.id', 0),
-    ('left_anti', 'LEFT ANTI JOIN', '', 'p.v', 0),
-    ('right_anti', 'RIGHT ANTI JOIN', '', 'b.id', 0),
-    ('and_null_safe', 'INNER JOIN', ' AND p.ks <=> b.ks', both, 0),
-    ('right_use_nulls', 'RIGHT JOIN', '', both, 1),
+{#- The joins that build a runtime filter, with the columns of their result that do not depend on the order of rows. #}
+{% set joins = {
+    'INNER JOIN': 'p.id, b.id',
+    'RIGHT JOIN': 'p.id, b.id',
+    'LEFT SEMI JOIN': 'p.id',
+    'RIGHT SEMI JOIN': 'b.id',
+    'LEFT ANTI JOIN': 'p.id',
+    'RIGHT ANTI JOIN': 'b.id',
+} %}
+{#- The (probe column, build column) of a key: the key types, and the mixed types that need a cast. #}
+{% set keys = [('int64', 'int64'), ('decimal', 'decimal'), ('string', 'string'), ('lc_string', 'lc_string'),
+    ('int32', 'int64'), ('lc_string', 'plain_string')] %}
+{% set edge_keys = [('int64', 'int64'), ('lc_string', 'lc_string')] %}
+{% set edge_joins = ['INNER JOIN', 'RIGHT JOIN', 'LEFT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN'] %}
+{% set types = [('int8', 'int8'), ('uint16', 'uint16'), ('uint128', 'uint128'), ('float64', 'float64'),
+    ('decimal76', 'decimal76'), ('fixed_string', 'fixed_string'), ('fixed_string', 'string'), ('date32', 'date32'),
+    ('datetime64', 'datetime64'), ('uuid', 'uuid'), ('ipv6', 'ipv6'), ('enum8', 'enum8'), ('bool', 'bool'),
+    ('lc_fixed_string', 'lc_fixed_string'), ('lc_int32', 'lc_int32')] %}
+{#- A batch is one query with a UNION ALL branch per case: (name, join_use_nulls, extra condition, cases). #}
+{% set batches = [
+    ('keys', 0, '', product(['probe'], joins, ['build'], keys) | list),
+    ('keys and <=>', 0, ' AND p.string <=> b.string', product(['probe'], ['INNER JOIN'], ['build'], keys) | list),
+    ('join_use_nulls', 1, '', product(['probe'], ['RIGHT JOIN'], ['build'], keys) | list),
+    ('no NULLs, only NULLs or no rows', 0, '',
+        (product(['probe_no_nulls'], edge_joins, ['build'], edge_keys) | list)
+        + (product(['probe'], edge_joins, ['build_only_nulls', 'build_empty'], edge_keys) | list)),
+    ('types', 0, '', product(['probe'], ['INNER JOIN'], ['build'], types) | list),
 ] %}
-{% set variants = [('bloom', 'join_runtime_filter_exact_values_limit = 1'), ('exact', 'join_runtime_filter_exact_values_limit = 10000'), ('off', 'enable_join_runtime_filters = 0')] %}
-{% set data = [('only_nulls', 'probe', 'build_nulls'), ('empty', 'probe', 'build_empty'), ('probe_no_nulls', '(SELECT * FROM probe WHERE n % 10 != 3)', 'build')] %}
-{% set types = [
-    ('Int8', 'CAST(ki % 100 AS Nullable(Int8))', 'CAST(ki % 100 AS Nullable(Int8))'),
-    ('UInt16', 'CAST(ki AS Nullable(UInt16))', 'CAST(ki AS Nullable(UInt16))'),
-    ('UInt128', 'CAST(ki AS Nullable(UInt128))', 'CAST(ki AS Nullable(UInt128))'),
-    ('Float64', 'CAST(multiIf(ki = 0 AND n % 2 = 0, -0., ki = 1, nan, ki) AS Nullable(Float64))', 'CAST(multiIf(ki = 31, -0., ki = 62, nan, ki) AS Nullable(Float64))'),
-    ('Decimal76', 'CAST(ki AS Nullable(Decimal(76, 2)))', 'CAST(ki AS Nullable(Decimal(76, 2)))'),
-    ('FixedString', 'CAST(toString(ki) AS Nullable(FixedString(8)))', 'CAST(toString(ki) AS Nullable(FixedString(8)))'),
-    ('FixedString_String', 'CAST(toString(ki) AS Nullable(FixedString(8)))', 'toString(ki)'),
-    ('Date32', 'CAST(ki AS Nullable(Date32))', 'CAST(ki AS Nullable(Date32))'),
-    ('DateTime64', 'CAST(ki AS Nullable(DateTime64(3, \'UTC\')))', 'CAST(ki AS Nullable(DateTime64(3, \'UTC\')))'),
-    ('UUID', 'CAST(concat(\'00000000-0000-0000-0000-\', leftPad(toString(ki), 12, \'0\')) AS Nullable(UUID))', 'CAST(concat(\'00000000-0000-0000-0000-\', leftPad(toString(ki), 12, \'0\')) AS Nullable(UUID))'),
-    ('IPv6', 'CAST(concat(\'::\', toString(ki)) AS Nullable(IPv6))', 'CAST(concat(\'::\', toString(ki)) AS Nullable(IPv6))'),
-    ('Enum8', 'CAST(ki % 3 AS Nullable(Enum8(\'a\' = 0, \'b\' = 1, \'c\' = 2)))', 'CAST(ki % 3 AS Nullable(Enum8(\'a\' = 0, \'b\' = 1, \'c\' = 2)))'),
-    ('Bool', 'CAST(ki % 2 AS Nullable(Bool))', 'CAST(ki % 2 AS Nullable(Bool))'),
-    ('LowCardinality_FixedString', 'CAST(toString(ki) AS LowCardinality(Nullable(FixedString(8))))', 'CAST(toString(ki) AS LowCardinality(Nullable(FixedString(8))))'),
-    ('LowCardinality_Int32', 'CAST(ki AS LowCardinality(Nullable(Int32)))', 'CAST(ki AS LowCardinality(Nullable(Int32)))'),
+{% set variants = {
+    'bloom filter': 'join_runtime_filter_exact_values_limit = 1',
+    'exact set': 'join_runtime_filter_exact_values_limit = 10000',
+    'no filter': 'enable_join_runtime_filters = 0',
+} %}
+
+{% for variant, variant_settings in variants.items() %}
+{% for batch, join_use_nulls, extra, cases in batches %}
+INSERT INTO results
+{% for probe, join, build, (probe_key, build_key) in cases %}
+{{ 'UNION ALL ' if not loop.first }}SELECT '{{ batch }}', '{{ probe }} {{ join }} {{ build }} ON {{ probe_key }} = {{ build_key }}', '{{ variant }}',
+    count(), sum(cityHash64({{ joins[join] }}))
+FROM {{ probe }} AS p {{ join }} {{ build }} AS b ON p.{{ probe_key }} = b.{{ build_key }}{{ extra }}
+{% endfor %}
+SETTINGS {{ variant_settings }}, join_use_nulls = {{ join_use_nulls }}, log_comment = 'batch {{ batch }}, {{ variant }}';
+{% endfor %}
+{% endfor %}
+
+-- No result depends on the runtime filter.
+SELECT variant, count() AS cases, countIf(rows > 0) AS cases_with_rows FROM results GROUP BY variant ORDER BY variant;
+SELECT 'depends on the filter', batch, query FROM results GROUP BY batch, query HAVING uniqExact(rows, checksum) > 1 ORDER BY ALL;
+
+-- `LEFT JOIN`, `FULL JOIN`, `<=>`, `IN` and `NOT IN` build no runtime filter.
+{% set no_filter_queries = [
+    'SELECT count() FROM probe AS p LEFT JOIN build AS b ON p.{0} = b.{1}',
+    'SELECT count() FROM probe AS p FULL JOIN build AS b ON p.{0} = b.{1}',
+    'SELECT count() FROM probe AS p INNER JOIN build AS b ON p.{0} <=> b.{1}',
+    'SELECT count() FROM probe WHERE {0} IN (SELECT {1} FROM build)',
+    'SELECT count() FROM probe WHERE {0} NOT IN (SELECT {1} FROM build)',
 ] %}
-
--- One INSERT per matrix and variant, one UNION ALL branch per case.
-{% for variant, variant_settings in variants %}
--- Matrix A: every kind of join that builds a runtime filter and every key, with NULLs on both sides.
-{% for use_nulls in [0, 1] %}
-INSERT INTO results
-{% for (key, pk, bk), (kind, join, extra, columns, kind_use_nulls) in product(keys, kinds) if kind_use_nulls == use_nulls %}
-{{ 'UNION ALL ' if not loop.first else '' }}SELECT '{{ key }} {{ kind }}', '{{ variant }}', count(), sum(cityHash64({{ columns }}))
-FROM probe AS p {{ join }} build AS b ON p.{{ pk }} = b.{{ bk }}{{ extra }}
+{% for nulls in [0, 1] %}
+{% for query, (probe_key, build_key) in product(no_filter_queries, keys) %}
+{{ 'UNION ALL ' if not loop.first }}{{ query.format(probe_key, build_key) }}
 {% endfor %}
-SETTINGS {{ variant_settings }}, join_use_nulls = {{ use_nulls }}, log_comment = '05857_batch_a{{ use_nulls }}_{{ variant }}';
-{% endfor %}
-
--- Matrix B: a build side of only NULLs or no rows, and a probe side without NULLs.
-INSERT INTO results
-{% for (name, probe, build), (key, pk, bk), (kind, join, extra, columns, kind_use_nulls) in product(data, keys[0:4:3], kinds) if kind in ['inner', 'right', 'left_semi', 'left_anti', 'right_anti'] %}
-{{ 'UNION ALL ' if not loop.first else '' }}SELECT '{{ name }} {{ key }} {{ kind }}', '{{ variant }}', count(), sum(cityHash64({{ columns }}))
-FROM {{ probe }} AS p {{ join }} {{ build }} AS b ON p.{{ pk }} = b.{{ bk }}
-{% endfor %}
-SETTINGS {{ variant_settings }}, log_comment = '05857_batch_b_{{ variant }}';
-
--- Matrix C: one INNER JOIN per key type, the floats with -0, 0 and NaN on both sides.
-INSERT INTO results
-{% for type, probe_key, build_key in types %}
-{{ 'UNION ALL ' if not loop.first else '' }}SELECT '{{ type }}', '{{ variant }}', count(), sum(cityHash64(p.v, b.id))
-FROM (SELECT {{ probe_key }} AS k, v FROM probe) AS p INNER JOIN (SELECT {{ build_key }} AS k, id FROM build) AS b ON p.k = b.k
-{% endfor %}
-SETTINGS {{ variant_settings }}, log_comment = '05857_batch_c_{{ variant }}';
-{% endfor %}
-
-SELECT 'cases', uniqExact(name), count(), countIf(variant = 'off' AND rows = 0) FROM results;
-SELECT 'differs from no filter', name FROM results GROUP BY name HAVING uniqExact(rows, checksum) > 1 ORDER BY name;
-
--- `LEFT JOIN`, `FULL JOIN`, `<=>`, `IN` and `NOT IN` build no runtime filter, so it cannot change their results.
-{% for null_settings in [0, 1] %}
-{% for (key, pk, bk), (join, op) in product(keys, [('LEFT JOIN', '='), ('FULL JOIN', '='), ('INNER JOIN', '<=>')]) %}
-{{ 'UNION ALL ' if not loop.first else '' }}SELECT count() FROM probe AS p {{ join }} build AS b ON p.{{ pk }} {{ op }} b.{{ bk }}
-{% endfor %}
-{% for (key, pk, bk), op in product(keys, ['IN', 'NOT IN']) %}
-UNION ALL SELECT count() FROM probe WHERE {{ pk }} {{ op }} (SELECT {{ bk }} FROM build)
-{% endfor %}
-SETTINGS join_runtime_filter_exact_values_limit = 1, join_use_nulls = {{ null_settings }}, transform_null_in = {{ null_settings }}, log_comment = '05857_no_filter_{{ null_settings }}'
+SETTINGS join_runtime_filter_exact_values_limit = 1, join_use_nulls = {{ nulls }}, transform_null_in = {{ nulls }},
+    log_comment = 'no filter, join_use_nulls = transform_null_in = {{ nulls }}'
 FORMAT Null;
 {% endfor %}
 
 -- Every key gets a Bloom filter once its exact set overflows.
-{% for key, pk, bk in keys %}
-SELECT '{{ key }}', replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
-FROM (EXPLAIN ANALYZE SELECT count() FROM probe AS p INNER JOIN build AS b ON p.{{ pk }} = b.{{ bk }}
+{% for probe_key, build_key in keys + types %}
+SELECT 'p.{{ probe_key }} = b.{{ build_key }}', extract(explain, 'Runtime filter \\(([a-z ]+)')
+FROM (EXPLAIN ANALYZE SELECT count() FROM probe AS p INNER JOIN build AS b ON p.{{ probe_key }} = b.{{ build_key }}
     SETTINGS join_runtime_filter_exact_values_limit = 1, max_threads = 1)
 WHERE explain LIKE '%Runtime filter (%';
 {% endfor %}
 
--- `RIGHT ANTI JOIN` builds a positive filter: the Bloom filter past the limit, the exact set below it.
-{% for limit in [1, 10000] %}
-SELECT 'right_anti {{ limit }}', replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
-FROM (EXPLAIN ANALYZE SELECT count() FROM probe AS p RIGHT ANTI JOIN build AS b ON p.ki = b.ki
+-- `RIGHT ANTI JOIN` builds a positive filter: the exact set up to the limit, the Bloom filter past it.
+{% for limit in [10000, 1] %}
+SELECT 'RIGHT ANTI JOIN, limit {{ limit }}', extract(explain, 'Runtime filter \\(([a-z ]+)')
+FROM (EXPLAIN ANALYZE SELECT count() FROM probe AS p RIGHT ANTI JOIN build AS b ON p.int64 = b.int64
     SETTINGS join_runtime_filter_exact_values_limit = {{ limit }}, max_threads = 1)
 WHERE explain LIKE '%Runtime filter (%';
 {% endfor %}
 
--- Every type of Matrix C gets a Bloom filter once its exact set overflows.
-{% for type, probe_key, build_key in types %}
-SELECT '{{ type }}', replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
-FROM (EXPLAIN ANALYZE SELECT count() FROM (SELECT {{ probe_key }} AS k, v FROM probe) AS p
-    INNER JOIN (SELECT {{ build_key }} AS k, id FROM build) AS b ON p.k = b.k
-    SETTINGS join_runtime_filter_exact_values_limit = 1, max_threads = 1)
-WHERE explain LIKE '%Runtime filter (%';
-{% endfor %}
-
--- A probe side of only NULLs: the nested default value is a key of the build side, but no row passes.
-SELECT count() FROM null_probe AS p INNER JOIN build AS b ON p.ki = b.ki
-SETTINGS join_runtime_filter_exact_values_limit = 1, log_comment = '05857_null_probe_int';
-SELECT count() FROM null_probe AS p INNER JOIN build AS b ON p.ks = b.ks
-SETTINGS join_runtime_filter_exact_values_limit = 1, log_comment = '05857_null_probe_string';
+-- A probe side of only NULLs: the nested value of a NULL, 0 or '', is a key of the build side, but no row passes.
+SELECT 'null probe, int64', count() FROM probe_only_nulls AS p INNER JOIN build AS b ON p.int64 = b.int64
+SETTINGS join_runtime_filter_exact_values_limit = 1, log_comment = 'null probe, int64';
+SELECT 'null probe, string', count() FROM probe_only_nulls AS p INNER JOIN build AS b ON p.string = b.string
+SETTINGS join_runtime_filter_exact_values_limit = 1, log_comment = 'null probe, string';
 
 -- The NULL build rows hold nested values that are not keys (62, 217, ...), so the probe rows with these values do not
 -- pass. An integer key drops its NULLs in the exact set, so they reach the Bloom filter only after the switch.
-SELECT count() FROM probe AS p INNER JOIN build AS b ON p.ki = b.ki
-SETTINGS join_runtime_filter_exact_values_limit = 1, max_threads = 1, log_comment = '05857_null_build_int';
-SELECT count() FROM probe AS p INNER JOIN build AS b ON p.ks = b.ks
-SETTINGS join_runtime_filter_exact_values_limit = 1, log_comment = '05857_null_build_string';
+SELECT 'null build, int64', count() FROM probe AS p INNER JOIN build AS b ON p.int64 = b.int64
+SETTINGS join_runtime_filter_exact_values_limit = 1, max_threads = 1, log_comment = 'null build, int64';
+SELECT 'null build, string', count() FROM probe AS p INNER JOIN build AS b ON p.string = b.string
+SETTINGS join_runtime_filter_exact_values_limit = 1, log_comment = 'null build, string';
 
 SYSTEM FLUSH LOGS query_log;
-INSERT INTO events_log SELECT log_comment, ProfileEvents FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish';
+INSERT INTO events SELECT log_comment, ProfileEvents FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish';
 
--- The settings of a batch apply to all its branches: its filters check rows only when they are enabled.
-SELECT log_comment, ProfileEvents['RuntimeFilterRowsChecked'] > 0 FROM events_log WHERE log_comment LIKE '05857_batch_%' ORDER BY log_comment;
-SELECT log_comment, ProfileEvents['RuntimeFiltersCreated'] FROM events_log WHERE log_comment LIKE '05857_no_filter_%' ORDER BY log_comment;
+-- A batch checks rows exactly when its runtime filters are enabled.
+SELECT log_comment, ProfileEvents['RuntimeFilterRowsChecked'] > 0 FROM events WHERE startsWith(log_comment, 'batch ') ORDER BY ALL;
+SELECT log_comment, ProfileEvents['RuntimeFiltersCreated'] FROM events WHERE startsWith(log_comment, 'no filter') ORDER BY ALL;
+-- The rows that pass a filter of a NULL probe or build side are the rows of the join.
 SELECT log_comment, ProfileEvents['RuntimeFilterRowsChecked'] > 0, ProfileEvents['RuntimeFilterRowsPassed']
-FROM events_log WHERE log_comment LIKE '05857_null_probe_%' ORDER BY log_comment;
-SELECT log_comment, ProfileEvents['RuntimeFilterRowsChecked'] > 0,
-    ProfileEvents['RuntimeFilterRowsPassed'] = if(log_comment LIKE '%_int',
-        (SELECT count() FROM probe WHERE ki IN (SELECT ki FROM build)),
-        (SELECT count() FROM probe WHERE ks IN (SELECT ks FROM build)))
-FROM events_log WHERE log_comment LIKE '05857_null_build_%' ORDER BY log_comment;
+FROM events WHERE startsWith(log_comment, 'null ') ORDER BY ALL;
 
-DROP TABLE probe;
-DROP TABLE build;
-DROP TABLE build_nulls;
-DROP TABLE build_empty;
-DROP TABLE null_probe;
-DROP TABLE results;
-DROP TABLE events_log;
+DROP TABLE probe, probe_no_nulls, probe_only_nulls, build, build_only_nulls, build_empty, results, events;

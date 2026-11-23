@@ -256,7 +256,7 @@ extern template class ExactSetRuntimeFilter<false>;
 extern template class ExactSetRuntimeFilter<true>;
 
 /// Bloom-backed runtime filter for approximate set membership checks.
-/// A NULL key is never inserted and never found.
+/// `insert` skips the rows with a NULL key and `find` rejects them: a NULL never matches an `=` join key.
 class ApproximateSetRuntimeFilter
 {
 public:

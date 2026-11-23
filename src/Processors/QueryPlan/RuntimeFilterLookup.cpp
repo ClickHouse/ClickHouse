@@ -320,8 +320,7 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
 }
 
 /// The column whose values a Bloom filter hashes and the NULL map of its rows (null if it has none).
-/// A runtime filter key comes from an `=` predicate, so a NULL key is neither inserted nor found.
-struct BloomFilterKeys
+struct ColumnInternals
 {
     ColumnPtr column;
     ColumnPtr null_map_holder;
@@ -329,9 +328,9 @@ struct BloomFilterKeys
     ConstNullMapPtr null_map = nullptr;
 };
 
-BloomFilterKeys splitNullKeys(const ColumnPtr & column)
+ColumnInternals getColumnInternals(const ColumnPtr & column)
 {
-    BloomFilterKeys result;
+    ColumnInternals result;
     result.column = column->convertToFullIfWrapped();
     if (isColumnLowCardinalityNullable(*result.column))
         result.column = result.column->convertToFullColumnIfLowCardinality();
@@ -639,7 +638,7 @@ RuntimeFilterDescription ExactSetRuntimeFilter<negate>::describe() const
 
 bool ApproximateSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
-    /// A NULL key is never inserted nor found, so a `Nullable` key is hashed by its nested value.
+    /// A `Nullable` key is hashed by its nested value, see `getColumnInternals`.
     /// `LowCardinality` is stripped first because it reports a contiguous value unconditionally.
     return removeNullable(removeLowCardinality(data_type))->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
@@ -656,7 +655,7 @@ void ApproximateSetRuntimeFilter::insert(ColumnPtr values, size_t first_row)
 
 void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values, size_t first_row)
 {
-    const auto keys = splitNullKeys(values);
+    const auto keys = getColumnInternals(values);
     forEachColumnHashBatch(
         *keys.keys,
         bloom_filter.getSeed(),
@@ -680,7 +679,7 @@ void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values
 
 ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
 {
-    const auto keys = splitNullKeys(values.column);
+    const auto keys = getColumnInternals(values.column);
     auto dst = ColumnVector<UInt8>::create();
     auto & dst_data = dst->getData();
     dst_data.resize(values.column->size());
