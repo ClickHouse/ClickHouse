@@ -49,8 +49,8 @@ public:
 
     /// The columns `fallback_reader` reads, and the ranges of the postings and positions files the streams read. These files
     /// are not compressed, see `MergeTreeReaderStream::recordBytesConsumed`.
-    void flushCompressedBlocksRead() override;
-    void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override;
+    void registerReadRanges() override;
+    void setReadRangesRegistry(ReadRangesRegistryPtr registry) override;
     void updateAllMarkRanges(const MarkRanges & ranges) override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
@@ -152,11 +152,11 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
-    /// The ranges of a file the streams read since `flushCompressedBlocksRead`.
+    /// The ranges of a file the streams read since `registerReadRanges`.
     struct FileRangesRead
     {
         CompressedBlockRanges ranges;
-        CountedCompressedBlocks::CountedRanges * counted = nullptr;
+        ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
     };
     FileRangesRead postings_ranges_read;
     FileRangesRead positions_ranges_read;

@@ -44,15 +44,15 @@ catch (...)
     throw;
 }
 
-void MergeTreeReaderCompactSingleBuffer::flushCompressedBlocksRead()
+void MergeTreeReaderCompactSingleBuffer::registerReadRanges()
 {
-    if (!counted_compressed_blocks)
+    if (!read_ranges_registry)
         return;
 
-    if (!counted_ranges)
-        counted_ranges = &counted_compressed_blocks->getCountedRanges(
+    if (!read_ranges)
+        read_ranges = &read_ranges_registry->getReadRanges(
             data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
-    counted_compressed_blocks->count(*counted_ranges, ranges_read);
+    read_ranges_registry->registerRanges(*read_ranges, ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(
@@ -145,8 +145,8 @@ try
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
-    if (counted_compressed_blocks)
-        stream->setBlocksReadSink(&ranges_read);
+    if (read_ranges_registry)
+        stream->setRangesReadSink(&ranges_read);
 
     initialized = true;
 }

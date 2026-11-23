@@ -22,42 +22,42 @@ class CachedCompressedReadBuffer;
 
 struct RuntimeDataflowStatisticsBlock;
 
-/// Counts the compressed blocks the readers of a read load into its statistics, each block once however many readers
+/// The ranges of the files the readers of a read load, counted into its statistics, each range once however many readers
 /// load it.
-class CountedCompressedBlocks
+class ReadRangesRegistry
 {
 public:
     /// `duplicated` is that of the `RuntimeDataflowStatisticsCacheUpdater` of the read.
-    CountedCompressedBlocks(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_);
+    ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_);
 
     /// The counted ranges of a file. The readers of several threads count the same file.
-    class CountedRanges
+    class ReadRanges
     {
-        friend class CountedCompressedBlocks;
+        friend class ReadRangesRegistry;
 
         /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
-        size_t take(CompressedBlockRanges & ranges);
+        size_t add(CompressedBlockRanges & ranges);
 
         std::mutex mutex;
         /// Merged, by their begin.
-        MapWithMemoryTracking<size_t, size_t> counted TSA_GUARDED_BY(mutex);
+        MapWithMemoryTracking<size_t, size_t> united_ranges TSA_GUARDED_BY(mutex);
     };
 
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
-    CountedRanges & getCountedRanges(const String & path);
+    ReadRanges & getReadRanges(const String & path);
 
     /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet. Clears `ranges`.
-    void count(CountedRanges & file_ranges, CompressedBlockRanges & ranges);
+    void registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
 
 private:
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
 
     std::mutex mutex;
-    UnorderedMapWithMemoryTracking<String, CountedRanges> counted TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, ReadRanges> read_ranges_by_path TSA_GUARDED_BY(mutex);
 };
 
-using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;
+using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;
 
 /// Basic and the most low-level class
 /// for reading single columns or indexes.
@@ -105,9 +105,9 @@ public:
 
     size_t getFileSize() const { return file_size; }
 
-    /// See `CompressedReadBufferBase::setBlocksReadSink`. A stream of uncompressed data records the ranges of the file it
+    /// See `CompressedReadBufferBase::setRangesReadSink`. A stream of uncompressed data records the ranges of the file it
     /// consumed, each closed by a seek or by `recordBytesConsumed`.
-    void setBlocksReadSink(CompressedBlockRanges * blocks_read_);
+    void setRangesReadSink(CompressedBlockRanges * ranges_read_);
     /// Records the range of uncompressed data consumed since the previous seek or call.
     void recordBytesConsumed();
 
@@ -139,7 +139,7 @@ private:
     ReadBuffer * data_buffer = nullptr;
     ReadBufferFromFileBase * plain_file_buffer = nullptr;
     CompressedReadBufferBase * compressed_data_buffer = nullptr;
-    CompressedBlockRanges * blocks_read = nullptr;
+    CompressedBlockRanges * ranges_read = nullptr;
     /// See `recordBytesConsumed`.
     size_t consumed_begin = 0;
     std::unique_ptr<ReadBuffer> read_buffer_holder;

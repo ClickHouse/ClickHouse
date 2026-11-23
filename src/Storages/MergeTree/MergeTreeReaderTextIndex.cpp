@@ -453,8 +453,8 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         settings,
         /*expected_buffer_size=*/ std::nullopt,
         /*use_page_cache_lookahead=*/ false);
-    if (counted_compressed_blocks)
-        positions_stream->setBlocksReadSink(&positions_ranges_read.ranges);
+    if (read_ranges_registry)
+        positions_stream->setRangesReadSink(&positions_ranges_read.ranges);
 
     positions_stream->seekToStart();
 }
@@ -660,28 +660,28 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStr
         settings,
         estimatePostingListBufferSize(token_info),
         /*use_page_cache_lookahead=*/ false);
-    if (counted_compressed_blocks)
-        stream->setBlocksReadSink(&postings_ranges_read.ranges);
+    if (read_ranges_registry)
+        stream->setRangesReadSink(&postings_ranges_read.ranges);
     return stream;
 }
 
-void MergeTreeReaderTextIndex::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+void MergeTreeReaderTextIndex::setReadRangesRegistry(ReadRangesRegistryPtr registry)
 {
     if (fallback_reader)
-        fallback_reader->countCompressedBytesRead(counted);
-    IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+        fallback_reader->setReadRangesRegistry(registry);
+    IMergeTreeReader::setReadRangesRegistry(std::move(registry));
     /// The streams created later get their sink when they are created.
     for (auto & [_, stream] : postings_streams)
-        stream->setBlocksReadSink(&postings_ranges_read.ranges);
+        stream->setRangesReadSink(&postings_ranges_read.ranges);
     if (positions_stream)
-        positions_stream->setBlocksReadSink(&positions_ranges_read.ranges);
+        positions_stream->setRangesReadSink(&positions_ranges_read.ranges);
 }
 
-void MergeTreeReaderTextIndex::flushCompressedBlocksRead()
+void MergeTreeReaderTextIndex::registerReadRanges()
 {
     if (fallback_reader)
-        fallback_reader->flushCompressedBlocksRead();
-    if (!counted_compressed_blocks)
+        fallback_reader->registerReadRanges();
+    if (!read_ranges_registry)
         return;
 
     for (auto & [_, stream] : postings_streams)
@@ -693,10 +693,10 @@ void MergeTreeReaderTextIndex::flushCompressedBlocksRead()
     {
         if (file.ranges.empty())
             return;
-        if (!file.counted)
-            file.counted = &counted_compressed_blocks->getCountedRanges(fmt::format(
+        if (!file.read_ranges)
+            file.read_ranges = &read_ranges_registry->getReadRanges(fmt::format(
                 "{}/{}.{}", data_part_info_for_read->getDataPartStorage()->getFullPath(), index_read_task.index.index->getFileName(), kind));
-        counted_compressed_blocks->count(*file.counted, file.ranges);
+        read_ranges_registry->registerRanges(*file.read_ranges, file.ranges);
     };
     count(postings_ranges_read, "postings");
     count(positions_ranges_read, "positions");
@@ -1088,7 +1088,7 @@ struct PhraseSearchStats
         ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + decode_us);
         ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
-        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, ranges_read);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, bytes_read);
     }
@@ -1098,7 +1098,7 @@ struct PhraseSearchStats
     UInt64 directory_us = 0;
     UInt64 decode_us = 0;
     UInt64 match_us = 0;
-    size_t blocks_read = 0;
+    size_t ranges_read = 0;
     size_t blocks_total = 0;
     UInt64 bytes_read = 0;
 };
@@ -1182,7 +1182,7 @@ private:
                     stats.bytes_read += block_bytes;
                 }
                 parsed_blocks[u] = block_idx;
-                ++stats.blocks_read;
+                ++stats.ranges_read;
             }
 
             const auto & doc_offsets = scratches[u].doc_offsets;
