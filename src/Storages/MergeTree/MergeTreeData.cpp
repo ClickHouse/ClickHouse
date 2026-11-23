@@ -6801,8 +6801,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
         for (const auto & key_materialized : key_materialized_columns)
         {
-            /// The altered column can reach the key column through other MATERIALIZED columns.
-            if (materialized_dependencies.findColumnsToRecalculate(key_materialized, {command.column_name}).empty())
+            /// Also through other MATERIALIZED columns, and also when the key column reads an EPHEMERAL column,
+            /// which findColumnsToRecalculate leaves out because such a column is never recalculated.
+            if (!materialized_dependencies.dependsOn(key_materialized, command.column_name))
                 continue;
 
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -7083,8 +7084,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                         it->second->getName(), command.data_type->getName());
                 }
 
-                check_key_materialized_sources(command);
-
                 if (old_metadata.getColumns().has(command.column_name))
                 {
                     columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
@@ -7278,6 +7277,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             backQuoteIfNeed(command.column_name), set_part.column_name);
             }
         }
+
+        /// Whether or not the ALTER rewrites data: a metadata-only conversion changes the values of a key
+        /// MATERIALIZED column computed from the column just as well.
+        if (command.type == AlterCommand::MODIFY_COLUMN)
+            check_key_materialized_sources(command);
     }
 
     /// A special column that is a subcolumn must stay a subcolumn of the same column: an added or renamed column

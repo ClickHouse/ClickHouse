@@ -51,6 +51,10 @@ public:
     /// Answers are memoised for one @changed_columns set; passing a different one starts over.
     const Names & findColumnsToRecalculate(const String & column_name, const NameSet & changed_columns) const;
 
+    /// Whether the expression of @column_name reads @source_column, directly or through other MATERIALIZED
+    /// columns. Unlike findColumnsToRecalculate, also true for a column that reads an EPHEMERAL one.
+    bool dependsOn(const String & column_name, const String & source_column) const;
+
 private:
     /// The memo must already be keyed on @changed_columns; the only walk starts above.
     bool willBeRecalculated(const String & column_name, const NameSet & changed_columns) const;

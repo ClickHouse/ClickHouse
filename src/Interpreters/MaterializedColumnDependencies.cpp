@@ -125,4 +125,24 @@ bool MaterializedColumnDependencies::willBeRecalculated(const String & column_na
     return result;
 }
 
+bool MaterializedColumnDependencies::dependsOn(const String & column_name, const String & source_column) const
+{
+    NameSet visited;
+    auto walk = [&](const String & name, auto && self) -> bool
+    {
+        if (!visited.insert(name).second)
+            return false;
+
+        const auto * materialized = findNode(name);
+        if (!materialized)
+            return false;
+
+        return std::ranges::any_of(materialized->dependencies, [&](const auto & dependency)
+        {
+            return dependency == source_column || self(dependency, self);
+        });
+    };
+    return walk(column_name, walk);
+}
+
 }
