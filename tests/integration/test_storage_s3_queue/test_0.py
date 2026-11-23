@@ -3159,8 +3159,9 @@ def test_failed_lookup_of_the_selected_version_releases_the_file(started_cluster
     assert node.contains_in_log(f"Failed to get the metadata of the version {selected_version}")
 
 
-def test_failed_lookup_of_the_selected_version_releases_the_file(started_cluster):
-    """A file whose lookup of the version selected by the URL failed is released, and it is read by a later poll."""
+def test_failed_lookup_of_the_selected_version_releases_the_file_of_an_ordered_queue(started_cluster):
+    """A file of an ordered queue whose lookup of the version selected by the URL failed is released, and it is read
+    by a later poll."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     bucket = f"versioned-{token}"
