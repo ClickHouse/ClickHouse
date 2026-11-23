@@ -36,7 +36,8 @@ do
 done
 
 # Compaction must refuse these tables: after a rename it would rewrite the renamed column with NULLs and remove the original files.
-# The cloud build routes `OPTIMIZE` through a different code path, so only the surviving data is checked there.
+# The cloud build routes `OPTIMIZE` through a different code path, which starts background jobs that `clickhouse-local`
+# has no executors for, so `OPTIMIZE` is not run there and only the surviving data is checked.
 IS_CLOUD=$($CLICKHOUSE_LOCAL -q "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 cp -r orcfmt avrofmt "$TMP_DIR/"
 cd "$TMP_DIR" || exit 1
@@ -46,7 +47,10 @@ do
         CREATE TABLE t ENGINE = IcebergLocal('$table');
         ALTER TABLE t RENAME COLUMN name TO renamed_name SETTINGS allow_insert_into_iceberg = 1;
     "
-    OPTIMIZE_ERR=$($CLICKHOUSE_LOCAL --path "local_$table" -q "OPTIMIZE TABLE t SETTINGS allow_experimental_iceberg_compaction = 1" 2>&1)
+    OPTIMIZE_ERR=''
+    if [[ "$IS_CLOUD" != "1" ]]; then
+        OPTIMIZE_ERR=$($CLICKHOUSE_LOCAL --path "local_$table" -q "OPTIMIZE TABLE t SETTINGS allow_experimental_iceberg_compaction = 1" 2>&1)
+    fi
     if [[ "$IS_CLOUD" = "1" ]] || grep -qF 'NOT_IMPLEMENTED' <<< "$OPTIMIZE_ERR"; then
         echo "$table OPTIMIZE refused"
     else
