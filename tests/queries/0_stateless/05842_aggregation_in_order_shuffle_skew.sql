@@ -12,7 +12,10 @@ SET merge_tree_min_bytes_for_concurrent_read = 0;
 
 DROP TABLE IF EXISTS t_aio_shuffle_skew;
 CREATE TABLE t_aio_shuffle_skew (k UInt64, v UInt64, s String, lc LowCardinality(String), d Dynamic)
-ENGINE = MergeTree ORDER BY k;
+ENGINE = MergeTree ORDER BY k
+-- The query under `max_memory_usage` below holds up to 16 blocks per stream plus the read buffers, so its memory
+-- depends on the size of a block and of a compressed block. Do not let the randomized settings enlarge them.
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10M', min_compress_block_size = 65536, max_compress_block_size = 1048576;
 
 -- Every part holds a single key, so each input stream sends all of its rows to one shard for a long time, while
 -- every other shard waits for that stream. Without markers this either deadlocks or buffers whole parts.
@@ -30,9 +33,11 @@ SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle_skew GROUP BY k
       SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
--- The repartitioning holds a few blocks per stream, not whole parts (the table is about 200 MB).
+-- The repartitioning holds a few blocks per stream, not whole parts: it takes under 20 MB with blocks of 8192 rows,
+-- while a part is about 50 MB in memory, and seven of the eight streams wait for the first one.
 SELECT k, sum(v), max(s), max(lc), count(d) FROM t_aio_shuffle_skew GROUP BY k ORDER BY k
-SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1, max_memory_usage = '100M';
+SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1, max_block_size = 8192,
+    max_memory_usage = '100M';
 
 -- `GROUP BY k, v % 7` reads in the order of `k` alone, so rows with equal sort keys go to different shards.
 SELECT
