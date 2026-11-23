@@ -1106,6 +1106,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
+    auto check_text_index_allowed = [&](const IndexDescription & index_desc)
+    {
+        if (index_desc.type == TEXT_INDEX_NAME && !getContext()->getSettingsRef()[Setting::enable_full_text_index])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+    };
+
     if (create.columns_list)
     {
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
@@ -1138,9 +1144,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (properties.indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
-                const auto & settings = getContext()->getSettingsRef();
-                if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+                check_text_index_allowed(index_desc);
 
                 properties.indices.push_back(index_desc);
             }
@@ -1198,8 +1202,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             /// not be copied.
             const auto & indices = as_storage_metadata->getSecondaryIndices();
             for (const auto & index : indices)
-                if (!index.isImplicitlyCreated())
-                    properties.indices.push_back(index);
+            {
+                if (index.isImplicitlyCreated())
+                    continue;
+                if (isFreshDefinition(mode))
+                    check_text_index_allowed(index);
+                properties.indices.push_back(index);
+            }
 
             /// Copy projections.
             properties.projections = as_storage_metadata->getProjections().clone();
