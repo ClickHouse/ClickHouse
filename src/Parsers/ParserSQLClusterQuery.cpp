@@ -350,7 +350,7 @@ Replica-level `user` and `password` override shard- and cluster-level defaults f
 
 ## Access control {#access-control}
 
-Requires the global `CREATE CLUSTER` grant (`GRANT CREATE CLUSTER ON *.*`).
+Requires the global `CREATE CLUSTER` grant (`GRANT CREATE CLUSTER ON *.*`). An `ON CLUSTER` clause that is executed also needs the global [`CLUSTER`](/reference/statements/grant#cluster) grant. See [Permissions](/concepts/features/configuration/server-config/sql-clusters#permissions).
 
 ## ON CLUSTER {#on-cluster}
 
@@ -438,7 +438,7 @@ Property names and semantics are the same as in [`CREATE CLUSTER`](/reference/st
 
 ## Access control {#access-control}
 
-Requires the global `ALTER CLUSTER` grant (`GRANT ALTER CLUSTER ON *.*`).
+Requires the global `ALTER CLUSTER` grant (`GRANT ALTER CLUSTER ON *.*`). An `ON CLUSTER` clause that is executed also needs the global [`CLUSTER`](/reference/statements/grant#cluster) grant. See [Permissions](/concepts/features/configuration/server-config/sql-clusters#permissions).
 
 ## ON CLUSTER {#on-cluster}
 

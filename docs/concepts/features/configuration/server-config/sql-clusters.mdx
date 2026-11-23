@@ -113,7 +113,7 @@ Supported storage types:
 
 If `path` is omitted, the default is `{data_path}/sql_clusters_metadata`. `clickhouse-local --path` uses that default under its data directory and loads saved SQL clusters at startup, the same way it loads named collections.
 
-With local storage, metadata exists independently on each server. Use `ON CLUSTER` when creating, altering, or dropping SQL clusters so the DDL runs on every node and each node writes its own metadata file.
+With local storage, metadata exists independently on each server. Use `ON CLUSTER` when creating, altering, or dropping SQL clusters so the DDL runs on every node and each node writes its own metadata file. The user also needs the [`CLUSTER`](/reference/statements/grant#cluster) privilege, as described in [Permissions](#permissions).
 
 ### Keeper storage example {#keeper-storage-example}
 
@@ -164,6 +164,14 @@ GRANT DROP CLUSTER ON *.* TO john;
 ```
 
 These privileges belong to the `SQL CLUSTER ADMIN` group (`GRANT SQL CLUSTER ADMIN ON *.* TO john` grants all three). They are not a part of the `CREATE`, `ALTER`, and `DROP` privilege groups: the `secret` of a cluster authenticates incoming interserver queries, so the right to define it is equivalent to the right to run queries as any user. Grant these privileges only to administrators.
+
+`CREATE CLUSTER`, `ALTER CLUSTER`, and `DROP CLUSTER` also need the global [`CLUSTER`](/reference/statements/grant#cluster) privilege when the `ON CLUSTER` clause is executed. Distributed DDL checks it on the initiating node. Local metadata storage keeps the clause, so grant it with the statement privilege:
+
+```sql
+GRANT CLUSTER ON *.* TO john;
+```
+
+Keeper metadata storage, with the default `ignore_on_cluster_for_replicated_sql_cluster_queries = 1`, drops `ON CLUSTER` before that check. The statement then runs with the SQL cluster privilege alone. `SQL CLUSTER ADMIN` covers `CREATE CLUSTER`, `ALTER CLUSTER`, and `DROP CLUSTER`.
 
 Secrets in the stored `create_query` are hidden in [`system.clusters`](/reference/system-tables/clusters) unless the user is allowed to see secrets (the same rules as [`system.named_collections`](/reference/system-tables/named_collections)).
 

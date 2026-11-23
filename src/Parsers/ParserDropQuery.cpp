@@ -376,7 +376,7 @@ DROP HANDLER my_handler;
 
 Deletes a [SQL-managed cluster](/concepts/features/configuration/server-config/sql-clusters) created by [CREATE CLUSTER](/reference/statements/create/cluster).
 
-Requires the global `DROP CLUSTER` grant (`GRANT DROP CLUSTER ON *.*`).
+Requires the global `DROP CLUSTER` grant (`GRANT DROP CLUSTER ON *.*`). An `ON CLUSTER` clause that is executed also needs the global [`CLUSTER`](/reference/statements/grant#cluster) grant. See [Permissions](/concepts/features/configuration/server-config/sql-clusters#permissions).
 
 **Syntax**
 
