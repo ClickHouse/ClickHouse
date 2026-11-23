@@ -15,19 +15,19 @@ Esta seção apresenta todas as materializações disponíveis no dbt-clickhouse
 
 ## Configurações gerais de materialização {#general-materialization-configurations}
 
-A tabela a seguir mostra as configurações compartilhadas por algumas das materializações disponíveis. Para informações mais detalhadas sobre configurações gerais de modelos do dbt, consulte a [documentação do dbt](https://docs.getdbt.com/category/general-configs):
+A tabela a seguir mostra as configurações compartilhadas por algumas das materializações disponíveis. Para informações mais detalhadas sobre configurações gerais de models do dbt, consulte a [documentação do dbt](https://docs.getdbt.com/category/general-configs):
 
-| Option             | Description                                                                                                                                                                  | Default if any |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| engine             | O motor de tabela (tipo de tabela) a ser usado ao criar tabelas                                                                                                             | `MergeTree()`  |
-| order&#95;by       | Uma tupla de nomes de colunas ou expressões arbitrárias. Isso permite criar um pequeno índice esparso que ajuda a localizar dados mais rapidamente.                          | `tuple()`      |
-| partition&#95;by   | Uma partição é uma combinação lógica de registros em uma tabela com base em um critério especificado. A chave de partição pode ser qualquer expressão das colunas da tabela. |                |
-| primary&#95;key    | Assim como em `order_by`, uma expressão de chave primária do ClickHouse. Se não for especificada, o ClickHouse usará a expressão de ordenação como chave primária            |                |
-| settings           | Um mapa/dicionário de configurações de &quot;TABLE&quot; para uso em instruções DDL, como `CREATE TABLE`, com este modelo                                                    |                |
-| query&#95;settings | Um mapa/dicionário de configurações em nível de usuário do ClickHouse para uso com instruções `INSERT` ou `DELETE` em conjunto com este modelo                               |                |
-| ttl                | Uma expressão TTL a ser usada com a tabela. A expressão TTL é uma string que pode ser usada para especificar o TTL da tabela.                                                |                |
-| sql&#95;security   | O usuário do ClickHouse a ser usado ao executar a consulta subjacente da view. [Valores aceitos](/pt-BR/reference/statements/create/view#sql_security): `definer`, `invoker`.      |                |
-| definer            | Se `sql_security` tiver sido definido como `definer`, você deverá especificar qualquer usuário existente ou `CURRENT_USER` na cláusula `definer`.                            |                |
+| Option             | Description                                                                                                                                                                                                          | Default if any |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| engine             | O motor de tabela (tipo de tabela) a ser usado ao criar tabelas                                                                                                                                                      | `MergeTree()`  |
+| order&#95;by       | Uma tupla de nomes de colunas ou expressões arbitrárias. Isso permite criar um pequeno índice esparso que ajuda a localizar dados mais rapidamente.                                                                  | `tuple()`      |
+| partition&#95;by   | Uma partição é uma combinação lógica de registros em uma tabela com base em um critério especificado. A chave de partição pode ser qualquer expressão das colunas da tabela.                                         |                |
+| primary&#95;key    | Assim como em `order_by`, uma expressão de chave primária do ClickHouse. Se não for especificada, o ClickHouse usará a expressão de ordenação como chave primária                                                    |                |
+| settings           | Um mapa/dicionário de configurações de &quot;TABLE&quot; para uso em instruções DDL, como `CREATE TABLE`, com este model                                                                                            |                |
+| query&#95;settings | Um mapa/dicionário de configurações em nível de usuário, adicionadas como cláusula `SETTINGS` às instruções `INSERT`/`DELETE` do model e, no caso de visões e visões materializadas, à consulta armazenada da visão |                |
+| ttl                | Uma expressão TTL a ser usada com a tabela. A expressão TTL é uma string que pode ser usada para especificar o TTL da tabela.                                                                                        |                |
+| sql&#95;security   | O usuário do ClickHouse a ser usado ao executar a consulta subjacente da visão. [Valores aceitos](/pt-BR/reference/statements/create/view#sql_security): `definer`, `invoker`.                                              |                |
+| definer            | Se `sql_security` tiver sido definido como `definer`, você deverá especificar qualquer usuário existente ou `CURRENT_USER` na cláusula `definer`.                                                                    |                |
 
 ### Motores de tabela compatíveis {#supported-table-engines}
 
@@ -52,18 +52,15 @@ A tabela a seguir mostra as configurações compartilhadas por algumas das mater
 Se você encontrar problemas para se conectar ao ClickHouse no dbt com um dos motores acima, abra uma
 issue [aqui](https://github.com/ClickHouse/dbt-clickhouse/issues).
 
-### Uma observação sobre as configurações do modelo {#a-note-on-model-settings}
+### Uma observação sobre as configurações do model {#a-note-on-model-settings}
 
-O ClickHouse tem vários tipos/níveis de &quot;configurações&quot;. Na configuração do modelo acima, dois desses tipos são
-configuráveis. `settings` se refere à cláusula `SETTINGS`
-usada em instruções DDL do tipo `CREATE TABLE/VIEW`, portanto, em geral, são configurações específicas do
-motor de tabela do ClickHouse em questão. O novo
-`query_settings` é usado para adicionar uma cláusula `SETTINGS` às consultas `INSERT` e `DELETE` usadas na materialização do modelo (
-incluindo materializações incrementais).
-Há centenas de configurações no ClickHouse, e nem sempre é claro qual é uma configuração de &quot;tabela&quot; e qual é uma
-configuração de &quot;usuário&quot; (embora estas últimas geralmente
-estejam disponíveis na tabela `system.settings`.) Em geral, recomenda-se usar os valores padrão, e qualquer uso dessas propriedades
-deve ser cuidadosamente pesquisado e testado.
+O ClickHouse tem vários tipos/níveis de &quot;configurações&quot;. Na configuração do model acima, dois desses tipos são
+configuráveis.
+
+* `settings` se refere à cláusula `SETTINGS` usada em instruções DDL do tipo `CREATE TABLE/VIEW`, portanto, em geral, são configurações específicas do motor de tabela do ClickHouse em questão.
+* `query_settings` é usado para adicionar uma cláusula `SETTINGS` às consultas `INSERT` e `DELETE` usadas na materialização do model (incluindo materializações incrementais). Para visões e visões materializadas, a cláusula `SETTINGS` também é adicionada à consulta armazenada da visão, de modo que uma visão materializada aplica essas configurações a cada insert em sua tabela de origem ou a cada atualização.
+
+Há centenas de configurações no ClickHouse, e nem sempre é claro qual é uma configuração de &quot;tabela&quot; e qual é uma configuração de &quot;usuário&quot; (embora estas últimas geralmente estejam disponíveis na tabela `system.settings`.) Em geral, recomenda-se usar os valores padrão, e qualquer uso dessas propriedades deve ser cuidadosamente pesquisado e testado.
 
 ### Configuração de coluna {#column-configuration}
 

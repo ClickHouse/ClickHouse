@@ -135,6 +135,11 @@ protected:
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
 
+    /// Called by `initialize` once the configuration is loaded, before it starts any thread (only the background
+    /// threads of jemalloc may exist, and `initialize` configures them right after), for what needs the process to
+    /// have a single thread, such as entering new namespaces.
+    virtual void beforeStartingThreads() {}
+
     /// Start the signal listener thread with the asynchronously delivered handled signals blocked in it.
     void startSignalListener();
 

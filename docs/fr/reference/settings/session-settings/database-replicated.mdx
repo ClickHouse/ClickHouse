@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont autogénérés à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="database_replicated_allow_explicit_uuid">
-  ## database_replicated_allow_explicit_uuid
-</div>
+## database_replicated_allow_explicit_uuid {#database_replicated_allow_explicit_uuid}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 0 - Ne pas autoriser la spécification explicite des UUID des tables dans les bases de données Replicated. 1 - Autoriser. 2 - Autoriser, mais ignorer l&#39;UUID spécifié et en générer un aléatoire à la place.
 
-<div id="database_replicated_allow_heavy_create">
-  ## database_replicated_allow_heavy_create
-</div>
+## database_replicated_allow_heavy_create {#database_replicated_allow_heavy_create}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,19 +29,29 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Autorise les requêtes DDL de longue durée (CREATE AS SELECT et POPULATE) avec le moteur de base de données Replicated. Notez que cela peut bloquer la file d&#39;attente DDL pendant une longue période.
 
-<div id="database_replicated_allow_only_replicated_engine">
-  ## database_replicated_allow_only_replicated_engine
-</div>
+## database_replicated_allow_only_replicated_engine {#database_replicated_allow_only_replicated_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Autorise la création uniquement de tables Replicated dans une base de données utilisant le moteur Replicated
+N&#39;autorise la création d&#39;une table dans une base de données utilisant le moteur `Replicated` que si la table réplique ses propres
+données stockées sur disque, ou bien ne stocke pas ses propres données sur disque.
 
-Valeur par défaut dans Cloud : `1`.
+Cette restriction s&#39;applique uniquement aux données sur disque appartenant à la table, y compris celles situées sur des disques distants. Elle ne garantit pas
+la durabilité des données in-memory ni des données gérées par des systèmes externes.
 
-<div id="database_replicated_allow_replicated_engine_arguments">
-  ## database_replicated_allow_replicated_engine_arguments
-</div>
+Par exemple, `ReplicatedMergeTree`, les moteurs in-memory tels que `Memory` et `Buffer`, les moteurs limités aux métadonnées
+tels que `Merge` et `Alias`, ainsi que les moteurs de stockage externe ou de lac de données tels que `S3` et `AzureBlobStorage` sont
+autorisés. Les moteurs non répliqués qui stockent les données de la table sur disque, tels que `MergeTree`, `Log`, `File` et `Set`, sont
+refusés, y compris lorsque leur politique de stockage accessible en écriture utilise des disques distants. Les tables `Set` et `Join` créées avec
+`SETTINGS persistent = 0` ne conservent leurs données qu&#39;en mémoire et sont donc autorisées.
+
+Les tables `Distributed`, `Remote` et `RemoteSecure` sont autorisées. Leur file d’attente locale facultative d&#39;`INSERT` en arrière-plan
+n&#39;est qu&#39;un tampon d&#39;envoi transitoire, et non des données propres à la table. Elle n&#39;est pas répliquée, et définir
+`distributed_foreground_insert = 1` permet de s&#39;en passer.
+
+Cloud default value : `1`.
+
+## database_replicated_allow_replicated_engine_arguments {#database_replicated_allow_replicated_engine_arguments}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,25 +59,19 @@ Valeur par défaut dans Cloud : `1`.
 
 0 - Ne pas autoriser la spécification explicite du chemin ZooKeeper et du nom de réplique pour les tables *MergeTree dans les bases de données Replicated. 1 - Autoriser. 2 - Autoriser, mais ignorer le chemin spécifié et utiliser le chemin par défaut à la place. 3 - Autoriser sans journaliser d&#39;avertissement.
 
-<div id="database_replicated_always_detach_permanently">
-  ## database_replicated_always_detach_permanently
-</div>
+## database_replicated_always_detach_permanently {#database_replicated_always_detach_permanently}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Exécute DETACH TABLE comme DETACH TABLE PERMANENTLY si le moteur de base de données est Replicated
 
-<div id="database_replicated_enforce_synchronous_settings">
-  ## database_replicated_enforce_synchronous_settings
-</div>
+## database_replicated_enforce_synchronous_settings {#database_replicated_enforce_synchronous_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Force l’attente synchrone pour certaines requêtes (voir aussi database&#95;atomic&#95;wait&#95;for&#95;drop&#95;and&#95;detach&#95;synchronously, mutations&#95;sync, alter&#95;sync). Il n’est pas recommandé d’activer ces paramètres.
 
-<div id="database_replicated_initial_query_timeout_sec">
-  ## database_replicated_initial_query_timeout_sec
-</div>
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 

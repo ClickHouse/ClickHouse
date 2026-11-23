@@ -7,8 +7,6 @@ keywords: ['청구', '임계값', '자동 인보이스 발행', '인보이스']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="threshholds">
   ## 임계값
 </div>
@@ -27,9 +25,25 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 아래 예시에서는 Cloud Console의 Billing UI를 보여줍니다.
 
-<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="UI에서 청구를 찾는 위치" />
+<div className="ch-image-sm">
 
-<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="인보이스" />
+<Frame>
+
+![UI에서 청구를 찾는 위치](/images/cloud/reference/billing_payment_threshhold.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![인보이스](/images/cloud/reference/billing_payment_threshhold_2.webp)
+
+</Frame>
+
+</div>
 
 위 예시에서 볼 수 있듯이, 2월 28일~3월 31일 청구 주기 동안 임계값 인보이스가 발송되었고, 같은 청구 주기 내에 1,000 USD를 초과한 나머지 사용량에 대해서도 또 다른 인보이스가 발송되었습니다.
 

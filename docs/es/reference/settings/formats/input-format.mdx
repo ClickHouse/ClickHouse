@@ -131,8 +131,8 @@ Define el modo de coincidencia de nombres de columna al ingestar datos mediante 
 Modos compatibles:
 
 * match&#95;case: coincidencia sensible a mayúsculas y minúsculas
-  * ignore&#95;case: coincidencia no sensible a mayúsculas y minúsculas
-  * auto: primero intenta hacer coincidir de forma sensible a mayúsculas y minúsculas; si falla, intenta hacerlo de forma no sensible a mayúsculas y minúsculas.
+* ignore&#95;case: coincidencia no sensible a mayúsculas y minúsculas
+* auto: primero intenta hacer coincidir de forma sensible a mayúsculas y minúsculas; si falla, intenta hacerlo de forma no sensible a mayúsculas y minúsculas.
 
 ## input_format_connection_handling {#input_format_connection_handling}
 
@@ -143,7 +143,7 @@ Modos compatibles:
 Cuando esta opción está habilitada, si la conexión se cierra de forma inesperada, los datos que queden en el búfer se analizarán y procesarán en lugar de tratarse como un error
 
 <Note>
-  Al habilitar esta opción, se desactiva el análisis en paralelo y la deduplicación deja de ser posible
+  Al habilitar esta opción, se desactiva el análisis sintáctico en paralelo y la deduplicación deja de ser posible
 </Note>
 
 ## input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
@@ -856,7 +856,7 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Una nueva configuración para usar columnas geo en un archivo Parquet"}]}]} />
 
-Usa el analizador de columnas geo para convertir Array(UInt8) en tipos Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
+Al leer archivos Parquet, decodifica las columnas de geometría como tipos geométricos de ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` o `Geometry`). Se aplica a las columnas descritas por la metadata `geo` de GeoParquet y a las columnas anotadas con el tipo lógico `GEOMETRY` o `GEOGRAPHY` de Parquet. Si está deshabilitado, dichas columnas se leen como `String` con los bytes WKB (o WKT) sin procesar, salvo que se solicite explícitamente un tipo geográfico.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -879,6 +879,14 @@ Al leer archivos Parquet, se omiten grupos de filas completos en función de las
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 No distinguir entre mayúsculas y minúsculas al hacer coincidir las columnas de Parquet con las columnas de CH.
+
+## input_format_parquet_detect_variant_by_structure {#input_format_parquet_detect_variant_by_structure}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para leer las columnas Variant de Spark, que no tienen el tipo lógico `VARIANT`, como `Dynamic` en lugar de `Tuple`"}]}]} />
+
+Lee como un Variant, es decir, como `Dynamic` en lugar de `Tuple`, un grupo de Parquet que no tiene el tipo lógico `VARIANT` pero que presenta la disposición de un Variant no fragmentado (un campo `metadata` y un campo `value` de tipo `BYTE_ARRAY`). Spark 4.0 escribe así las columnas Variant. Los grupos anotados con el tipo lógico `VARIANT` siempre se leen como Variant.
 
 ## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
 
@@ -914,9 +922,9 @@ Al leer archivos Parquet, se omiten grupos de filas completos según las expresi
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para sobrescribir el tamaño adaptativo de la lectura inicial del footer de Parquet con un número fijo de bytes; 0 mantiene el comportamiento adaptativo."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para el tamaño de la lectura inicial del footer de Parquet; 0 lee 64 KiB de un archivo local y adapta el tamaño de la lectura para otras fuentes."}]}]} />
 
-Tamaño (en bytes) de la lectura inicial del final del archivo con la que se obtiene el footer de Parquet (`FileMetaData`) al abrir un archivo con el lector v3. Con `0` (valor predeterminado), el tamaño de la lectura se adapta al archivo (el 1 % de su tamaño, limitado a `[128 KiB, 2 MiB]`), por lo que normalmente abarca todo el footer en una sola lectura, incluso en archivos wide con cientos de columnas. Establezca un valor distinto de cero para forzar un tamaño de lectura inicial fijo en lugar del adaptativo; esto resulta útil con almacenamiento de objetos de latencia muy alta, donde leer de entrada un fragmento final más grande evita un segundo viaje de ida y vuelta. El valor se limita al tamaño del archivo.
+Tamaño (en bytes) de la lectura inicial del final del archivo con la que se obtiene el footer de Parquet (`FileMetaData`) al abrir un archivo con el lector v3. Con `0` (valor predeterminado), se lee un fragmento final de 64 KiB cuando el archivo se lee directamente del sistema de archivos local y, para otras fuentes (almacenamiento de objetos, URL, HDFS), el tamaño de la lectura se adapta al archivo (el 1 % de su tamaño, limitado a `[128 KiB, 2 MiB]`), por lo que normalmente abarca todo el footer en una sola lectura, incluso en archivos wide con cientos de columnas. Establezca un valor distinto de cero para forzar un tamaño de lectura inicial fijo en lugar del adaptativo; esto resulta útil con almacenamiento de objetos de latencia muy alta, donde leer de entrada un fragmento final más grande evita un segundo viaje de ida y vuelta. El valor se limita al tamaño del archivo.
 
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 

@@ -40,6 +40,7 @@
 #    include <Common/filesystemHelpers.h>
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
+#    include <Common/RemoteHostFilter.h>
 #    include <Common/setThreadName.h>
 #    include <Core/LogsLevel.h>
 
@@ -128,7 +129,7 @@ DatabaseMySQL::DatabaseMySQL(
     : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
-    , database_engine_define(database_engine_define_->clone())
+    , database_engine_define(database_engine_define_->formatWithSecretsOneLine<SecretString>())
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
@@ -267,7 +268,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     }
 
     auto storage = local_tables_cache[table_name].second;
-    auto table_storage_define = database_engine_define->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
         ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
@@ -317,7 +318,7 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_define);
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_define));
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
@@ -819,7 +820,9 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 /*dependent_table_id=*/ nullptr,
                 engine_define->settings))
         {
-            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
+            configuration = StorageMySQL::processNamedCollectionResult(
+                *named_collection, *mysql_settings, args.context,
+                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table_or_query=*/ false);
         }
         else
         {
@@ -841,7 +844,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             if (engine_name == "MySQL")
             {
                 size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
-                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+                    host_port, max_addresses, 3306, globCaller(fmt::format("Database engine '{}'", engine_name)));
             }
             else
             {
@@ -854,7 +858,18 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
         }
-        mysql_settings->loadFromQueryContext(args.context, *engine_define);
+
+        /// Same policy as the `PostgreSQL` database engine: skip only the server's own metadata replay.
+        if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+        }
+
+        /// On `RESTORE` we don't use the session context: it may contain a conflicting `mysql_datatypes_support_level`
+        /// setting and make the `RESTORE` fail.
+        if (!args.is_restore_from_backup)
+            mysql_settings->loadFromQueryContext(args.context, *engine_define);
         if (engine_define->settings)
             mysql_settings->loadFromQuery(*engine_define);
 
@@ -887,8 +902,6 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MySQL database engine
 
 <CloudNotSupportedBadge />
@@ -913,7 +926,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
+- `host:port` — MySQL server address. The host must be a plain host name or IP address and is reached over TCP at the given port, also for `localhost`: Unix sockets are not supported. Other host syntax of the MySQL client library, such as connection strings or comma-separated host lists, is rejected.
 - `database` — Remote database name.
 - `user` — MySQL user.
 - `password` — User password.

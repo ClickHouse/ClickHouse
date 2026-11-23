@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <Common/DequeWithMemoryTracking.h>
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
@@ -59,6 +60,8 @@ private:
     /// Ends eligibility for the queue route: starts the fallback if it is not running yet, replays
     /// `pending` (which still holds `*held`, if any, at its original position), then pushes `chunk`.
     void disqualify(Chunk chunk);
+    /// `disqualify` without a chunk of its own to push.
+    void fallBack();
 
     AsynchronousInsertQueue * queue;
     ContextMutablePtr context;
@@ -97,7 +100,7 @@ private:
     /// for the chunk info they may carry, e.g. from `RestoreChunkInfosTransform`) and, once seen, the
     /// single held candidate itself (`held` points at its slot). Replayed into the fallback pipeline
     /// if eligibility is lost, discarded otherwise (the queue divert only ever needs `*held`).
-    std::deque<Chunk> pending;
+    DequeWithMemoryTracking<Chunk> pending;
     /// Points into `pending`, valid until eligibility is lost or the block is diverted; `pending`'s
     /// push_back does not invalidate it.
     Chunk * held = nullptr;
