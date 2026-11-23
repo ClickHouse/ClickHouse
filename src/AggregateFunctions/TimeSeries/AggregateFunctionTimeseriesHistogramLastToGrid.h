@@ -50,7 +50,7 @@ struct AggregateFunctionTimeseriesHistogramLastToGridTraits
                 latest = nullptr;
         }
 
-        const Bucket * getResult(TimestampType /*grid_timestamp*/) const
+        [[nodiscard]] const Bucket * getResult(TimestampType /*grid_timestamp*/) const
         {
             return latest;
         }

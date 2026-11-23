@@ -20,7 +20,7 @@ namespace
         FunctionTimeSeriesHistogramStdvar() : FunctionTimeSeriesHistogramVariance(name) {}
 
     private:
-        Float64 transformResult(Float64 variance) const override { return variance; }
+        [[nodiscard]] Float64 transformResult(Float64 variance) const override { return variance; }
     };
 }
 

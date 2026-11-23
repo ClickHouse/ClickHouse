@@ -67,7 +67,7 @@ struct TimeSeriesFloatHistogram
     std::vector<Float64> custom_values; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Mirrors `IsCustomBucketsSchema` in Prometheus model/histogram/generic.go.
-    bool usesCustomBuckets() const { return schema == HISTOGRAM_CUSTOM_BUCKETS_SCHEMA; }
+    [[nodiscard]] bool usesCustomBuckets() const { return schema == HISTOGRAM_CUSTOM_BUCKETS_SCHEMA; }
 
     /// Extracts the counter reset hint bits from the payload `flags` column value.
     static UInt8 counterResetHintFromFlags(UInt8 flags)
@@ -86,7 +86,7 @@ struct TimeSeriesFloatHistogram
 
     /// Mirrors FloatHistogram.CopyToSchema (exponential resolution reduction only): the equal-schema fast path
     /// copies the counter reset hint, the slow path does not; throws INCORRECT_DATA where upstream panics.
-    TimeSeriesFloatHistogram copyToSchema(Int32 target_schema) const;
+    [[nodiscard]] TimeSeriesFloatHistogram copyToSchema(Int32 target_schema) const;
 
     /// Mirrors FloatHistogram.Add: reconciles the zero threshold and the schema (via `reduceResolution`) and
     /// intersects mismatched custom bucket bounds; modifies this histogram, returns the outcome.
@@ -111,7 +111,7 @@ struct TimeSeriesFloatHistogram
 
     /// Mirrors FloatHistogram.DetectReset: true on buckets populated in `previous` but missing here or any decreased
     /// count (never the sum), shortcutting on the CounterReset/NotCounterReset hints; zero-threshold changes fold buckets first.
-    bool detectReset(const TimeSeriesFloatHistogram & previous) const;
+    [[nodiscard]] bool detectReset(const TimeSeriesFloatHistogram & previous) const;
 
     /// Mirrors FloatHistogram.Compact: trims empty buckets at span edges, merges spans at most
     /// `max_empty_buckets` apart, splits spans with longer empty runs.
@@ -149,17 +149,17 @@ private:
         Int64 orig_idx = 0;
 
         bool next();
-        ResolvedBucket at() const;
+        [[nodiscard]] ResolvedBucket at() const;
         /// The port of `strippedAt`: the current bucket without bound values.
-        std::pair<Float64, Int64> strippedAt() const { return {curr_count, curr_idx}; }
+        [[nodiscard]] std::pair<Float64, Int64> strippedAt() const { return {curr_count, curr_idx}; }
 
     private:
         bool advance();
-        Float64 bound(Int64 idx) const;
+        [[nodiscard]] Float64 bound(Int64 idx) const;
     };
 
     /// The port of the low-level constructor `floatBucketIterator`.
-    BucketIterator bucketIterator(bool positive, Float64 absolute_start_value, Int32 target_schema) const;
+    [[nodiscard]] BucketIterator bucketIterator(bool positive, Float64 absolute_start_value, Int32 target_schema) const;
 
     /// The port of `zeroCountForLargerThreshold`: the zero count (and the compensation's, when non-null) with a
     /// larger threshold, adjusted to a populated bucket's upper bound; returns {zero_count, adjusted_threshold, compensation_zero_count}.
@@ -177,7 +177,7 @@ private:
 
     /// The port of `newCompensationHistogram`: a zero-valued compensation histogram matching this
     /// histogram's counter reset hint, schema, zero threshold, custom values and bucket layout.
-    TimeSeriesFloatHistogram newCompensationHistogram() const;
+    [[nodiscard]] TimeSeriesFloatHistogram newCompensationHistogram() const;
 
     /// The port of `kahanCompact`: `compact` with the compensation buckets compacted in lockstep.
     void kahanCompact(int max_empty_buckets, TimeSeriesFloatHistogram & compensation);
@@ -199,7 +199,7 @@ private:
 
     /// The port of `detectResetWithMismatchedCustomBounds`: true if any bucket count decreased, comparing
     /// NHCBs with mismatched custom bounds mapped to the intersected bounds on the fly.
-    bool detectResetWithMismatchedCustomBounds(
+    [[nodiscard]] bool detectResetWithMismatchedCustomBounds(
         const TimeSeriesFloatHistogram & previous,
         const std::vector<Float64> & curr_bounds, /// STYLE_CHECK_ALLOW_STD_CONTAINERS
         const std::vector<Float64> & prev_bounds) const; /// STYLE_CHECK_ALLOW_STD_CONTAINERS

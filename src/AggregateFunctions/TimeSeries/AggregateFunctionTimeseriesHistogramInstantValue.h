@@ -75,7 +75,7 @@ public:
             window_samples.removeBefore(cut_off);
         }
 
-        std::optional<TimeSeriesFloatHistogram> getResult(TimestampType /*grid_timestamp*/) const
+        [[nodiscard]] std::optional<TimeSeriesFloatHistogram> getResult(TimestampType /*grid_timestamp*/) const
         {
             if (window_samples.samples.size() < 2)
                 return std::nullopt;
