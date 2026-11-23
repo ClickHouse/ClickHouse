@@ -95,6 +95,14 @@ QueryScope QueryScope::createForQueryContext(Int64 untracked_memory_limit)
     return scope;
 }
 
+QueryScope QueryScope::createForBackgroundQuery(ContextPtr source_context, ThreadGroupPtr source_group)
+{
+    auto scope = createForQueryContext(source_context);
+    if (source_group)
+        source_group->reparentQuerySetup(scope.setup_group);
+    return scope;
+}
+
 void QueryScope::attachToQueryContext(ContextMutablePtr query_context, std::function<void()> fatal_error_callback)
 {
     if (!setup_group || initialized)

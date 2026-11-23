@@ -112,6 +112,16 @@ ThreadGroup::ThreadGroup()
 {
 }
 
+void ThreadGroup::reparentQuerySetup(ThreadGroupPtr background_group)
+{
+    chassert(!parent);
+    chassert(memory_tracker.getParent() == &total_memory_tracker);
+    memory_tracker.reparent(&background_group->memory_tracker);
+    background_group->memory_tracker.inheritPeak(memory_tracker);
+    /// The request can outlive the worker, including its tracker and process-list entry.
+    parent = std::move(background_group);
+}
+
 void ThreadGroup::initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_)
 {
     std::lock_guard lock(mutex);
