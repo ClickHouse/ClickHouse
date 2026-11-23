@@ -2206,7 +2206,7 @@ def test_read_blob_version(cluster):
     assert "9\n" == azure_query(node, f"SELECT * FROM {blob(new_version)}")
     assert "6\n" == azure_query(node, f"SELECT DISTINCT _size FROM {blob(old_version)}")
     assert "c1\tNullable(Int64)\n" == azure_query(
-        node, f"SELECT name, type FROM (DESCRIBE TABLE {blob(old_version, structure=None)})"
+        node, f"DESCRIBE TABLE {blob(old_version, structure=None)}", settings={"describe_compact_output": 1}
     )
 
     # The same with a named collection.
