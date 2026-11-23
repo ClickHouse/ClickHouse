@@ -12,9 +12,13 @@
 #include <Coordination/Storage/SortedRun.h>
 #include <Coordination/Storage/StorageState.h>
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperLSMTNodesStorage.h>
+#include <Coordination/KeeperStorage.h>
 #include <Common/FailPoint.h>
 #include <Common/SharedMutex.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/DiskLocal.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
@@ -27,6 +31,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <set>
 #include <shared_mutex>
@@ -44,6 +49,7 @@ namespace DB::FailPoints
 
 namespace DB::CoordinationSetting
 {
+    extern const CoordinationSettingsBool use_lsmt_storage;
     extern const CoordinationSettingsBool storage_memory_only;
     extern const CoordinationSettingsUInt64 block_cache_size;
     extern const CoordinationSettingsUInt64 committed_memtable_size;
@@ -946,6 +952,127 @@ TEST(KeeperStorage, GetCommittedNodeAfterConcurrentReaderDroppedItsCopy)
     EXPECT_EQ(read_data, "data0");
 
     storage.shutdown();
+}
+
+/// SetWatches reads committed nodes, so it must hold storage_mutex: background flushes and merges change
+/// `sorted_runs` under an exclusive storage_mutex. Pause a SetWatches lookup in the slow path, after the
+/// `sorted_runs` scan, and check that a publisher cannot take storage_mutex meanwhile.
+TEST(KeeperStorage, SetWatchesHoldsStorageMutexWhileReadingNodes)
+{
+    TestDataDir data_dir("./keeper_storage_set_watches_test");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::use_lsmt_storage] = true;
+    (*settings)[DB::CoordinationSetting::storage_memory_only] = false;
+    (*settings)[DB::CoordinationSetting::committed_memtable_size] = 2048;
+    (*settings)[DB::CoordinationSetting::memtable_block_size] = 256;
+    (*settings)[DB::CoordinationSetting::file_block_size] = 256;
+    (*settings)[DB::CoordinationSetting::file_block_group_compressed_size] = 256;
+    (*settings)[DB::CoordinationSetting::sorted_file_uncompressed_size] = 2048;
+    /// The block cache keeps nothing, so every lookup of a flushed node takes the slow path.
+    (*settings)[DB::CoordinationSetting::block_cache_size] = 1;
+    /// No merges: publishing a merge would wait for the paused lookup.
+    (*settings)[DB::CoordinationSetting::min_files_to_merge] = 1'000'000;
+
+    auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
+    keeper_context->setDataDisk(std::make_shared<DB::DiskLocal>("DataDisk", data_dir.path));
+    keeper_context->setLocalLogsPreprocessed();
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    StorageState & state = dynamic_cast<DB::KeeperLSMTNodesStorage &>(*storage.nodes_storage).state;
+
+    const int64_t watcher = 1;
+    const int64_t writer = 2;
+    int64_t zxid = 0;
+    for (int i = 0; i < 200; ++i)
+    {
+        auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+        request->path = fmt::format("/n{:05}", i);
+        request->data = fmt::format("data{}", i);
+        storage.preprocessRequest(request, writer, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
+        storage.processRequest(request, writer, zxid);
+    }
+
+    /// Only a lookup of an expired entry reaches the failpoint (see the test above).
+    const NodePathWithHash path = NodePath("/n00000").withCalculatedHash();
+    const auto entry_expired = [&]
+    {
+        std::shared_lock lock(*state.storage_mutex);
+        const NodeRefCache::Entry * entry = state.node_cache.findEntry(path.hash);
+        if (!entry)
+            return false;
+        std::lock_guard guard(entry->block);
+        return state.immutable_memtables.empty() && !entry->block.get();
+    };
+    bool expired = false;
+    for (int attempt = 0; attempt < 4000 && !expired; ++attempt)
+    {
+        expired = entry_expired();
+        if (!expired)
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    ASSERT_TRUE(expired);
+
+    SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing); });
+
+    /// Retried: an idle flush or merge thread holds storage_mutex shared for a moment when it wakes up.
+    const auto lookup_excludes_publishers = [&](const std::function<void()> & send)
+    {
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+        std::thread client(send);
+        DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+        bool publisher_could_lock = false;
+        for (int attempt = 0; attempt < 100 && !publisher_could_lock; ++attempt)
+        {
+            if (state.storage_mutex->try_lock())
+            {
+                state.storage_mutex->unlock();
+                publisher_could_lock = true;
+            }
+            else
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+        client.join();
+        return !publisher_could_lock;
+    };
+
+    {
+        SCOPED_TRACE("SetWatches, local read");
+        DB::KeeperResponsesForSessions responses;
+        EXPECT_TRUE(lookup_excludes_publishers([&]
+        {
+            auto request = std::make_shared<Coordination::ZooKeeperSetWatchesRequest>();
+            request->zxid = zxid;
+            request->data_watches = {"/n00000"};
+            responses = storage.processLocalRequests({DB::KeeperRequestForSession{.session_id = watcher, .request = request}}, /*check_acl=*/true);
+        }));
+        ASSERT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    }
+
+    ASSERT_TRUE(entry_expired());
+
+    {
+        SCOPED_TRACE("SetWatches2, quorum read");
+        DB::KeeperResponsesForSessions responses;
+        const int64_t last_zxid = zxid;
+        const int64_t commit_zxid = ++zxid;
+        EXPECT_TRUE(lookup_excludes_publishers([&]
+        {
+            auto request = std::make_shared<Coordination::ZooKeeperSetWatches2Request>();
+            request->zxid = last_zxid;
+            request->data_watches = {"/n00000"};
+            storage.preprocessRequest(request, watcher, 0, commit_zxid, /*check_acl=*/true, /*log_idx=*/0);
+            responses = storage.processRequest(request, watcher, commit_zxid);
+        }));
+        ASSERT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    }
+
+    /// Both requests registered the same data watch.
+    EXPECT_EQ(storage.getTotalWatchesCount(), 1);
 }
 
 #endif

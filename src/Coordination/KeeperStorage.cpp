@@ -1495,6 +1495,8 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
         responses.push_back(KeeperResponseForSession{.session_id = session_id, .response = std::move(watch_response)});
     };
 
+    SharedLockGuard storage_lock(storage_mutex);
+
     for (const auto & path : watches_paths)
     {
         KeeperNodeStats stats;
