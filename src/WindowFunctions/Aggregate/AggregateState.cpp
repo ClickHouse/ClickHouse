@@ -75,6 +75,12 @@ void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 e
     }
 }
 
+void AggregateState::merge(ConstAggregateDataPtr rhs)
+{
+    checkCreated();
+    function->merge(place.data(), rhs, arena.get());
+}
+
 void AggregateState::insertResultInto(IColumn & result)
 {
     checkCreated();

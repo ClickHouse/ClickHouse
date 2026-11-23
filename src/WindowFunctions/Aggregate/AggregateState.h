@@ -28,6 +28,7 @@ public:
 
     void recreate();
     void add(const WindowArguments & arguments, Int64 begin, Int64 end);
+    void merge(ConstAggregateDataPtr rhs);
     void insertResultInto(IColumn & result);
 
 private:
