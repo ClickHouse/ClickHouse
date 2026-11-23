@@ -26,10 +26,10 @@ CREATE CLUSTER test_sql_cluster_05453_case (
     SECRET = 'cluster_secret_05453_case',
     user = 'default',
     Password = 'cluster_password_05453_case',
-    SHARD (host = '127.0.0.1', port = 9000, Password = 'shard_password_05453_case'),
+    SHARD (HOST = '127.0.0.1', PORT = 9000, Password = 'shard_password_05453_case'),
     SHARD (
         Password = 'shard_with_replicas_password_05453_case',
-        REPLICA (host = '127.0.0.1', port = 9000, Password = 'replica_password_05453_case')
+        REPLICA (HOST = '127.0.0.1', PORT = 9000, Password = 'replica_password_05453_case')
     )
 );
 
@@ -44,6 +44,11 @@ WHERE cluster = 'test_sql_cluster_05453_case'
 SELECT min(create_query LIKE '%SECRET = \'[HIDDEN]\'%' AND create_query LIKE '%Password = \'[HIDDEN]\'%')
 FROM system.clusters
 WHERE cluster = 'test_sql_cluster_05453_case';
+
+SELECT host_name, port
+FROM system.clusters
+WHERE cluster = 'test_sql_cluster_05453_case'
+ORDER BY shard_num, replica_num;
 
 DROP CLUSTER test_sql_cluster_05453;
 DROP CLUSTER test_sql_cluster_05453_case;

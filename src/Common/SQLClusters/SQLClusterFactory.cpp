@@ -14,6 +14,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/sleep.h>
 
+#include <cctype>
+#include <cstring>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
@@ -68,15 +70,56 @@ const std::unordered_set<String> & replicaPropertyKeys()
     return keys;
 }
 
+/// Property names keep the spelling from the query. Comparisons and the keys written into the
+/// in-memory cluster config use the canonical lowercase name.
+bool propertyNamesEqual(std::string_view left, std::string_view right)
+{
+    return left.size() == right.size()
+        && 0 == strncasecmp(left.data(), right.data(), left.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
+}
+
+bool containsProperty(const std::unordered_set<String> & keys, std::string_view name)
+{
+    for (const auto & key : keys)
+        if (propertyNamesEqual(key, name))
+            return true;
+    return false;
+}
+
+std::string_view canonicalPropertyName(std::string_view name)
+{
+    for (const auto * keys : {&clusterPropertyKeys(), &shardOnlyPropertyKeys(), &replicaPropertyKeys()})
+        for (const auto & key : *keys)
+            if (propertyNamesEqual(key, name))
+                return key;
+    return name;
+}
+
+String foldedPropertyName(std::string_view name)
+{
+    String folded(name.size(), '\0');
+    for (size_t i = 0; i < name.size(); ++i)
+        folded[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(name[i])));
+    return folded;
+}
+
+const Field * tryGetProperty(const Properties & properties, std::string_view name)
+{
+    for (const auto & change : properties)
+        if (propertyNamesEqual(change.name, name))
+            return &change.value;
+    return nullptr;
+}
+
 bool isCredentialProperty(std::string_view name)
 {
-    return name == "user" || name == "password";
+    return propertyNamesEqual(name, "user") || propertyNamesEqual(name, "password");
 }
 
 bool isBoolProperty(std::string_view name)
 {
-    return name == "secure" || name == "compression" || name == "internal_replication"
-        || name == "allow_distributed_ddl_queries";
+    return propertyNamesEqual(name, "secure") || propertyNamesEqual(name, "compression")
+        || propertyNamesEqual(name, "internal_replication") || propertyNamesEqual(name, "allow_distributed_ddl_queries");
 }
 
 void validateAndNormalizeBoolProperty(Field & value, std::string_view name)
@@ -123,10 +166,10 @@ void normalizeBoolProperties(Properties & properties)
 
 void validateNoDuplicateProperties(const Properties & properties, std::string_view scope)
 {
-    std::unordered_set<std::string_view> seen;
+    std::unordered_set<String> seen;
     for (const auto & change : properties)
     {
-        if (!seen.insert(change.name).second)
+        if (!seen.insert(foldedPropertyName(change.name)).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate property `{}` {}", change.name, scope);
     }
 }
@@ -157,7 +200,7 @@ void validateClusterLevelProperties(const Properties & properties)
 
     for (const auto & change : properties)
     {
-        if (!clusterPropertyKeys().contains(change.name) && !isCredentialProperty(change.name))
+        if (!containsProperty(clusterPropertyKeys(), change.name) && !isCredentialProperty(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed at cluster level", change.name);
 
         if (isBoolProperty(change.name))
@@ -173,19 +216,19 @@ void validateShardProperties(const Properties & properties, bool has_replicas)
     {
         if (has_replicas)
         {
-            if (!shardOnlyPropertyKeys().contains(change.name) && !isCredentialProperty(change.name))
+            if (!containsProperty(shardOnlyPropertyKeys(), change.name) && !isCredentialProperty(change.name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in SHARD with REPLICA blocks", change.name);
         }
-        else if (!replicaPropertyKeys().contains(change.name) && !shardOnlyPropertyKeys().contains(change.name))
+        else if (!containsProperty(replicaPropertyKeys(), change.name) && !containsProperty(shardOnlyPropertyKeys(), change.name))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in SHARD", change.name);
         }
 
-        if (change.name == "port")
+        if (propertyNamesEqual(change.name, "port"))
             validatePortProperty(change.value);
-        else if (change.name == "weight")
+        else if (propertyNamesEqual(change.name, "weight"))
             validateIntProperty(change.value, change.name, 0, std::numeric_limits<Int32>::max());
-        else if (change.name == "priority")
+        else if (propertyNamesEqual(change.name, "priority"))
             validateIntProperty(change.value, change.name, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
         else if (isBoolProperty(change.name))
             validateBoolProperty(change.value, change.name);
@@ -198,12 +241,12 @@ void validateReplicaProperties(const Properties & properties)
 
     for (const auto & change : properties)
     {
-        if (!replicaPropertyKeys().contains(change.name))
+        if (!containsProperty(replicaPropertyKeys(), change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in REPLICA", change.name);
 
-        if (change.name == "port")
+        if (propertyNamesEqual(change.name, "port"))
             validatePortProperty(change.value);
-        else if (change.name == "priority")
+        else if (propertyNamesEqual(change.name, "priority"))
             validateIntProperty(change.value, change.name, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
         else if (isBoolProperty(change.name))
             validateBoolProperty(change.value, change.name);
@@ -331,11 +374,11 @@ void resolveOmittedPort(
     const String & cluster_name,
     const String & location)
 {
-    if (properties.tryGet("port"))
+    if (tryGetProperty(properties, "port"))
         return;
 
     bool is_secure = false;
-    if (const auto * secure = properties.tryGet("secure"))
+    if (const auto * secure = tryGetProperty(properties, "secure"))
     {
         Field normalized = *secure;
         validateAndNormalizeBoolProperty(normalized, "secure");
@@ -359,9 +402,10 @@ void applyReplicaProperties(Poco::Util::AbstractConfiguration & config, const St
 {
     for (const auto & change : properties)
     {
-        if (!replicaPropertyKeys().contains(change.name))
+        if (!containsProperty(replicaPropertyKeys(), change.name))
             continue;
-        setSQLClusterConfigValue(config, prefix + "." + change.name, change.name, change.value);
+        const auto canonical = String(canonicalPropertyName(change.name));
+        setSQLClusterConfigValue(config, prefix + "." + canonical, canonical, change.value);
     }
 }
 
@@ -369,8 +413,11 @@ void applyShardOnlyProperties(Poco::Util::AbstractConfiguration & config, const 
 {
     for (const auto & change : properties)
     {
-        if (change.name == "weight" || change.name == "internal_replication")
-            setSQLClusterConfigValue(config, prefix + "." + change.name, change.name, change.value);
+        if (propertyNamesEqual(change.name, "weight") || propertyNamesEqual(change.name, "internal_replication"))
+        {
+            const auto canonical = String(canonicalPropertyName(change.name));
+            setSQLClusterConfigValue(config, prefix + "." + canonical, canonical, change.value);
+        }
     }
 }
 
@@ -378,9 +425,12 @@ void applyClusterProperties(Poco::Util::AbstractConfiguration & config, const St
 {
     for (const auto & change : properties)
     {
-        if (change.name == "secret" || change.name == "allow_distributed_ddl_queries")
-            setSQLClusterConfigValue(config, prefix + "." + change.name, change.name, change.value);
-        else if (change.name != "user" && change.name != "password")
+        if (propertyNamesEqual(change.name, "secret") || propertyNamesEqual(change.name, "allow_distributed_ddl_queries"))
+        {
+            const auto canonical = String(canonicalPropertyName(change.name));
+            setSQLClusterConfigValue(config, prefix + "." + canonical, canonical, change.value);
+        }
+        else if (!isCredentialProperty(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cluster property `{}`", change.name);
     }
 }
@@ -448,7 +498,7 @@ ClusterPtr SQLClusterFactory::materializeCluster(
 
         if (shard.replicas.empty())
         {
-            if (!shard_properties.tryGet("host"))
+            if (!tryGetProperty(shard_properties, "host"))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard {} in SQL cluster `{}` must have `host` or at least one REPLICA", shard_num, query.cluster_name);
 
             const String node_prefix = cluster_prefix + ".node" + std::to_string(shard_num);
