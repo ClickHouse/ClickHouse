@@ -64,6 +64,8 @@ namespace Setting
 {
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_estimated_execution_time;
+    extern const SettingsUInt64 min_execution_speed;
+    extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -1134,6 +1136,14 @@ bool RemoteQueryExecutor::mayRetryAfterNetworkError() const
     /// of the whole executor) before another replica fails, and a retry would re-send every slice,
     /// so the finished replica's work would be replayed and counted twice.
     if (pool_mode != PoolMode::GET_ONE)
+        return false;
+
+    /// While a retry is possible, the progress of the remote server is deferred, so the initiator would
+    /// see no rows read until the first block of the result. The minimum execution speed is checked on
+    /// the initiator against these counters, and it would fail with `TOO_SLOW` a query whose remote
+    /// server is making enough progress. The checks are more important than the retries.
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::min_execution_speed] != 0 || settings[Setting::min_execution_speed_bytes] != 0)
         return false;
 
     return network_error_retries_count < context->getSettingsRef()[Setting::distributed_query_retries];
