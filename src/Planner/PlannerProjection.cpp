@@ -15,8 +15,6 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -26,7 +24,9 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -83,50 +83,32 @@ private:
     Chunk chunk;
 };
 
-void writeStoredNames(const QueryTreeNodes & nodes, const ContextPtr & context, WriteBuffer & out);
+ASTPtr makeStoredNameAST(const QueryTreeNodePtr & node, const ContextPtr & context);
 
-/// the old analysis names an array or a tuple of literals as a literal
-bool isLiteral(const QueryTreeNodePtr & node)
+ASTPtr makeStoredNameASTs(const QueryTreeNodes & nodes, const ContextPtr & context)
 {
-    const auto * constant_node = node->as<ConstantNode>();
-    if (!constant_node)
-        return false;
-
-    if (!constant_node->hasSourceExpression())
-        return true;
-
-    const auto * function_node = constant_node->getSourceExpression()->as<FunctionNode>();
-    return function_node && (function_node->getFunctionName() == "array" || function_node->getFunctionName() == "tuple")
-        && std::ranges::all_of(function_node->getArguments().getNodes(), isLiteral);
+    auto list = make_intrusive<ASTExpressionList>();
+    for (const auto & node : nodes)
+        list->children.push_back(makeStoredNameAST(node, context));
+    return list;
 }
 
-/// writes the name that a projection part stores the expression under: the name that the old analysis gave to the expression
-void writeStoredName(const QueryTreeNodePtr & node, const ContextPtr & context, WriteBuffer & out)
+/// Makes the expression that the old analysis kept in the query of a projection. A projection part stores
+/// a column under the name of this expression, so the AST gives the name, and this function only selects what to name.
+ASTPtr makeStoredNameAST(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     if (const auto * column_node = node->as<ColumnNode>())
-    {
-        out << column_node->getColumnName();
-        return;
-    }
+        return make_intrusive<ASTIdentifier>(column_node->getColumnName());
 
     if (const auto * constant_node = node->as<ConstantNode>())
     {
-        if (constant_node->hasSourceExpression())
-        {
-            /// a constant that the analysis makes has the name of the value
-            if (!constant_node->getSourceExpression()->hasOriginalAST() || isLiteral(node))
-                ASTLiteral(constant_node->getValue()).appendColumnName(out);
-            /// a constant folded from an expression has the name of that expression
-            else
-                writeStoredName(constant_node->getSourceExpression(), context, out);
-            return;
-        }
+        /// a constant folded from an expression of the query has the name of that expression
+        if (constant_node->hasSourceExpression() && constant_node->getSourceExpression()->hasOriginalAST())
+            return makeStoredNameAST(constant_node->getSourceExpression(), context);
 
-        if (!node->hasOriginalAST())
-        {
-            ASTLiteral(constant_node->getValue()).appendColumnName(out);
-            return;
-        }
+        /// a constant that the analysis makes has the name of the value
+        if (constant_node->hasSourceExpression() || !node->hasOriginalAST())
+            return make_intrusive<ASTLiteral>(constant_node->getValue());
     }
 
     if (const auto * function_node = node->as<FunctionNode>())
@@ -139,69 +121,49 @@ void writeStoredName(const QueryTreeNodePtr & node, const ContextPtr & context, 
             = function_node->isAggregationCall() && node->hasOriginalAST() ? node->getOriginalAST()->as<ASTFunction>() : nullptr;
         bool has_written_name = written_function
             && (written_function->arguments ? written_function->arguments->children.size() : 0) == function_node->getArguments().getNodes().size();
-        auto nulls_action = has_written_name ? written_function->getNullsAction() : function_node->getNullsAction();
 
-        if (has_written_name)
-            out << getAggregateFunctionCanonicalNameIfAny(QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
-                written_function->name, nulls_action, function_node->getArgumentTypes(), function_node->getAggregateFunction()->getParameters(), context));
-        else
-            out << function_node->getFunctionName();
+        auto function = make_intrusive<ASTFunction>();
+        function->setNullsAction(has_written_name ? written_function->getNullsAction() : function_node->getNullsAction());
+        function->name = has_written_name
+            ? getAggregateFunctionCanonicalNameIfAny(QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
+                written_function->name, function->getNullsAction(), function_node->getArgumentTypes(), function_node->getAggregateFunction()->getParameters(), context))
+            : function_node->getFunctionName();
+
         if (!function_node->getParameters().getNodes().empty())
         {
-            out << '(';
-            writeStoredNames(function_node->getParameters().getNodes(), context, out);
-            out << ')';
+            function->parameters = makeStoredNameASTs(function_node->getParameters().getNodes(), context);
+            function->children.push_back(function->parameters);
         }
 
-        out << '(';
-        writeStoredNames(function_node->getArguments().getNodes(), context, out);
-        out << ')';
-
-        if (nulls_action == NullsAction::RESPECT_NULLS)
-            out << " RESPECT NULLS";
-        else if (nulls_action == NullsAction::IGNORE_NULLS)
-            out << " IGNORE NULLS";
-        return;
+        function->arguments = makeStoredNameASTs(function_node->getArguments().getNodes(), context);
+        function->children.push_back(function->arguments);
+        return function;
     }
 
     if (const auto * lambda_node = node->as<LambdaNode>())
     {
-        out << "lambda(tuple(" << fmt::format("{}", fmt::join(lambda_node->getArguments().getNames(), ", ")) << "), ";
-        writeStoredName(lambda_node->getExpression(), context, out);
-        out << ')';
-        return;
+        ASTs arguments;
+        for (const auto & name : lambda_node->getArguments().getNames())
+            arguments.push_back(make_intrusive<ASTIdentifier>(name));
+
+        return makeASTFunction("lambda", makeASTFunction("tuple", std::move(arguments)), makeStoredNameAST(lambda_node->getExpression(), context));
     }
 
+    /// a literal and a subquery have the name of the expression that the query writes
     if (node->hasOriginalAST())
-    {
-        /// a literal and a subquery have the name of the expression that the query writes
-        node->getOriginalAST()->appendColumnName(out);
-        return;
-    }
+        return node->getOriginalAST();
 
     if (!isQueryOrUnionNode(node))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression {} of a projection has no original AST", node->formatASTForErrorMessage());
 
     /// the analysis makes a subquery for `exists`
     auto hash = node->getTreeHash();
-    out << "__subquery_" << hash.low64 << '_' << hash.high64;
-}
-
-void writeStoredNames(const QueryTreeNodes & nodes, const ContextPtr & context, WriteBuffer & out)
-{
-    for (size_t i = 0; i < nodes.size(); ++i)
-    {
-        if (i)
-            out << ", ";
-        writeStoredName(nodes[i], context, out);
-    }
+    return make_intrusive<ASTIdentifier>(fmt::format("__subquery_{}_{}", hash.low64, hash.high64));
 }
 
 String getStoredName(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
-    WriteBufferFromOwnString out;
-    writeStoredName(node, context, out);
-    return out.str();
+    return makeStoredNameAST(node, context)->getColumnName();
 }
 
 /// Makes the plan calculate each expression over the columns of the table, as the old analysis did.
