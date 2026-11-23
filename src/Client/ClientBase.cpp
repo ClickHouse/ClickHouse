@@ -766,8 +766,23 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         /// q is lexically a different language as well (backticks are symbols, `/` starts comments).
         /// The program is only parsed here: it is compiled into a ClickHouse query on the server.
-        res = parseQQuery(
-            pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        try
+        {
+            res = parseQQuery(
+                pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        catch (const Exception & e)
+        {
+            /// Syntax errors of q are thrown. Under `--ignore-error` they are reported like those of ClickHouse queries:
+            /// the caller then skips the whole (possibly multiline) q query and continues with the next one.
+            if (ignore_error)
+            {
+                error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+                return nullptr;
+            }
+            throw;
+        }
     }
     else if (dialect == Dialect::kusto && !is_set_escape)
     {
@@ -3881,6 +3896,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 is_first = false;
                 have_error |= buzz_house;
                 error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
+                const bool q_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::q;
 
                 /// The AST fuzzer feeds whole test files to one session, often several files in
                 /// a row, so a statement that does not parse is expected rather than a finding -
@@ -3891,21 +3907,42 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
                     unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
-                    Tokens tokens(this_query_begin, all_queries_end);
-                    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
-                        ++token_iterator;
-                    this_query_begin = token_iterator->end;
+                    if (q_dialect)
+                    {
+                        this_query_begin = skipQQuery(this_query_begin, all_queries_end);
+                    }
+                    else
+                    {
+                        Tokens tokens(this_query_begin, all_queries_end);
+                        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                            ++token_iterator;
+                        this_query_begin = token_iterator->end;
+                    }
                     current_exception.reset();
                     continue;
                 }
 
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-
-                // Try to find test hint for syntax error. We don't know where
-                // the query ends because we failed to parse it, so we consume
-                // the entire line.
-                TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
+                String hint_text;
+                if (q_dialect)
+                {
+                    /// A q query may span several lines, and its end is known even when it does not parse: a `;` at the end
+                    /// of a line. The whole query is skipped, and the hint is looked for only in the comment after that `;`,
+                    /// because the text of a q query cannot be scanned with the ClickHouse lexer.
+                    const char * q_query_end = skipQQuery(this_query_begin, all_queries_end);
+                    this_query_end = find_first_symbols<'\n'>(q_query_end, all_queries_end);
+                    const char * hint_begin = q_query_end > this_query_begin && q_query_end[-1] == ';' ? q_query_end - 1 : q_query_end;
+                    hint_text.assign(hint_begin, this_query_end);
+                }
+                else
+                {
+                    // Try to find test hint for syntax error. We don't know where
+                    // the query ends because we failed to parse it, so we consume
+                    // the entire line.
+                    this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+                    hint_text.assign(this_query_begin, this_query_end);
+                }
+                TestHint hint(hint_text);
                 if (hint.hasServerErrors() && !hint.hasClientErrors())
                 {
                     // Syntax errors are considered as client errors.
