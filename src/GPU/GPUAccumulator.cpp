@@ -790,9 +790,9 @@ GPUGroupingLane::GPUGroupingLane(
 
     if (aggregates.empty())
     {
-        if (!computed.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows filtered on the GPU with computed arguments");
-        row_filter = std::make_unique<CudfRowFilter>(values, stream());
+        if (!computed.empty() || !where)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows filtered on the GPU with computed arguments or without a `WHERE`");
+        row_filter = std::make_unique<CudfRowFilter>(values, where->expression, stream());
         return;
     }
 
@@ -876,20 +876,19 @@ MutableColumns GPUGroupingLane::filterRows(GPUDeviceBatch batch, const DataTypes
 
     batch.moveTo(stream());
     const std::vector<DeviceColumnView> value_columns = batch.values();
-    const std::vector<DeviceFixedColumn> filter_columns = batch.filterColumns();
-    const size_t num_where_columns = where ? where->columns.size() : 0;
-    if (value_columns.size() != values.size() || filter_columns.size() != num_where_columns)
+    const std::vector<DeviceFixedColumn> where_columns = batch.filterColumns();
+    if (value_columns.size() != values.size() || where_columns.size() != where->columns.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "A GPU batch of {} values and {} filter columns for a lane of {} and {}",
             value_columns.size(),
-            filter_columns.size(),
+            where_columns.size(),
             values.size(),
-            num_where_columns);
+            where->columns.size());
 
     Stopwatch watch;
     MutableColumns columns;
-    const size_t rows = row_filter->filter(value_columns, filter_columns, where ? &where->expression : nullptr);
+    const size_t rows = row_filter->filter(value_columns, where_columns);
     if (rows != 0)
     {
         std::vector<DeviceColumnView> from;

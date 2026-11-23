@@ -728,8 +728,9 @@ private:
 class RowFilter
 {
 public:
-    __host__ RowFilter(GPUSpan<GPUElementType> values_, cuda::stream_ref stream_)
+    __host__ RowFilter(GPUSpan<GPUElementType> values_, const GPUExpression & where_, cuda::stream_ref stream_)
         : values(values_.begin(), values_.end())
+        , where(where_)
         , stream(stream_)
         , filter_mask(0, stream_)
         , all_true(0, stream_)
@@ -737,7 +738,7 @@ public:
     {
     }
 
-    __host__ size_t filter(GPUSpan<DeviceColumnView> batch_values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
+    __host__ size_t filter(GPUSpan<DeviceColumnView> batch_values, GPUSpan<DeviceFixedColumn> where_columns)
     {
         if (batch_values.size() != values.size())
             throwGPUError(("a batch of " + std::to_string(batch_values.size()) + " columns to filter, expected " + std::to_string(values.size())).c_str());
@@ -747,11 +748,11 @@ public:
         for (const DeviceColumnView & column : batch_values)
             whole.push_back(column);
         const size_t rows = batch_values[0].rows();
-        if (rows == 0 || !filter)
-            return rows;
+        if (rows == 0)
+            return 0;
 
-        const std::vector<GPUExpressionInput> inputs = inputsOf(*filter, filter_columns, rows);
-        const DeviceBitmask mask = evaluateMask(*filter, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, filter_mask, stream);
+        const std::vector<GPUExpressionInput> inputs = inputsOf(where, where_columns, rows);
+        const DeviceBitmask mask = evaluateMask(where, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, filter_mask, stream);
         const cudf::size_type left_out = leftOutBy(mask, stream);
         if (left_out == 0)
             return rows;
@@ -776,6 +777,7 @@ public:
 
 private:
     const std::vector<GPUElementType> values;
+    const GPUExpression where;
     const cuda::stream_ref stream;
     rmm::device_buffer filter_mask;
     rmm::device_buffer all_true;
@@ -850,13 +852,15 @@ __host__ DeviceColumnView CudfGroupBy::value(size_t index) const
     return guarded("viewing an aggregate of a `GROUP BY`", [&] { return impl->value(index); });
 }
 
-__host__ CudfRowFilter::CudfRowFilter(GPUSpan<GPUElementType> values, cuda::stream_ref stream)
+__host__ CudfRowFilter::CudfRowFilter(GPUSpan<GPUElementType> values, const GPUExpression & where, cuda::stream_ref stream)
 {
     if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
         throwGPUError("a filter of rows on the device's default stream");
     if (values.empty())
         throwGPUError("a filter of rows of no columns");
-    impl = guarded("making a filter of rows", [&] { return new cudf_group_by::RowFilter(values, stream); });
+    if (where.result != GPUExpressionResult::Bitmask)
+        throwGPUError("a filter of rows by an expression that is not a predicate");
+    impl = guarded("making a filter of rows", [&] { return new cudf_group_by::RowFilter(values, where, stream); });
 }
 
 __host__ CudfRowFilter::~CudfRowFilter()
@@ -864,9 +868,9 @@ __host__ CudfRowFilter::~CudfRowFilter()
     delete impl;
 }
 
-__host__ size_t CudfRowFilter::filter(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
+__host__ size_t CudfRowFilter::filter(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> where_columns)
 {
-    return guarded("filtering the rows of a batch", [&] { return impl->filter(values, filter_columns, filter); });
+    return guarded("filtering the rows of a batch", [&] { return impl->filter(values, where_columns); });
 }
 
 __host__ DeviceColumnView CudfRowFilter::value(size_t index) const

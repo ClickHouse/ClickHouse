@@ -53,19 +53,19 @@ private:
     cudf_group_by::GroupBy * impl = nullptr;
 };
 
-/// The rows of a batch that its `WHERE` keeps, rather than groups of them.
+/// The rows of a batch that `where`, a predicate, keeps, rather than groups of them.
 class CudfRowFilter
 {
 public:
-    __host__ CudfRowFilter(GPUSpan<GPUElementType> values, cuda::stream_ref stream);
+    __host__ CudfRowFilter(GPUSpan<GPUElementType> values, const GPUExpression & where, cuda::stream_ref stream);
     __host__ ~CudfRowFilter();
 
     CudfRowFilter(const CudfRowFilter &) = delete;
     CudfRowFilter & operator=(const CudfRowFilter &) = delete;
 
-    /// Returns how many rows `filter` keeps, which `value` views until the next call: the columns of the batch themselves
+    /// Returns how many rows `where` keeps, which `value` views until the next call: the columns of the batch themselves
     /// if it keeps them all, which must stay alive until then.
-    __host__ size_t filter(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns = {}, const GPUExpression * filter = nullptr);
+    __host__ size_t filter(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> where_columns);
 
     __host__ DeviceColumnView value(size_t index) const;
 
