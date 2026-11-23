@@ -71,30 +71,47 @@ REPORT_LOCAL_SERVER_SETTINGS = [
     "--memory_worker_use_cgroup=0",
 ]
 
-GET_HISTORICAL_TRESHOLDS_QUERY = """\
-SELECT test, query_index,
-    quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
-    quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    query_display_name
-FROM query_metrics_v2
--- We use results at least one week in the past, so that the current
--- changes do not immediately influence the statistics, and we have
--- some time to notice that something is wrong.
-WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
-    AND metric = 'client_time'
-    AND pr_number = 0
-    AND workflow_name = 'MasterCI'
-    -- The same runs, selected by the key prefix so that the PR runs are not read.
-    AND new_sha IN (
-        SELECT new_sha FROM perf_test_times_v1
-        -- The job writes both tables, so their dates differ by a day at most.
-        WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
-                AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
-            AND pr_number = 0
-            AND workflow_name = 'MasterCI')
--- The display name is part of the key: compare.sh joins this file on all three.
-GROUP BY test, query_index, query_display_name
-HAVING count() > 100"""
+# The learned per-query thresholds: 1.5 times the 0.99 quantile of what `MasterCI`
+# measured for the query over a month. The job does not compute them: that reads
+# every metric of a month of master runs, over 1 TB, which the `play` user may not
+# (`TOO_MANY_BYTES`), and the answer is the same for every job of a day. CIDB
+# computes them once a day instead. The refreshable materialized view
+# `perf_query_thresholds_mv` appends the result of this query to
+# `HISTORICAL_THRESHOLDS_TABLE`, with the time of the refresh in `computed_at`:
+#
+#     SELECT test, query_index,
+#         quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
+#         quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
+#         query_display_name
+#     FROM query_metrics_v2
+#     -- We use results at least one week in the past, so that the current
+#     -- changes do not immediately influence the statistics, and we have
+#     -- some time to notice that something is wrong.
+#     WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
+#         AND metric = 'client_time'
+#         AND pr_number = 0
+#         AND workflow_name = 'MasterCI'
+#         -- The same runs, selected by the key prefix so that the PR runs are not read.
+#         AND new_sha IN (
+#             SELECT new_sha FROM perf_test_times_v1
+#             -- The job writes both tables, so their dates differ by a day at most.
+#             WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+#                     AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
+#                 AND pr_number = 0
+#                 AND workflow_name = 'MasterCI')
+#     -- The display name is part of the key: compare.sh joins this file on all three.
+#     GROUP BY test, query_index, query_display_name
+#     HAVING count() > 100
+HISTORICAL_THRESHOLDS_TABLE = "perf_query_thresholds_v1"
+
+GET_HISTORICAL_TRESHOLDS_QUERY = f"""\
+SELECT test, query_index, max_diff, max_stat_threshold, query_display_name
+FROM {HISTORICAL_THRESHOLDS_TABLE}
+-- The newest snapshot. One that was not refreshed for a week is not used: the
+-- answer is then empty, and the queries are judged without their learned thresholds.
+WHERE computed_at = (
+    SELECT max(computed_at) FROM {HISTORICAL_THRESHOLDS_TABLE}
+    WHERE computed_at >= now() - INTERVAL 1 WEEK)"""
 
 INSERT_HISTORICAL_DATA = """\
 INSERT INTO query_metrics_v2
@@ -3605,8 +3622,7 @@ def main():
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
                 )
                 return True
-            # The query takes 8 to 10 s, so a 10 s timeout lost the thresholds
-            # of about half of the runs.
+            # A read of the daily snapshot, about 7500 rows.
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY,
                 timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
