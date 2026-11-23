@@ -5,14 +5,11 @@
     </settings>
 
     <!--
-        Benchmarks the `timeSeries*ToGrid` aggregate functions when many series share one aggregation state and
-        repeat the same timestamps, so a bucket receives many samples with duplicate timestamps in no sorted order.
+        Benchmarks the `timeSeries*ToGrid` aggregate functions when a bucket receives many samples with duplicate timestamps in no sorted order.
         The unsorted samples are sorted and deduplicated before the buffer of the bucket is reallocated, so the buffer
         stays as small as the number of distinct timestamps instead of the number of samples.
+        Many series with the same timestamps in one state are benchmarked by `timeseries_to_grid_overlapping_tail.xml`.
     -->
-
-    <!-- 500 series of 20000 samples, one sample every 15s, all series with the same timestamps, in one state: 10M rows. -->
-    <query>SELECT timeSeriesRateToGrid(0, 300000, 300000, 300000)(toDateTime64((number % 20000) * 15, 3), toFloat64(number % 1000)) FROM numbers(10000000) FORMAT Null</query>
 
     <!--
         Two series in two states repeat the same 4095 timestamps of one bucket, and the rows of the two series alternate, so every sample is added on its own.

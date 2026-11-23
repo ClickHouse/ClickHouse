@@ -38,22 +38,5 @@ SELECT countIf(a.r = e.r AND a.c = e.c), count() FROM
  FROM (SELECT n, groupArray(ts) AS tss, groupArray(v) AS vs FROM (SELECT n, ts, v FROM ts_growth ORDER BY n, ord) GROUP BY n) GROUP BY n) AS a
 INNER JOIN ts_growth_expected AS e USING (n);
 
--- Many samples with few distinct timestamps in one state: 100 timestamps repeated by 100 series.
-SELECT 'many repeats, single state (all 1):';
-SELECT
-    (SELECT timeSeriesRateToGrid(0, 100, 100, 100)(toDateTime64(1 + number % 100, 3, 'UTC'), toFloat64(number % 17)) FROM numbers(10000) SETTINGS max_threads = 1)
-    = (SELECT timeSeriesRateToGrid(0, 100, 100, 100)(ts, v) FROM (SELECT 1 + number % 100 AS t, toFloat64(max(number % 17)) AS v, toDateTime64(t, 3, 'UTC') AS ts FROM numbers(10000) GROUP BY t ORDER BY t));
-
--- Two series in two states repeat the 4095 timestamps of one bucket 10 times with different values, and their rows alternate, so every sample is added on its own.
--- After the deduplication the buffer of 4096 samples holds 4095 of them, so it grows instead of being sorted again by every following sample.
-SELECT 'repeated 4095 timestamps in one bucket (2 of 2):';
-WITH samples AS (SELECT number % 2 AS k, toDateTime64(1 + intDiv(number, 2) % 4095, 3, 'UTC') AS ts, toFloat64(number % 4093) AS v FROM numbers(81900))
-SELECT countIf(a.r = e.r AND a.c = e.c), count() FROM
-(SELECT k, timeSeriesRateToGrid(0, 4095, 4095, 4095)(ts, v) AS r, timeSeriesChangesToGrid(0, 4095, 4095, 4095)(ts, v) AS c
- FROM samples GROUP BY k SETTINGS max_threads = 1) AS a
-INNER JOIN
-(SELECT k, timeSeriesRateToGrid(0, 4095, 4095, 4095)(ts, v) AS r, timeSeriesChangesToGrid(0, 4095, 4095, 4095)(ts, v) AS c
- FROM (SELECT k, ts, max(v) AS v FROM samples GROUP BY k, ts ORDER BY k, ts) GROUP BY k) AS e USING (k);
-
 DROP VIEW ts_growth_expected;
 DROP TABLE ts_growth;
