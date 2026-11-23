@@ -6022,6 +6022,16 @@ void addTypingSettingsOfReads(
     });
 }
 
+/// Whether the validator of a secondary index of this type refuses a type that holds `Variant` or `Dynamic`.
+/// The one of `set` checks no type.
+bool indexRefusesMixedTypes(const String & type)
+{
+    for (const auto * name : {"minmax", "bloom_filter", "ngrambf_v1", "tokenbf_v1", "sparse_grams", "vector_similarity", "text"})
+        if (equalsCaseInsensitive(type, name))
+            return true;
+    return false;
+}
+
 /// For the settings that change how `if`, `array`, `tuple` and the like type their result, picks for each table the values all its
 /// analyzed expressions analyze with together, else warns and keeps the dump session's, and warns when its storage needs non-defaults.
 void markTypingSettings(
@@ -6147,8 +6157,8 @@ void markTypingSettings(
                     if (const auto * index = child->as<ASTIndexDeclaration>(); index && index->getExpression())
                     {
                         String text = index->getExpression()->formatWithSecretsOneLine();
-                        /// A minmax index cannot hold `Variant` or `Dynamic`, so its probe fails analysis on such a type.
-                        if (const auto type = index->getType(); type && equalsCaseInsensitive(type->name, "minmax"))
+                        /// Such an index cannot hold `Variant` or `Dynamic`, so its probe fails analysis on such a type.
+                        if (const auto type = index->getType(); type && indexRefusesMixedTypes(type->name))
                             text = "CAST(1, if(match(toTypeName(" + text
                                 + "), '(^|[(, ])(Variant[(]|Dynamic)'), 'NotAllowedInIndex', 'UInt8'))";
                         add(index->getExpression().get(), text, storage_expressions);
