@@ -116,6 +116,25 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
     return body;
 }
 
+bool hasValueAndItsNotNone(const std::string & value, const Poco::JSON::Object::Ptr & object)
+{
+    return object->has(value) && !object->isNull(value) && !object->get(value).isEmpty();
+}
+
+bool isUnityDeltaTable(const Poco::JSON::Object::Ptr & table_json)
+{
+    const bool has_securable_kind = hasValueAndItsNotNone("securable_kind", table_json);
+    const bool has_data_source_format = hasValueAndItsNotNone("data_source_format", table_json);
+
+    if (has_securable_kind && !UNITY_DELTA_SECURABLE_KINDS.contains(table_json->get("securable_kind").extract<String>()))
+        return false;
+
+    if (has_data_source_format && table_json->get("data_source_format").extract<String>() != UNITY_DELTA_DATA_SOURCE_FORMAT)
+        return false;
+
+    return has_securable_kind || has_data_source_format;
+}
+
 }
 
 #endif
