@@ -261,6 +261,7 @@
           "group": "AI tools and agents",
           "pages": [
             "products/cloud/features/ai-ml/index",
+            "products/cloud/features/ai-ml/schema-advisor",
             "products/cloud/features/ai-ml/langfuse",
             {
               "expanded": false,
