@@ -47,6 +47,41 @@ using ScannedDataFilePtr = std::shared_ptr<const ScannedDataFile>;
 struct SnapshotDataFiles
 {
     std::vector<ScannedDataFilePtr> files;
+
+    static size_t getFileWeight(const ScannedDataFile & file)
+    {
+        return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity();
+    }
+};
+
+class SnapshotDataFilesCollector
+{
+public:
+    explicit SnapshotDataFilesCollector(size_t max_weight_) : max_weight(max_weight_) {}
+
+    void add(const ScannedDataFilePtr & file)
+    {
+        if (!active)
+            return;
+        weight += SnapshotDataFiles::getFileWeight(*file);
+        if (weight > max_weight)
+        {
+            active = false;
+            data_files.files = {};
+            return;
+        }
+        data_files.files.push_back(file);
+    }
+
+    bool isActive() const { return active; }
+
+    std::shared_ptr<SnapshotDataFiles> release() { return std::make_shared<SnapshotDataFiles>(std::move(data_files)); }
+
+private:
+    const size_t max_weight;
+    size_t weight = sizeof(SnapshotDataFiles);
+    bool active = true;
+    SnapshotDataFiles data_files;
 };
 
 }
@@ -58,9 +93,9 @@ struct DeltaLakeMetadataCacheWeightFunction
 {
     size_t operator()(const DeltaLake::SnapshotDataFiles & data_files) const
     {
-        size_t weight = sizeof(DeltaLake::SnapshotDataFiles) + data_files.files.capacity() * sizeof(DeltaLake::ScannedDataFilePtr);
+        size_t weight = sizeof(DeltaLake::SnapshotDataFiles);
         for (const auto & file : data_files.files)
-            weight += sizeof(DeltaLake::ScannedDataFile) + file->path.capacity();
+            weight += DeltaLake::SnapshotDataFiles::getFileWeight(*file);
         return weight;
     }
 };

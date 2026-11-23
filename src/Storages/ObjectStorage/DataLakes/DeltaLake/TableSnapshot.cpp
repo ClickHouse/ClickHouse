@@ -168,7 +168,8 @@ public:
         }
 
         use_engine_predicate = filter.has_value() && enable_engine_predicate && !metadata_cache;
-        collect_for_cache = metadata_cache && !cached_data_files_;
+        if (metadata_cache && !cached_data_files_)
+            collector.emplace(metadata_cache->maxSizeInBytes());
 
         if (cached_data_files_)
         {
@@ -352,10 +353,8 @@ public:
                             }
                             data_files_cv.notify_all();
 
-                            if (collect_for_cache && scan_completed)
-                                metadata_cache->set(
-                                    metadata_cache_key,
-                                    std::make_shared<SnapshotDataFiles>(SnapshotDataFiles{.files = std::move(files_for_cache)}));
+                            if (collector && collector->isActive() && scan_completed)
+                                metadata_cache->set(metadata_cache_key, collector->release());
 
                             LOG_TRACE(
                                 log, "All data files at version {} were listed "
@@ -650,19 +649,8 @@ public:
             "Scanned file: {}, size: {}, num records: {}",
             file->path, size, stats ? DB::toString(stats->num_records) : "Unknown");
 
-        if (context->collect_for_cache)
-        {
-            context->files_for_cache_weight += sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file->path.size();
-            if (context->files_for_cache_weight > context->metadata_cache->maxSizeInBytes())
-            {
-                context->collect_for_cache = false;
-                context->files_for_cache = {};
-            }
-            else
-            {
-                context->files_for_cache.push_back(file);
-            }
-        }
+        if (context->collector)
+            context->collector->add(file);
 
         {
             std::lock_guard lock(context->next_mutex);
@@ -710,9 +698,7 @@ private:
     const DB::DeltaLakeMetadataCachePtr metadata_cache;
     const String metadata_cache_key;
     bool use_engine_predicate = false;
-    bool collect_for_cache = false;
-    std::vector<ScannedDataFilePtr> files_for_cache;
-    size_t files_for_cache_weight = 0;
+    std::optional<SnapshotDataFilesCollector> collector;
 
     std::exception_ptr scan_exception;
     std::exception_ptr engine_predicate_exception;
@@ -765,7 +751,20 @@ size_t TableSnapshot::getVersionUnlocked() const
     return getKernelSnapshotState()->snapshot_version;
 }
 
-TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
+std::pair<DB::DeltaLakeMetadataCachePtr, String>
+TableSnapshot::getMetadataCache(const DB::ContextPtr & context, const KernelSnapshotState & state) const
+{
+    if (!context->getSettingsRef()[DB::Setting::use_delta_lake_metadata_cache])
+        return {};
+    auto metadata_cache = context->getDeltaLakeMetadataCache();
+    if (!metadata_cache || !metadata_cache->maxSizeInBytes())
+        return {};
+    auto key = DB::DeltaLakeMetadataCache::makeKey(
+        object_storage->getDescription(), helper->getTableLocation(), state.table_id, state.snapshot_version);
+    return {std::move(metadata_cache), std::move(key)};
+}
+
+TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats(const DB::ContextPtr & context) const
 {
     if (snapshot_stats.has_value())
         return snapshot_stats.value();
@@ -773,7 +772,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
     const auto pre_fingerprint = kernel_state_credentials_fingerprint;
     try
     {
-        snapshot_stats = getSnapshotStatsImpl();
+        snapshot_stats = getSnapshotStatsImpl(context);
     }
     catch (const DB::Exception & e)
     {
@@ -783,7 +782,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
         /// freshened credentials, then re-run the stats scan against the new engine.
         kernel_snapshot_state.reset();
         initOrUpdateSnapshot();
-        snapshot_stats = getSnapshotStatsImpl();
+        snapshot_stats = getSnapshotStatsImpl(context);
     }
     LOG_TEST(
         log, "Updated statistics for snapshot version {}",
@@ -791,9 +790,33 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
     return snapshot_stats.value();
 }
 
-TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
+TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::ContextPtr & context) const
 {
     auto state = getKernelSnapshotState();
+
+    auto [metadata_cache, metadata_cache_key] = getMetadataCache(context, *state);
+    if (metadata_cache)
+    {
+        if (auto cached_data_files = metadata_cache->get(metadata_cache_key))
+        {
+            SnapshotStats stats{.total_bytes = 0, .total_rows = 0};
+            for (const auto & file : cached_data_files->files)
+            {
+                *stats.total_bytes += static_cast<size_t>(file->size);
+                if (file->num_records && !hasDeletionVector(file->dv_info.get()) && stats.total_rows)
+                    *stats.total_rows += *file->num_records;
+                else
+                    stats.total_rows = std::nullopt;
+            }
+            LOG_TEST(
+                log, "Snapshot at version {} data files from the metadata cache: {}, total rows: {}, total bytes: {}",
+                state->snapshot_version,
+                cached_data_files->files.size(),
+                stats.total_rows ? DB::toString(*stats.total_rows) : "Unknown",
+                *stats.total_bytes);
+            return stats;
+        }
+    }
 
     KernelScan fallback_scan;
     fallback_scan = KernelUtils::unwrapResult(
@@ -812,9 +835,15 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
     struct StatsVisitor
     {
-        explicit StatsVisitor(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+        StatsVisitor(ffi::SharedExternEngine * engine_, std::optional<size_t> max_cached_weight)
+            : engine(engine_)
+        {
+            if (max_cached_weight)
+                collector.emplace(*max_cached_weight);
+        }
 
         ffi::SharedExternEngine * const engine;
+        std::optional<SnapshotDataFilesCollector> collector;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
@@ -825,7 +854,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
         static bool visit(
             ffi::NullableCvoid engine_context,
-            struct ffi::KernelStringSlice /* path */,
+            struct ffi::KernelStringSlice path,
             int64_t size,
             int64_t /* mod_time */,
             const ffi::Stats * stats,
@@ -834,13 +863,12 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
             const struct ffi::CStringMap * /* deprecated */)
         {
             /// Wrap handles in RAII immediately to ensure cleanup on any exit path
-            /// TODO: Actually we do not need any transforms/dv_info to exist here,
-            /// so it would be better to implement in delta-kernel scanCallback
-            /// which will only collect stats.
             KernelDvInfo dv_info_handle(dv_info);
             std::optional<KernelExpression> transform_handle;
             if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
                 transform_handle.emplace(transform.some._0);
+
+            ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
             visitor->total_data_files += 1;
@@ -849,6 +877,18 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
                 visitor->total_rows.value() += stats->num_records;
             else
                 visitor->total_rows = std::nullopt;
+
+            if (visitor->collector && visitor->collector->isActive())
+            {
+                auto file = std::make_shared<ScannedDataFile>();
+                file->path = KernelUtils::fromDeltaString(path);
+                file->size = size;
+                if (stats)
+                    file->num_records = stats->num_records;
+                file->dv_info = std::move(dv_info_handle);
+                file->transform = std::move(transform_handle);
+                visitor->collector->add(file);
+            }
             return true;
         }
 
@@ -878,7 +918,8 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
         }
     };
 
-    StatsVisitor visitor(state->engine.get());
+    StatsVisitor visitor(
+        state->engine.get(), metadata_cache ? std::optional<size_t>(metadata_cache->maxSizeInBytes()) : std::nullopt);
 
     while (true)
     {
@@ -897,6 +938,9 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
             break;
     }
 
+    if (visitor.collector && visitor.collector->isActive())
+        metadata_cache->set(metadata_cache_key, visitor.collector->release());
+
     LOG_TEST(
         log, "Snapshot at version {} data files: {}, total rows: {}, total bytes: {}",
         state->snapshot_version,
@@ -911,16 +955,16 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
     };
 }
 
-std::optional<size_t> TableSnapshot::getTotalRows() const
+std::optional<size_t> TableSnapshot::getTotalRows(const DB::ContextPtr & context) const
 {
     std::lock_guard lock(mutex);
-    return getSnapshotStats().total_rows;
+    return getSnapshotStats(context).total_rows;
 }
 
-std::optional<size_t> TableSnapshot::getTotalBytes() const
+std::optional<size_t> TableSnapshot::getTotalBytes(const DB::ContextPtr & context) const
 {
     std::lock_guard lock(mutex);
-    return getSnapshotStats().total_bytes;
+    return getSnapshotStats(context).total_bytes;
 }
 
 bool TableSnapshot::tryRefreshAfterStaleTokenError(
@@ -1056,21 +1100,10 @@ DB::ObjectIterator TableSnapshot::iterate(
     initOrUpdateSchemaIfChanged();
     auto state = getKernelSnapshotState();
 
-    DB::DeltaLakeMetadataCachePtr metadata_cache;
-    String metadata_cache_key;
+    auto [metadata_cache, metadata_cache_key] = getMetadataCache(context, *state);
     DB::DeltaLakeMetadataCache::MappedPtr cached_data_files;
-    if (settings[DB::Setting::use_delta_lake_metadata_cache])
-        metadata_cache = context->getDeltaLakeMetadataCache();
-    if (metadata_cache && metadata_cache->maxSizeInBytes())
-    {
-        metadata_cache_key = DB::DeltaLakeMetadataCache::makeKey(
-            object_storage->getDescription(), helper->getTableLocation(), state->table_id, state->snapshot_version);
+    if (metadata_cache)
         cached_data_files = metadata_cache->get(metadata_cache_key);
-    }
-    else
-    {
-        metadata_cache.reset();
-    }
     auto update_stats_func = [self = shared_from_this(), version = state->snapshot_version, this]
         (SnapshotStats && stats)
         {
