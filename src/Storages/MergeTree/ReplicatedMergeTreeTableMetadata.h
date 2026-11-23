@@ -59,7 +59,7 @@ struct ReplicatedMergeTreeTableMetadata
         ContextPtr context);
 
     void write(WriteBuffer & out) const;
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     struct Diff
     {
@@ -81,16 +81,16 @@ struct ReplicatedMergeTreeTableMetadata
         bool ttl_table_changed = false;
         String new_ttl_table;
 
-        bool empty() const
+        [[nodiscard]] bool empty() const
         {
             return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
                 && !ttl_table_changed && !constraints_changed;
         }
 
-        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
+        [[nodiscard]] StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
-    bool checkEquals(
+    [[nodiscard]] bool checkEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
         const VirtualColumnsDescription & virtuals,
@@ -100,7 +100,7 @@ struct ReplicatedMergeTreeTableMetadata
         bool strict_check = true,
         LoggerPtr logger = nullptr) const;
 
-    Diff checkAndFindDiff(
+    [[nodiscard]] Diff checkAndFindDiff(
         const ReplicatedMergeTreeTableMetadata & from_zk,
         const ColumnsDescription & columns,
         const VirtualColumnsDescription & virtuals,
