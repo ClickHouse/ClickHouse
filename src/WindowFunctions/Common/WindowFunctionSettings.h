@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Core/Settings.h>
-
 #include <base/types.h>
 
 namespace DB
 {
+
+struct Settings;
 
 struct WindowFunctionSettings
 {
