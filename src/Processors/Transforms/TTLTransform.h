@@ -67,6 +67,7 @@ private:
         DataTypePtr type;
         ExpressionActionsPtr default_expression;
         String default_column_name;
+        bool shares_nested_offsets;
     };
     UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
 
