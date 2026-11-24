@@ -16,11 +16,12 @@ SET log_query_plans = 1;
 
 -- The right side of an `ALL INNER` hash join reports how many of its rows matched only with the
 -- extra bookkeeping, because nothing the join produces anyway carries that number.
+-- The plan is captured on the initiator only, and with parallel replicas its share of the join can be empty.
 SELECT count() FROM p_left ALL INNER JOIN p_right USING (k)
-SETTINGS log_comment = '05315_default', join_algorithm = 'hash' FORMAT Null;
+SETTINGS log_comment = '05315_default', join_algorithm = 'hash', enable_parallel_replicas = 0 FORMAT Null;
 
 SELECT count() FROM p_left ALL INNER JOIN p_right USING (k)
-SETTINGS log_comment = '05315_both', join_algorithm = 'hash', log_query_plans_time = 1, log_query_plans_join_matches = 1 FORMAT Null;
+SETTINGS log_comment = '05315_both', join_algorithm = 'hash', log_query_plans_time = 1, log_query_plans_join_matches = 1, enable_parallel_replicas = 0 FORMAT Null;
 
 SET log_query_plans = 0;
 
