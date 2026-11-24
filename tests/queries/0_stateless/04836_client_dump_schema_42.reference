@@ -19,6 +19,9 @@ dictionary_query: replay rc=0
 --- an eager dictionary comes after the view its attribute expression reads ---
 dictionary_expression: dump rc=0
 dictionary_expression: replay rc=0
+--- an eager dictionary comes after the view its attribute expression in a string reads ---
+dictionary_expression_string: dump rc=0
+dictionary_expression_string: replay rc=0
 --- a minmax index that is a Variant without lossy numeric promotion ---
 lossy_index: dump rc=0
 1

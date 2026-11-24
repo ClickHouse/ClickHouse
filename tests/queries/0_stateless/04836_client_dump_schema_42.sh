@@ -90,6 +90,15 @@ CREATE DICTIONARY d.aaa_dict (id UInt64, v UInt64 EXPRESSION (SELECT max(id) FRO
     SOURCE(CLICKHOUSE(DB 'd' TABLE 'base'))
     LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 0);"
 
+echo '--- an eager dictionary comes after the view its attribute expression in a string reads ---'
+round_trip dictionary_expression_string "
+CREATE DATABASE d;
+CREATE TABLE d.base (id UInt64, v UInt64) ENGINE = Memory;
+CREATE VIEW d.zzz_src AS SELECT id FROM d.base;
+CREATE DICTIONARY d.aaa_dict (id UInt64, v UInt64 EXPRESSION '(SELECT max(id) FROM d.zzz_src)') PRIMARY KEY id
+    SOURCE(CLICKHOUSE(DB 'd' TABLE 'base'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 0);"
+
 # The dump runs on default settings here, unlike the source and the target.
 echo '--- a minmax index that is a Variant without lossy numeric promotion ---'
 rm -rf "$work/src" "$work/dst"

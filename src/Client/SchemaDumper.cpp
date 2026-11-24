@@ -20,6 +20,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/ConnectionTimeouts.h>
@@ -1433,13 +1434,14 @@ std::optional<DictionarySourceQuery> readDictionarySourceQuery(const ASTDictiona
             where = value;
     }
     /// The table form selects the attribute expressions from the table with its WHERE, and all of them can read other tables.
+    /// A string expression is selected as the SQL it holds.
     if (query.empty() && !table.empty())
     {
         String expressions;
         if (attributes)
             for (const auto & child : attributes->children)
                 if (const auto * attribute = child->as<ASTDictionaryAttributeDeclaration>(); attribute && attribute->expression)
-                    expressions += (expressions.empty() ? "(" : ", (") + attribute->expression->formatWithSecretsOneLine() + ")";
+                    expressions += (expressions.empty() ? "(" : ", (") + getAttributeExpression(attribute) + ")";
         query = "SELECT " + (expressions.empty() ? "1" : expressions) + " FROM "
             + (database.empty() ? "" : backQuoteIfNeed(database) + ".") + backQuoteIfNeed(table) + (where.empty() ? "" : " WHERE " + where);
     }
