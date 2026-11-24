@@ -1163,9 +1163,7 @@ QueryAnalyzer::MaxOrdinaryExpressionsResult QueryAnalyzer::recursivelyCollectMax
 
     if (const auto * column_node = node->as<ColumnNode>())
     {
-        /// A column that resolves to a lambda parameter is not a valid GROUP BY key. Report the
-        /// binding lambda so the enclosing function that owns this lambda does not collapse into a
-        /// key. The flag is cleared once that lambda is left (see the LambdaNode case below).
+        /// A lambda parameter is not a valid GROUP BY key: report its binding lambda instead.
         if (auto column_source = column_node->getColumnSourceOrNull();
             column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
             return {false, {column_source.get()}, 0};
@@ -1174,12 +1172,7 @@ QueryAnalyzer::MaxOrdinaryExpressionsResult QueryAnalyzer::recursivelyCollectMax
         return {false, {}, 1};
     }
 
-    /// A lambda argument of a higher-order function (e.g. arrayMap/arrayFilter) is not itself a
-    /// GROUP BY key. Collect the max-ordinary key expressions from the lambda body and report
-    /// whether the body carries an aggregate/window function so the enclosing function is not
-    /// collapsed into a single key. References to this lambda's own parameters do not escape it,
-    /// but references to enclosing lambdas' parameters still do.
-    /// See https://github.com/ClickHouse/ClickHouse/issues/56019.
+    /// A lambda is never a key itself: keys come from its body, where its own parameters are bound.
     if (auto * lambda_node = node->as<LambdaNode>())
     {
         auto body_result = recursivelyCollectMaxOrdinaryExpressions(lambda_node->getExpression(), into);
@@ -1209,9 +1202,8 @@ QueryAnalyzer::MaxOrdinaryExpressionsResult QueryAnalyzer::recursivelyCollectMax
         referenced_lambdas.merge(child_result.referenced_lambdas);
     }
 
-    /// Collapse to the current function only if it contains neither an aggregate function nor a
-    /// reference to an (unbound) lambda parameter; a subtree that references a lambda parameter is
-    /// not a valid GROUP BY key, so its already-collected ordinary sub-expressions are kept instead.
+    /// Without aggregates or unbound lambda parameters below it, the current function replaces its
+    /// arguments as a single key.
     if (!has_aggregate && referenced_lambdas.empty())
     {
         for (UInt64 i = 0; i < pushed_children; i++)

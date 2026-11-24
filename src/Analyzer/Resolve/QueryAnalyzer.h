@@ -171,10 +171,8 @@ private:
 
     void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope) const;
 
-    /// Result of collecting GROUP BY ALL key expressions from a SELECT sub-expression.
-    /// `referenced_lambdas` holds the lambda nodes whose parameters are referenced by the collected
-    /// sub-expression and are not yet bound (i.e. the binding lambda has not been left). While it is
-    /// non-empty the sub-expression is not a valid GROUP BY key.
+    /// `referenced_lambdas`: lambdas outside the sub-expression whose parameters it references.
+    /// While it is non-empty, the sub-expression is not a valid GROUP BY key.
     struct MaxOrdinaryExpressionsResult
     {
         bool has_aggregate = false;
