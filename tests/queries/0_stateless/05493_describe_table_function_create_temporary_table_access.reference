@@ -1,0 +1,31 @@
+--- readonly_1
+READONLY
+READONLY
+READONLY
+READONLY
+READONLY
+READONLY
+READONLY
+OK
+--- readonly_2
+OK
+OK
+OK
+OK
+OK
+OK
+--- readonly_0
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+OK
+--- requests to the endpoint
+readonly_2_cluster	1
+readonly_2_describe	1
+readonly_2_remote	1
+readonly_2_select	1
+readonly_2_view_if_permitted	1

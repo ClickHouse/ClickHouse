@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -69,6 +70,8 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// Finding the target table reads the definition of the TimeSeries table, as `DESCRIBE TABLE` of it does.
+    checkSourceTableAccess(context, time_series_storage_id, AccessType::SHOW_COLUMNS);
     target_table_type_name = getTargetTable(context)->getName();
 }
 
@@ -80,6 +83,12 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const Cont
     return time_series_storage->getTargetTable(target_kind, context);
 }
 
+
+template <ViewTarget::Kind target_kind>
+std::optional<String> TableFunctionTimeSeriesTarget<target_kind>::getParallelReplicasReadID() const
+{
+    return fmt::format("{}({}.{})", name, backQuoteIfNeed(time_series_storage_id.getDatabaseName()), backQuoteIfNeed(time_series_storage_id.getTableName()));
+}
 
 template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
@@ -313,7 +322,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
-**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -394,7 +403,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
-**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 

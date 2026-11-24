@@ -115,8 +115,12 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 {
     bool alter = false;
 
-    if (ParserKeyword{Keyword::ATTACH_MASKING_POLICY}.ignore(pos, expected))
-        attach_mode = true;
+    /// `ATTACH` is the form in which the policies are stored, only the loader of the access entities parses it.
+    if (attach_mode)
+    {
+        if (!ParserKeyword{Keyword::ATTACH_MASKING_POLICY}.ignore(pos, expected))
+            return false;
+    }
     else if (ParserKeyword{Keyword::ALTER_MASKING_POLICY}.ignore(pos, expected))
         alter = true;
     else if (!ParserKeyword{Keyword::CREATE_MASKING_POLICY}.ignore(pos, expected))
@@ -235,8 +239,6 @@ std::map<String, Documentation> ParserCreateMaskingPolicy::getDocumentation() co
     documentation["CREATE MASKING POLICY"] =
     {
         .description = R"DOCS_MD(
-import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
 <CloudOnlyBadge/>
 
 Creates a masking policy, which allows dynamically transforming or masking column values for specific users or roles when they query a table.
@@ -333,8 +335,6 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
     documentation["ALTER MASKING POLICY"] =
     {
         .description = R"DOCS_MD(
-import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
 <CloudOnlyBadge/>
 
 Modifies an existing masking policy.

@@ -191,7 +191,7 @@ delta-kernel 쓰기 기능을 활성화합니다.
 
 파티션 표현식이 `DISTINCT` 컬럼의 결정론적 함수인 경우, 스트림 간 머지를 생략하고 별도 스레드에서 파티션별 `DISTINCT`를 독립적으로 평가하도록 합니다. 파티션 수가 코어 수와 비슷하고 파티션 크기가 대략 동일할 때 유용합니다. 그렇지 않은 경우 비용 휴리스틱에 따라 이 최적화가 적용되지 않습니다. [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ko/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) 및 [force&#95;distinct&#95;partitions&#95;independently](/ko/reference/settings/session-settings/force#force_distinct_partitions_independently)를 참조하십시오. `FINAL` 또는 병렬 레플리카와 함께 사용할 때는 적용되지 않습니다.
 
-[max&#95;rows&#95;in&#95;distinct](/ko/reference/settings/session-settings/max-rows#max_rows_in_distinct) 또는 [max&#95;bytes&#95;in&#95;distinct](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_distinct)가 설정된 경우에도 적용되지 않습니다. 이러한 제한은 전체 머지 결과를 확인하는 단일 `DISTINCT` 변환에서 적용되므로, 제한의 전역적 의미를 유지하기 위해 스트림 간 머지를 유지합니다.
+스트림이 분리되어 있는 동안 [max&#95;rows&#95;in&#95;distinct](/ko/reference/settings/session-settings/max-rows#max_rows_in_distinct) 및 [max&#95;bytes&#95;in&#95;distinct](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_distinct)는 모든 파티션 집합(set)의 합산 크기에 적용됩니다.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -449,6 +449,20 @@ toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*()와 같은 특정 �
 ClickHouse는 서버 시작 시 로드된 이 설정 값을 사용합니다.
 `SET` 또는 쿼리 수준 `SETTINGS`로 변경해도 추출된 서브컬럼의 동작은 바뀌지 않습니다.
 추출된 서브컬럼의 동작을 변경하려면 시작 프로필 구성(예: users.xml)에서 `allow_nullable_tuple_in_extracted_subcolumns` 값을 수정한 뒤 서버를 재시작하십시오.
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "해시 파티셔닝을 사용하여 최종 `DISTINCT`를 병렬로 평가하는 새로운 설정입니다."}]}]} />
+
+`DISTINCT` 컬럼의 해시를 기준으로 입력 스트림을 파티셔닝하여 최종 `DISTINCT`를 여러 스레드에서 평가합니다. 동일한 키는 같은 스트림으로 전달되므로 각 파티션을 독립적으로 중복 제거할 수 있습니다.
+
+[allow&#95;distinct&#95;partitions&#95;independently](/ko/reference/settings/session-settings/allow#allow_distinct_partitions_independently)와 달리, 이 설정은 테이블의 파티션 키(partition key)와 `DISTINCT` 컬럼 사이에 특정한 관계(Relationship)가 없어도 사용할 수 있습니다. 블록 분할 및 스트림 연결 비용을 제한하기 위해 입력 스트림 수와 해시 파티션 수에는 `max_threads`와 별도로 상한이 적용됩니다.
+
+`DISTINCT`는 전역적으로 정렬된 입력의 순서를 그대로 유지하므로, 이러한 입력에는 해시 파티셔닝이 적용되지 않습니다. [max&#95;rows&#95;in&#95;distinct](/ko/reference/settings/session-settings/max-rows#max_rows_in_distinct) 및 [max&#95;bytes&#95;in&#95;distinct](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_distinct)는 모든 해시 파티션을 합산한 크기를 기준으로 적용됩니다.
+
+`ORDER BY`가 없는 `DISTINCT`는 행 순서가 정해져 있지 않으므로, 이 최적화로 인해 동일한 고유 값(distinct values)이 다른 순서로 반환될 수 있습니다. 따라서 정렬되지 않은 `DISTINCT` 결과에 `LIMIT`, `OFFSET` 또는 `LIMIT BY`를 적용하면 매번 다른 행 부분 집합이 선택될 수 있습니다.
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 

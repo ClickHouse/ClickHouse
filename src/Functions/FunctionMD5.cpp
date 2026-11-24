@@ -24,7 +24,7 @@
 #    include <Common/Crypto/OpenSSLInitializer.h>
 #endif
 
-/// Not tied to USE_MULTITARGET_CODE: the AVX2 kernel below is compiled whenever the build target has
+/// Not tied to USE_X86_64_MULTITARGET_CODE: the AVX2 kernel below is compiled whenever the build target has
 /// AVX2, which is independent of whether multi-target dispatch is on.
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <base/sanitizer_defs.h>
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #define USE_MD5_AARCH64_ASIMD 1
@@ -102,15 +103,15 @@ class FunctionMD5Base : public IFunction
 public:
     static constexpr auto name = "MD5";
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0])) [[unlikely]]
             throw Exception(
@@ -523,8 +524,9 @@ struct ScalarMD5Ops
     };
     static constexpr size_t lanes = 2;
 
-    static inline Vec add(Vec a, Vec b)
+    static inline Vec NO_SANITIZE_UNSIGNED_OVERFLOW add(Vec a, Vec b)
     {
+        /// MD5 is defined over addition modulo 2^32.
         return {a.v[0] + b.v[0], a.v[1] + b.v[1]};
     }
     static inline Vec set1(uint32_t val)
@@ -943,7 +945,7 @@ public:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #endif
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionMD5Impl>();
@@ -953,7 +955,7 @@ public:
         impl = std::make_unique<TargetSpecific::Default::FunctionMD5Impl>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }
