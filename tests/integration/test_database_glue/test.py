@@ -1539,6 +1539,64 @@ def test_writes_rebuild_after_glue_version_id_conflict(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+def test_insert_cleans_files_after_glue_get_table_failure(started_cluster):
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+    suffix = uuid.uuid4().hex
+    db_name = f"glue_rejection_{suffix}"
+    namespace = f"rejection_{suffix}"
+    table_name = f"t_{suffix}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    failpoint = "iceberg_writes_pause_before_commit"
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        "iceberg_write_table_statistics_ndv": 1,
+        "max_insert_threads": 1,
+    }
+
+    def files():
+        return {
+            obj.object_name
+            for obj in started_cluster.minio_client.list_objects(
+                "warehouse-glue", prefix=f"{table_name}/", recursive=True
+            )
+        }
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    insert = None
+    try:
+        create_clickhouse_glue_table(
+            started_cluster, node, namespace, table_name, "(x Int64)", catalog_name=db_name
+        )
+        node.query(f"INSERT INTO {table_ref} VALUES (1)", settings=settings)
+        baseline = files()
+        assert sum(path.endswith(".stats") for path in baseline) == 1
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        insert = node.get_query_request(
+            f"INSERT INTO {table_ref} VALUES (2)", settings=settings, timeout=120
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        assert any(path.endswith(".stats") for path in files() - baseline)
+        started_cluster.exec_in_container(
+            proxy,
+            ["curl", "--fail", "-s", "-X", "POST", f"http://localhost:8081/reject_get_table/{namespace}"],
+        )
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        _, error = insert.get_answer_and_error()
+        insert = None
+        assert "ICEBERG_COMMIT_REJECTED" in error, error
+        assert "Injected GetTable rejection" in error, error
+        assert files() == baseline
+        assert node.query(f"SELECT x FROM {table_ref}") == "1\n"
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        if insert is not None:
+            insert.get_answer_and_error()
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_alternating_commits_with_pyiceberg(started_cluster):
     # Iceberg Java and pyiceberg parse the table version only from `<N>-<uuid>.metadata.json`. When ClickHouse named
     # its files `v<N>.metadata.json`, pyiceberg restarted the version at 0 and a later ClickHouse commit wanted a name

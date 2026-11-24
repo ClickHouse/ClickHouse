@@ -66,6 +66,7 @@ namespace DB::ErrorCodes
 {
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int ICEBERG_COMMIT_REJECTED;
     extern const int ICEBERG_COMMIT_STATE_UNKNOWN;
     extern const int FAULT_INJECTED;
 }
@@ -897,7 +898,7 @@ bool GlueCatalog::commitTableUpdate(
         auto get_outcome = glue_client->GetTable(get_request);
         if (!get_outcome.IsSuccess())
             throw DB::Exception(
-                update_may_have_landed ? DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN : DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                update_may_have_landed ? DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN : DB::ErrorCodes::ICEBERG_COMMIT_REJECTED,
                 "Exception calling GetTable for table {}.{}: {}",
                 namespace_name, table_name, get_outcome.GetError().GetMessage());
 

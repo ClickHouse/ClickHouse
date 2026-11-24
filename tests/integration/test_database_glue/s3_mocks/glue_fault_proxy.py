@@ -22,6 +22,7 @@ VERSION_CHECKED_PREFIX = "cas_"
 DROPPED_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-length", "host", "server", "date"}
 
 injected = {}
+rejected_get_tables = set()
 lock = threading.Lock()
 update_lock = threading.Lock()
 
@@ -65,7 +66,22 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        if self.path.startswith("/reject_get_table/"):
+            with lock:
+                rejected_get_tables.add(self.path[len("/reject_get_table/") :])
+            self.reply(200, b"{}", [("Content-Type", "application/json")])
+            return
         target = self.headers.get("X-Amz-Target")
+        if target == "AWSGlue.GetTable":
+            database = json.loads(body).get("DatabaseName", "")
+            with lock:
+                reject = database in rejected_get_tables
+                rejected_get_tables.discard(database)
+            if reject:
+                count_fault(database)
+                payload = json.dumps({"__type": "AccessDeniedException", "message": "Injected GetTable rejection"}).encode()
+                self.reply(400, payload, [("Content-Type", "application/x-amz-json-1.1")])
+                return
         if target == "AWSGlue.GetTables":
             fault = take_fault(json.loads(body).get("DatabaseName", ""))
             if fault is not None:

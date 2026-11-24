@@ -2061,7 +2061,11 @@ bool IcebergStorageSink::initializeMetadata()
                 catch (const Exception & e)
                 {
                     if (e.code() == ErrorCodes::ICEBERG_COMMIT_REJECTED)
+                    {
                         cleanup_on_abort = true;
+                        if (!catalog_writes_metadata_file)
+                            removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
+                    }
                     throw;
                 }
             }
