@@ -92,7 +92,7 @@ void StatelessTaskExecutor::TaskCancellation::cancel()
         cancelled = true;
         running_query = query.lock();
     }
-    /// The way `KILL QUERY` cancels: it reaches the task's executors at once.
+    /// Cancels as `KILL QUERY` does: the running executor stops at once.
     if (running_query)
     {
         FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_task_cancel);
@@ -243,7 +243,7 @@ bool StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
             {
                 std::lock_guard lock(tasks_mutex);
                 auto controller = query_controllers.find(unique_query_id);
-                /// A query without a controller has no task registered here yet, so refusing it leaves nothing behind.
+                /// A query without a controller has no task here, so refusing it leaves nothing behind.
                 if (controller == query_controllers.end() && query_controllers.size() >= max_queries)
                 {
                     LOG_INFO(getLogger("StatelessTaskExecutor"), "Refusing the tasks of {}: {} queries run already", unique_query_id, max_queries);
@@ -481,7 +481,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTask(const String & t
     auto it = tasks.find(task_id);
     if (it == tasks.end())
         return Result::UnknownTaskId;
-    /// Dropping a running task would orphan it, and its end would never release its query's controller.
+    /// A running task stays registered until it ends, so it is never orphaned and keeps its query's slot until then.
     if (it->second->completion_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
         it->second->forget_when_ended = true;

@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: the remote executor needs the stateless worker configuration.
-#
 # A worker cancels a running task through the task's query, as `KILL QUERY` does, so the tasks of a killed distributed query
 # end as cancelled instead of reporting a success.
 
@@ -37,14 +34,14 @@ $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" --query "SELECT count(), sum(c) FROM (
     max_block_size = 1000, function_sleep_max_microseconds_per_block = 0, max_execution_time = 300" > /dev/null 2>&1 &
 CLIENT_PID=$!
 
-# A reader can end early (the buckets are uneven), so kill once `main` and a reader run, and judge only the tasks that ended later.
+# A reader can end early (the buckets are uneven), so kill once `main` and a reader run, and judge the tasks that ended from then on.
 wait_for "SELECT countIf(query = 'main') = 1 AND countIf(query LIKE 'stage_0_%') > 0 FROM system.processes
     WHERE initial_query_id = '$QUERY_ID' AND query_id != '$QUERY_ID'"
 KILLED_AT=$($CLICKHOUSE_CLIENT --query "SELECT now64(6)")
 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC" > /dev/null
 wait $CLIENT_PID
 
-# The tasks end after the initiator; their rows are in the log once none of them runs.
+# Tasks can outlive the initiator; their rows are in the log once none of them runs.
 wait_for "SELECT count() = 0 FROM system.processes WHERE initial_query_id = '$QUERY_ID'"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 

@@ -74,7 +74,7 @@ public:
     Result startTask(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path, const TaskCollectors & collectors);
     /// Starts the tasks of a `start_tasks` batch of the query `unique_query_id`, skipping those cancelled before their start or
     /// already started. A task that cannot be scheduled fails the call; the tasks scheduled before it keep running.
-    /// Returns false, having started nothing, for a query new on this worker when `max_queries` queries run already.
+    /// Returns false for a query with no task on this worker when `max_queries` queries have tasks here.
     bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     /// Remembers an unknown id, so its start, still on the wire, is ignored when it arrives.
@@ -160,16 +160,16 @@ private:
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
-    /// Called by a task's thread after its promise is set: removes the task if it was forgotten while running.
+    /// Removes the task if it was forgotten while running; called by its thread after its promise is set.
     void onTaskEnded(const String & unique_task_id) noexcept;
 
     /// Schedules a registered task in `thread_pool`; `trace_context_` is the dispatch request's.
     void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
         DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_);
 
-    /// The most queries with tasks on this worker; a query holds its slot while it has a `WorkerQueryController`.
+    /// The most queries with tasks on this worker at once.
     const size_t max_queries;
-    /// A thread for every task, as many as the global thread pool has: a task waiting for its peers holds only its own.
+    /// One thread per task up to the global pool's size, so a task never queues behind a running one.
     ThreadPool thread_pool;
 
     std::unordered_map<String, TaskStatePtr> tasks TSA_GUARDED_BY(tasks_mutex);

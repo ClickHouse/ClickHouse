@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
-# no-fasttest: the remote executor needs the stateless worker configuration, and the test enables a failpoint.
+# no-fasttest: the test enables a failpoint.
 # no-parallel: the failpoint is global.
 #
 # A worker cancels a task without holding the lock of all its tasks, so a slow cancellation (here paused) does not hold up the

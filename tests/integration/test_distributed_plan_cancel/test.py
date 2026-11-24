@@ -99,7 +99,7 @@ def test_worker_refuses_queries_beyond_max_queries(started_cluster):
         )
         node.query("INSERT INTO test_max_queries SELECT number FROM numbers(100000)")
 
-    # Each query sleeps 10 s in all (5 s per reader); its tasks are on both workers.
+    # Each query sleeps 10 s in all, split over its two readers; its tasks are on both workers.
     slow_query = f"""
         SELECT count() FROM test_max_queries WHERE sleepEachRow(0.0001) = 0
         SETTINGS {DISTRIBUTED_SETTINGS}, max_block_size = 1000, function_sleep_max_microseconds_per_block = 0
