@@ -1582,7 +1582,13 @@ BlockIO InterpreterInsertQuery::execute()
     /// initialization. The columns are known only after the refresh, so this checks that `INSERT` is granted
     /// on at least some column of the table, and the full check below follows.
     if (!query.table_function && !skip_target_insert_access_check)
+    {
         context->checkAccess(AccessType::INSERT, query.table_id, Strings{});
+        /// An `Alias` forwards the refresh to the last table of its chain, and its `write` requires `INSERT`
+        /// on every table of the chain, so a grant on the alias alone must not be enough to load the target.
+        if (const auto * alias = table->as<StorageAlias>())
+            alias->checkAccessThroughChain(context, AccessType::INSERT);
+    }
 
     table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

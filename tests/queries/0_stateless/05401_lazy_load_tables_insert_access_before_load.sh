@@ -44,6 +44,16 @@ do
     run_as --async_insert 1 --wait_for_async_insert 1 --query "INSERT INTO $table VALUES ('x')"
 done
 
+# `INSERT` through an `Alias` requires the grant on the target as well, so the grant on the alias alone
+# must not load the target either.
+$CLICKHOUSE_CLIENT --query "GRANT INSERT ON alias_mt TO $user; GRANT INSERT ON alias_fuzz TO $user;"
+
+for table in alias_mt alias_fuzz
+do
+    run_as --query "INSERT INTO $table VALUES ('x')"
+    run_as --async_insert 1 --wait_for_async_insert 1 --query "INSERT INTO $table VALUES ('x')"
+done
+
 $CLICKHOUSE_CLIENT --query "SELECT name, engine FROM system.tables WHERE database = '$DB' ORDER BY name"
 
 # `DROP` loads the table to check that it can be dropped.

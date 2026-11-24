@@ -153,6 +153,12 @@ std::vector<std::pair<String, String>> StorageAlias::getTargetChain() const
     return chain;
 }
 
+void StorageAlias::checkAccessThroughChain(ContextPtr query_context, AccessType access_type) const
+{
+    for (const auto & [database, table] : getTargetChain())
+        query_context->checkAccess(access_type, database, table);
+}
+
 NameSet StorageAlias::filterColumnsSelectableThroughChain(
     ContextPtr query_context, const ColumnsDescription & columns, const Names & column_names) const
 {

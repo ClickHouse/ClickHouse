@@ -43,6 +43,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUT.h>
@@ -564,7 +565,11 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     /// The refresh below may load the storage, so reject a user with no `INSERT` grant on the table at all before it,
     /// as `InterpreterInsertQuery::execute` does. The full check with the columns follows.
     if (insert_query.table_id)
+    {
         query_context->checkAccess(AccessType::INSERT, insert_query.table_id, Strings{});
+        if (const auto * alias = table->as<StorageAlias>())
+            alias->checkAccessThroughChain(query_context, AccessType::INSERT);
+    }
     /// Refresh any external dynamic metadata before taking the snapshot used to parse the incoming data,
     /// mirroring the synchronous insert path (`InterpreterInsertQuery::execute`). Otherwise a storage whose
     /// schema is derived from an external source (e.g. a `SQLite` table repairing a generated-column

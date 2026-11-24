@@ -76,6 +76,10 @@ public:
     /// chain when the target is itself an Alias. The chain stops at a cycle or at a target that does not exist.
     std::vector<std::pair<String, String>> getTargetChain() const;
 
+    /// Checks the table-level `access_type` on every table of `getTargetChain`, as the operation itself does on each
+    /// hop (see `getTargetTable`). It does not load a lazily loaded target, so it can precede a step that does.
+    void checkAccessThroughChain(ContextPtr query_context, AccessType access_type) const;
+
     /// Read from target table
     void read(
         QueryPlan & query_plan,
