@@ -590,6 +590,7 @@ GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::IMPORTANT), SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::CUSTOM), SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::AFFECTS_CLIENT), SettingsTierType::PRIVATE_PREVIEW);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::DATABASE_LEVEL), SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::HOT_RELOAD), SettingsTierType::PRIVATE_PREVIEW);
 }
 

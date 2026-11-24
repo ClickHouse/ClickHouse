@@ -11,9 +11,6 @@
 
 #include <fmt/ranges.h>
 
-#include <algorithm>
-#include <array>
-
 namespace DB
 {
 
@@ -129,40 +126,35 @@ bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
     return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
 }
 
-/// The other settings of the Iceberg table engine tell where the metadata of a table is, which the catalog tells instead,
-/// or run background tasks that do not make sense for the tables that the database builds for every query.
-static constexpr auto iceberg_table_settings = std::to_array<std::string_view>({
-    "iceberg_format_version",
-    "iceberg_timezone_for_timestamptz",
-    "allow_experimental_iceberg_compaction",
-    "enable_cleanup_old_data_files_compaction",
-    "iceberg_compaction_lock_lease_seconds",
-    "iceberg_compaction_delay_bias",
-    "iceberg_compaction_data_cleanup",
-    "iceberg_read_with_snapshot_lease",
-    "iceberg_snapshot_lease_seconds",
-    "iceberg_outdated_snapshot_lifetime_seconds",
-    "iceberg_max_number_datafiles_to_compact",
-    "iceberg_data_file_size_lower_threshold_compaction",
-    "iceberg_compaction_max_bytes_to_merge",
-    "iceberg_compaction_max_rows_to_merge",
-});
-
 bool DatabaseDataLakeSettings::isIcebergTableSetting(std::string_view name)
 {
-    return std::ranges::find(iceberg_table_settings, DatabaseDataLakeSettingsTraits::resolveName(name)) != iceberg_table_settings.end();
+    const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
+    const size_t index = accessor.find(DatabaseDataLakeSettingsTraits::resolveName(name));
+    return index != static_cast<size_t>(-1) && accessor.isDatabaseLevel(index);
 }
 
 void DatabaseDataLakeSettings::checkCanBeSetForDatabase(std::string_view name)
 {
-    /// The settings of the Iceberg table engine are told by the prefix. An unknown name is reported by `applyChanges`.
-    if (name.starts_with("iceberg_") && hasBuiltin(name) && !isIcebergTableSetting(name))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Setting `{}` of the Iceberg table engine cannot be set for a `DataLakeCatalog` database. "
-            "The table settings that the database applies to all its Iceberg tables are: {}",
-            name,
-            fmt::join(iceberg_table_settings, ", "));
+    /// The `iceberg_` prefix is a deprecated way to tell whether a setting can be set for the database: it is kept only
+    /// so that the other settings, which the database accepted before, are still accepted. Do not use the name of a setting
+    /// for such decisions, mark the setting with `DATABASE_LEVEL` in its declaration instead. An unknown name is reported
+    /// by `applyChanges`.
+    if (!name.starts_with("iceberg_") || !hasBuiltin(name) || isIcebergTableSetting(name))
+        return;
+
+    const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
+    Strings table_settings;
+    for (size_t i = 0; i < accessor.size(); ++i)
+    {
+        if (accessor.isDatabaseLevel(i))
+            table_settings.push_back(accessor.getName(i));
+    }
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Setting `{}` of the Iceberg table engine cannot be set for a `DataLakeCatalog` database. "
+        "The table settings that the database applies to all its Iceberg tables are: {}",
+        name,
+        fmt::join(table_settings, ", "));
 }
 
 static const String & getSettingNameByOffset(size_t offset)

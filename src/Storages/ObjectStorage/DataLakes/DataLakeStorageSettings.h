@@ -53,6 +53,12 @@ class SettingsChanges;
 
 // clang-format off
 
+/// A table of a `DataLakeCatalog` database has no definition of its own: the database builds it from the catalog and gives
+/// it the settings of the database. The settings marked with `DATABASE_LEVEL` can be set for such a database, which applies
+/// them to all its tables, and changed with `ALTER DATABASE ... MODIFY SETTING`. A `DataLakeCatalog` database rejects the
+/// other settings whose names start with `iceberg_`, for example the ones that tell where the metadata file of a table is,
+/// which the catalog tells instead. Checking the prefix is deprecated, so do not rely on the name of a new setting:
+/// mark it with `DATABASE_LEVEL` if the database can apply it. See `DatabaseDataLakeSettings::checkCanBeSetForDatabase`.
 #define DATA_LAKE_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
@@ -71,10 +77,10 @@ Get latest metadata path from version-hint.text file.
 )", 0) \
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
 The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns are mapped to. The stored values are instants and do not depend on this setting, it only changes how they are displayed and how `DateTime64` literals without an explicit time zone are interpreted in queries.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(Bool, paimon_incremental_read, false, R"(
 Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
 in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
@@ -116,62 +122,62 @@ A replica writes its lease and then lists the leases of the other replicas, givi
 of them is live. The replica holding it rewrites its lease while it needs it; a lease that has not
 been rewritten for a whole lease period is ignored by the other replicas.
 Set to 0 to run compaction without the lock, relying solely on the optimistic commit CAS.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Per-table counterpart of the query-level setting of the same name: allows background compaction and `OPTIMIZE` for this Iceberg table.
 Unlike the query-level setting, this one is stored in the table definition, so it survives a server restart.
 When it is not set explicitly in the table definition, the query-level setting of the context that initializes the table metadata is used instead.
-)", 0) \
+)", DATABASE_LEVEL) \
     ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
 Per-table counterpart of the query-level setting of the same name: allows expiring the snapshots that a newer one replaced longer
 than `iceberg_compaction_data_cleanup` ago, together with the files that only they reference, for a table with background compaction.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 The previous name `allow_experimental_cleanup_old_data_files_compaction` is kept as an alias, so the table definitions that use it still load.
-)", 0, allow_experimental_cleanup_old_data_files_compaction) \
+)", DATABASE_LEVEL, allow_experimental_cleanup_old_data_files_compaction) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
 Per-table counterpart of the query-level setting of the same name: minimum delay between two background compaction operations.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
 Per-table counterpart of the query-level setting of the same name: the time after which a snapshot that a newer one replaced is expired,
 together with the files that only it references.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(Bool, iceberg_read_with_snapshot_lease, true, R"(
 Lets a query reading this table lease the snapshot it reads, so that the cleanup of old data files on any replica does not remove
 the files of that snapshot while the query still reads them. A lease is an object under `coordination/` in the table
 directory, one per snapshot and replica, shared by all the queries of the replica reading that snapshot and renewed while they run.
 Only takes effect when compaction or the cleanup of old data files is enabled for the table.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(NonZeroUInt64, iceberg_snapshot_lease_seconds, 300, R"(
 Lease period, in seconds, of the lease a replica takes on an Iceberg snapshot its queries read. The replica renews the lease every
 third of this period while the snapshot is read, and a lease that has not been renewed for a whole period is ignored by the
 cleanup of old data files, so this bounds how long a replica that stopped reading or died keeps the snapshot. The cleanup also
 runs once per this period.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(UInt64, iceberg_outdated_snapshot_lifetime_seconds, 15 * 60, R"(
 Time, in seconds, after a snapshot was replaced by a newer one during which the cleanup of old data files does not expire it, similar
 to `old_parts_lifetime` of `MergeTree`. The longer of this and `iceberg_compaction_data_cleanup` applies. A query reading the current
 snapshot of the table, that is without `iceberg_snapshot_id`, `iceberg_timestamp_ms` or `iceberg_metadata_file_path`, writes its lease
 only once it has run for two thirds of this time, so the queries shorter than that put no lease objects to the object storage. Time
 travel queries write their lease before they start reading. Set to 0 to make every query write its lease before it starts reading.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Per-table counterpart of the query-level setting of the same name: max number of data files merged by one compaction merge.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
 Per-table counterpart of the query-level setting of the same name: data files smaller than this are selected for compaction.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(UInt64, iceberg_compaction_max_bytes_to_merge, 150_GiB, R"(
 Per-table counterpart of the query-level setting of the same name: max total size of the data files merged by one compaction merge.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(UInt64, iceberg_compaction_max_rows_to_merge, std::numeric_limits<UInt64>::max(), R"(
 Per-table counterpart of the query-level setting of the same name: max total number of rows of the data files merged by one compaction merge.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
+)", DATABASE_LEVEL) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(SecretString, storage_catalog_credential, "", "", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
