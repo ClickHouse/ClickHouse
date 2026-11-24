@@ -1239,42 +1239,6 @@ static void splitAndModifyMutationCommands(
                 }
             );
         }
-
-        /// A secondary replica can have only historical nonphysical columns after replaying an `ALTER`.
-        /// Materialize a remaining physical column before the rewrite discards its last row-count source.
-        auto is_removed = [&](const String & name)
-        {
-            return dropped_columns.contains(name) || std::ranges::any_of(for_interpreter, [&](const auto & command)
-            {
-                return command.type == MutationCommand::DROP_COLUMN && command.column_name == name;
-            });
-        };
-        bool has_stored_column = std::ranges::any_of(part_columns, [&](const auto & column)
-        {
-            return !is_removed(column.name)
-                && (table_columns.hasPhysical(column.name) || metadata_snapshot->virtuals.has(column.name));
-        });
-        if (!has_stored_column)
-        {
-            for (const auto & column : table_columns.getAllPhysical())
-            {
-                if (is_removed(column.name))
-                    continue;
-
-                bool already_read = std::ranges::any_of(for_interpreter, [&](const auto & command)
-                {
-                    return command.type == MutationCommand::READ_COLUMN && command.column_name == column.name;
-                });
-                if (!already_read)
-                    for_interpreter.push_back(
-                    {
-                        .type = MutationCommand::READ_COLUMN,
-                        .column_name = column.name,
-                        .data_type = column.type,
-                    });
-                break;
-            }
-        }
     }
     else
     {
@@ -1463,6 +1427,47 @@ static void splitAndModifyMutationCommands(
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+        }
+    }
+
+    /// A secondary replica can have only historical nonphysical columns after replaying an `ALTER`.
+    /// Both full rewrites and partial `Wide` mutations must materialize a physical column before
+    /// discarding the last stored row-count source.
+    auto is_removed = [&](const String & name)
+    {
+        auto removes_column = [&](const auto & command)
+        {
+            return command.type == MutationCommand::DROP_COLUMN && command.column_name == name;
+        };
+        return std::ranges::any_of(for_interpreter, removes_column)
+            || std::ranges::any_of(for_file_renames, removes_column);
+    };
+    bool has_stored_column = std::ranges::any_of(part->getColumns(), [&](const auto & column)
+    {
+        const auto name_in_table = alter_conversions->columnHasNewName(column.name)
+            ? alter_conversions->getColumnNewName(column.name) : column.name;
+        return !is_removed(name_in_table)
+            && (table_columns.hasPhysical(name_in_table) || metadata_snapshot->virtuals.has(name_in_table));
+    });
+    if (!has_stored_column)
+    {
+        for (const auto & column : table_columns.getAllPhysical())
+        {
+            if (is_removed(column.name))
+                continue;
+
+            bool already_read = std::ranges::any_of(for_interpreter, [&](const auto & command)
+            {
+                return command.type == MutationCommand::READ_COLUMN && command.column_name == column.name;
+            });
+            if (!already_read)
+                for_interpreter.push_back(
+                {
+                    .type = MutationCommand::READ_COLUMN,
+                    .column_name = column.name,
+                    .data_type = column.type,
+                });
+            break;
         }
     }
 

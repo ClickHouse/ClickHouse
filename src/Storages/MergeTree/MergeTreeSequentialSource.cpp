@@ -417,9 +417,8 @@ Pipe createMergeTreeSequentialSource(
     if (info->alter_conversions->hasPatches())
     {
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader).withSubcolumns();
-        auto all_read_columns = info->task_columns.getAllColumnNames();
-        auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
-        info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns_list, need_to_filter_deleted_rows);
+        auto all_read_columns = info->task_columns.getAllColumns();
+        info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns, need_to_filter_deleted_rows);
 
         addPatchPartsColumns(
             info->task_columns,

@@ -30,7 +30,7 @@ void addPatchPartsColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,
-    const Names & all_columns_to_read,
+    const NamesAndTypesList & all_columns_to_read,
     bool has_lightweight_delete);
 
 MergeTreeReadTaskColumns getReadTaskColumns(

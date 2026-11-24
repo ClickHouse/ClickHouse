@@ -23,6 +23,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
@@ -64,6 +65,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/saturatedDuration.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -820,23 +822,74 @@ void StorageMergeTree::alter(
             }
         };
 
-        if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
+        const bool makes_columns_nonphysical = std::ranges::any_of(commands, [&](const auto & command)
+            {
+                return isColumnMadeNonPhysical(command, old_metadata.columns, new_metadata.columns);
+            });
+
+        const bool replay_makes_columns_nonphysical = makes_columns_nonphysical && isSecondaryDDLReplay(local_context);
+        if (makes_columns_nonphysical)
         {
-            int64_t prev_mutation = 0;
+            /// Mutation versions are allocated under the alter lock, but registered after releasing it.
+            /// Drain previously prepared entries before choosing the barrier's last mutation version.
+            Int64 last_prepared_mutation = 0;
+            for (const auto & block : getCommittingBlocks())
+            {
+                if (block.op == CommittingBlock::Op::Mutation)
+                    last_prepared_mutation = std::max(last_prepared_mutation, block.number);
+            }
+            if (last_prepared_mutation != 0)
+            {
+                const bool reacquire = ddl_guard != nullptr;
+                ddl_guard.reset();
+                waitForCommittingInsertsAndMutations(
+                    last_prepared_mutation + 1,
+                    saturatedMilliseconds(query_settings[Setting::lock_acquire_timeout].totalMilliseconds()).count());
+                if (auto process_list_element = local_context->getProcessListElementSafe())
+                    process_list_element->checkTimeLimit();
+                if (reacquire)
+                {
+                    ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+                        shared_from_this(), query_settings[Setting::lock_acquire_timeout]);
+                    table_id = getStorageID();
+                }
+            }
+        }
+
+        if (makes_columns_nonphysical && !replay_makes_columns_nonphysical)
+        {
+            /// The eligibility check could not see an entry that was still being registered.
+            const auto unfinished_mutations = getUnfinishedMutationCommands();
+            for (const auto & command : commands)
+            {
+                if (isColumnMadeNonPhysical(command, old_metadata.columns, new_metadata.columns))
+                    checkAlterCommandDoesntAffectInProgressMutations(
+                        command, unfinished_mutations, local_context, /*makes_column_nonphysical=*/true);
+            }
+        }
+
+        if (replay_makes_columns_nonphysical
+            || (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand()))
+        {
+            VectorWithMemoryTracking<Int64> mutations_to_wait;
             {
                 std::lock_guard lock(currently_processing_in_background_mutex);
-                auto it = current_mutations_by_version.rbegin();
-                if (it != current_mutations_by_version.rend())
-                    prev_mutation = it->first;
+                if (replay_makes_columns_nonphysical)
+                {
+                    for (const auto & [version, _] : current_mutations_by_version)
+                        mutations_to_wait.push_back(version);
+                }
+                else if (!current_mutations_by_version.empty())
+                    mutations_to_wait.push_back(current_mutations_by_version.rbegin()->first);
             }
 
-            /// Always wait previous mutations synchronously, because alters
-            /// should be executed in sequential order.
-            if (prev_mutation != 0)
+            /// Secondary replay must finish earlier consumers before publishing the nonphysical schema.
+            /// The alter lock excludes new mutation preparation while registration and execution can finish.
+            for (Int64 version : mutations_to_wait)
             {
-                LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
-                wait_for_mutation_unguarded(prev_mutation);
-                LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
+                LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", version);
+                wait_for_mutation_unguarded(version);
+                LOG_DEBUG(log, "Mutation {} finished", version);
             }
         }
         else

@@ -105,6 +105,7 @@ struct MergeTreeReadTaskColumns
     NamesAndTypesLists patch_columns;
 
     [[nodiscard]] String dump() const;
+    [[nodiscard]] NamesAndTypesList getAllColumns() const;
     [[nodiscard]] Names getAllColumnNames() const;
     void moveAllColumnsFromPrewhere();
 };

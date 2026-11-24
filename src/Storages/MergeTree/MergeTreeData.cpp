@@ -14,6 +14,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -15166,12 +15167,55 @@ bool MergeTreeData::isColumnMadeNonPhysical(
         && !new_columns.hasPhysical(command.column_name);
 }
 
+namespace
+{
+UnorderedSetWithMemoryTracking<String> getMutationColumnDependencies(
+    const MutationCommand & command, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    UnorderedSetWithMemoryTracking<String> dependencies;
+    auto add_column = [&](const String & name)
+    {
+        if (name.empty())
+            return;
+        dependencies.insert(name);
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            dependencies.insert(column->getNameInStorage());
+    };
+    auto add_expression = [&](ASTPtr expression)
+    {
+        /// Serialized mutation expressions have not had their set operations normalized yet.
+        normalizeSetOperations(expression, context);
+        for (const auto & name : collectIdentifiersFullNames(buildQueryTree(expression, context)))
+            add_column(name);
+    };
+
+    add_column(command.column_name);
+    if (auto alter = command.ast())
+    {
+        if (alter->predicate)
+            add_expression(alter->predicate);
+        if (alter->update_assignments)
+        {
+            for (const auto & child : alter->update_assignments->children)
+            {
+                const auto & assignment = child->as<ASTAssignment &>();
+                add_column(assignment.column_name);
+                add_expression(assignment.expression());
+            }
+        }
+    }
+    return dependencies;
+}
+}
+
 void MergeTreeData::checkAlterCommandDoesntAffectInProgressMutations(
     const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations,
     ContextPtr local_context, bool makes_column_nonphysical) const
 {
     if ((!command.isDropOrRename() && !makes_column_nonphysical) || unfinished_mutations.empty())
         return;
+
+    const auto metadata = getInMemoryMetadataPtr(local_context, false);
 
     auto throw_exception = [] (
         const std::string & mutation_name,
@@ -15209,43 +15253,10 @@ void MergeTreeData::checkAlterCommandDoesntAffectInProgressMutations(
                 const std::string action = makes_column_nonphysical ? "make nonphysical"
                     : (command.type == AlterCommand::DROP_COLUMN ? "drop" : "rename");
 
-                if (mutation_command.column_name == command.column_name)
+                const auto dependencies = getMutationColumnDependencies(
+                    mutation_command, metadata->getColumns(), local_context);
+                if (dependencies.contains(command.column_name))
                     throw_exception(mutation_name, action, "column", command.column_name);
-
-                auto alter = mutation_command.ast();
-                /// The predicate and assignment expressions were re-parsed from the serialized mutation
-                /// command, so their set operations (UNION/INTERSECT/EXCEPT) are not normalized yet.
-                /// Normalize them before building the query tree, as `executeQuery` does, otherwise the
-                /// analyzer rejects an in-progress mutation that legitimately contains such a subquery.
-                if (alter && alter->predicate)
-                {
-                    ASTPtr predicate(alter->predicate);
-                    normalizeSetOperations(predicate, local_context);
-
-                    auto query_tree = buildQueryTree(predicate, local_context);
-                    auto identifiers = collectIdentifiersFullNames(query_tree);
-
-                    if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, action, "column", command.column_name);
-                }
-
-                if (alter && alter->update_assignments)
-                {
-                    for (const auto & child : alter->update_assignments->children)
-                    {
-                        const auto & assignment = child->as<ASTAssignment &>();
-                        if (assignment.column_name == command.column_name)
-                            throw_exception(mutation_name, action, "column", command.column_name);
-
-                        ASTPtr assignment_expression = assignment.expression();
-                        normalizeSetOperations(assignment_expression, local_context);
-
-                        auto query_tree = buildQueryTree(assignment_expression, local_context);
-                        auto identifiers = collectIdentifiersFullNames(query_tree);
-                        if (identifiers.contains(command.column_name))
-                            throw_exception(mutation_name, action, "column", command.column_name);
-                    }
-                }
             }
             else if (command.type == AlterCommand::DROP_STATISTICS)
             {

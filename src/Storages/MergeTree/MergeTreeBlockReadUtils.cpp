@@ -11,6 +11,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -21,6 +22,7 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <algorithm>
+#include <string_view>
 #include <unordered_set>
 
 
@@ -461,11 +463,16 @@ void addPatchPartsColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,
-    const Names & all_columns_to_read,
+    const NamesAndTypesList & all_columns_to_read,
     bool has_lightweight_delete)
 {
     if (patch_parts.empty())
         return;
+
+    UnorderedMapWithMemoryTracking<std::string_view, const NameAndTypePair *> requested_columns;
+    requested_columns.reserve(all_columns_to_read.size());
+    for (const auto & column : all_columns_to_read)
+        requested_columns.emplace(column.name, &column);
 
     NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
@@ -477,10 +484,9 @@ void addPatchPartsColumns(
         const auto & patch_part_columns = patch_parts[i].part->getColumnsDescription();
         const auto & alter_conversions = patch_parts[i].part->getAlterConversions();
 
-        for (const auto & column_name : all_columns_to_read)
+        for (const auto & column : all_columns_to_read)
         {
-            auto column_in_storage = storage_snapshot->getColumn(options, column_name);
-            auto column_name_in_patch = column_in_storage.getNameInStorage();
+            auto column_name_in_patch = column.getNameInStorage();
 
             if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_patch))
                 column_name_in_patch = alter_conversions->getColumnOldName(column_name_in_patch);
@@ -490,7 +496,7 @@ void addPatchPartsColumns(
 
             /// Add requested column name, not the column name in patch, for correct query analysis and applying patches.
             /// This column name will be translated to the column name in patch in MergeTree reader.
-            patch_columns_to_read_set.insert(column_name);
+            patch_columns_to_read_set.insert(column.name);
         }
 
         if (has_lightweight_delete && patch_part_columns.has(RowExistsColumn::name))
@@ -514,7 +520,15 @@ void addPatchPartsColumns(
                 std::reverse(patch_columns_to_read_names.begin(), patch_columns_to_read_names.end());
         });
 
-        result.patch_columns[i] = storage_snapshot->getColumnsByNames(options, patch_columns_to_read_names);
+        /// Requested columns already carry the types resolved by read planning, including historical
+        /// nonphysical columns injected for the row count. Only patch keys and the deletion mask are new.
+        for (const auto & name : patch_columns_to_read_names)
+        {
+            if (auto it = requested_columns.find(name); it != requested_columns.end())
+                result.patch_columns[i].push_back(*it->second);
+            else
+                result.patch_columns[i].push_back(storage_snapshot->getColumn(options, name));
+        }
     }
 
     auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();
