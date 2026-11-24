@@ -19,6 +19,8 @@ CREATE TABLE dst (f Float64, g Float32, n Nullable(Float64)) ENGINE = MergeTree 
 SETTINGS auto_statistics_types = 'basic, uniq_v2', materialize_statistics_on_merge = 1;
 
 INSERT INTO src SELECT multiIf(number = 0, 1., number = 1, nan, number = 2, 5., 0.) AS f, f, nullIf(f, 0) FROM numbers(1000);
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'src' AND active ORDER BY column;
 -- The block inserted into `dst` is sparse and has no default rows: [1, nan, 5].
 INSERT INTO dst SELECT f, g, n FROM src WHERE f != 0;
 
@@ -36,6 +38,8 @@ CREATE TABLE dst_nan (f Float64, g Float32) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS auto_statistics_types = 'basic, uniq_v2', materialize_statistics_on_merge = 1;
 
 INSERT INTO src_nan SELECT multiIf(number < 2, nan, 0.) AS f, f FROM numbers(1000);
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'src_nan' AND active ORDER BY column;
 INSERT INTO dst_nan SELECT f, g FROM src_nan WHERE f != 0;
 
 SELECT min(f), max(f), min(g), max(g), count() FROM dst_nan;

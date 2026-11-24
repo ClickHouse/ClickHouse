@@ -1,3 +1,6 @@
+f	Sparse
+g	Sparse
+n	Sparse
 1	5	1	5	3
 1	5	1	5	3
 1	5	3
@@ -8,5 +11,7 @@ nan	nan	nan
 
 1	1	1
 5	5	5
+f	Sparse
+g	Sparse
 nan	nan	nan	nan	2
 nan	nan	nan	nan	2
