@@ -834,6 +834,88 @@ MutableColumnPtr ColumnArray::getDataInRange(size_t start, size_t length) const
 }
 
 
+void ColumnArray::insertFromEither(
+    const IColumn & src_true_, bool src_true_is_const, const IColumn & src_false_, bool src_false_is_const, const IColumn::Filter & condition)
+{
+    /// Above this average number of elements per row, the elements are copied with one `insertRangeFrom` per row:
+    /// its virtual call is cheap compared with the copy, and the gather below would copy every element three times.
+    static constexpr size_t max_average_size_to_gather = 16;
+
+    const ColumnArray & src_true = assert_cast<const ColumnArray &>(src_true_);
+    const ColumnArray & src_false = assert_cast<const ColumnArray &>(src_false_);
+    const Offsets & true_offsets = src_true.getOffsets();
+    const Offsets & false_offsets = src_false.getOffsets();
+
+    const size_t rows = condition.size();
+    const UInt8 * condition_data = condition.data();
+
+    auto true_row = [&](size_t i) -> ssize_t { return src_true_is_const ? 0 : i; };
+    auto false_row = [&](size_t i) -> ssize_t { return src_false_is_const ? 0 : i; };
+
+    Offsets & res_offsets = getOffsets();
+    const size_t old_rows = res_offsets.size();
+    const Offset old_elements = res_offsets[static_cast<ssize_t>(old_rows) - 1];
+    res_offsets.resize(old_rows + rows);
+
+    Offset offset = old_elements;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const size_t size_true = true_offsets[true_row(i)] - true_offsets[true_row(i) - 1];
+        const size_t size_false = false_offsets[false_row(i)] - false_offsets[false_row(i) - 1];
+        offset += condition_data[i] ? size_true : size_false;
+        res_offsets[old_rows + i] = offset;
+    }
+
+    const size_t elements = offset - old_elements;
+    if (elements == 0)
+        return;
+
+    if (elements > rows * max_average_size_to_gather)
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const ColumnArray & src = condition_data[i] ? src_true : src_false;
+            const ssize_t row = condition_data[i] ? true_row(i) : false_row(i);
+            getData().insertRangeFrom(src.getData(), src.offsetAt(row), src.sizeAt(row));
+        }
+        return;
+    }
+
+    /// The elements of the two sources do not line up with the rows, so the nested column cannot use `insertFromEither`.
+    /// Instead, the elements of both sources are concatenated and the result is gathered from them with `index`: a
+    /// constant number of virtual calls instead of one per row. A constant source contributes the elements of its row.
+    const size_t true_begin = src_true_is_const ? true_offsets[-1] : 0;
+    const size_t true_end = src_true_is_const ? true_offsets[0] : true_offsets.back();
+    const size_t false_begin = src_false_is_const ? false_offsets[-1] : 0;
+    const size_t false_end = src_false_is_const ? false_offsets[0] : false_offsets.back();
+
+    MutableColumnPtr concatenated = getData().cloneEmpty();
+    concatenated->reserve(true_end - true_begin + false_end - false_begin);
+    concatenated->insertRangeFrom(src_true.getData(), true_begin, true_end - true_begin);
+    concatenated->insertRangeFrom(src_false.getData(), false_begin, false_end - false_begin);
+
+    /// Position in `concatenated` of the first element of a row: elements of `src_false` follow those of `src_true`.
+    auto true_start = [&](size_t i) { return true_offsets[true_row(i) - 1] - true_begin; };
+    auto false_start = [&](size_t i) { return false_offsets[false_row(i) - 1] - false_begin + (true_end - true_begin); };
+
+    auto indexes = ColumnUInt64::create(elements);
+    UInt64 * out = indexes->getData().data();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const size_t start = condition_data[i] ? true_start(i) : false_start(i);
+        const size_t size = res_offsets[old_rows + i] - res_offsets[static_cast<ssize_t>(old_rows + i) - 1];
+        for (size_t k = 0; k < size; ++k)
+            out[k] = start + k;
+        out += size;
+    }
+
+    ColumnPtr gathered = concatenated->index(*indexes, 0);
+    if (getData().empty())
+        data = std::move(gathered);
+    else
+        getData().insertRangeFrom(*gathered, 0, elements);
+}
+
 ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (typeid_cast<const ColumnUInt8 *>(data.get()))

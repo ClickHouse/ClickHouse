@@ -910,21 +910,23 @@ ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter,
     MutableColumnPtr mut_column = column->cloneEmpty();
     mut_column->reserve(column->size());
 
+    MutableColumnPtr default_row;
     if (default_type && !default_type->isDefaultInsertTrivial())
     {
         /// `mut_column` keeps the wrapper of `column` (e.g. `ColumnReplicated`), so the type default is built unwrapped.
-        auto default_row = default_type->createColumn();
+        default_row = default_type->createColumn();
         default_type->insertDefaultInto(*default_row);
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (static_cast<bool>(filter[row]) != inverse_filter)
-                mut_column->insertFrom(*column, row);
-            else
-                mut_column->insertFrom(*default_row, 0);
-        }
     }
     else
-        mut_column->insertFromOrDefaults(*column, filter, inverse_filter);
+    {
+        default_row = column->cloneEmpty();
+        default_row->insertDefault();
+    }
+
+    if (inverse_filter)
+        mut_column->insertFromEither(*default_row, true, *column, false, filter);
+    else
+        mut_column->insertFromEither(*column, false, *default_row, true, filter);
 
     return mut_column;
 }

@@ -241,6 +241,74 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 }
 
 
+namespace
+{
+
+template <bool src_true_is_const, bool src_false_is_const>
+void insertStringsFromEither(
+    ColumnString::Chars & res_chars,
+    ColumnString::Offsets & res_offsets,
+    const ColumnString & src_true,
+    const ColumnString & src_false,
+    const IColumn::Filter & condition)
+{
+    const size_t rows = condition.size();
+    const UInt8 * condition_data = condition.data();
+    const ColumnString::Offsets & true_offsets = src_true.getOffsets();
+    const ColumnString::Offsets & false_offsets = src_false.getOffsets();
+
+    /// The first pass computes the offsets, so that `res_chars` is resized once.
+    const size_t old_rows = res_offsets.size();
+    res_offsets.resize(old_rows + rows);
+    ColumnString::Offset * out_offsets = res_offsets.data() + old_rows;
+    ColumnString::Offset offset = res_chars.size();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const size_t true_row = src_true_is_const ? 0 : i;
+        const size_t false_row = src_false_is_const ? 0 : i;
+        const size_t size_true = true_offsets[true_row] - true_offsets[ssize_t(true_row) - 1];
+        const size_t size_false = false_offsets[false_row] - false_offsets[ssize_t(false_row) - 1];
+        offset += condition_data[i] ? size_true : size_false;
+        out_offsets[i] = offset;
+    }
+
+    const size_t old_chars_size = res_chars.size();
+    res_chars.resize(offset);
+
+    const UInt8 * true_chars = src_true.getChars().data();
+    const UInt8 * false_chars = src_false.getChars().data();
+    UInt8 * out_chars = res_chars.data();
+    ColumnString::Offset start = old_chars_size;
+    /// The writes overflow into the next strings, which are written later, and into the padding of `chars`.
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const size_t true_row = src_true_is_const ? 0 : i;
+        const size_t false_row = src_false_is_const ? 0 : i;
+        const UInt8 * value = condition_data[i] ? true_chars + true_offsets[ssize_t(true_row) - 1]
+                                                : false_chars + false_offsets[ssize_t(false_row) - 1];
+        memcpySmallAllowReadWriteOverflow15(out_chars + start, value, out_offsets[i] - start);
+        start = out_offsets[i];
+    }
+}
+
+}
+
+void ColumnString::insertFromEither(
+    const IColumn & src_true_, bool src_true_is_const, const IColumn & src_false_, bool src_false_is_const, const IColumn::Filter & condition)
+{
+    const ColumnString & src_true = assert_cast<const ColumnString &>(src_true_);
+    const ColumnString & src_false = assert_cast<const ColumnString &>(src_false_);
+
+    if (src_true_is_const && src_false_is_const)
+        insertStringsFromEither<true, true>(chars, offsets, src_true, src_false, condition);
+    else if (src_true_is_const)
+        insertStringsFromEither<true, false>(chars, offsets, src_true, src_false, condition);
+    else if (src_false_is_const)
+        insertStringsFromEither<false, true>(chars, offsets, src_true, src_false, condition);
+    else
+        insertStringsFromEither<false, false>(chars, offsets, src_true, src_false, condition);
+}
+
 ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (offsets.empty())
