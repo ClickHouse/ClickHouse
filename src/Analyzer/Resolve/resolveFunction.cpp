@@ -3693,10 +3693,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     /// An Array-typed column on the right of IN is the set of its elements, exactly like an
                     /// array literal or an array-returning function, so rewrite `x IN arr` to `has(arr, x)` -
-                    /// but only when the array is exactly one dimension deeper than the left argument, so that
-                    /// the element type of `has` matches the left argument (e.g. a scalar and `Array(scalar)`,
-                    /// or `Array(T)` and `Array(Array(T))`). When the depths are equal (e.g. `Array(T) IN
-                    /// Array(T)`), the column is a single set element and must be handled as `x = col` below.
+                    /// An array one dimension deeper than the left argument is a set of its elements.
+                    /// An equal-depth array of active `Dynamic` or `Variant` values also needs the
+                    /// active-value shape choice made by `buildHasExpression`. Other equal-depth
+                    /// arrays are single set elements and are handled as `x = col` below.
                     /// Without this, the column would be wrapped in tuple() and treated as a single set element,
                     /// giving a wrong (always-false) result for stringifiable elements or an error otherwise.
                     const auto * rhs_array_type = typeid_cast<const DataTypeArray *>(in_second_argument_column->getColumnType().get());
@@ -3706,7 +3706,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         const auto * lhs_array_type = typeid_cast<const DataTypeArray *>(lhs_type.get());
                         const size_t lhs_depth = lhs_array_type ? lhs_array_type->getNumberOfDimensions() : 0;
 
-                        if (rhs_array_type->getNumberOfDimensions() == lhs_depth + 1)
+                        const auto rhs_element_type = removeNullable(removeLowCardinality(rhs_array_type->getNestedType()));
+                        const bool active_array_carrier = use_null_as_unknown_for_in && lhs_array_type
+                            && rhs_array_type->getNumberOfDimensions() == lhs_depth
+                            && (isDynamic(rhs_element_type) || isVariant(rhs_element_type));
+                        if (rhs_array_type->getNumberOfDimensions() == lhs_depth + 1 || active_array_carrier)
                             return buildHasExpression(
                                 node,
                                 in_second_argument,

@@ -268,7 +268,39 @@ namespace
     const bool left_identifier = isUUID(left) || isIPv4(left) || isIPv6(left);
     const bool right_identifier = isUUID(right) || isIPv4(right) || isIPv6(right);
     return (isStringOrFixedString(left) && (isNumber(right) || isBool(right) || isEnum(right) || right_identifier))
-        || (isStringOrFixedString(right) && (isNumber(left) || isBool(left) || isEnum(left) || left_identifier));
+        || (isStringOrFixedString(right) && (isNumber(left) || isBool(left) || isEnum(left) || left_identifier))
+        || (isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right));
+}
+
+[[nodiscard]] bool hasNamedTupleLayoutMismatch(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasNamedTupleLayoutMismatch(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get()))
+        {
+            if (left_tuple->hasExplicitNames() && right_tuple->hasExplicitNames()
+                && left_tuple->getElementNames() != right_tuple->getElementNames())
+                return true;
+            if (left_tuple->getElements().size() == right_tuple->getElements().size())
+                for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                    if (hasNamedTupleLayoutMismatch(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                        return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasNamedTupleLayoutMismatch(left_map->getKeyType(), right_map->getKeyType())
+                || hasNamedTupleLayoutMismatch(left_map->getValueType(), right_map->getValueType());
+    }
+    return false;
 }
 
 [[nodiscard]] bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
@@ -1001,6 +1033,11 @@ public:
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
                     left_arg.type->getName(), set_types[0]->getName(), getName());
             if (mixed_string_domain && !only_null_key)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
+                    left_arg.type->getName(), set_types[0]->getName(), getName());
+            if (hasNamedTupleLayoutMismatch(left_type, key_type) && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
