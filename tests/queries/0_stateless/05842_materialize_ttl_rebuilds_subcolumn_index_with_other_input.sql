@@ -26,13 +26,28 @@ SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 0;
 
 -- The same when an ordinary UPDATE of the TTL source makes the TTL reset `t`.
-TRUNCATE TABLE t_ttl_index;
-INSERT INTO t_ttl_index VALUES (1, '2100-01-01 00:00:00', tuple(100), 7, 'payload');
+DROP TABLE IF EXISTS t_ttl_index_update;
 
-ALTER TABLE t_ttl_index UPDATE d = toDateTime('2000-01-01 00:00:00') WHERE 1 SETTINGS mutations_sync = 2;
+CREATE TABLE t_ttl_index_update
+(
+    id UInt64,
+    d DateTime,
+    t Tuple(a Int32) TTL d + INTERVAL 1 SECOND,
+    y Int32,
+    payload String,
+    INDEX idx (t.a + y) TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, materialize_ttl_recalculate_only = 0;
 
-SELECT t, y FROM t_ttl_index;
-SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 1;
-SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 0;
+SYSTEM STOP TTL MERGES t_ttl_index_update;
+INSERT INTO t_ttl_index_update VALUES (1, '2100-01-01 00:00:00', tuple(100), 7, 'payload');
+
+ALTER TABLE t_ttl_index_update UPDATE d = toDateTime('2000-01-01 00:00:00') WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT t, y FROM t_ttl_index_update;
+SELECT count() FROM t_ttl_index_update WHERE t.a + y = 7 SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_ttl_index_update WHERE t.a + y = 7 SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_ttl_index;
+DROP TABLE t_ttl_index_update;
