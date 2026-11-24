@@ -250,7 +250,7 @@ private:
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
-    /// The snapshot referencing the written files is committed, or may be, so they must never be removed.
+    /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
     /// A commit attempt may have published the snapshot referencing the written files, so they must not be removed.
     bool commit_outcome_unknown = false;
