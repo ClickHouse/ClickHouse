@@ -49,7 +49,7 @@ SELECT timeSeriesHistogramStddev((0, -53, 0., 4., 8., 0., [(1, 2)], [3., 1.], []
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

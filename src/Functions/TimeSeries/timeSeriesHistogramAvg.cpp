@@ -59,7 +59,7 @@ SELECT timeSeriesHistogramAvg((0, 0, 0., 12., 30.5, 1., [], [], [], [], [], 12, 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
