@@ -1,11 +1,14 @@
 product	1	1
 100	200	100
+1	1
 5
 100	200	100
 rabitq	Compact	1
 1
 materialize column	1
-update dependency	1
 100	500
+update dependency	1
+0
+1
 1
 16	1	16

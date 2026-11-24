@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- (the two-stage codes rewrite is disabled under parallel replicas, so the plan check below cannot hold there)
 -- A mutation that rewrites a column with a `Quantized` codec writes the codec's streams, like an insert or a merge does:
 -- the quantized codes, and the codebook of the `product` method.
 
@@ -8,6 +10,8 @@ DROP TABLE IF EXISTS t_product;
 DROP TABLE IF EXISTS t_rabitq;
 DROP TABLE IF EXISTS t_rabitq_ref;
 DROP TABLE IF EXISTS t_materialized;
+DROP TABLE IF EXISTS t_dependency;
+DROP TABLE IF EXISTS t_dependency_ref;
 DROP TABLE IF EXISTS t_block_sizes;
 
 -- `product` (always a Wide part).
@@ -19,6 +23,9 @@ ALTER TABLE t_product UPDATE v = arrayMap(x -> -x, v) WHERE id % 3 = 0;
 SELECT 'product', has(substreams, 'v.quantized'), has(substreams, 'v.product_quantization_codebook')
 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_product' AND active AND column = 'v';
 SELECT count(), sum(length(v.quantized)), countIf(length(v.product_quantization_codebook) = 128) FROM t_product;
+SELECT countIf(explain ILIKE '%quantized shortlist%') > 0, countIf(explain ILIKE '%productQuantizationDistance%') > 0
+FROM (EXPLAIN actions = 1 SELECT id FROM t_product ORDER BY L2Distance(v, [1., 1., 1., 1., 1., 1., 1., 1.]::Array(Float32)) LIMIT 5
+      SETTINGS vector_search_use_quantized_codes = 1);
 SELECT count() FROM (SELECT id FROM t_product ORDER BY L2Distance(v, [1., 1., 1., 1., 1., 1., 1., 1.]::Array(Float32)) LIMIT 5)
 SETTINGS vector_search_use_quantized_codes = 1;
 
@@ -39,7 +46,7 @@ SELECT 'rabitq', part_type, has(substreams, 'v.quantized')
 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_rabitq' AND active AND column = 'v';
 SELECT (SELECT sum(cityHash64(id, v.quantized)) FROM t_rabitq) = (SELECT sum(cityHash64(id, v.quantized)) FROM t_rabitq_ref);
 
--- A MATERIALIZED column: MATERIALIZE COLUMN, then an update of the column it is computed from.
+-- A MATERIALIZED column: MATERIALIZE COLUMN.
 CREATE TABLE t_materialized
 (
     id UInt64,
@@ -53,10 +60,26 @@ ALTER TABLE t_materialized MATERIALIZE COLUMN v;
 SELECT 'materialize column', has(substreams, 'v.quantized')
 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_materialized' AND active AND column = 'v';
 
-ALTER TABLE t_materialized UPDATE w = arrayMap(x -> -x, w) WHERE id % 3 = 0;
-SELECT 'update dependency', has(substreams, 'v.quantized')
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_materialized' AND active AND column = 'v';
 SELECT count(), sum(length(v.quantized)) FROM t_materialized;
+
+-- A MATERIALIZED column recomputed by an update of the column it is computed from.
+CREATE TABLE t_dependency
+(
+    id UInt64,
+    w Array(Float32),
+    v Array(Float32) MATERIALIZED arrayMap(x -> x * 2, w) CODEC(Quantized('rabitq', 8))
+)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+CREATE TABLE t_dependency_ref (id UInt64, v Array(Float32) CODEC(Quantized('rabitq', 8)))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_dependency (id, w) SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(8)) FROM numbers(100);
+ALTER TABLE t_dependency UPDATE w = arrayMap(x -> -x, w) WHERE id % 3 = 0;
+INSERT INTO t_dependency_ref SELECT id, v FROM t_dependency;
+
+SELECT 'update dependency', has(substreams, 'v.quantized')
+FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_dependency' AND active AND column = 'v';
+SELECT countIf(v != arrayMap(x -> x * 2, w)) FROM t_dependency;
+SELECT (SELECT sum(cityHash64(id, v.quantized)) FROM t_dependency) = (SELECT sum(cityHash64(id, v.quantized)) FROM t_dependency_ref);
 
 -- The column-level block sizes apply only to the vectors of a mutated column too.
 CREATE TABLE t_block_sizes (id UInt64, v Array(Float32) CODEC(Quantized('rabitq', 64)) SETTINGS (min_compress_block_size = 256))
@@ -78,4 +101,6 @@ DROP TABLE t_product;
 DROP TABLE t_rabitq;
 DROP TABLE t_rabitq_ref;
 DROP TABLE t_materialized;
+DROP TABLE t_dependency;
+DROP TABLE t_dependency_ref;
 DROP TABLE t_block_sizes;
