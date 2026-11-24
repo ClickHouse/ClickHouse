@@ -21,6 +21,8 @@ public:
     void cancel() noexcept override;
 
 private:
+    friend class RabbitMQProducerTest;
+
     String getProducingTaskName() const override { return "RabbitMQProducingTask"; }
 
     using Payload = RabbitMQPublisher::Payload;

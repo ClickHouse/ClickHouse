@@ -1,5 +1,4 @@
 #include <Common/SipHash.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>

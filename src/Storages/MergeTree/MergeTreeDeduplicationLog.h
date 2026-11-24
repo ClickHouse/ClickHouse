@@ -50,17 +50,17 @@ public:
         : max_size(max_size_)
     {}
 
-    [[nodiscard]] bool contains(const std::string & key) const
+    bool contains(const std::string & key) const
     {
         return map.find(key) != map.end();
     }
 
-    [[nodiscard]] V get(const std::string & key) const
+    V get(const std::string & key) const
     {
         return map.at(key)->value;
     }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return queue.size();
     }
@@ -113,14 +113,14 @@ public:
     }
 
     iterator begin() { return queue.begin(); }
-    [[nodiscard]] const_iterator begin() const { return queue.cbegin(); }
+    const_iterator begin() const { return queue.cbegin(); }
     iterator end() { return queue.end(); }
-    [[nodiscard]] const_iterator end() const { return queue.cend(); }
+    const_iterator end() const { return queue.cend(); }
 
     reverse_iterator rbegin() { return queue.rbegin(); }
-    [[nodiscard]] const_reverse_iterator rbegin() const { return queue.crbegin(); }
+    const_reverse_iterator rbegin() const { return queue.crbegin(); }
     reverse_iterator rend() { return queue.rend(); }
-    [[nodiscard]] const_reverse_iterator rend() const { return queue.crend(); }
+    const_reverse_iterator rend() const { return queue.crend(); }
 };
 
 /// Fixed-size log for deduplication in non-replicated MergeTree.
@@ -153,12 +153,8 @@ public:
     /// Whether at least one of the block ids is already present, so `addPart` would report a duplicate.
     bool containsAny(const std::vector<std::string> & block_ids);
 
-    /// Remove all covered parts from in memory table and add DROP records to the disk.
-    /// With `sync_to_disk`, every record written so far is fsynced before returning, even if there was nothing to remove:
-    /// the covered records may have been evicted from the window by newer records, and the eviction is durable only if they are.
-    /// A failure to sync is propagated. After such a failure, every later call with `sync_to_disk` throws,
-    /// because the removal may not be durable.
-    void dropPart(const MergeTreePartInfo & drop_part_info, bool sync_to_disk = false);
+    /// Remove all covered parts from in memory table and add DROP records to the disk
+    void dropPart(const MergeTreePartInfo & drop_part_info);
 
     /// Load history from disk. Ignores broken logs.
     void load();
@@ -198,14 +194,6 @@ private:
     const bool disk_supports_writing_with_append;
 
     bool stopped{false};
-
-    /// A durable removal (`dropPart` with `sync_to_disk`) did not complete: its records are already removed from memory,
-    /// but they may be lost on disk, and syncing the log again does not prove otherwise. Further durable removals fail.
-    bool durable_drop_failed{false};
-
-    /// Some records written by this process may be lost on disk: a log failed to be flushed or synced, and its writer
-    /// was canceled. Durable removals fail then, because they rely on all the records written so far being durable.
-    bool records_may_be_lost{false};
 
     /// Start new log
     void rotate();

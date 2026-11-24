@@ -19,12 +19,8 @@
 #include <aws/glue/model/TableInput.h>
 #include <aws/glue/model/StorageDescriptor.h>
 #include <aws/glue/model/Column.h>
-#include <aws/core/client/DefaultRetryStrategy.h>
-#include <aws/core/http/HttpResponse.h>
 
 #include <Common/Exception.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -53,8 +49,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/FailPoint.h>
-#include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -82,7 +76,6 @@ namespace DB::Setting
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
-    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
 }
 
 namespace DB::ServerSetting
@@ -96,22 +89,6 @@ namespace DataLake
 
 namespace
 {
-
-/// The generated Glue error mapper marks every modeled exception as not retryable, including server
-/// faults such as `InternalServiceException` (HTTP 500), so a transient status is retried regardless.
-class GlueRetryStrategy : public Aws::Client::DefaultRetryStrategy
-{
-public:
-    /// NOLINTNEXTLINE(google-runtime-int)
-    [[nodiscard]] bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, long attempted_retries) const override
-    {
-        if (attempted_retries >= m_maxRetries)
-            return false;
-        if (DB::CurrentThread::isInitialized() && DB::CurrentThread::get().isQueryCanceled())
-            return false;
-        return error.ShouldRetry() || Aws::Http::IsRetryableHttpResponseCode(error.GetResponseCode());
-    }
-};
 
 /// A Glue table is readable only if it is an Iceberg table. `table_type` is available in
 /// both the bulk `GetTables` listing and `tryGetTableMetadata`, so the two stay consistent.
@@ -174,7 +151,7 @@ GlueCatalog::GlueCatalog(
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 
@@ -183,7 +160,6 @@ GlueCatalog::GlueCatalog(
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
     client_configuration.requestTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_request_timeout_ms]);
     client_configuration.region = region;
-    client_configuration.retryStrategy = std::make_shared<GlueRetryStrategy>();
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
     Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key);
@@ -321,25 +297,12 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
 CatalogTables GlueCatalog::getTables() const
 {
     auto databases = getDatabases("");
-
-    /// Glue has no call that lists the tables of every database, so this issues one `GetTables` request per
-    /// database. Issuing them one after another makes `SHOW TABLES` take seconds to minutes in an account
-    /// with hundreds of databases, so they run in parallel, like the per-namespace listing of `RestCatalog`.
-    /// Every database writes to its own slot, which keeps the result in the order of `GetDatabases`.
-    std::vector<CatalogTables> tables_by_database(databases.size());
-    {
-        auto & pool = getContext()->getIcebergCatalogThreadpool();
-        DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_GLUE_CATALOG);
-        /// Reserve tracking capacity, so `enqueueAndKeepTrack` cannot schedule a job and then fail to track it.
-        runner.reserve(databases.size());
-        for (size_t i = 0; i < databases.size(); ++i)
-            runner.enqueueAndKeepTrack([this, &databases, &tables_by_database, i] { tables_by_database[i] = getTablesForDatabase(databases[i]); });
-        runner.waitForAllToFinishAndRethrowFirstError();
-    }
-
     CatalogTables result;
-    for (auto & tables_in_database : tables_by_database)
-        std::move(tables_in_database.begin(), tables_in_database.end(), std::back_inserter(result));
+    for (const auto & database : databases)
+    {
+        auto tables_in_database = getTablesForDatabase(database);
+        result.insert(result.end(), tables_in_database.begin(), tables_in_database.end());
+    }
     return result;
 }
 
@@ -569,7 +532,7 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
     DB::ASTs args = storage->engine->arguments->children;
 
-    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : encodeLocationForURI(s3_location);
+    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
     if (args.empty())
         args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
     else
@@ -623,15 +586,10 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
-    auto resolve_context = DB::Context::createCopy(getContext());
-    DB::Settings resolve_settings = resolve_context->getSettingsCopy();
-    resolve_settings[DB::Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
-    resolve_context->setSettings(resolve_settings);
-
     try
     {
         auto [metadata_version, metadata_path, compression_method, _] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 

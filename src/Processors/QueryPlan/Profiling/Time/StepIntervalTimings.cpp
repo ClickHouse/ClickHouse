@@ -1,11 +1,11 @@
 #include <Core/Types.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 #include <base/defines.h>
 #include <Processors/QueryPlan/Profiling/Time/StepIntervalTimings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
 
+#include <deque>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -16,6 +16,14 @@ namespace DB
 namespace
 {
 
+struct Frame
+{
+    const QueryPlan::Node * node = nullptr;
+    std::vector<QueryPlan *> child_plans;
+    size_t next_child = 0;
+    size_t next_child_plan = 0;
+};
+
 /// Average number of busy threads over intervals of total length `total_ns`.
 /// Empty when there were no intervals: a step that did no work has no concurrency.
 std::optional<double> ratio(UInt64 busy_ns, UInt64 total_ns)
@@ -25,20 +33,39 @@ std::optional<double> ratio(UInt64 busy_ns, UInt64 total_ns)
     return static_cast<double>(busy_ns) / static_cast<double>(total_ns);
 }
 
+const QueryPlan::Node * nextChildToVisit(Frame & current_frame)
+{
+    if (current_frame.next_child < current_frame.node->children.size())
+    {
+        auto * next_child = current_frame.node->children[current_frame.next_child];
+        ++current_frame.next_child;
+        return next_child;
+    }
+
+    while (current_frame.next_child_plan < current_frame.child_plans.size())
+    {
+        auto * child_plan = current_frame.child_plans[current_frame.next_child_plan];
+        ++current_frame.next_child_plan;
+        if (child_plan && child_plan->isInitialized())
+        {
+            return child_plan->getRootNode();
+        }
+    }
+    return nullptr;
 }
 
-StepIntervalTimings::StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const PlanAnalysisSnapshot & plan_snapshot)
+}
+
+StepIntervalTimings::StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const QueryPlan & plan)
     : concurrency_profile(intervals_per_thread)
 {
-    for (const auto & [step_id, _] : plan_snapshot.analyzers)
-        timing_by_step.try_emplace(step_id);
-
-    computeBranchTime(plan_snapshot, collectStepIntervals(intervals_per_thread));
+    collectPlanSteps(plan);
+    computeBranchTime(plan, collectStepIntervals(intervals_per_thread));
 }
 
-const StepTimeAndConcurrency * StepIntervalTimings::findTiming(const String & step_id) const
+const StepTimeAndConcurrency * StepIntervalTimings::findTiming(const IQueryPlanStep * step) const
 {
-    const auto it = timing_by_step.find(step_id);
+    const auto it = timing_by_step.find(step);
     return it != timing_by_step.end() ? &it->second : nullptr;
 }
 
@@ -59,27 +86,55 @@ ExecutionTimeBreakdown StepIntervalTimings::executionTimeBreakdown(UInt64 execut
     };
 }
 
+void StepIntervalTimings::collectPlanSteps(const QueryPlan & plan)
+{
+    if (!plan.isInitialized())
+        return;
+
+    std::vector<const QueryPlan::Node *> stack;
+
+    stack.push_back(plan.getRootNode());
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+
+        timing_by_step.try_emplace(current->step.get());
+
+        for (const auto * child : current->children)
+            stack.push_back(child);
+
+        for (const auto * child_plan : current->step->getChildPlans(/*for_explain=*/ false))
+        {
+            if (child_plan && child_plan->isInitialized())
+                stack.push_back(child_plan->getRootNode());
+        }
+    }
+}
+
 StepIntervalTimings::TimeIntervalsByStep StepIntervalTimings::collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const
 {
     static constexpr size_t no_thread = std::numeric_limits<size_t>::max();
 
     struct StepIntervalsByThread
     {
-        VectorWithMemoryTracking<TimeIntervals> intervals_by_thread;
+        std::vector<TimeIntervals> intervals_by_thread;
         size_t last_thread = no_thread;
     };
 
-    UnorderedMapWithMemoryTracking<String, StepIntervalsByThread> step_to_thread_intervals;
+    std::unordered_map<const IQueryPlanStep *, StepIntervalsByThread> step_to_thread_intervals;
     step_to_thread_intervals.reserve(timing_by_step.size());
 
-    for (const auto & [step_id, _] : timing_by_step)
-        step_to_thread_intervals.try_emplace(step_id);
+    for (const auto & [step, _] : timing_by_step)
+        step_to_thread_intervals.try_emplace(step);
 
     for (size_t thread = 0; thread < intervals_per_thread.size(); ++thread)
     {
         for (const auto & interval : intervals_per_thread[thread])
         {
-            auto it = step_to_thread_intervals.find(interval.step_id);
+            const auto * step_ptr = interval.step;
+            auto it = step_to_thread_intervals.find(step_ptr);
 
             if (it == step_to_thread_intervals.end())
                 continue;
@@ -99,53 +154,89 @@ StepIntervalTimings::TimeIntervalsByStep StepIntervalTimings::collectStepInterva
 
     TimeIntervalsByStep time_intervals_by_step;
     time_intervals_by_step.reserve(step_to_thread_intervals.size());
-    for (const auto & [step_id, runs] : step_to_thread_intervals)
-        time_intervals_by_step[step_id] = uniteSortedIntervals(runs.intervals_by_thread);
+    for (const auto & [step, runs] : step_to_thread_intervals)
+        time_intervals_by_step[step] = uniteSortedIntervals(runs.intervals_by_thread);
 
     return time_intervals_by_step;
 }
 
-void StepIntervalTimings::computeBranchTime(const PlanAnalysisSnapshot & plan_snapshot, TimeIntervalsByStep time_intervals_by_step)
+void StepIntervalTimings::computeBranchTime(const QueryPlan & plan, TimeIntervalsByStep time_intervals_by_step)
 {
+    if (!plan.isInitialized())
+        return;
+
+    /// We use deque in order for the reference to the last element does not get invalidated during push back
+    std::deque<Frame> stack;
+
+    const auto push_frame = [&](const QueryPlan::Node * node)
+    {
+        Frame frame;
+        frame.node = node;
+
+        const auto child_plans = node->step->getChildPlans(/*for_explain=*/ false);
+        frame.child_plans.assign(child_plans.begin(), child_plans.end());
+
+        stack.push_back(std::move(frame));
+    };
+
+    push_frame(plan.getRootNode());
+
     TimeIntervalsByStep branch_intervals_by_step;
 
-    for (const auto * node : plan_snapshot.stepsInPostOrder())
+    while (!stack.empty())
     {
-        /// The step's own intervals get moved into its branch, so its own metrics come first.
-        TimeIntervals current_step_intervals = std::move(time_intervals_by_step.at(node->id));
-        StepTimeAndConcurrency & timing = timing_by_step.at(node->id);
+        Frame & frame = stack.back();
+
+        if (const auto * next_child = nextChildToVisit(frame))
+        {
+            push_frame(next_child);
+            continue;
+        }
+
+        const auto * current_step = frame.node->step.get();
+        /// Current Step Intervals gets moved, so we compute the total time and concurrency for the step first
+        TimeIntervals current_step_intervals = std::move(time_intervals_by_step.at(current_step));
+        StepTimeAndConcurrency & timing = timing_by_step.at(current_step);
 
         timing.step_time_ns = totalIntervalsLength(current_step_intervals);
         timing.step_concurrency = ratio(concurrency_profile.busyTimeIn(current_step_intervals), timing.step_time_ns);
 
-        auto current_step_branch_intervals
-            = collectLowerBranchIntervals(std::move(current_step_intervals), node->children, branch_intervals_by_step);
+        /// Compute the Branch time and concurrency
+        auto current_step_branch_intervals = collectLowerBranchIntervals(std::move(current_step_intervals), frame.node->children, frame.child_plans, branch_intervals_by_step);
         TimeIntervals branch_time = uniteSortedIntervals(current_step_branch_intervals);
 
         timing.branch_time_ns = totalIntervalsLength(branch_time);
         timing.branch_concurrency = ratio(concurrency_profile.busyTimeIn(branch_time), timing.branch_time_ns);
 
-        branch_intervals_by_step[node->id] = std::move(branch_time);
+        branch_intervals_by_step[current_step] = std::move(branch_time);
+
+        stack.pop_back();
     }
 
-    /// The root is retired last, so its branch unites the intervals of every step of the plan.
-    if (const auto root_it = timing_by_step.find(plan_snapshot.root_id); root_it != timing_by_step.end())
-        all_steps_time_ns = root_it->second.branch_time_ns;
+    /// The root frame is processed last, so its branch unites the intervals of every step of the plan.
+    all_steps_time_ns = timing_by_step.at(plan.getRootNode()->step.get()).branch_time_ns;
 }
 
-VectorWithMemoryTracking<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(
-    TimeIntervals && current_step_intervals, const std::vector<String> & children, TimeIntervalsByStep & branch_intervals_by_step) const
+std::vector<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(TimeIntervals && current_step_intervals, const std::vector<QueryPlan::Node *> & children, const std::vector<QueryPlan *> & child_plans, TimeIntervalsByStep & branch_intervals_by_step) const
 {
-    VectorWithMemoryTracking<TimeIntervals> current_step_branch_intervals;
+    std::vector<TimeIntervals> current_step_branch_intervals;
 
     current_step_branch_intervals.push_back(std::move(current_step_intervals));
 
-    for (const auto & child_id : children)
+    for (const auto * child : children)
     {
-        const auto it = branch_intervals_by_step.find(child_id);
-        if (it == branch_intervals_by_step.end())
+        auto child_branch_timing = std::move(branch_intervals_by_step.at(child->step.get()));
+        current_step_branch_intervals.push_back(std::move(child_branch_timing));
+    }
+
+    for (const auto * child_plan : child_plans)
+    {
+        if (!child_plan || !child_plan->isInitialized())
             continue;
-        current_step_branch_intervals.push_back(std::move(it->second));
+
+        const auto * plan_root_ptr = child_plan->getRootNode()->step.get();
+        auto child_plan_branch_timing = std::move(branch_intervals_by_step.at(plan_root_ptr));
+        current_step_branch_intervals.push_back(std::move(child_plan_branch_timing));
     }
 
     return current_step_branch_intervals;

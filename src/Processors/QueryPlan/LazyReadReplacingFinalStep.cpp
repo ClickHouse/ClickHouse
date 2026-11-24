@@ -1,5 +1,4 @@
 #include <Common/Exception.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -65,17 +64,7 @@ QueryPlanRawPtrs LazyReadReplacingFinalStep::getChildPlans(bool /*for_explain*/)
     return {&*explain_plan};
 }
 
-QueryPlanRawPtrs LazyReadReplacingFinalStep::getBuiltChildPlans()
-{
-    /// Running the step never builds `explain_plan`; only `EXPLAIN` asks for it. So there is
-    /// nothing to report unless an explain already built it.
-    if (!explain_plan)
-        return {};
-
-    return {&*explain_plan};
-}
-
-VectorWithMemoryTracking<size_t> LazyReadReplacingFinalStep::getStepGroups() const
+std::vector<size_t> LazyReadReplacingFinalStep::getStepGroups() const
 {
     return {static_cast<size_t>(Stage::ReadAndAggregate), static_cast<size_t>(Stage::ReplacingMerge)};
 }

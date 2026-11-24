@@ -98,10 +98,10 @@ struct MergedPlanDAG
     /// order. What a step passes through without reading is only here.
     std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;
 
-    [[nodiscard]] const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
+    const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 
     /// Nodes for the columns of the subtree's output header, in order.
-    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getOutputs() const { return getDAG().getOutputs(); }
+    const ActionsDAG::NodeRawConstPtrs & getOutputs() const { return getDAG().getOutputs(); }
 
     /// Which sources the node reads. Empty for a constant.
     const BitSet & getSources(const ActionsDAG::Node * node) const;
@@ -110,7 +110,7 @@ struct MergedPlanDAG
     size_t getSourceOfInput(const ActionsDAG::Node * input) const;
 
     /// The nearest padded side of the columns of a source, which is the same for all of them, or null.
-    [[nodiscard]] const PaddedSide * getNearestPaddedSideOfSource(size_t source) const;
+    const PaddedSide * getNearestPaddedSideOfSource(size_t source) const;
 
     /// The padded side that decides whether this node has a value of its own at all. Where it is set, a
     /// join above this node replaced the node's value by a default or a NULL for the rows that matched

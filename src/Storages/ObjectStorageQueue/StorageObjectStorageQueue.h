@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config.h"
 #include <chrono>
 #include <optional>
 #include <Common/Macros.h>
@@ -39,14 +38,11 @@ public:
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
+        ObjectStorageQueueTableMetadata::Source source,
+        bool strict_metadata_check,
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
-
-#if CLICKHOUSE_CLOUD
-    ObjectStoragePtr getObjectStorage() const { return object_storage; }
-    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const { return configuration; }
-#endif
 
     ObjectStorageType getType() { return type; }
 
@@ -76,7 +72,7 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    ObjectStorageQueueSettings getSettings() const;
+    ObjectStorageQueueSettings getSettings(const ObjectStorageQueueTableMetadata * table_metadata = nullptr) const;
 
     /// Block until `path` is marked as processed (or failed) in Keeper by this
     /// queue, then return.

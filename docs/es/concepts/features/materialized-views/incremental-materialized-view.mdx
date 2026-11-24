@@ -7,6 +7,8 @@ score: 10000
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 ## Contexto {#background}
 
 Las vistas materializadas incrementales (vistas materializadas) permiten trasladar el coste del cálculo del tiempo de consulta al tiempo de inserción, lo que se traduce en consultas `SELECT` más rápidas.
@@ -17,15 +19,7 @@ La principal motivación de las vistas materializadas es que los resultados inse
 
 Las vistas materializadas en ClickHouse se actualizan en tiempo real a medida que los datos fluyen hacia la tabla en la que se basan, funcionando más como índices que se actualizan continuamente. Esto contrasta con otras bases de datos, donde las vistas materializadas suelen ser instantáneas estáticas de una consulta que deben actualizarse (de forma similar a las [vistas materializadas actualizables](/es/reference/statements/create/view#refreshable-materialized-view) de ClickHouse).
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Diagrama de vista materializada](/images/materialized-view/materialized-view-diagram.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de vista materializada" />
 
 <div id="example">
   ## Ejemplo

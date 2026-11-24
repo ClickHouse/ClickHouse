@@ -10,14 +10,12 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/getMostSubtype.h>
-#include <DataTypes/transformTypesRecursively.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
@@ -138,6 +136,7 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::DEFAULT:
             case JoinAlgorithm::AUTO:
             case JoinAlgorithm::HASH:
+            case JoinAlgorithm::PARALLEL_HASH:
                 /// The hash-based algorithms implement every kind and strictness.
                 return true;
             case JoinAlgorithm::GRACE_HASH:
@@ -263,32 +262,27 @@ static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
     return isInteger(removeNullable(type));
 }
 
-DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type)
+/// An `accurateCastOrNull` of a `LowCardinality(Nullable(T))` Tuple element to a non-Nullable element throws
+/// instead of reporting the NULL in the null map of the whole Tuple. Only the elements are converted
+/// element-wise, so a `LowCardinality` or `Nullable` wrapper around the whole key is not affected.
+static bool hasNullableLowCardinalityTupleElement(const DataTypePtr & type)
 {
-    auto is_bool = [](const DataTypePtr & t) { return isBool(t) || isSimpleAggregateFunctionOfBool(*t); };
-    for (const auto & key_type : {left_type, right_type})
-    {
-        bool replaced = false;
-        auto result = replaceNestedTypesInPair(type, key_type,
-            [&](const DataTypePtr & leaf, const DataTypePtr & key_leaf) -> DataTypePtr
-            {
-                if (is_bool(leaf) && !is_bool(key_leaf) && leaf->equals(*key_leaf))
-                {
-                    replaced = true;
-                    return std::make_shared<DataTypeUInt8>();
-                }
-                return leaf;
-            },
-            /*left_is_common_type=*/ true);
-        if (replaced && result)
-            type = std::move(result);
-    }
-    return type;
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+    if (!tuple_type)
+        return false;
+
+    return std::ranges::any_of(
+        tuple_type->getElements(),
+        [](const auto & element)
+        { return element->isLowCardinalityNullable() || hasNullableLowCardinalityTupleElement(element); });
 }
 
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion)
 {
+    if (hasNullableLowCardinalityTupleElement(left_type) || hasNullableLowCardinalityTupleElement(right_type))
+        return nullptr;
+
     DataTypes types{
         removeNullable(recursiveRemoveLowCardinality(left_type)),
         removeNullable(recursiveRemoveLowCardinality(right_type))};
@@ -726,19 +720,6 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
-bool isExactJoinKeyEquality(const DataTypePtr & left_type, const DataTypePtr & right_type)
-{
-    auto left = removeLowCardinalityAndNullable(left_type);
-    auto right = removeLowCardinalityAndNullable(right_type);
-    if (left->equals(*right))
-        return true;
-    if (isNumber(left) && isNumber(right))
-        return true;
-    if (isDateOrDate32OrDateTimeOrDateTime64(left) && isDateOrDate32OrDateTimeOrDateTime64(right))
-        return true;
-    return isFixedString(left) && isFixedString(right);
-}
-
 static ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
@@ -897,27 +878,32 @@ bool hasNonJoinedBlocks(const TableJoin & table_join)
     return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
-ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter, const DataTypePtr & default_type)
+ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();
     MutableColumnPtr mut_column = column->cloneEmpty();
     mut_column->reserve(column->size());
 
-    if (default_type && !default_type->isDefaultInsertTrivial())
+    if (inverse_filter)
     {
-        /// `mut_column` keeps the wrapper of `column` (e.g. `ColumnReplicated`), so the type default is built unwrapped.
-        auto default_row = default_type->createColumn();
-        default_type->insertDefaultInto(*default_row);
         for (size_t row = 0; row < filter.size(); ++row)
         {
-            if (static_cast<bool>(filter[row]) != inverse_filter)
-                mut_column->insertFrom(*column, row);
+            if (filter[row])
+                mut_column->insertDefault();
             else
-                mut_column->insertFrom(*default_row, 0);
+                mut_column->insertFrom(*column, row);
         }
     }
     else
-        mut_column->insertFromOrDefaults(*column, filter, inverse_filter);
+    {
+        for (size_t row = 0; row < filter.size(); ++row)
+        {
+            if (filter[row])
+                mut_column->insertFrom(*column, row);
+            else
+                mut_column->insertDefault();
+        }
+    }
 
     return mut_column;
 }

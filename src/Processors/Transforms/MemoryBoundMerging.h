@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Core/SortDescription.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -192,9 +190,9 @@ private:
     Block header;
     size_t num_inputs;
 
-    VectorWithMemoryTracking<ChunkId> last_chunk_id;
-    VectorWithMemoryTracking<bool> is_input_finished;
-    MapWithMemoryTracking<ChunkId, Chunk> chunks;
+    std::vector<ChunkId> last_chunk_id;
+    std::vector<bool> is_input_finished;
+    std::map<ChunkId, Chunk> chunks;
     Chunk overflow_chunk;
 };
 

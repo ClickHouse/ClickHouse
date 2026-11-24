@@ -1,6 +1,4 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Set.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -52,14 +50,14 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCircuitFunctions(
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
     const ActionsDAG & actions_dag,
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
     bool reorder_arguments,
     std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments);
 
-static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
-    const ActionsDAG & actions_dag, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes);
+static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
+    const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
 
 ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
     : actions_dag(std::move(actions_dag_))
@@ -68,7 +66,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_map<const ActionsDAG::Node *, size_t> short_circuit_eager_arguments;
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
         actions_dag,
         settings.short_circuit_function_evaluation,
         settings.short_circuit_function_evaluation_reorder_arguments,
@@ -79,7 +77,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
         actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
 #endif
 
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> reorderable_short_circuit_arguments;
+    std::unordered_set<const ActionsDAG::Node *> reorderable_short_circuit_arguments;
     if (settings.short_circuit_function_evaluation_reorder_arguments && !lazy_executed_nodes.empty())
         reorderable_short_circuit_arguments = findReorderableShortCircuitArguments(actions_dag, lazy_executed_nodes);
 
@@ -95,7 +93,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 {
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
-    ActionsDAG::NodeMapping copy_map;
+    std::unordered_map<const Node *, const Node *> copy_map;
     copy->actions_dag = actions_dag.clone(copy_map);
     copy->actions = actions;
     for (auto & action : copy->actions)
@@ -132,7 +130,7 @@ namespace
     };
 }
 
-static ActionsDAGReverseInfo getActionsDAGReverseInfo(const ActionsDAG::Nodes & nodes, const ActionsDAG::NodeRawConstPtrs & index)
+static ActionsDAGReverseInfo getActionsDAGReverseInfo(const std::list<ActionsDAG::Node> & nodes, const ActionsDAG::NodeRawConstPtrs & index)
 {
     ActionsDAGReverseInfo result_info;
     result_info.nodes_info.resize(nodes.size());
@@ -271,7 +269,7 @@ static bool findLazyExecutedNodes(
     const ActionsDAG::NodeRawConstPtrs & children,
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> & lazy_execution_infos,
     bool force_enable_lazy_execution,
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes_out)
+    std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes_out)
 {
     bool has_lazy_node = false;
     for (const auto * child : children)
@@ -373,7 +371,7 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node, std::unord
     return res;
 }
 
-static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCircuitFunctions(
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
     const ActionsDAG & actions_dag,
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
     bool reorder_arguments,
@@ -443,7 +441,7 @@ static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCirc
     for (const auto & node : nodes)
         setLazyExecutionInfo(&node, reverse_info, short_circuit_nodes, lazy_execution_infos);
 
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> lazy_executed_nodes;
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
     for (const auto & [node, settings] : short_circuit_nodes)
     {
         /// Recursively find nodes that should be lazy executed.
@@ -462,7 +460,7 @@ static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCirc
 /// and be deterministic in the scope of the query.
 static bool canBeExecutedOnMoreRows(
     const ActionsDAG::Node * node,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
     std::unordered_map<const ActionsDAG::Node *, bool> & cache)
 {
     if (auto it = cache.find(node); it != cache.end())
@@ -504,10 +502,10 @@ static bool canBeExecutedOnMoreRows(
   * The function chooses the order of these arguments by the statistics collected during the execution,
   * see `ShortCircuitArgumentStatistics`.
   */
-static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
-    const ActionsDAG & actions_dag, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
+    const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> res;
+    std::unordered_set<const ActionsDAG::Node *> res;
     std::unordered_map<const ActionsDAG::Node *, bool> cache;
 
     for (const auto & node : actions_dag.getNodes())
@@ -533,8 +531,8 @@ static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findReorderableS
 }
 
 void ExpressionActions::linearizeActions(
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & reorderable_short_circuit_arguments,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    const std::unordered_set<const ActionsDAG::Node *> & reorderable_short_circuit_arguments,
     const std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments)
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
@@ -811,7 +809,7 @@ namespace
     {
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
-        VectorWithMemoryTracking<ssize_t> inputs_pos = {};
+        std::vector<ssize_t> inputs_pos = {};
         size_t num_rows = 0;
     };
 }
@@ -1095,9 +1093,9 @@ void ExpressionActions::execute(
     num_rows = execution_context.num_rows;
 }
 
-VectorWithMemoryTracking<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
+std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
 {
-    VectorWithMemoryTracking<ssize_t> inputs_pos(required_columns.size(), -1);
+    std::vector<ssize_t> inputs_pos(required_columns.size(), -1);
 
     for (size_t pos = 0; pos < header.columns(); ++pos)
     {
@@ -1121,7 +1119,7 @@ VectorWithMemoryTracking<ssize_t> ExpressionActions::getInputPositions(const Blo
 Columns ExpressionActions::executeOnColumns(
     Columns columns,
     const Block & header,
-    const VectorWithMemoryTracking<ssize_t> & input_positions_for_header,
+    const std::vector<ssize_t> & input_positions_for_header,
     size_t & num_rows,
     bool dry_run,
     const std::atomic<bool> * is_cancelled) const

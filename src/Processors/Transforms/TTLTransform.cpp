@@ -1,12 +1,11 @@
 #include <Processors/Transforms/TTLTransform.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Common/quoteString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/Context.h>
@@ -16,6 +15,7 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -23,6 +23,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedSets::Subqueries & subqueries_for_sets, const ContextPtr & context)
@@ -41,11 +46,22 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
     return {expr.expression, where_expr.expression};
 }
 
+/// Returns a stored `Nested` sibling of `name`, whose array sizes a read uses to fill `name`.
+static const ColumnWithTypeAndName * findNestedSiblingWithSizes(const Block & block, const String & name, const auto & expired_columns)
+{
+    auto table_name = Nested::extractTableName(name);
+    for (const auto & column : block)
+        if (column.name != name && !expired_columns.contains(column.name) && isArray(column.type)
+            && Nested::extractTableName(column.name) == table_name)
+            return &column;
+    return nullptr;
+}
+
 /// A column TTL resets its column to the default, but the `MATERIALIZED` columns computed from it keep
 /// the value they had before the expiry, which contradicts their own expression forever - no later merge
 /// repairs it. `ALTER TABLE ... CLEAR COLUMN`, the other path that resets a column to its default,
 /// recomputes them, so do the same here, over the same dependency graph.
-VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMaterializedColumn>> TTLTransform::analyzeDependentMaterializedColumns(
+std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform::analyzeDependentMaterializedColumns(
     const MergeTreeData & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & reset_columns,
@@ -68,7 +84,7 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
         return {};
 
     /// The level of a dependent is one past the highest level among the dependents it reads.
-    UnorderedMapWithMemoryTracking<String, size_t> level_of;
+    std::unordered_map<String, size_t> level_of;
     auto level_of_column = [&](const String & name, auto && self) -> size_t
     {
         if (auto it = level_of.find(name); it != level_of.end())
@@ -98,7 +114,7 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
     NameSet unrecomputable_columns = columns_to_leave_alone;
     unrecomputable_columns.merge(metadata_snapshot->getStorageColumnsRequiredForKeys());
 
-    VectorWithMemoryTracking<VectorWithMemoryTracking<DependentMaterializedColumn>> levels(number_of_levels);
+    std::vector<std::vector<DependentMaterializedColumn>> levels(number_of_levels);
     for (const auto & column : storage_columns)
     {
         if (!dependents.contains(column.name) || unrecomputable_columns.contains(column.name))
@@ -177,12 +193,11 @@ TTLTransform::TTLTransform(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
             old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
-    /// `consume` adds the expired columns to the block before the algorithms run.
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
                 getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getOutputPort().getHeader(), storage_, metadata_snapshot_));
+                getInputPort().getHeader(), storage_, metadata_snapshot_));
 
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
@@ -201,11 +216,18 @@ TTLTransform::TTLTransform(
         return Result{actions, default_ast->getColumnName()};
     };
 
+    bool share_nested = (*storage_.getSettings())[MergeTreeSetting::share_nested_offsets];
+    auto shares_nested_offsets = [&](const NameAndTypePair & column)
+    {
+        return share_nested && isArray(column.type) && Nested::extractTableName(column.name) != column.name;
+    };
+
     for (const auto & expired_column : expired_columns)
     {
         auto [default_expression, default_column_name] = build_default_expr(expired_column.name);
-        expired_columns_data.emplace(
-            expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
+        ExpiredColumnData data{
+            expired_column.type, std::move(default_expression), std::move(default_column_name), shares_nested_offsets(expired_column)};
+        expired_columns_data.emplace(expired_column.name, std::move(data));
     }
 
     const auto column_ttls = metadata_snapshot_->getColumnTTLs();
@@ -226,7 +248,7 @@ TTLTransform::TTLTransform(
     for (const auto & expired_column : expired_columns)
         reset_columns.insert(expired_column.name);
 
-    VectorWithMemoryTracking<VectorWithMemoryTracking<DependentMaterializedColumn>> recompute_levels;
+    std::vector<std::vector<DependentMaterializedColumn>> recompute_levels;
     NameSet recomputed_columns;
     if (!reset_columns.empty())
     {
@@ -257,7 +279,8 @@ TTLTransform::TTLTransform(
             name,
             default_expression,
             default_column_name,
-            isCompactPart(data_part)));
+            isCompactPart(data_part),
+            shares_nested_offsets(storage_columns.getPhysical(name))));
     };
 
     /// The TTL of a column that nothing recomputes goes first: a dependent has to read the value that
@@ -301,7 +324,7 @@ static Block reorderColumns(Block block, const Block & header)
     return res;
 }
 
-void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemoryTracking<DependentMaterializedColumn> & dependents)
+void TTLTransform::recomputeDependentColumns(Block & block, const std::vector<DependentMaterializedColumn> & dependents)
 {
     if (block.empty())
         return;
@@ -359,6 +382,9 @@ void TTLTransform::consume(Chunk chunk)
     {
         auto default_column
             = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
+        if (!default_column && data.shares_nested_offsets)
+            if (const auto * sibling = findNestedSiblingWithSizes(block, column, expired_columns_data))
+                default_column = TTLColumnAlgorithm::createArraysOfDefaults(*data.type, *sibling->column);
         if (default_column)
             default_column = default_column->convertToFullColumnIfConst();
         else

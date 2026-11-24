@@ -37,21 +37,21 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for MongoDBDictionarySource");
     }
 
-    [[nodiscard]] bool supportsSelectiveLoad() const override { return true; }
+    bool supportsSelectiveLoad() const override { return true; }
 
     BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
     BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
     /// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
-    [[nodiscard]] bool isModified() const override { return true; }
+    bool isModified() const override { return true; }
 
     /// Not yet supported
-    [[nodiscard]] bool hasUpdateField() const override { return false; }
+    bool hasUpdateField() const override { return false; }
 
-    [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<MongoDBDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<MongoDBDictionarySource>(*this); }
 
-    [[nodiscard]] std::string toString() const override;
+    std::string toString() const override;
 
 private:
     const DictionaryStructure dict_struct;

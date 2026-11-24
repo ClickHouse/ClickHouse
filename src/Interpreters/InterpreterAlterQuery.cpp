@@ -493,7 +493,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
             /// then all repopulate from the metadata committed as of holding the lock.
             if (auto metadata_cache = context->getQueryMetadataCache())
-                metadata_cache->clear();
+            {
+                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
+                cache->clear();
+            }
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
@@ -503,11 +506,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
-            context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
-            /// The following segments must see the metadata this ALTER committed.
-            if (auto metadata_cache = context->getQueryMetadataCache())
-                metadata_cache->clear();
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
@@ -528,7 +527,6 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 auto validation_context = Context::createCopy(context);
                 validation_context->setAnalyzingBackgroundExpressions(true);
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
-                context->onQueryExecutionStarted();
                 table->mutate(*mutation_commands, context);
             }
         }
@@ -537,7 +535,6 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
-            context->onQueryExecutionStarted();
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
             if (!partition_commands_pipe.empty())
                 res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
@@ -545,7 +542,6 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
             auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-            context->onQueryExecutionStarted();
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
@@ -711,15 +707,18 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    bool is_mutation = false;
+    bool run_as_submitting_user = false;
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
         if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
         {
-            is_mutation = true;
+            run_as_submitting_user = true;
             checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
         }
+        else if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes
+            && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes).empty())
+            run_as_submitting_user = true;
     }
 
     checkAddedIndexPermissions(alter, table, getContext());
@@ -728,7 +727,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = is_mutation}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(
+            query_ptr, getContext(), {.run_as_submitting_user = run_as_submitting_user}, std::move(guard));
     }
 
 #if CLICKHOUSE_CLOUD
@@ -743,7 +743,16 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     /// Queries with an explicit UUID (internal ones, e.g. the fill step of CREATE) address exactly
     /// that table, and it may not be visible by name yet, so keep the storage resolved above.
     if (alter.uuid == UUIDHelpers::Nil && table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        table = database->tryGetTable(table_id.table_name, getContext());
+    {
+        auto table_by_name = database->tryGetTable(table_id.table_name, getContext());
+        if (!skip_access_check)
+        {
+            const auto resolved_table = resolveStorageProxyLoading(table_by_name);
+            if (resolved_table && resolved_table != table)
+                getContext()->checkAccess(getRequiredAccess(resolved_table));
+        }
+        table = table_by_name;
+    }
 
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
@@ -965,8 +974,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<ASTAlterCommand &>();
-        required_access.append_range(
-            getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_column_kind, context_for_source));
+        required_access.append_range(getRequiredAccessForCommand(
+            command, alter.getDatabase(), alter.getTable(), row_exists_column_kind, context_for_source,
+            storage && alter.cluster.empty() ? storage->getName() : ""));
 
         if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
@@ -980,7 +990,8 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
     const String & database,
     const String & table,
     RowExistsColumnKind row_exists_column_kind,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    const String & engine)
 {
     AccessRightsElements required_access;
 
@@ -1165,11 +1176,14 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
 
             /// A setting that sends the table's data elsewhere, e.g. the move destination of a queue, is the same data flow as
             /// `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`. The creator of the table supplied its source and credentials,
-            /// so the reading part is `SELECT` on the table. The grants do not depend on the engine of the table, so the initiator
-            /// of `ON CLUSTER` can check them without the table.
+            /// so the reading part is `SELECT` on the table. For `ON CLUSTER`, `engine` is empty, so the grants can be checked
+            /// without the table.
             if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
             {
-                auto export_access = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes);
+                const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+                auto export_access = engine.empty()
+                    ? StorageFactory::instance().getExportAccessOfAnyEngine(changes)
+                    : StorageFactory::instance().getExportAccess(changes, engine);
                 if (!export_access.empty())
                 {
                     required_access.append_range(std::move(export_access));
