@@ -19,6 +19,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
@@ -33,6 +34,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -174,11 +176,13 @@ struct LoopbackExchange
     LoopbackExchange() { server.start(); }
 };
 
-/// Runs `pipeline` to the end; returns the code it threw with, if any.
-std::optional<int> run(QueryPipeline & pipeline, size_t threads)
+/// Runs `pipeline` to the end, or until `should_cancel` returns true; returns the code it threw with, if any.
+std::optional<int> run(QueryPipeline & pipeline, size_t threads, const std::function<bool()> & should_cancel = {})
 {
     pipeline.setNumThreads(threads);
     CompletedPipelineExecutor executor(pipeline);
+    if (should_cancel)
+        executor.setCancelCallback(should_cancel, /*interactive_timeout_ms_=*/ 10);
     try
     {
         executor.execute();
@@ -193,7 +197,12 @@ std::optional<int> run(QueryPipeline & pipeline, size_t threads)
 /// The sending task: `chunks_per_stream` streams, each serializing its chunks, into one real sink on
 /// `connection`, as the send steps arrange it.
 QueryPipeline makeSendingPipeline(
-    const SharedHeader & header, std::vector<Chunks> chunks_per_stream, FutureConnectionPtr connection, bool advisory = false)
+    const SharedHeader & header,
+    std::vector<Chunks> chunks_per_stream,
+    FutureConnectionPtr connection,
+    bool advisory = false,
+    CompressionCodecPtr codec = CompressionCodecFactory::instance().getDefaultCodec(),
+    size_t packet_target_bytes = StreamingExchangeProtocol::TARGET_DATA_PACKET_BODY_BYTES)
 {
     Pipes pipes;
     for (auto & chunks : chunks_per_stream)
@@ -201,9 +210,10 @@ QueryPipeline makeSendingPipeline(
 
     QueryPipelineBuilder builder;
     builder.init(Pipe::unitePipes(std::move(pipes)));
-    builder.addSimpleTransform([](const SharedHeader & stream_header)
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
     {
-        return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec());
+        return std::make_shared<StreamingExchangeSerializingTransform>(
+            stream_header, codec, StreamingExchangeProtocol::DEFAULT_MAX_DATA_PACKET_BODY_BYTES, advisory, packet_target_bytes);
     });
     builder.resize(1);
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
@@ -1638,6 +1648,74 @@ TEST(StreamingExchangeTransport, LargeChunkIsSentAsSeveralPackets)
         EXPECT_EQ(received_rows, rows);
         EXPECT_TRUE(same_values);
     }
+}
+
+/// A column compressed in memory reports its compressed size, so the chunk looks small enough for one
+/// packet. When the packet turns out too large, the chunk is decompressed before it is cut into pieces.
+TEST(StreamingExchangeTransport, CompressedColumnThatIsLargerThanItsSizeIsSplit)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr size_t rows = 4;
+    constexpr size_t value_bytes = 1024 * 1024;
+    constexpr size_t packet_target_bytes = value_bytes;
+
+    auto type = std::make_shared<DataTypeString>();
+    auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(type->createColumn(), type, "s")});
+
+    auto strings = ColumnString::create();
+    for (size_t row = 0; row < rows; ++row)
+        strings->insert(Field(std::string(value_bytes, static_cast<char>('a' + row))));
+    const ColumnPtr expected = std::move(strings);
+    const ColumnPtr compressed = expected->compress(/*force_compression=*/ true);
+    ASSERT_TRUE(typeid_cast<const ColumnCompressed *>(compressed.get()));
+    ASSERT_LT(compressed->byteSize(), packet_target_bytes);
+
+    std::vector<Chunks> chunks_per_stream_list(1);
+    chunks_per_stream_list[0].push_back(Chunk(Columns{compressed}, rows));
+
+    LoopbackExchange exchange;
+    auto sending = makeSendingPipeline(
+        header,
+        std::move(chunks_per_stream_list),
+        exchange.connections->getConnection("query", "stream"),
+        /*advisory=*/ false,
+        CompressionCodecFactory::instance().get("NONE", {}),
+        packet_target_bytes);
+    auto sink = std::make_shared<CollectingSink>(header);
+    auto receiving = makeReceivingPipeline(header, exchange.server.port(), /*source_hands_packets=*/ false, sink);
+
+    /// Without the cancel, the receiver would wait for the rest of the stream after the sender fails.
+    std::optional<int> sending_code;
+    std::atomic<bool> sending_failed = false;
+    std::thread sender([&]
+    {
+        sending_code = run(sending, 1);
+        sending_failed = sending_code.has_value();
+    });
+    const auto receiving_code = run(receiving, 1, [&] { return sending_failed.load(); });
+    sender.join();
+
+    EXPECT_EQ(sending_code, std::nullopt);
+    EXPECT_EQ(receiving_code, std::nullopt);
+
+    size_t data_chunks = 0;
+    size_t received_rows = 0;
+    bool same_values = true;
+    for (const auto & received : sink->chunks)
+    {
+        if (received.getNumRows() == 0)
+            continue;
+        ++data_chunks;
+        const auto & values = *received.getColumns().front();
+        for (size_t row = 0; row < values.size() && same_values; ++row)
+            same_values = received_rows + row < rows && values.getDataAt(row) == expected->getDataAt(received_rows + row);
+        received_rows += values.size();
+    }
+
+    EXPECT_GE(data_chunks, 2u);
+    EXPECT_EQ(received_rows, rows);
+    EXPECT_TRUE(same_values);
 }
 
 #endif

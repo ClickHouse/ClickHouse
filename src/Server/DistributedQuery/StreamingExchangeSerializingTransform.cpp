@@ -78,6 +78,17 @@ Chunk cutRows(const Chunk & chunk, size_t start, size_t length)
     return piece;
 }
 
+/// A compressed column cannot be cut. The writer decompresses a whole chunk by itself, so this is needed
+/// only before the chunk is cut.
+void decompressColumns(Chunk & chunk)
+{
+    const size_t rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->decompress();
+    chunk.setColumns(std::move(columns), rows);
+}
+
 }
 
 StreamingExchangeSerializingTransform::StreamingExchangeSerializingTransform(
@@ -206,15 +217,8 @@ void StreamingExchangeSerializingTransform::makeNextPacket(Chunk & input_chunk, 
         for (const auto & range : splitEvenly(input_chunk, packet_target_bytes))
             pending_ranges.push_back(range);
 
-        /// A compressed column cannot be cut; the writer decompresses a whole chunk itself.
         if (pending_ranges.size() > 1)
-        {
-            const size_t rows = input_chunk.getNumRows();
-            auto columns = input_chunk.detachColumns();
-            for (auto & column : columns)
-                column = column->decompress();
-            input_chunk.setColumns(std::move(columns), rows);
-        }
+            decompressColumns(input_chunk);
     }
 
     while (true)
@@ -232,6 +236,8 @@ void StreamingExchangeSerializingTransform::makeNextPacket(Chunk & input_chunk, 
 
         if (range.length > 1)
         {
+            /// A compressed column can be much smaller than its packet, so the first split can come only now.
+            decompressColumns(input_chunk);
             const auto ranges = splitByRowSizes(input_chunk, range, packet_target_bytes);
             pending_ranges.insert(pending_ranges.begin(), ranges.begin(), ranges.end());
             continue;
