@@ -1006,6 +1006,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                         table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, required_columns,
                         prepared_sets);
 
+                if (const auto * filter_node = parallel_replicas_custom_filter_info->actions.tryFindInOutputs(parallel_replicas_custom_filter_info->column_name))
+                    checkCustomKeyFilterType(filter_node->result_type, settings[Setting::parallel_replicas_custom_key].value);
+
                 parallel_replicas_custom_filter_info->do_remove_column = true;
                 query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }

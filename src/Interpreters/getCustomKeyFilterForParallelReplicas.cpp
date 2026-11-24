@@ -177,6 +177,15 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     return makeASTOperator("and", std::move(lower_function), std::move(upper_function));
 }
 
+void checkCustomKeyFilterType(const DataTypePtr & filter_type, const String & custom_key)
+{
+    if (filter_type && filter_type->isNullableOrLowCardinalityNullable())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Invalid custom key `{}`: its type is nullable, so the rows with `NULL` key would not be read by any replica",
+            custom_key);
+}
+
 ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context)
 {
     /// The callers get here only when the custom key filtering is requested. Every replica reads only the part of
