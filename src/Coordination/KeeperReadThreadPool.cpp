@@ -60,10 +60,10 @@ void KeeperReadThreadPool::execute(size_t count, const CoordinationSettings & co
         ++running_threads;
         try
         {
-            pool->scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup()]
+            pool->scheduleOrThrowOnError([this, start_batch_idx = batch_idx, thread_group = CurrentThread::getGroup()]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::KEEPER_READ);
-                    threadFunction();
+                    threadFunction(start_batch_idx);
                 });
         }
         catch (...)
@@ -111,13 +111,12 @@ void KeeperReadThreadPool::execute(size_t count, const CoordinationSettings & co
         std::rethrow_exception(std::exchange(first_exception, {}));
 }
 
-void KeeperReadThreadPool::threadFunction()
+void KeeperReadThreadPool::threadFunction(size_t seen_batch_idx)
 {
     try
     {
         std::unique_lock lock(mutex);
 
-        size_t seen_batch_idx = 0;
         while (true)
         {
             if (running_threads > target_num_threads)
