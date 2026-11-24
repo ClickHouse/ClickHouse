@@ -436,7 +436,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         {
             const auto & select_query = view_metadata->select.inner_query;
             auto interpreter = InterpreterSelectQueryAnalyzer(
-                select_query, Context::createCopyForStoredDefinition(context), SelectQueryOptions{}.noModify());
+                select_query, context, SelectQueryOptions{}.noModify().allowCompoundTableIdentifierQualification(false));
             auto query_tree = interpreter.getQueryTree();
             Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
 

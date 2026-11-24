@@ -1308,7 +1308,7 @@ void AlterCommand::apply(
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
 
         SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(
-            select->clone(), Context::createCopyForStoredDefinition(context));
+            select->clone(), context, SelectQueryOptions().allowCompoundTableIdentifierQualification(false));
 
         /// A comment, unlike the other column attributes, stays valid for any type the new query gives the column.
         ColumnsDescription new_columns;

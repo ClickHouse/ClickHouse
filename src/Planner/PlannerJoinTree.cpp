@@ -2511,26 +2511,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// StorageView::readImpl path enforces them in the correct namespace.
                         const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
 
-                        /// A stored view body is read as written, the query of a table function such as `view` is not
-                        /// (as in `getViewContext`); `inner_context` also analyzes user-typed filters, so it is not changed.
-                        ContextPtr inner_query_context;
-                        if (view->getStorageID().database_name != ITableFunction::getDatabaseName())
-                        {
-                            inner_query_context = Context::createCopyForStoredDefinition(inner_context);
-                        }
-                        else if (inner_context->isCompoundTableIdentifierQualificationAllowed())
-                        {
-                            inner_query_context = inner_context;
-                        }
-                        else
-                        {
-                            auto unrestricted_context = Context::createCopy(inner_context);
-                            unrestricted_context->setAllowCompoundTableIdentifierQualification(true);
-                            inner_query_context = unrestricted_context;
-                        }
-
+                        /// A stored view body is read as written, the query of a table function such as `view` is not.
                         auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
-                        InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_query_context, options);
+                        options.allowCompoundTableIdentifierQualification(view->getStorageID().database_name == ITableFunction::getDatabaseName());
+                        InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_context, options);
                         const auto & inner_query_tree = inner_interp.getQueryTree();
                         /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.
                         inner_query_tree->as<QueryNode &>().setIsSubquery(true);
@@ -2620,7 +2604,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// check this pushdown path is meant to be equivalent to. Without this,
                                 /// collectSelectedColumnsFromTable would pick up every column the view
                                 /// body mentions and over-require grants on the underlying table.
-                                InterpreterSelectQueryAnalyzer access_check_interp(inner_query_ast, inner_query_context, options, columns_names);
+                                InterpreterSelectQueryAnalyzer access_check_interp(inner_query_ast, inner_context, options, columns_names);
                                 auto access_check_tree = access_check_interp.getQueryTree();
                                 auto access_check_dist_node = findTableNodeByStorage(access_check_tree, underlying_dist);
                                 /// This tree is the same inner query re-analyzed with the read column list;
