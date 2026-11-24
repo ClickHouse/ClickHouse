@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 
 #include <memory>
+#include <string_view>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -36,6 +37,9 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl;
 };
+
+/// Unions serialized Theta sketches, e.g. a snapshot's with its parent's. Throws `INCORRECT_DATA` on a malformed one.
+PuffinColumnThetaSketch::Serialized unionThetaSketches(const VectorWithMemoryTracking<std::string_view> & sketches);
 
 PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 sequence_number, UInt64 ndv);
 

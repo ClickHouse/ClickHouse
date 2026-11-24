@@ -116,7 +116,6 @@ namespace QueryPlanSerializationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LIMIT_EXCEEDED;
@@ -125,30 +124,7 @@ namespace ErrorCodes
 
 static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
 {
-    if (max_bytes_ratio_before_external_sort == 0.)
-        return 0;
-
-    double ratio = max_bytes_ratio_before_external_sort;
-    if (ratio < 0 || ratio >= 1.)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({:.3f})", ratio);
-
-    auto available_system_memory = getMostStrictAvailableSystemMemory();
-    if (available_system_memory.has_value())
-    {
-        size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
-
-        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {:.3f}, available system memory: {})",
-            formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-            ratio,
-            formatReadableSizeWithBinarySuffix(*available_system_memory));
-
-        return ratio_in_bytes;
-    }
-    else
-    {
-        LOG_TRACE(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
-        return 0;
-    }
+    return getMaxBytesBeforeExternalProcessing(0, max_bytes_ratio_before_external_sort, "max_bytes_ratio_before_external_sort");
 }
 
 SortingStep::Settings::Settings(const DB::Settings & settings)
