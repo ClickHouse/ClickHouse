@@ -81,4 +81,55 @@ TEST(KeeperDiskMove, MoveIsNotRefusedByTheMemoryTracker)
     EXPECT_FALSE(disk_from->existsFile("changelog.bin"));
 }
 
+/// The destination may have a different name and directory than the source, e.g. a rotated
+/// changelog or a move into `detached/`. The `tmp_` marker belongs next to the destination, so a
+/// completed move must leave neither a marker in the destination directory nor one at the root.
+TEST(KeeperDiskMove, MoveToRenamedPathInSubdirectory)
+{
+    const std::string test_dir = "./keeper_disk_move_renamed_test";
+    fs::remove_all(test_dir);
+    fs::create_directories(test_dir + "/from");
+    fs::create_directories(test_dir + "/to/detached/ts");
+    SCOPE_EXIT_SAFE(fs::remove_all(test_dir));
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 1;
+    auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper_=*/true, settings);
+
+    DB::DiskPtr disk_from = std::make_shared<DB::DiskLocal>("From", test_dir + "/from");
+    DB::DiskPtr disk_to = std::make_shared<DB::DiskLocal>("To", test_dir + "/to");
+
+    const std::string content(64 * 1024, 'y');
+    {
+        auto buf = disk_from->writeFile("changelog_1_100000.bin", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+        DB::writeString(content, *buf);
+        buf->finalize();
+    }
+
+    const std::string path_to = "detached/ts/changelog_1_42.bin";
+    bool marker_present_before_source_removal = true;
+    DB::moveFileBetweenDisks(
+        disk_from,
+        "changelog_1_100000.bin",
+        disk_to,
+        path_to,
+        [&]
+        {
+            marker_present_before_source_removal = disk_to->existsFile("detached/ts/tmp_changelog_1_42.bin")
+                || disk_to->existsFile("tmp_changelog_1_100000.bin");
+            return true;
+        },
+        getLogger("KeeperDiskMoveTest"),
+        keeper_context);
+
+    EXPECT_FALSE(marker_present_before_source_removal);
+    EXPECT_FALSE(disk_from->existsFile("changelog_1_100000.bin"));
+    ASSERT_TRUE(disk_to->existsFile(path_to));
+    EXPECT_EQ(disk_to->getFileSize(path_to), content.size());
+
+    for (const auto & entry : fs::recursive_directory_iterator(test_dir + "/to"))
+        EXPECT_FALSE(entry.path().filename().string().starts_with(DB::tmp_keeper_file_prefix)) << entry.path();
+}
+
 #endif

@@ -16,7 +16,9 @@
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/copyData.h>
 #include <base/find_symbols.h>
 
 namespace DB
@@ -134,8 +136,12 @@ void moveFileBetweenDisks(
     /// if a copy is complete we don't care from which disk we use the same file
     /// so it's okay if a failure happens after removing of tmp file but before we remove
     /// the file from the source disk
-    auto from_path = fs::path(path_from);
-    auto tmp_file_name = from_path.parent_path() / (std::string{tmp_keeper_file_prefix} + from_path.filename().string());
+    /// The marker must be named after the destination file and live next to it, because startup
+    /// recovery on `disk_to` pairs `tmp_<name>` with `<name>` in the same directory, and `path_to`
+    /// can differ from `path_from` (e.g. a renamed changelog or a move into `detached/`).
+    auto to_path = fs::path(path_to);
+    auto tmp_file_name = (to_path.parent_path() / (std::string{tmp_keeper_file_prefix} + to_path.filename().string())).string();
+    auto to_directory = to_path.parent_path().string();
 
     const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
     auto max_retries_on_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
@@ -176,19 +182,59 @@ void moveFileBetweenDisks(
         return false;
     };
 
+    /// Files on a local destination disk are synced before the next step, so that after a power loss
+    /// the marker, the copy and the marker removal are observed in order, and the source is removed
+    /// only once the destination is durable. `getDirectorySyncGuard` returns nullptr for disks
+    /// without local directories. The guard is opened before the directory entry changes.
+    const bool sync_destination = !disk_to->isRemote();
+
     if (!run_with_retries(
             [&]
             {
+                auto dir_sync_guard = disk_to->getDirectorySyncGuard(to_directory);
                 auto buf = disk_to->writeFile(tmp_file_name);
                 buf->finalize();
+                if (sync_destination)
+                    buf->sync();
+                if (dir_sync_guard)
+                    dir_sync_guard->sync();
             },
             "creating temporary file"))
         return;
 
-    if (!run_with_retries([&] { disk_from->copyFile(from_path, *disk_to, path_to, {}); }, "copying file"))
+    if (!run_with_retries(
+            [&]
+            {
+                if (!sync_destination)
+                {
+                    disk_from->copyFile(path_from, *disk_to, path_to, {});
+                    return;
+                }
+
+                /// `IDisk::copyFile` only finalizes the destination without syncing it.
+                auto dir_sync_guard = disk_to->getDirectorySyncGuard(to_directory);
+                auto in = disk_from->readFile(path_from, getReadSettings());
+                auto out = disk_to->writeFile(path_to, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+                copyData(*in, *out);
+                out->finalize();
+                out->sync();
+                if (dir_sync_guard)
+                    dir_sync_guard->sync();
+            },
+            "copying file"))
         return;
 
-    if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))
+    /// The marker removal must be durable before the source is removed, otherwise after a crash
+    /// recovery would treat the complete destination as incomplete and delete it.
+    if (!run_with_retries(
+            [&]
+            {
+                auto dir_sync_guard = disk_to->getDirectorySyncGuard(to_directory);
+                disk_to->removeFileIfExists(tmp_file_name);
+                if (dir_sync_guard)
+                    dir_sync_guard->sync();
+            },
+            "removing temporary file"))
         return;
 
     if (before_file_remove_op && !before_file_remove_op())
