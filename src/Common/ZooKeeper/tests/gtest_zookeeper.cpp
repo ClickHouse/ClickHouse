@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 #include <gtest/gtest.h>
 
@@ -87,6 +88,21 @@ private:
     mutable std::mutex mutex;
     std::shared_ptr<const GetCallback> latest_get_callback;
 };
+
+template <typename Response>
+void expectKeeperError(std::future<Response> future, Error code, const std::string & message_part)
+{
+    try
+    {
+        (void)future.get();
+        ADD_FAILURE() << "Expected " << errorMessage(code);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        EXPECT_EQ(e.code, code);
+        EXPECT_NE(e.message().find(message_part), std::string::npos) << e.message();
+    }
+}
 
 }
 
@@ -435,4 +451,43 @@ TEST(ZooKeeperTest, MultiReadResponsesInFlightThrowHardwareErrorOnAccess)
     EXPECT_THROW(responses[0], zkutil::KeeperException);
     EXPECT_THROW(responses[0], zkutil::KeeperException);
     EXPECT_THROW(responses.waitForResponses(), zkutil::KeeperException);
+}
+
+TEST(ZooKeeperTest, FaultInjectionAsyncCallsAfterFault)
+{
+    /// A fault resets the keeper, so the next async calls must fail their future without touching it.
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 30000);
+    ZooKeeperWithFaultInjection faulty(zk);
+    faulty.forceFailureBeforeOperation();
+    expectKeeperError(faulty.asyncTryGet("/node"), Error::ZSESSIONEXPIRED, "Fault injection before operation");
+    ASSERT_TRUE(faulty.isNull());
+    expectKeeperError(faulty.asyncTryGet("/node"), Error::ZSESSIONEXPIRED, "Called after fault injection");
+    expectKeeperError(faulty.asyncTryRemove("/node"), Error::ZSESSIONEXPIRED, "Called after fault injection");
+}
+
+TEST(ZooKeeperTest, FaultInjectionAsyncCallsWithoutKeeperAlwaysFaulty)
+{
+    /// No keeper and a fault before every operation: the future must be set exactly once.
+    ZooKeeperWithFaultInjection faulty(nullptr, /*fault_injection_probability=*/ 1.0, /*fault_injection_seed=*/ 1, "test", nullptr);
+    expectKeeperError(faulty.asyncTryGet("/node"), Error::ZSESSIONEXPIRED, "Called after fault injection");
+    expectKeeperError(faulty.asyncTryRemove("/node"), Error::ZSESSIONEXPIRED, "Called after fault injection");
+}
+
+TEST(ZooKeeperTest, FaultInjectionAsyncTryGetResponseAfterReturn)
+{
+    /// The response arrives after `asyncTryGet` returned and its argument was destroyed.
+    auto keeper_holder = std::make_unique<GetCallbackKeeper>();
+    auto & keeper = *keeper_holder;
+    auto zk = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::unique_ptr<IKeeper>(std::move(keeper_holder)));
+    ZooKeeperWithFaultInjection faulty(zk);
+
+    const std::string path = "/fault_injection/a_path_longer_than_the_small_string_buffer";
+    auto future = faulty.asyncTryGet(path);
+    auto callback = keeper.getLatestGetCallback();
+    ASSERT_TRUE(callback);
+
+    GetResponse response;
+    response.error = Error::ZCONNECTIONLOSS;
+    (*callback)(response);
+    expectKeeperError(std::move(future), Error::ZCONNECTIONLOSS, path);
 }
