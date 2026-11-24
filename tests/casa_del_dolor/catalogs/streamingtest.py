@@ -6,7 +6,6 @@ import logging
 import random
 import subprocess
 import time
-import traceback
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -246,7 +245,6 @@ class StreamingHandler:
             self.on_create(table)
         except Exception as e:
             # The broker may be restarting, the table is created anyway
-            traceback.print_exc()
             self.logger.exception(e)
         return True
 
@@ -259,7 +257,6 @@ class StreamingHandler:
             self.on_update(table)
         except Exception as e:
             # If an error happens, ignore it, but log it
-            traceback.print_exc()
             self.logger.exception(e)
         return True
 

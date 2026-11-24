@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class SerializationInfoObject;
-
 class DataTypeObject final : public IDataType
 {
 public:
@@ -64,11 +62,10 @@ public:
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
-    bool hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const override;
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }
     bool isComparableForEquality() const override { return true; }
-    bool haveSubtypes() const override { return false; }
+    bool haveSubtypes() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
     /// Equal except for the set of SHARED typed paths. Such types have identical columns.
@@ -89,11 +86,6 @@ public:
     void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override;
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
-    SerializationPtr getSerialization(const SerializationInfo & info) const override;
-    SerializationPtr getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const override;
-    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
-    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
-    using IDataType::getSerializationInfo;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;
@@ -126,11 +118,6 @@ public:
     static const DataTypePtr & getTypeOfSharedData();
 
 private:
-    SerializationPtr getSerializationImpl(
-        const SerializationInfoSettings & settings,
-        const SerializationInfoObject * serialization_info,
-        bool use_type_serialization_settings) const;
-
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 
     /// Don't change these constants, it can break backward compatibility.
