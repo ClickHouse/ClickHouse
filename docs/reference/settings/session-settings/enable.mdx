@@ -565,7 +565,7 @@ Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nu
 
 Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join` is not affected either.
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join keeps exact keys when its hash table fits in the L2 cache of the CPU, and also when it would hash every left key and the right side has fewer rows than `min_rows_for_packed_string_keys_in_hash_join`. With that setting at 0, every join is packed, also one whose hash table fits in the L2 cache.
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 
