@@ -9,6 +9,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 #include <Common/SipHash.h>
 
@@ -252,6 +253,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     ExpressionActionsSettings actions_settings_,
     PreparedSetsCachePtr prepared_sets_cache_)
 {
+    const auto result_limits = StreamLocalLimits::forQueryResult(from).size_limits;
+    result_limit_can_stop_reading = result_limits.hasLimits() && result_limits.overflow_mode == OverflowMode::BREAK;
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
 

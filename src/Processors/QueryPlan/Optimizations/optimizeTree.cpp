@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -84,48 +85,44 @@ static bool containsRuntimeFilter(const ActionsDAG & actions)
     });
 }
 
-static bool containsRuntimeFilter(const IQueryPlanStep & step)
+static bool hasPushedDownFilter(const SourceStepWithFilterBase & source)
 {
-    if (typeid_cast<const BuildRuntimeFilterStep *>(&step))
+    if (const auto & filter = source.getFilterActionsDAG(); filter && !filter->getNodes().empty())
         return true;
-    if (const auto * filter = typeid_cast<const FilterStep *>(&step))
-        return containsRuntimeFilter(filter->getExpression());
+    if (const auto prewhere = source.getPrewhereInfo(); prewhere && !prewhere->prewhere_actions.getNodes().empty())
+        return true;
+    const auto filter = source.getRowLevelFilter();
+    return filter && !filter->actions.getNodes().empty();
+}
+
+static bool canShortenFingerprintProbe(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const FilterStep *>(&step) || typeid_cast<const BuildRuntimeFilterStep *>(&step))
+        return true;
     if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
         return containsRuntimeFilter(expression->getExpression());
-    if (const auto * source = typeid_cast<const SourceStepWithFilterBase *>(&step))
+    if (step.getInputHeaders().empty())
     {
-        if (const auto & filter = source->getFilterActionsDAG(); filter && containsRuntimeFilter(*filter))
-            return true;
-        if (const auto prewhere = source->getPrewhereInfo(); prewhere && containsRuntimeFilter(prewhere->prewhere_actions))
-            return true;
-        if (const auto filter = source->getRowLevelFilter(); filter && containsRuntimeFilter(filter->actions))
-            return true;
+        if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(&step))
+            return source->getQueryInfo().mayStopReadingEarly() || hasPushedDownFilter(*source);
+        if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(&step))
+            return hasPushedDownFilter(*source);
+        return false;
     }
-    return false;
-}
-
-static bool containsFilterAffectingProbeBudget(const IQueryPlanStep & step)
-{
-    if (typeid_cast<const FilterStep *>(&step))
-        return true;
-    if (const auto * source = typeid_cast<const SourceStepWithFilterBase *>(&step))
-    {
-        if (const auto & filter = source->getFilterActionsDAG(); filter && !filter->getNodes().empty())
-            return true;
-        if (const auto prewhere = source->getPrewhereInfo(); prewhere && !prewhere->prewhere_actions.getNodes().empty())
-            return true;
-        if (const auto filter = source->getRowLevelFilter(); filter && !filter->actions.getNodes().empty())
-            return true;
-    }
-    return false;
-}
-
-static bool canStopFingerprintProbeEarly(const IQueryPlanStep & step)
-{
     if (typeid_cast<const LimitStep *>(&step))
         return true;
     if (const auto * range = typeid_cast<const LimitRangeStep *>(&step))
         return range->canStopReadingEarly();
+    if (const auto * aggregation = typeid_cast<const AggregatingStep *>(&step))
+    {
+        const auto & params = aggregation->getParams();
+        return params.keys_size && params.max_rows_to_group_by && params.group_by_overflow_mode == OverflowMode::BREAK;
+    }
+    if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
+    {
+        const auto & limits = sorting->getSettings().size_limits;
+        return limits.hasLimits() && limits.overflow_mode == OverflowMode::BREAK;
+    }
     if (const auto * distinct = typeid_cast<const DistinctStep *>(&step))
     {
         const auto & limits = distinct->getSettings().set_size_limits;
@@ -144,18 +141,19 @@ static bool canStopFingerprintProbeEarly(const IQueryPlanStep & step)
     return false;
 }
 
-static void invalidateAutoFingerprintProbeEstimates(QueryPlan::Node & root, bool runtime_filters_added)
+static void invalidateAutoFingerprintProbeEstimates(QueryPlan::Node & root, bool probe_budget_invalid)
 {
     /// Nested queries can choose a different fingerprint mode from the outer query.
     /// Inspect each join's captured settings instead of the thread's outer context.
     Stack stack;
-    bool probe_budget_invalid = runtime_filters_added;
-    traverseQueryPlan(stack, root, [&](const auto & node)
+    if (!probe_budget_invalid)
     {
-        probe_budget_invalid |= containsRuntimeFilter(*node.step)
-            || containsFilterAffectingProbeBudget(*node.step)
-            || canStopFingerprintProbeEarly(*node.step);
-    });
+        traverseQueryPlan(stack, root, [&](const auto & node)
+        {
+            if (!probe_budget_invalid)
+                probe_budget_invalid = canShortenFingerprintProbe(*node.step);
+        });
+    }
     if (!probe_budget_invalid)
         return;
 
@@ -577,7 +575,7 @@ void optimizeTreeSecondPass(
             traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
     }
 
-    invalidateAutoFingerprintProbeEstimates(root, join_runtime_filters_were_added);
+    invalidateAutoFingerprintProbeEstimates(root, join_runtime_filters_were_added || optimization_settings.result_limit_can_stop_reading);
 
     /// The runtime `FilterStep`s added and pushed down just above are invisible to the
     /// `updateQueryConditionCache` walk at the beginning of this function, but they change the
@@ -1211,7 +1209,7 @@ void optimizeTreeSecondPass(
     allowReadingShardsFromSeveralReplicas(root);
 
     /// Later rewrites can add filters after physical join construction. Recheck the final probe budget.
-    invalidateAutoFingerprintProbeEstimates(root, join_runtime_filters_were_added);
+    invalidateAutoFingerprintProbeEstimates(root, join_runtime_filters_were_added || optimization_settings.result_limit_can_stop_reading);
 }
 
 void addStepsToBuildSets(

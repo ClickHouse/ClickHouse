@@ -29,7 +29,6 @@
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -365,27 +364,6 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
 namespace
 {
 
-/// Whether a read limit with a non-throwing overflow mode can end the read early instead of failing the
-/// query. Row and byte limits, including the leaf ones, are checked against the progress of the whole query
-/// and `max_execution_time` against the elapsed time, so the read can stop however few rows it selects.
-/// These are the limits that the sources of the read enforce; leaf limits are set only on a leaf of a distributed
-/// query (`distributed_depth > 0`).
-bool mayStopReadingEarly(const SelectQueryInfo & query_info)
-{
-    if (!query_info.storage_limits)
-        return false;
-    return std::ranges::any_of(
-        *query_info.storage_limits,
-        [](const StorageLimits & limits)
-        {
-            const auto & local_limits = limits.local_limits;
-            return (local_limits.size_limits.overflow_mode != OverflowMode::THROW && local_limits.size_limits.hasLimits())
-                || (limits.leaf_limits.overflow_mode != OverflowMode::THROW && limits.leaf_limits.hasLimits())
-                || (local_limits.timeout_overflow_mode != OverflowMode::THROW
-                    && local_limits.speed_limits.max_execution_time.totalMicroseconds() != 0);
-        });
-}
-
 /// What a read does to the rows and values that the statistics of its source describe. A filter step above the read
 /// records its own row subset; it counts here only where the estimate of the read accounts for it.
 struct ReadCoverage
@@ -480,7 +458,7 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
 
     return ReadCoverage{
         .may_drop_rows = has_predicates || has_row_selecting_modifiers || has_deleted_rows || has_on_the_fly_data_changes
-            || mayStopReadingEarly(query_info),
+            || query_info.mayStopReadingEarly(),
         /// `FINAL` can synthesize values in `SummingMergeTree`, `AggregatingMergeTree` and `GraphiteMergeTree`; every
         /// `FINAL` read counts, so that new merge modes fail closed.
         .may_rewrite_values = has_on_the_fly_data_changes || query_info.isFinal()
@@ -666,7 +644,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         /// The manifest statistics describe every row of the remaining files, deleted rows included.
         const ReadCoverage coverage{
             .may_drop_rows = estimate->has_delete_files || reading->getFilterActionsDAG() || reading->getPrewhereInfo()
-                || reading->getRowLevelFilter() || mayStopReadingEarly(reading->getQueryInfo()),
+                || reading->getRowLevelFilter() || reading->getQueryInfo().mayStopReadingEarly(),
             .may_rewrite_values = false,
             .top_k_limit = std::nullopt};
 
