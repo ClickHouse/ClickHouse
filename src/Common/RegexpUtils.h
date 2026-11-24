@@ -53,7 +53,6 @@ RegexpFixedPrefix extractFixedPrefixFromRegularExpression(std::string_view regex
 /// The straightforward wrapping into `^(?:...)$` is used only when the regex has an alternation or an inline
 /// multiline flag at the top level: a leading group stops `extractFixedPrefixFromRegularExpression`, so the
 /// anchors are added directly (`node_.*` -> `^node_.*$`) whenever that keeps the whole-string semantics.
-/// A regex with a ')' that closes no group is returned unchanged, so it stays invalid.
 String anchorRegexpToMatchWholeString(std::string_view regexp);
 
 /// Removes the last character of `literal`, a whole UTF-8 code point, which a zero-allowing quantifier makes optional.
