@@ -27,3 +27,6 @@ printf "$QUERY" | $CLICKHOUSE_LOCAL 2>&1 | report
 
 echo "-- with a failure while preparing the explanation"
 printf "SYSTEM ENABLE FAILPOINT insert_schema_mismatch_diagnostic_fail; $QUERY" | $CLICKHOUSE_LOCAL 2>&1 | report
+
+echo "-- with a failure while attaching the prepared explanation"
+printf "SYSTEM ENABLE FAILPOINT insert_schema_mismatch_diagnostic_attach_fail; $QUERY" | $CLICKHOUSE_LOCAL 2>&1 | report

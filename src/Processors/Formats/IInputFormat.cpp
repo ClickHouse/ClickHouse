@@ -20,6 +20,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char insert_schema_mismatch_diagnostic_fail[];
+    extern const char insert_schema_mismatch_diagnostic_attach_fail[];
 }
 
 bool isInsertDataErrorWorthExplaining(int code)
@@ -59,7 +60,6 @@ Chunk IInputFormat::generate()
         /// For a parse or conversion error, attach the schema-mismatch explanation if one is available.
         if (parse_error_diagnostic_provider && isInsertDataErrorWorthExplaining(e.code()))
         {
-            String diagnostic;
             try
             {
                 /// Stands in for a failure while the diagnostic is prepared, e.g. exceeding the memory
@@ -68,17 +68,26 @@ Chunk IInputFormat::generate()
                 {
                     throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::insert_schema_mismatch_diagnostic_fail);
                 });
-                diagnostic = parse_error_diagnostic_provider(getRowsReachedOnParseError());
+                String diagnostic = parse_error_diagnostic_provider(getRowsReachedOnParseError());
+                if (!diagnostic.empty())
+                {
+                    /// Stands in for a failure while a prepared explanation is attached, e.g. exceeding
+                    /// the memory limit when `addMessage` copies it into the message of the exception.
+                    fiu_do_on(FailPoints::insert_schema_mismatch_diagnostic_attach_fail,
+                    {
+                        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::insert_schema_mismatch_diagnostic_attach_fail);
+                    });
+                    e.addMessage(diagnostic);
+                }
             }
             catch (...) // NOLINT(bugprone-empty-catch)
             {
                 /// The explanation is an optional addition to the exception being handled. A failure
                 /// anywhere in preparing it, including in the provider before the explanation itself
-                /// is computed (e.g. copying the captured data under the query memory limit), must not
-                /// replace the original exception, so it is Ok to ignore it and omit the explanation.
+                /// is computed (e.g. copying the captured data under the query memory limit), or in
+                /// attaching it to the exception (`addMessage` allocates as well), must not replace
+                /// the original exception, so it is Ok to ignore it and omit the explanation.
             }
-            if (!diagnostic.empty())
-                e.addMessage(diagnostic);
         }
 
         throw;
