@@ -1239,6 +1239,11 @@ void visitLocalAST(
     for (const auto & child : node->children)
         if (child.get() != skip)
             visitLocalAST(child.get(), clusters, owner, visitor, in_table_expression, eval_query);
+    /// A TTL's GROUP BY keys and SET assignments are not in its `children`.
+    if (const auto * ttl = node->as<ASTTTLElement>())
+        for (const auto * parts : {&ttl->group_by_key, &ttl->group_by_assignments})
+            for (const auto & part : *parts)
+                visitLocalAST(part.get(), clusters, owner, visitor, in_table_expression, eval_query);
     if (const auto * eval = asEvalCall(*node))
     {
         const EvalQuery generated = parseEvalQueryOrRefuse(*eval, clusters.context, owner);
