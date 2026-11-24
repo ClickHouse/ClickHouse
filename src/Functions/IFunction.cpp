@@ -132,9 +132,11 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
 
     /// A block can carry a dictionary much larger than itself; then only the keys its rows use are evaluated.
+    /// That copies the used values, so the required ratio grows with the average value size.
     const size_t block_rows = low_cardinality_column->size();
-    const bool dictionary_is_much_larger_than_block
-        = block_rows != 0 && low_cardinality_column->getDictionary().size() > 16 * block_rows;
+    const auto & dictionary = low_cardinality_column->getDictionary();
+    const size_t value_bytes = dictionary.byteSize() / dictionary.size();
+    const bool dictionary_is_much_larger_than_block = block_rows != 0 && dictionary.size() > (16 + value_bytes / 16) * block_rows;
 
     ColumnPtr indexes;
     if (can_be_executed_on_default_arguments && !dictionary_is_much_larger_than_block)

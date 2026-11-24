@@ -14,6 +14,9 @@
     <create_query>
         CREATE TABLE test_lc_hc (x UInt64, lc LowCardinality(String), u UInt64) ENGINE = MergeTree order by x
     </create_query>
+    <create_query>
+        CREATE TABLE test_lc_long (x UInt64, lc LowCardinality(String)) ENGINE = MergeTree order by x
+    </create_query>
 
     <fill_query>INSERT INTO test_lc SELECT number, number % 10 ? NULL : toString(number % 10000) FROM numbers(1e7)</fill_query>
     <!-- The queries over test_lc_agg and test_lc_runs take a time that depends on the number of parts, so both servers get one part. -->
@@ -24,6 +27,8 @@
     <fill_query>OPTIMIZE TABLE test_lc_runs FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
     <fill_query>INSERT INTO test_lc_hc SELECT number, concat(if(cityHash64(number, 1) % 2 = 0, 'X', 'Y'), toString(cityHash64(number, 2) % 500000)), cityHash64(number, 3) % 1000000000 FROM numbers(1e7)</fill_query>
     <fill_query>OPTIMIZE TABLE test_lc_hc FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>INSERT INTO test_lc_long SELECT number, concat(toString(cityHash64(number) % 8000), repeat('x', 1020)) FROM numbers(2e6)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_lc_long FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
     
     <query>SELECT isNullable(lc) FROM test_lc FORMAT Null</query>
     <query>SELECT isConstant(lc) FROM test_lc FORMAT Null</query>
@@ -42,10 +47,13 @@
     <query>SELECT min(lc), max(lc) FROM test_lc_runs FORMAT Null</query>
     <query>SELECT count() FROM test_lc_hc WHERE u &lt; 50000000 AND lower(lc) = 'x123' SETTINGS allow_reorder_prewhere_conditions = 0, use_query_condition_cache = 0</query>
     <query>SELECT count() FROM test_lc_shared WHERE x % 1000 = 7 AND lower(lc) LIKE '%42%' SETTINGS use_query_condition_cache = 0</query>
+    <!-- 1 KB values on blocks with 17 times fewer rows than the dictionary: a cheap function must keep the whole-dictionary path. -->
+    <query>SELECT countIf(empty(lc)) FROM test_lc_long SETTINGS max_block_size = 470</query>
 
     <drop_query>DROP TABLE IF EXISTS test_lc</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_agg</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_shared</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_runs</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_hc</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_lc_long</drop_query>
 </test>
