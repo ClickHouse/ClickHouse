@@ -1233,6 +1233,118 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     });
 }
 
+static size_t tryPushDownOverIntersectOrExceptStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node)
+{
+    auto & parent = parent_node->step;
+    QueryPlanStepPtr & child = child_node->step;
+    auto * filter = assert_cast<FilterStep *>(parent.get());
+
+    auto * intersect_or_except = typeid_cast<IntersectOrExceptStep *>(child.get());
+    if (!intersect_or_except)
+        return 0;
+
+    /// IntersectOrExcept does not change the header and its branches are positionally aligned,
+    /// so a filter above it can be cloned into every branch, exactly as for UnionStep.
+    ///
+    /// TODO(#117559): a pushed-down filter also runs on branch rows the set operation removes,
+    /// so a predicate that throws on some values raises there instead of returning rows.
+    if (isSensitiveToEvaluationCount(filter->getExpression()))
+        return 0;
+
+    /// The set operation returns full columns while a branch may emit constant ones, so a filter reading the
+    /// representation (e.g. `isConstant`) would see a different one there.
+    if (!ActionsDAG::getInputsReadByRepresentation(filter->getExpression().getOutputs()).empty())
+        return 0;
+
+    /// A set operation matches NULL keys whatever lies under the null map, so the cloned filter must not read it.
+    if (dagReadsUnspecifiedValueUnderNull(filter->getExpression()))
+        return 0;
+
+    /// In a branch that produces totals the filter could sink below TotalsHaving and change the totals.
+    for (auto * branch : child_node->children)
+        if (canProduceTotals(*branch))
+            return 0;
+
+    /// Forcing the filter's output header onto a branch whose input header is not the output one
+    /// would reinstate a constness that branch does not emit, as for UnionStep.
+    const auto & set_key_header = *intersect_or_except->getOutputHeader();
+    for (const auto & input_header : child->getInputHeaders())
+        if (!blocksHaveEqualStructure(*input_header, set_key_header))
+            return 0;
+
+    /// IntersectOrExcept compares whole rows positionally: its entire header is the set key, and
+    /// the pushed filter's output header becomes the new one. Dropping a set-key column coarsens
+    /// the comparison; projecting them all away (e.g. a count() parent) computes the set over zero
+    /// columns and aborts on num_srcs > 0. Consistent renaming or reordering is harmless, so only
+    /// the column count and positional types must be preserved.
+    auto expected_output = filter->getOutputHeader();
+    if (expected_output->columns() != set_key_header.columns())
+        return 0;
+    for (size_t i = 0; i < set_key_header.columns(); ++i)
+    {
+        if (!expected_output->getByPosition(i).type->equals(*set_key_header.getByPosition(i).type))
+            return 0;
+    }
+
+    /// The same width and types are not enough: the new set key must be a permutation of the
+    /// original, so every column resolves to a branch input and each input is used exactly once.
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> output_by_name;
+    for (const auto * out : filter->getExpression().getOutputs())
+        output_by_name.emplace(out->result_name, out);
+
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_inputs;
+    for (const auto & col : *expected_output)
+    {
+        auto it = output_by_name.find(col.name);
+        if (it == output_by_name.end())
+            return 0;
+        const auto * input = resolvePassThroughInput(it->second);
+        if (!input || !used_inputs.emplace(input).second)
+            return 0;
+    }
+
+    auto input_headers = child->getInputHeaders();
+
+    for (auto & input_header : input_headers)
+        input_header = expected_output;
+
+    ///                          - Something
+    /// Filter - IntersectExcept - Something
+    ///                          - Something
+
+    child = std::make_unique<IntersectOrExceptStep>(
+        input_headers, intersect_or_except->getOperator(), intersect_or_except->getMaxThreads());
+
+    std::swap(parent, child);
+    std::swap(parent_node->children, child_node->children);
+    std::swap(parent_node->children.front(), child_node->children.front());
+
+    ///                - Filter - Something
+    /// IntersectExcept - Something
+    ///                - Something
+
+    for (size_t i = 1; i < parent_node->children.size(); ++i)
+    {
+        auto & filter_node = nodes.emplace_back();
+        filter_node.children.push_back(parent_node->children[i]);
+        parent_node->children[i] = &filter_node;
+
+        auto new_filter = std::make_unique<FilterStep>(
+            filter_node.children.front()->step->getOutputHeader(),
+            filter->getExpression().clone(),
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn());
+        new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
+        filter_node.step = std::move(new_filter);
+    }
+
+    ///                - Filter - Something
+    /// IntersectExcept - Filter - Something
+    ///                - Filter - Something
+
+    return 3;
+}
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -1496,109 +1608,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return 3;
     }
 
-    if (auto * intersect_or_except = typeid_cast<IntersectOrExceptStep *>(child.get()))
-    {
-        /// IntersectOrExcept does not change the header and its branches are positionally aligned,
-        /// so a filter above it can be cloned into every branch, exactly as for UnionStep.
-        ///
-        /// TODO(#117559): a pushed-down filter also runs on branch rows the set operation removes,
-        /// so a predicate that throws on some values raises there instead of returning rows.
-        if (isSensitiveToEvaluationCount(filter->getExpression()))
-            return 0;
-
-        /// The set operation returns full columns while a branch may emit constant ones, so a filter reading the
-        /// representation (e.g. `isConstant`) would see a different one there.
-        if (!ActionsDAG::getInputsReadByRepresentation(filter->getExpression().getOutputs()).empty())
-            return 0;
-
-        /// A set operation matches NULL keys whatever lies under the null map, so the cloned filter must not read it.
-        if (dagReadsUnspecifiedValueUnderNull(filter->getExpression()))
-            return 0;
-
-        /// In a branch that produces totals the filter could sink below TotalsHaving and change the totals.
-        for (auto * branch : child_node->children)
-            if (canProduceTotals(*branch))
-                return 0;
-
-        /// Forcing the filter's output header onto a branch whose input header is not the output one
-        /// would reinstate a constness that branch does not emit, as for UnionStep.
-        const auto & set_key_header = *intersect_or_except->getOutputHeader();
-        for (const auto & input_header : child->getInputHeaders())
-            if (!blocksHaveEqualStructure(*input_header, set_key_header))
-                return 0;
-
-        /// IntersectOrExcept compares whole rows positionally: its entire header is the set key, and
-        /// the pushed filter's output header becomes the new one. Dropping a set-key column coarsens
-        /// the comparison; projecting them all away (e.g. a count() parent) computes the set over zero
-        /// columns and aborts on num_srcs > 0. Consistent renaming or reordering is harmless, so only
-        /// the column count and positional types must be preserved.
-        auto expected_output = filter->getOutputHeader();
-        if (expected_output->columns() != set_key_header.columns())
-            return 0;
-        for (size_t i = 0; i < set_key_header.columns(); ++i)
-        {
-            if (!expected_output->getByPosition(i).type->equals(*set_key_header.getByPosition(i).type))
-                return 0;
-        }
-
-        /// The same width and types are not enough: the new set key must be a permutation of the
-        /// original, so every column resolves to a branch input and each input is used exactly once.
-        UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> output_by_name;
-        for (const auto * out : filter->getExpression().getOutputs())
-            output_by_name.emplace(out->result_name, out);
-
-        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_inputs;
-        for (const auto & col : *expected_output)
-        {
-            auto it = output_by_name.find(col.name);
-            if (it == output_by_name.end())
-                return 0;
-            const auto * input = resolvePassThroughInput(it->second);
-            if (!input || !used_inputs.emplace(input).second)
-                return 0;
-        }
-
-        auto input_headers = child->getInputHeaders();
-
-        for (auto & input_header : input_headers)
-            input_header = expected_output;
-
-        ///                          - Something
-        /// Filter - IntersectExcept - Something
-        ///                          - Something
-
-        child = std::make_unique<IntersectOrExceptStep>(
-            input_headers, intersect_or_except->getOperator(), intersect_or_except->getMaxThreads());
-
-        std::swap(parent, child);
-        std::swap(parent_node->children, child_node->children);
-        std::swap(parent_node->children.front(), child_node->children.front());
-
-        ///                - Filter - Something
-        /// IntersectExcept - Something
-        ///                - Something
-
-        for (size_t i = 1; i < parent_node->children.size(); ++i)
-        {
-            auto & filter_node = nodes.emplace_back();
-            filter_node.children.push_back(parent_node->children[i]);
-            parent_node->children[i] = &filter_node;
-
-            auto new_filter = std::make_unique<FilterStep>(
-                filter_node.children.front()->step->getOutputHeader(),
-                filter->getExpression().clone(),
-                filter->getFilterColumnName(),
-                filter->removesFilterColumn());
-            new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
-            filter_node.step = std::move(new_filter);
-        }
-
-        ///                - Filter - Something
-        /// IntersectExcept - Filter - Something
-        ///                - Filter - Something
-
-        return 3;
-    }
+    if (auto updated_steps = tryPushDownOverIntersectOrExceptStep(parent_node, nodes, child_node))
+        return updated_steps;
 
     /// A filter left above the local fragment (see below) would keep this one from reaching it, while the
     /// remote step gathers every filter in the chain above it. So join the two, and split them together.
