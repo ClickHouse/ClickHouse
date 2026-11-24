@@ -184,6 +184,13 @@ IcebergRESTCatalogWarehouse::CreateTableOutcome IcebergRESTCatalogWarehouse::cre
     return store->createTable(ns, table, pointer, table_root);
 }
 
+std::optional<IcebergRESTCatalogWarehouse::CreateTableOutcome> IcebergRESTCatalogWarehouse::checkForLocationConflict(
+    const IcebergNamespaceName & ns, const String & table, const String & table_root) const
+{
+    validateLocation(table_root);
+    return store->checkForLocationConflict(ns, table, table_root);
+}
+
 std::optional<IcebergTablePointer> IcebergRESTCatalogWarehouse::getTable(const IcebergNamespaceName & ns, const String & table) const
 {
     return store->getTable(ns, table);

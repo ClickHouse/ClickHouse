@@ -47,6 +47,8 @@ public:
     using CreateTableOutcome = KeeperIcebergRESTCatalogStore::CreateTableOutcome;
     [[nodiscard]] CreateTableOutcome
     createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer, const String & table_root) const;
+    [[nodiscard]] std::optional<CreateTableOutcome>
+    checkForLocationConflict(const IcebergNamespaceName & ns, const String & table, const String & table_root) const;
     [[nodiscard]] std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
     [[nodiscard]] bool tableExists(const IcebergNamespaceName & ns, const String & table) const;
     [[nodiscard]] std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;

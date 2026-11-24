@@ -343,32 +343,12 @@ std::optional<KeeperIcebergRESTCatalogStore::CreateTableOutcome> KeeperIcebergRE
 {
     const auto table_path = tablePath(ns, table);
 
-    /// Step 1. Read all table locations and remember the version of `locations`.
-    Strings existing_table_locations;
+    /// Step 1. Check all table locations for a conflict and remember the version of `locations`.
     Coordination::Stat stat;
-    const auto code = zookeeper->tryGetChildren(locations_path, existing_table_locations, &stat);
-    /// The `locations` node is created with the warehouse. If it is missing, the warehouse was dropped.
-    if (code == Coordination::Error::ZNONODE)
-        return CreateTableOutcome{.result = CreateTableResult::NamespaceMissing, .conflicting_location = {}};
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, locations_path);
+    if (auto conflict = checkForLocationConflict(zookeeper, table_path, table_root, &stat))
+        return conflict;
 
-    /// Step 2. Reject the new location if it is equal to, inside, or above an existing one.
-    /// This is a linear scan over all tables of the warehouse. A faster structure is possible, but more complex and likely not needed.
-    for (const auto & escaped_location : existing_table_locations)
-    {
-        auto existing_location = unescapeForFileName(escaped_location);
-        if (!locationsOverlap(table_root, existing_location))
-            continue;
-
-        /// A repeated create of the same table overlaps its own location. The name conflict is reported first, as the REST spec expects.
-        if (zookeeper->exists(table_path))
-            return CreateTableOutcome{.result = CreateTableResult::TableExists, .conflicting_location = {}};
-
-        return CreateTableOutcome{.result = CreateTableResult::LocationOverlaps, .conflicting_location = std::move(existing_location)};
-    }
-
-    /// Step 3. Write everything in one transaction.
+    /// Step 2. Write everything in one transaction.
     Coordination::Requests ops;
 
     /// Bump the version of `locations`. Fails if a table was created since step 1.
@@ -393,14 +373,14 @@ std::optional<KeeperIcebergRESTCatalogStore::CreateTableOutcome> KeeperIcebergRE
     if (multi_code == Coordination::Error::ZOK)
         return CreateTableOutcome{.result = CreateTableResult::Created, .conflicting_location = {}};
 
-    /// Step 4. The transaction failed. Find out why.
+    /// Step 3. The transaction failed. Find out why.
 
     /// Another create changed `locations`. The caller scans it again.
     if (multi_code == Coordination::Error::ZBADVERSION)
         return std::nullopt;
 
     /// The table node or the uuid node already exists. The uuid of a staged create comes from the client, so it can be taken.
-    /// The location create cannot fail: the version check passed, so no location was added since step 2.
+    /// The location create cannot fail: the version check passed, so no location was added since step 1.
     if (multi_code == Coordination::Error::ZNODEEXISTS && zkutil::getFailedOpIndex(multi_code, responses) != location_op)
         return CreateTableOutcome{.result = CreateTableResult::TableExists, .conflicting_location = {}};
 
@@ -412,6 +392,42 @@ std::optional<KeeperIcebergRESTCatalogStore::CreateTableOutcome> KeeperIcebergRE
     /// Anything else is a Keeper error, such as a lost session.
     zkutil::KeeperMultiException::check(multi_code, ops, responses);
     UNREACHABLE();
+}
+
+std::optional<KeeperIcebergRESTCatalogStore::CreateTableOutcome> KeeperIcebergRESTCatalogStore::checkForLocationConflict(
+    const IcebergNamespaceName & ns, const String & table, const String & table_root) const
+{
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::checkForLocationConflict");
+    return checkForLocationConflict(getZooKeeper(), tablePath(ns, table), table_root);
+}
+
+std::optional<KeeperIcebergRESTCatalogStore::CreateTableOutcome> KeeperIcebergRESTCatalogStore::checkForLocationConflict(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & table_path, const String & table_root, Coordination::Stat * stat) const
+{
+    Strings existing_table_locations;
+    const auto code = zookeeper->tryGetChildren(locations_path, existing_table_locations, stat);
+    /// The `locations` node is created with the warehouse. If it is missing, the warehouse was dropped.
+    if (code == Coordination::Error::ZNONODE)
+        return CreateTableOutcome{.result = CreateTableResult::NamespaceMissing, .conflicting_location = {}};
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, locations_path);
+
+    /// Reject the new location if it is equal to, inside, or above an existing one.
+    /// This is a linear scan over all tables of the warehouse. A faster structure is possible, but more complex and likely not needed.
+    for (const auto & escaped_location : existing_table_locations)
+    {
+        auto existing_location = unescapeForFileName(escaped_location);
+        if (!locationsOverlap(table_root, existing_location))
+            continue;
+
+        /// A repeated create of the same table overlaps its own location. The name conflict is reported first, as the REST spec expects.
+        if (zookeeper->exists(table_path))
+            return CreateTableOutcome{.result = CreateTableResult::TableExists, .conflicting_location = {}};
+
+        return CreateTableOutcome{.result = CreateTableResult::LocationOverlaps, .conflicting_location = std::move(existing_location)};
+    }
+
+    return std::nullopt;
 }
 
 std::optional<IcebergTablePointer> KeeperIcebergRESTCatalogStore::getTable(const IcebergNamespaceName & ns, const String & table) const

@@ -106,6 +106,10 @@ public:
     CreateTableOutcome
     createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer, const String & table_root);
 
+    /// Reason for which `createTable` would refuse `table_root` now, if any. Read-only, so a concurrent create can change the answer.
+    std::optional<CreateTableOutcome>
+    checkForLocationConflict(const IcebergNamespaceName & ns, const String & table, const String & table_root) const;
+
     std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
 
     bool tableExists(const IcebergNamespaceName & ns, const String & table) const;
@@ -169,6 +173,13 @@ private:
         const String & table,
         const IcebergTablePointer & pointer,
         const String & table_root);
+
+    /// Reads all table locations and compares them with `table_root`. `stat`, if given, receives the version of `locations`.
+    std::optional<CreateTableOutcome> checkForLocationConflict(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        const String & table_path,
+        const String & table_root,
+        Coordination::Stat * stat = nullptr) const;
 
     String namespacePath(const IcebergNamespaceName & name) const;
     /// Node that holds the direct children of `name`. Empty `name` means the root list.

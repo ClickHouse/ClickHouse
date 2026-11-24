@@ -1157,6 +1157,10 @@ IcebergRESTCatalogWarehouse::CreateTableOutcome IcebergRESTCatalogService::write
     const Poco::JSON::Object::Ptr & metadata,
     CompressionMethod compression_method) const
 {
+    /// Refuse an overlapping location before the write, so that no file lands in the directory of another table.
+    if (auto conflict = warehouse.checkForLocationConflict(ns, table, location))
+        return *conflict;
+
     /// Object storage first, then the Keeper pointer. A crash in between leaves an orphan file, not a dangling pointer.
     const auto object_key = warehouse.objectKey(pointer.metadata_location);
     writeNewObject(
