@@ -2481,7 +2481,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.is_materialized_view && isFreshDefinition(mode) && mode != LoadingStrictnessLevel::RESTORE)
     {
         // An MV with a flattened nested column in an inner table can never be filled
-        if (create.is_materialized_view_with_inner_table())
+        if (mode == LoadingStrictnessLevel::CREATE && create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties);
     }
