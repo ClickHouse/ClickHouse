@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS t_product;
 DROP TABLE IF EXISTS t_rabitq;
 DROP TABLE IF EXISTS t_rabitq_ref;
 DROP TABLE IF EXISTS t_materialized;
+DROP TABLE IF EXISTS t_materialized_ref;
 DROP TABLE IF EXISTS t_dependency;
 DROP TABLE IF EXISTS t_dependency_ref;
 DROP TABLE IF EXISTS t_block_sizes;
@@ -46,7 +47,7 @@ SELECT 'rabitq', part_type, has(substreams, 'v.quantized')
 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_rabitq' AND active AND column = 'v';
 SELECT (SELECT sum(cityHash64(id, v.quantized)) FROM t_rabitq) = (SELECT sum(cityHash64(id, v.quantized)) FROM t_rabitq_ref);
 
--- A MATERIALIZED column: MATERIALIZE COLUMN.
+-- A MATERIALIZED column: MATERIALIZE COLUMN recomputes it (the inserted values differ from its expression).
 CREATE TABLE t_materialized
 (
     id UInt64,
@@ -54,13 +55,21 @@ CREATE TABLE t_materialized
     v Array(Float32) MATERIALIZED arrayMap(x -> x * 2, w) CODEC(Quantized('rabitq', 8))
 )
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-INSERT INTO t_materialized (id, w) SELECT number, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(8)) FROM numbers(100);
+CREATE TABLE t_materialized_ref (id UInt64, v Array(Float32) CODEC(Quantized('rabitq', 8)))
+ENGINE = MergeTree ORDER BY id;
+SET insert_allow_materialized_columns = 1;
+INSERT INTO t_materialized (id, w, v)
+SELECT id, w, w AS v FROM (SELECT number AS id, arrayMap(j -> toFloat32(sipHash64(number, j) % 2000 / 1000.0 - 1.0), range(8)) AS w FROM numbers(100));
+SET insert_allow_materialized_columns = 0;
+SELECT countIf(v != arrayMap(x -> x * 2, w)) FROM t_materialized;
 
 ALTER TABLE t_materialized MATERIALIZE COLUMN v;
+INSERT INTO t_materialized_ref SELECT id, v FROM t_materialized;
 SELECT 'materialize column', has(substreams, 'v.quantized')
 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_materialized' AND active AND column = 'v';
-
 SELECT count(), sum(length(v.quantized)) FROM t_materialized;
+SELECT countIf(v != arrayMap(x -> x * 2, w)) FROM t_materialized;
+SELECT (SELECT sum(cityHash64(id, v.quantized)) FROM t_materialized) = (SELECT sum(cityHash64(id, v.quantized)) FROM t_materialized_ref);
 
 -- A MATERIALIZED column recomputed by an update of the column it is computed from.
 CREATE TABLE t_dependency
@@ -101,6 +110,7 @@ DROP TABLE t_product;
 DROP TABLE t_rabitq;
 DROP TABLE t_rabitq_ref;
 DROP TABLE t_materialized;
+DROP TABLE t_materialized_ref;
 DROP TABLE t_dependency;
 DROP TABLE t_dependency_ref;
 DROP TABLE t_block_sizes;

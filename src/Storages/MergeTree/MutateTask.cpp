@@ -61,6 +61,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -1708,7 +1709,7 @@ getColumnsForNewDataPart(
     /// In compact parts we read all columns, because they all stored in a single file
     if (!isWidePart(source_part) || !isPerFilePartStorage(source_part->getDataPartStorage()))
     {
-        std::unordered_map<String, DataTypePtr> storage_types;
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> storage_types;
         for (const auto & column : storage_columns)
             storage_types.emplace(column.name, column.type);
 
@@ -4457,7 +4458,7 @@ private:
             /// the new part.
             NamesAndTypesList columns_for_writer;
             {
-                std::unordered_map<String, NameAndTypePair> new_part_columns;
+                UnorderedMapWithMemoryTracking<String, NameAndTypePair> new_part_columns;
                 for (const auto & col : ctx->new_data_part->getColumns())
                     new_part_columns.emplace(col.name, col);
                 for (const auto & col : ctx->updated_header.getNamesAndTypesList())
