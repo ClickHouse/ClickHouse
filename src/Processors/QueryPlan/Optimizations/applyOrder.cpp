@@ -18,12 +18,14 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/StorageMerge.h>
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <Functions/IFunction.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
 #include <algorithm>
-#include <unordered_set>
 
 
 namespace DB
@@ -161,7 +163,7 @@ static void applyActionsToSortingProperty(SortingProperty & property, const Acti
 /// Whether the plan reads a table with `STREAM`, which is an unbounded input.
 static bool readsStream(const QueryPlan::Node & node)
 {
-    std::vector<const QueryPlan::Node *> stack{&node};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&node};
     while (!stack.empty())
     {
         const auto * current = stack.back();
@@ -190,7 +192,7 @@ static void applyCurrentTimeOrderToAggregation(QueryPlan::Node & node, Aggregati
     if (params.keys.empty() || params.overflow_row)
         return;
 
-    std::unordered_set<std::string_view> keys(params.keys.begin(), params.keys.end());
+    UnorderedSetWithMemoryTracking<std::string_view> keys(params.keys.begin(), params.keys.end());
 
     /// The columns of the current time that are not the keys are skipped, see `SortingProperty::current_time_prefix`.
     SortDescription order;
@@ -208,7 +210,7 @@ static void applyCurrentTimeOrderToAggregation(QueryPlan::Node & node, Aggregati
     if (order.size() < num_current_time_keys)
         return;
 
-    std::unordered_set<std::string_view> used_keys;
+    UnorderedSetWithMemoryTracking<std::string_view> used_keys;
     for (const auto & column : order)
         used_keys.insert(column.column_name);
 
