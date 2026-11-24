@@ -24,6 +24,8 @@ DROP TABLE IF EXISTS t_vaf_nested;
 DROP TABLE IF EXISTS t_mlocal;
 DROP TABLE IF EXISTS t_mdist;
 DROP TABLE IF EXISTS t_merge_dist;
+DROP TABLE IF EXISTS t_merge_dist_nullable;
+DROP TABLE IF EXISTS t_merge_dist_64;
 
 CREATE TABLE t_src (ts DateTime, ts64 DateTime64(3), u UInt8) ENGINE = Memory;
 INSERT INTO t_src VALUES (1767225600, 1767225600.123, 2);
@@ -85,6 +87,12 @@ CREATE TABLE t_mdist AS t_mlocal ENGINE = Distributed(test_shard_localhost, curr
 CREATE TABLE t_merge_dist (ts DateTime('UTC')) ENGINE = Merge(currentDatabase(), '^t_mdist$');
 SELECT toHour(ts), count() FROM t_merge_dist GROUP BY 1;
 SELECT count() FROM t_merge_dist WHERE toHour(ts) = 0;
+-- The declared type can also wrap or widen the child's type.
+CREATE TABLE t_merge_dist_nullable (ts Nullable(DateTime('UTC'))) ENGINE = Merge(currentDatabase(), '^t_mdist$');
+SELECT toHour(ts), count() FROM t_merge_dist_nullable GROUP BY 1;
+SELECT count() FROM t_merge_dist_nullable WHERE toHour(ts) = 0;
+CREATE TABLE t_merge_dist_64 (ts DateTime64(3, 'UTC')) ENGINE = Merge(currentDatabase(), '^t_mdist$');
+SELECT toHour(ts), count() FROM t_merge_dist_64 GROUP BY 1;
 
 SELECT 'Variant';
 CREATE TABLE t_var (x Variant(DateTime, String)) ENGINE = Memory;
@@ -165,5 +173,7 @@ DROP TABLE t_any_mixed;
 DROP TABLE t_qaf_nested;
 DROP TABLE t_vaf_nested;
 DROP TABLE t_merge_dist;
+DROP TABLE t_merge_dist_nullable;
+DROP TABLE t_merge_dist_64;
 DROP TABLE t_mdist;
 DROP TABLE t_mlocal;

@@ -32,6 +32,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TimezoneMixin.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
@@ -728,12 +730,24 @@ bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
     return include_subcolumns;
 }
 
-/// A child computes in its own type, so it cannot run before a cast that relabels an equal type.
+/// The explicit time zones of the `DateTime` and `DateTime64` types in `type`, in type-tree order.
+static std::vector<String> getExplicitTimeZones(const IDataType & type)
+{
+    std::vector<String> time_zones;
+    forEachInTypeTree(type, [&](const IDataType & node)
+    {
+        if (const auto * mixin = dynamic_cast<const TimezoneMixin *>(&node))
+            time_zones.push_back(mixin->hasExplicitTimeZone() ? mixin->getTimeZone().getTimeZone() : "");
+    });
+    return time_zones;
+}
+
+/// A child computes in its own type, so it cannot run before a cast that relabels an equal type or changes a time zone.
 static bool childCanProcessBeforeConversion(const IDataType & child_type, const IDataType & declared_type)
 {
     if (child_type.equals(declared_type))
         return !needsConvertingCast(child_type, declared_type);
-    return conversionPreservesOrder(child_type, declared_type);
+    return conversionPreservesOrder(child_type, declared_type) && getExplicitTimeZones(child_type) == getExplicitTimeZones(declared_type);
 }
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
