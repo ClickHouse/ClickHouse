@@ -24,6 +24,8 @@ SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
+-- CI may randomize the minimum to 0, which packs the keys of the queries below that check the default.
+SET min_rows_for_packed_string_keys_in_hash_join = 100000;
 
 -- The tables with the suffix `_plain` have the same keys without statistics. `auto_statistics_types` is empty, so the
 -- statistics do not depend on the server configuration.
