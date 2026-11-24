@@ -502,8 +502,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
 
     settings[QueryPlanSerializationSetting::cross_join_min_rows_to_compress] = cross_join_min_rows_to_compress;
     settings[QueryPlanSerializationSetting::cross_join_min_bytes_to_compress] = cross_join_min_bytes_to_compress;
-    /// `QueryPlanSerializationSettings` is a strict named schema, so the names go on the wire only towards a peer
-    /// that knows them. An older peer runs the join without in-memory compression, which changes only its memory usage.
+    /// A peer that does not know the names skips them and runs the join without in-memory compression,
+    /// which changes only its memory usage.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION)
     {
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = enable_join_in_memory_compression;

@@ -141,10 +141,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// not know the names at all.
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
-/// Version 21 adds the `min_bytes_before_external_group_by` plan setting, and the
-/// `enable_join_in_memory_compression` and `join_in_memory_compression_min_bytes` join step settings.
-/// A peer below it does not know the join names, so they are not written towards it, and it runs the
-/// join without in-memory compression.
+/// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
 /// Version 21 also adds the `hash_join_layout` plan setting, written only towards a peer at this version or above.
@@ -159,6 +156,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `IMPORTANT`, so a peer at this version that does not know the name yet rejects the plan instead of
 /// skipping the name and aggregating with another method.
 /// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
+/// Release 26.12 adds `enable_join_in_memory_compression` and `join_in_memory_compression_min_bytes` to the join
+/// step settings without a new version: a peer at version 21 that does not know the names (release 26.11) skips
+/// them and runs the join without in-memory compression, which changes only its memory usage, not the result.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -265,9 +265,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
-/// First query-plan serialization version that knows `enable_join_in_memory_compression` and
-/// `join_in_memory_compression_min_bytes`. Below it, the names are not written: the older peer runs the
-/// join without in-memory compression, which changes only its memory usage, not the result.
+/// The query-plan serialization version at which `enable_join_in_memory_compression` and
+/// `join_in_memory_compression_min_bytes` are written. The names were added in release 26.12 at the version of
+/// release 26.11, whose reader skips a name it does not know: such a peer runs the join without in-memory
+/// compression, which changes only its memory usage, not the result.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION = 21;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
 /// First query-plan serialization version that carries the `hash_join_layout` plan setting. Gates writing it in
