@@ -44,6 +44,10 @@
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#if USE_PROMETHEUS_PROTOBUFS
+#include <google/protobuf/arena.h>
+#endif
+
 
 namespace DB
 {
@@ -365,7 +369,8 @@ public:
         auto table = getTimeSeriesTable(AccessType::SHOW_TABLES);
         PrometheusRemoteWriteProtocol protocol{table, context};
 
-        prometheus::WriteRequest write_request;
+        google::protobuf::Arena arena;
+        prometheus::WriteRequest & write_request = *google::protobuf::Arena::Create<prometheus::WriteRequest>(&arena);
 
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};

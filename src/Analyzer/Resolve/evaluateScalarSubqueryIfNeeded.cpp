@@ -301,7 +301,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
             if (execute_for_exists)
             {
-                if (optimizePlanForExists(query_plan))
+                if (optimizePlanForExists(query_plan, /*is_correlated=*/false))
                     skip_execution_for_exists = true;
                 else
                 {
