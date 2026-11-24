@@ -85,6 +85,13 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
         return 0;
 
     String element_filter_column = filter_node->result_name;
+
+    /// the step broadcasts each input of the element filter: drop the columns that only the conjuncts above read
+    NameSet element_filter_columns{element_filter_column};
+    for (const auto & name : ActionsDAG::cloneSubDAG({filter_node}, false).getRequiredColumnsNames())
+        element_filter_columns.insert(name);
+    split->dag.removeUnusedActions(element_filter_columns);
+
     array_join->setElementFilter(std::move(split->dag), element_filter_column, split->remove_filter);
 
     /// the residual is an all-columns pass-through if the whole filter is now the element filter
