@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Formats/FormatSettings.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -81,6 +83,10 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             header, sort_description, fill_description, std::move(interpolate_description),
             use_with_fill_by_sorting_prefix, settings.process_list_element);
     });
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void FillingStep::describeActions(FormatSettings & settings) const
@@ -128,7 +134,7 @@ void FillingStep::serialize(Serialization & ctx) const
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
 
     /// The fill columns are derived from the sort description, so only the latter travels.
-    serializeSortDescription(sort_description, ctx.out, ctx.version);
+    serializeSortDescription(sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
     UInt8 flags = 0;
     if (use_with_fill_by_sorting_prefix)
@@ -140,7 +146,7 @@ void FillingStep::serialize(Serialization & ctx) const
     if (!interpolate_description)
         return;
 
-    interpolate_description->actions.serialize(ctx.out, ctx.registry);
+    interpolate_description->actions.serialize(ctx.out, ctx.registry, ctx.input_header);
 
     /// The reader rebuilds `result_columns_order` from the DAG's outputs, which is exactly how
     /// `InterpolateDescription` built it - unless the query's aliases renamed an output. Only the analyzer
@@ -163,7 +169,7 @@ void FillingStep::serialize(Serialization & ctx) const
     /// from `actions` on the other side, so a stream cannot describe a fill that disagrees with its own DAG.
     /// The pairs are sorted because the map has no stable order and these bytes are also a plan cache key.
     /// Keys are unique, so ordering the pairs orders them by key.
-    std::vector<std::pair<std::string_view, std::string_view>> required_columns;
+    VectorWithMemoryTracking<std::pair<std::string_view, std::string_view>> required_columns;
     required_columns.reserve(interpolate_description->required_columns_map.size());
     for (const auto & [key, name_and_type] : interpolate_description->required_columns_map)
         required_columns.emplace_back(key, name_and_type.name);
@@ -172,8 +178,10 @@ void FillingStep::serialize(Serialization & ctx) const
     writeVarUInt(required_columns.size(), ctx.out);
     for (const auto & [key, name] : required_columns)
     {
-        writeStringBinary(key, ctx.out);
-        writeStringBinary(name, ctx.out);
+        /// With no alias, `InterpolateDescription` fills this map straight from
+        /// `actions.getRequiredColumns()`, so both halves can be planner-composed names.
+        ctx.writeColumnName(String{key});
+        ctx.writeColumnName(String{name});
     }
 }
 
@@ -209,6 +217,12 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
     {
         auto actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
+        /// `FillingTransform` executes the expression on a single row and copies row 0 of each result,
+        /// but `ARRAY JOIN` changes the number of rows (an empty array leaves none). The analyzer rejects
+        /// it in `INTERPOLATE`, so a plan containing it did not come from a planner.
+        if (actions.hasArrayJoin())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "FillingStep: ARRAY JOIN is not supported in INTERPOLATE");
+
         /// The plan may come from an untrusted client (`TCPHandler::receiveQueryPlan`), so the description
         /// is rebuilt from the DAG rather than taken from the wire. `FillingTransform` pairs the executed
         /// DAG's output columns with `result_columns_order` by position and stages each required column in
@@ -218,8 +232,17 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
         const auto dag_required_columns = actions.getRequiredColumns();
 
         UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map;
+        NameSet sourced_required_columns;
         size_t num_required_columns = 0;
         readVarUInt(num_required_columns, ctx.in);
+
+        /// The planner writes one pair per column that the expression requires, so the number of the pairs
+        /// is known before they are read, and the serialized data cannot make this loop any longer than that.
+        if (num_required_columns != dag_required_columns.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "FillingStep: INTERPOLATE expects {} source columns, got {}",
+                dag_required_columns.size(), num_required_columns);
+
         for (size_t i = 0; i < num_required_columns; ++i)
         {
             String key;
@@ -248,18 +271,31 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
             /// The type comes from the DAG, never from the wire: it decides the column the transform
             /// stages the value in before executing the expression.
-            required_columns_map[key] = *name_and_type;
-        }
+            /// The planner gives every column required by the expression exactly one source, under its own key.
+            /// The number of the pairs is checked above, so it is enough to refuse a repeated key and a repeated
+            /// required column: either of them would leave a required column without a source, which
+            /// the expression would find out only when `FillingTransform` executes it.
+            if (!required_columns_map.emplace(key, *name_and_type).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE source column '{}' occurs more than once", key);
 
-        if (required_columns_map.size() != dag_required_columns.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "FillingStep: INTERPOLATE expects {} source columns, got {}",
-                dag_required_columns.size(), required_columns_map.size());
+            if (!sourced_required_columns.insert(name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: column '{}' required by the interpolate expression has more than one source", name);
+        }
 
         /// One entry per DAG output, in output order - the pairing `FillingTransform` relies on.
         VectorWithMemoryTracking<std::string> result_columns_order;
+        NameSet result_column_names;
         for (const auto & column : actions.getResultColumns())
         {
+            /// `FillingTransform` inserts every output into the header column of its name, so a repeated
+            /// output would grow that column once per occurrence and break the row count of the chunk.
+            /// The planner never repeats a column in INTERPOLATE.
+            if (!result_column_names.insert(column.name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE column '{}' occurs more than once", column.name);
+
             if (!input_header.has(column.name))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE column '{}' is not present in the input header", column.name);

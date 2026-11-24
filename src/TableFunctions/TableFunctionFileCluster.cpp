@@ -16,7 +16,7 @@ namespace Setting
 
 StoragePtr TableFunctionFileCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
+    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/, bool /*is_table_definition*/) const
 {
     StoragePtr storage;
 
@@ -133,7 +133,7 @@ All patterns supported by [File](/reference/functions/table-functions/file#globs
 ## Related {#related}
 
 - [File table function](/reference/functions/table-functions/file)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = false});
 }
 

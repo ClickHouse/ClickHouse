@@ -88,8 +88,6 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
-    bool supportsChmod() const override { return disk->supportsChmod(); }
-
     bool supportsStat() const override { return disk->supportsStat(); }
 
     struct stat stat(const String & path) const override { return disk->stat(path); }
@@ -124,6 +122,9 @@ public:
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
     int64_t getDeadBlobsQueueEstimate() override;
+
+    /// The storage has a single location, so there is never anything to replicate.
+    bool hasMissingBlobsQueue() const override { return false; }
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
@@ -151,10 +152,6 @@ public:
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
-
-    bool supportsChmod() const override { return metadata_storage.supportsChmod(); }
-
-    void chmod(const String & path, mode_t mode) override;
 
     void setReadOnly(const std::string & path) override;
 

@@ -115,9 +115,8 @@ def started_cluster():
             "ADD COLUMN plain String DEFAULT concat('p', toString(k))"
         )
         worker.query("SYSTEM SYNC REPLICA t_dflt")
-        # An ALIAS column with a dictionary call, on a table of its own: the analyzer resolves alias expressions of a table
-        # when it initializes the table expression, whichever columns the query uses, so the record sees the dictionary
-        # for every query over this table.
+        # An ALIAS column with a dictionary call, on a table of its own: the analyzer resolves the expression of an alias
+        # only when the query uses this column, so only such queries see the dictionary.
         # Added by ALTER on the initiator: a CREATE with the alias would validate the expression on the worker, which has
         # no dictionary; the replicated metadata change is not validated there.
         for node in (initiator, worker):
@@ -376,19 +375,21 @@ def test_column_default_check_boundaries(started_cluster):
     assert _remote_tasks(query_id) == 0
     assert "does not support dictionary default.d_both: it is an object of the initiator, used by a column default of table default.t_mat" in _fallback_reasons(query_id)
 
-    # The analyzer resolves all ALIAS expressions of a table during analysis, so a dictionary ALIAS makes every query on
-    # the table fall back, used or not.
-    for query, expected in [
-        ("SELECT k, al FROM t_alias ORDER BY k LIMIT 2", "0\tn0\n1\tn1\n"),
-        ("SELECT k FROM t_alias ORDER BY k LIMIT 2", "0\n1\n"),
-    ]:
-        query_id = str(uuid.uuid4())
-        assert initiator.query(f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id) == expected, query
-        _flush_logs()
-        assert _remote_tasks(query_id) == 0, query
-        reasons = _fallback_reasons(query_id)
-        assert "does not support dictionary default.d: it is an object of the initiator" in reasons, query
-        assert "column default" not in reasons, query
+    # The analyzer resolves the expression of an ALIAS column only when the query uses it, so a dictionary ALIAS makes
+    # a query on the table fall back only if the query reads this column.
+    query_id = str(uuid.uuid4())
+    assert initiator.query(f"SELECT k, al FROM t_alias ORDER BY k LIMIT 2 SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id) == "0\tn0\n1\tn1\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) == 0
+    reasons = _fallback_reasons(query_id)
+    assert "does not support dictionary default.d: it is an object of the initiator" in reasons
+    assert "column default" not in reasons
+
+    query_id = str(uuid.uuid4())
+    assert initiator.query(f"SELECT k FROM t_alias ORDER BY k LIMIT 2 SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id) == "0\n1\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) > 0
+    assert _fallback_reasons(query_id) == ""
 
 
 def test_strict_mode_throws(started_cluster):

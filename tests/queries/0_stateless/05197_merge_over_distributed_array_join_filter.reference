@@ -1,0 +1,14 @@
+the local table	100
+the Distributed table	100
+Merge over the local table	100
+Merge over Distributed, no filter	300
+Merge over Distributed	100
+an equality filter	100
+an aliased array join	100
+LEFT ARRAY JOIN	100
+a filter on a table column	150
+both kinds of filter	50
+both kinds, reversed	50
+the values	0	ccc
+the values	2	ccc
+the values	4	ccc
