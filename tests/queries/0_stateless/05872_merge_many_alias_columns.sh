@@ -33,3 +33,12 @@ $CLICKHOUSE_CLIENT --query "SELECT count(), sum(sipHash64(*)) FROM merge(current
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_alias"
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_plain"
+
+# An ALIAS column named like the table alias of `merge` must not capture the other aliases' references.
+$CLICKHOUSE_CLIENT --query "CREATE TABLE u_alias (x UInt64, __table1 Tuple(x UInt64) ALIAS tuple(100), y UInt64 ALIAS x + 2) ENGINE = MergeTree ORDER BY x"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE u_plain (x UInt64, __table1 Tuple(x UInt64), y UInt64) ENGINE = MergeTree ORDER BY x"
+$CLICKHOUSE_CLIENT --query "INSERT INTO u_alias (x) VALUES (1)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO u_plain SELECT 2, tuple(200), 4"
+$CLICKHOUSE_CLIENT --query "SELECT x, __table1.x, y FROM merge(currentDatabase(), '^u_') ORDER BY x"
+$CLICKHOUSE_CLIENT --query "DROP TABLE u_alias"
+$CLICKHOUSE_CLIENT --query "DROP TABLE u_plain"

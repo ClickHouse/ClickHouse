@@ -14,7 +14,6 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/Logger.h>
@@ -2057,7 +2056,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     visitor.visit(column_node);
 
                     column_name_to_node.emplace(column, column_node);
-                    aliases.push_back({ .name = column, .type = column_type, .expression = column_node->toAST() });
+                    aliases.push_back({ .name = column, .type = column_type });
                 }
                 else
                 {
@@ -2848,26 +2847,30 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         ActionsDAG actions_dag(pipe_columns);
 
-        auto alias_expressions = std::make_shared<ListNode>();
-        alias_expressions->getNodes().reserve(aliases.size());
+        auto alias_identifiers = std::make_shared<ListNode>();
+        alias_identifiers->getNodes().reserve(aliases.size());
         for (const auto & alias : aliases)
-        {
-            QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
-            query_tree->setAlias(alias.name);
-            alias_expressions->getNodes().push_back(std::move(query_tree));
-        }
+            alias_identifiers->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{alias.name}));
 
         /// One pass and one step for all aliases: one per alias is quadratic in their number.
-        QueryTreeNodePtr resolved_expressions = std::move(alias_expressions);
+        QueryTreeNodePtr resolved_aliases = std::move(alias_identifiers);
         QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-        query_analysis_pass.run(resolved_expressions, local_context);
+        query_analysis_pass.run(resolved_aliases, local_context);
+
+        auto & resolved_nodes = resolved_aliases->as<ListNode &>().getNodes();
+        if (resolved_nodes.size() != aliases.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} resolved alias columns, got {}", aliases.size(), resolved_nodes.size());
+
+        ApplyAliasColumnExpressionsVisitor visitor(modified_query_info.table_expression);
+        for (auto & resolved_node : resolved_nodes)
+            visitor.visit(resolved_node);
 
         /// On the query info cache path nothing registered these expressions' sets.
-        collectSets(resolved_expressions, *modified_query_info.planner_context);
+        collectSets(resolved_aliases, *modified_query_info.planner_context);
 
         ColumnNodePtrWithHashSet empty_correlated_columns_set;
         PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
-        const auto & [nodes, _] = actions_visitor.visit(actions_dag, resolved_expressions);
+        const auto & [nodes, _] = actions_visitor.visit(actions_dag, resolved_aliases);
 
         if (nodes.size() != aliases.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have {} outputs but got {}", aliases.size(), nodes.size());

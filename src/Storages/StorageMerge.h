@@ -295,7 +295,6 @@ private:
     {
         String name;       /// "size" in  "size String Alias formatReadableSize(size_bytes)"
         DataTypePtr type;  /// String in "size String Alias formatReadableSize(size_bytes)", or something different came from query
-        ASTPtr expression; /// formatReadableSize(size_bytes) in "size String Alias formatReadableSize(size_bytes)"
     };
 
     using Aliases = std::vector<AliasData>;
