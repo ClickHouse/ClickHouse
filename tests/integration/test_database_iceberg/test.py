@@ -2846,8 +2846,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
     supports table namespaces and `X` is not `system`. Database `X` must exist, and both
     existing is an error unless the user can access only one of them. SQL stored in
     definitions (views, materialized views, row policies, mutations, `ALIAS` columns, projections,
-    constraints) always reads `X.T` as table `T` of database `X`, except in the query argument
-    of a table function such as `view` or `eval`.
+    constraints, `TTL` expressions) always reads `X.T` as table `T` of database `X`, except in the
+    query argument of a table function such as `view` or `eval`.
     """
     node = started_cluster.instances["node1"]
     on = {"allow_experimental_table_namespaces": 1}
@@ -2862,6 +2862,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
     VF, VE = f"vf_{test_ref}", f"ve_{test_ref}"
     A = f"a_{test_ref}"
     PR, C = f"pr_{test_ref}", f"c_{test_ref}"
+    TT = f"tt_{test_ref}"
     policy = f"pol_{test_ref}"
     policy_user = f"u_policy_{test_ref}"
 
@@ -3023,6 +3024,22 @@ def test_namespace_two_part_name_resolution(started_cluster):
         )
         assert result == 1, f"constraint optimization must read the database table, got {result}"
 
+        # a `TTL` reads `X.T` as the database table; its analysis uses the server settings, so the subquery carries the setting itself
+        node.query(
+            f"USE {CATALOG_NAME}; CREATE TABLE default.{TT} (id UInt64, d DateTime) ENGINE = MergeTree ORDER BY id "
+            f"TTL d + INTERVAL 1 DAY WHERE id IN (SELECT id FROM {X}.{T} SETTINGS allow_experimental_table_namespaces = 1)",
+            settings=on,
+        )
+        node.query(
+            f"USE {CATALOG_NAME}; INSERT INTO default.{TT} VALUES (1, '2000-01-01 00:00:00'), (10, '2000-01-01 00:00:00')",
+            settings=sync,
+        )
+        node.query(f"USE {CATALOG_NAME}; ALTER TABLE default.{TT} ADD COLUMN x UInt8", settings=on)
+        node.query(f"USE {CATALOG_NAME}; OPTIMIZE TABLE default.{TT} FINAL", settings=on)
+        result = node.query(f"SELECT groupArray(id) FROM (SELECT id FROM default.{TT} ORDER BY id)").strip()
+        assert result == "[10]", f"TTL must delete by the database table, got {result}"
+        node.query(f"DROP TABLE default.{TT}")
+
         node.query(f"DROP TABLE {CATALOG_NAME}.`{X}.{T}`")
 
         # row 4: X.T only in the database
@@ -3102,7 +3119,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
             result = node.query(f"USE {CATALOG_NAME}; SELECT v, v2 FROM default.{A}", settings=outer).strip()
             assert result == "7\t7", f"ALIAS column, outer {outer}: expected the database table, got {result}"
     finally:
-        for name in (PR, C):
+        for name in (PR, C, TT):
             node.query(f"DROP TABLE IF EXISTS default.{name}")
         node.query(f"DROP TABLE IF EXISTS default.{A}")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{X}.{J}`")
