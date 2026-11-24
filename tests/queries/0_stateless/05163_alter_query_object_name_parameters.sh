@@ -25,10 +25,10 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.data_skipping_indices W
 ${CLICKHOUSE_CLIENT} --query "SELECT countSubstrings(create_table_query, 'PROJECTION') + countSubstrings(create_table_query, 'CONSTRAINT') FROM system.tables WHERE database = currentDatabase() AND name = 'alter_param_t'";
 
 # DROP STATISTICS with a parameterized column name.
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE alter_param_t ADD STATISTICS a TYPE countmin";
-${CLICKHOUSE_CLIENT} --query "SELECT has(splitByChar(',', statistics), 'countmin') FROM system.columns WHERE database = currentDatabase() AND table = 'alter_param_t' AND name = 'a'";
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE alter_param_t ADD STATISTICS a TYPE tdigest";
+${CLICKHOUSE_CLIENT} --query "SELECT has(splitByChar(',', statistics), 'TDigest') FROM system.columns WHERE database = currentDatabase() AND table = 'alter_param_t' AND name = 'a'";
 ${CLICKHOUSE_CLIENT} --param_s=a --query "ALTER TABLE alter_param_t DROP STATISTICS {s:Identifier}";
-${CLICKHOUSE_CLIENT} --query "SELECT has(splitByChar(',', statistics), 'countmin') FROM system.columns WHERE database = currentDatabase() AND table = 'alter_param_t' AND name = 'a'";
+${CLICKHOUSE_CLIENT} --query "SELECT has(splitByChar(',', statistics), 'TDigest') FROM system.columns WHERE database = currentDatabase() AND table = 'alter_param_t' AND name = 'a'";
 
 # RENAME b -> b2, ADD d AFTER a, DROP c, so the columns are a, d, b2.
 ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'alter_param_t' ORDER BY position";
