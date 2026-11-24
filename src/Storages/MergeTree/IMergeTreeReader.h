@@ -105,6 +105,11 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
+    /// Returns true if the column at position @pos in columns_to_read was dropped
+    /// by a pending mutation that hasn't been applied to this part yet.
+    /// Such columns should not be read from the part; defaults should be used instead.
+    [[nodiscard]] bool isColumnDroppedByPendingMutation(size_t pos) const;
+
     [[nodiscard]] size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -219,11 +224,6 @@ protected:
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
-
-    /// Returns true if the column at position @pos in columns_to_read was dropped
-    /// by a pending mutation that hasn't been applied to this part yet.
-    /// Such columns should not be read from the part; defaults should be used instead.
-    [[nodiscard]] bool isColumnDroppedByPendingMutation(size_t pos) const;
 
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     [[nodiscard]] bool isSystemColumnInvalidated(size_t pos) const;

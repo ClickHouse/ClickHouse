@@ -86,6 +86,20 @@ nodefault v1 default
 nodefault v1	1	
 nodefault v1	2	u
 nodefault v1	3	
+dropreadd same v1 pending	2	['String']
+dropreadd same v1	1	abc
+dropreadd same v1	2	u
+dropreadd same v1	3	abc
+dropreadd same v1 nodefault	1	
+dropreadd same v1 nodefault	2	u
+dropreadd same v1 nodefault	3	
+dropreadd other v1 pending	2	['UInt64']
+dropreadd other v1	1	abc
+dropreadd other v1	2	u
+dropreadd other v1	3	abc
+dropreadd other v1 nodefault	1	
+dropreadd other v1 nodefault	2	u
+dropreadd other v1 nodefault	3	
 pending s v2	1	0
 s v2	1	abc
 s v2	2	u
@@ -174,3 +188,17 @@ nodefault v2 default
 nodefault v2	1	
 nodefault v2	2	u
 nodefault v2	3	
+dropreadd same v2 pending	2	['String']
+dropreadd same v2	1	abc
+dropreadd same v2	2	u
+dropreadd same v2	3	abc
+dropreadd same v2 nodefault	1	
+dropreadd same v2 nodefault	2	u
+dropreadd same v2 nodefault	3	
+dropreadd other v2 pending	2	['UInt64']
+dropreadd other v2	1	abc
+dropreadd other v2	2	u
+dropreadd other v2	3	abc
+dropreadd other v2 nodefault	1	
+dropreadd other v2 nodefault	2	u
+dropreadd other v2 nodefault	3	
