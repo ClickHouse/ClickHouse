@@ -7,3 +7,15 @@ LowCardinality(String)	1
 0	a	a	a	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
 1	\N	\N	\N	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
 2	a			LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
+1
+0	0	LowCardinality(Nullable(String))
+1	\N	LowCardinality(Nullable(String))
+2	other	LowCardinality(Nullable(String))
+3	other	LowCardinality(Nullable(String))
+0	15
+10	14
+12	14
+2	15
+4	14
+6	14
+8	14

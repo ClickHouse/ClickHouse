@@ -11,6 +11,8 @@
     <query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(rand() % 2 ? 'hello' : 'world')</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(multiIf(number % 5 = 0, 'five', number % 3 = 0, 'three', 'other'))</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(transform(number % 10, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other'))</query>
+    <!-- A mapping much larger than a block, of which a block refers to a few values: the work must be proportional to the block. -->
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(transform(number % 2, range(1000000), arrayMap(x -> toString(x), range(1000000)), 'other')) SETTINGS optimize_if_transform_strings_to_enum = 0</query>
     <query>SELECT number % 1000 = 0 ? 'a' : 'b' AS x, count() FROM numbers(100000000) GROUP BY x FORMAT Null</query>
     <query>SELECT transform(number % 10, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other') AS x, count() FROM numbers(100000000) GROUP BY x FORMAT Null</query>
 </test>

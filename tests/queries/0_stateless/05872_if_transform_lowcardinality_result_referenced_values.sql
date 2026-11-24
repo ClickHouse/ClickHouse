@@ -14,3 +14,8 @@ SELECT match('a', if(number = 0, 'a', '[')) FROM numbers(2); -- { serverError CA
 SELECT match('a', multiIf(number = 0, 'a', number = 1, '[', '(')) FROM numbers(2); -- { serverError CANNOT_COMPILE_REGEXP }
 SELECT match('a', transform(number, [0, 1], ['a', '['], '(')) FROM numbers(2); -- { serverError CANNOT_COMPILE_REGEXP }
 SELECT number, if(number % 2 = 0, 'a', NULL) AS x, multiIf(number = 0, 'a', number = 1, NULL, '') AS y, transform(number, [0, 1], ['a', NULL], '') AS z, toTypeName(x), toTypeName(y), toTypeName(z) FROM numbers(3) SETTINGS max_block_size = 1;
+-- A mapping larger than a block: the referenced values are collected without going over the whole mapping.
+SELECT match('a', transform(number, range(1000), arrayMap(x -> if(x = 0, 'a', '['), range(1000)), '(')) FROM numbers(1);
+SELECT match('a', transform(number, range(1000), arrayMap(x -> if(x = 0, 'a', '['), range(1000)), '(')) FROM numbers(2); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT number, transform(number * 500, range(1000), arrayMap(x -> if(x = 500, NULL, toString(x)), range(1000)), 'other') AS x, toTypeName(x) FROM numbers(4) SETTINGS max_block_size = 3;
+SELECT x, count() FROM (SELECT transform(number % 7, range(1000), arrayMap(x -> toString(x * 2), range(1000)), 'other') AS x FROM numbers(100) SETTINGS max_block_size = 10) GROUP BY x ORDER BY x;

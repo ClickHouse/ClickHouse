@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumnUnique.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
@@ -51,26 +52,62 @@ ColumnPtr createLowCardinalityOfReferencedValues(
     auto & numbers = assert_cast<ColumnVector<IndexType> &>(*value_numbers).getData();
     const size_t num_values = values.size();
 
-    VectorWithMemoryTracking<UInt8> is_referenced(num_values, 0);
-    for (const auto number : numbers)
-        is_referenced[number] = 1;
-
     auto referenced_numbers = ColumnUInt64::create();
-    for (size_t i = 0; i < num_values; ++i)
-        if (is_referenced[i])
-            referenced_numbers->insertValue(i);
+    auto & referenced = referenced_numbers->getData();
+
+    auto create_result = [&](LowCardinalityOfKnownValues && referenced_values)
+    {
+        return ColumnLowCardinality::create(
+            MutableColumnPtr(std::move(referenced_values.dictionary)), std::move(value_numbers), /*is_shared=*/false);
+    };
+
+    /// The work must be proportional to the block: `values` can be large (the whole mapping of `transform`),
+    /// while a block refers to a few of them. Arrays over all `values` are used only when they are not larger
+    /// than the block, otherwise the referenced numbers are collected in a hash table.
+    if (num_values <= std::max<size_t>(numbers.size(), 256))
+    {
+        VectorWithMemoryTracking<UInt8> is_referenced(num_values, 0);
+        for (const auto number : numbers)
+            is_referenced[number] = 1;
+
+        for (size_t i = 0; i < num_values; ++i)
+            if (is_referenced[i])
+                referenced.push_back(i);
+
+        LowCardinalityOfKnownValues referenced_values(type, *values.index(*referenced_numbers, 0));
+
+        VectorWithMemoryTracking<IndexType> position_of_value(num_values, 0);
+        for (size_t i = 0; i < referenced.size(); ++i)
+            position_of_value[referenced[i]] = static_cast<IndexType>(referenced_values.positions[i]);
+
+        for (auto & number : numbers)
+            number = position_of_value[number];
+
+        return create_result(std::move(referenced_values));
+    }
+
+    /// Every referenced number gets a compact number in the order of the first reference, and the rows are
+    /// switched to the compact numbers right away, so the hash table is looked up once per row.
+    HashMap<IndexType, IndexType> compact_number_of_value;
+    for (auto & number : numbers)
+    {
+        typename HashMap<IndexType, IndexType>::LookupResult it;
+        bool inserted;
+        compact_number_of_value.emplace(number, it, inserted);
+        if (inserted)
+        {
+            it->getMapped() = static_cast<IndexType>(referenced.size());
+            referenced.push_back(number);
+        }
+        number = it->getMapped();
+    }
 
     LowCardinalityOfKnownValues referenced_values(type, *values.index(*referenced_numbers, 0));
 
-    VectorWithMemoryTracking<IndexType> position_of_value(num_values, 0);
-    for (size_t i = 0; i < referenced_values.positions.size(); ++i)
-        position_of_value[referenced_numbers->getData()[i]] = static_cast<IndexType>(referenced_values.positions[i]);
-
     for (auto & number : numbers)
-        number = position_of_value[number];
+        number = static_cast<IndexType>(referenced_values.positions[number]);
 
-    return ColumnLowCardinality::create(
-        MutableColumnPtr(std::move(referenced_values.dictionary)), std::move(value_numbers), /*is_shared=*/false);
+    return create_result(std::move(referenced_values));
 }
 
 }
