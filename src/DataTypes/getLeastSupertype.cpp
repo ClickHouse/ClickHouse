@@ -257,6 +257,18 @@ DataTypes getStateArgumentTypes(const IDataType & type)
     return typeid_cast<const DataTypeAggregateFunction &>(*state_type).getArgumentsDataTypes();
 }
 
+/// Whether `type` has `Bool` anywhere below it, including inside the arguments of aggregate states.
+bool hasBoolInside(const IDataType & type)
+{
+    checkStackSize();
+    return anyInTypeTree(type, [](const IDataType & node)
+    {
+        return hasBoolLabel(node)
+            || (WhichDataType(node).isAggregateFunction()
+                && std::ranges::any_of(getStateArgumentTypes(node), [](const DataTypePtr & argument) { return hasBoolInside(*argument); }));
+    });
+}
+
 /// Only through aggregate states and the types whose common type is built from their children below.
 bool haveBoolInSamePlaces(const IDataType & lhs, const IDataType & rhs)
 {
@@ -442,7 +454,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         && std::ranges::all_of(types, [&](const DataTypePtr & type) { return type->equals(*types[0]); }))
     {
         for (const auto & type : types)
-            if (std::ranges::none_of(getStateArgumentTypes(*type), [](const DataTypePtr & argument) { return anyInTypeTree(*argument, hasBoolLabel); }))
+            if (!hasBoolInside(*type))
                 return type;
         return types[0];
     }

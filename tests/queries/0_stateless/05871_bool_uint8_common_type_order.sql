@@ -34,3 +34,6 @@ SELECT toTypeName(s), finalizeAggregation(s) AS v, v = true FROM (SELECT anyStat
 SELECT toTypeName(s) FROM (SELECT anyState(true) AS s UNION ALL SELECT anyState(false));
 SELECT toTypeName([anyState(true), anyState(toUInt8(2))]), toTypeName([anyState(toUInt8(2)), anyState(true)]);
 SELECT toTypeName([argMaxState(true, 1), argMaxState(toUInt8(2), 2)]), toTypeName([argMaxState(toUInt8(2), 2), argMaxState(true, 1)]);
+SELECT toTypeName(s), finalizeAggregation(s) AS v FROM (SELECT anyTupleState(tuple(true)) AS s UNION ALL SELECT anyTupleState(tuple(toUInt8(2)))) ORDER BY v;
+SELECT toTypeName(s), finalizeAggregation(s) AS v FROM (SELECT anyTupleState(tuple(toUInt8(2))) AS s UNION ALL SELECT anyTupleState(tuple(true))) ORDER BY v;
+SELECT toTypeName([anyTupleState(tuple(true)), anyTupleState(tuple(toUInt8(2)))]), toTypeName([anyTupleState(tuple(toUInt8(2))), anyTupleState(tuple(true))]);
