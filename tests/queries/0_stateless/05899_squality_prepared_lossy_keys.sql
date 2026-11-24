@@ -66,7 +66,7 @@ SELECT CAST(toUInt64(1) AS Variant(UInt64, String))
     IN squality_prepared_string_set; -- { serverError NOT_IMPLEMENTED }
 DROP TABLE squality_prepared_string_set;
 
-SELECT [CAST(toUInt64(1) AS Variant(UInt64, String))] IN ['1'];
+SELECT [CAST(toUInt64(1) AS Variant(UInt64, String))] IN materialize(['1']);
 SELECT [CAST(toUInt64(1) AS Variant(UInt64, String))]
     IN (SELECT ['1']); -- { serverError NOT_IMPLEMENTED }
 
