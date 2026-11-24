@@ -5,12 +5,16 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -39,7 +43,7 @@ struct ExpressionUsage
     /// Used subcolumn names (only meaningful for nested() expressions).
     std::unordered_set<std::string> used_subcolumns;
 
-    /// Subcolumn names from the nested() first argument. Empty if not a nested() expression.
+    /// Subcolumn names from the nested() first argument, or the element names of an `Array(Tuple)` table column. Empty otherwise.
     std::vector<std::string> nested_subcolumn_names;
 
     /// Set only if pruning changed the ARRAY JOIN expression: its new column type. References adopt it, keeping their own Nullable.
@@ -98,6 +102,22 @@ ExpressionUsage * findReferencedExpression(const ColumnNode & column_node, Array
     return &expr_it->second;
 }
 
+/// The element type of a table column `Array(Tuple(...))` with named elements: the pass splits such a column like `nested()`.
+const DataTypeTuple * getSplittableTupleType(const QueryTreeNodePtr & expression)
+{
+    const auto * column_node = expression->as<ColumnNode>();
+    if (!column_node)
+        return nullptr;
+
+    auto source = column_node->getColumnSourceOrNull();
+    if (!source || (!source->as<TableNode>() && !source->as<TableFunctionNode>()))
+        return nullptr;
+
+    const auto * array_type = typeid_cast<const DataTypeArray *>(column_node->getColumnType().get());
+    const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
+    return tuple_type && tuple_type->hasExplicitNames() ? tuple_type : nullptr;
+}
+
 /// `x.a` resolves to `tupleElement(x, 'a')` or to `getSubcolumn(x, 'a')`.
 bool isSubcolumnFunction(const FunctionNode & function_node)
 {
@@ -151,6 +171,10 @@ public:
                             expr_usage.nested_subcolumn_names.push_back(name.safeGet<String>());
                     }
                 }
+            }
+            else if (const auto * tuple_type = getSplittableTupleType(column_node->getExpression()))
+            {
+                expr_usage.nested_subcolumn_names = tuple_type->getElementNames();
             }
 
             definition_nodes.insert(join_expr.get());
@@ -278,6 +302,33 @@ private:
     ArrayJoinUsageMap & usage_map;
     const std::unordered_set<const IQueryTreeNode *> & definition_nodes;
 };
+
+/// `arr` becomes `nested(['a', 'b'], tupleElement(arr, 'a'), tupleElement(arr, 'b'))`, which the pruning below handles,
+/// and `FunctionToSubcolumnsPass` then reads `arr.a` instead of `arr`.
+FunctionNode & splitTupleArrayColumn(ColumnNode & column_node, const Strings & element_names, const ContextPtr & context)
+{
+    auto & column_expression = column_node.getExpression();
+
+    Array names_array;
+    for (const auto & element_name : element_names)
+        names_array.push_back(element_name);
+
+    auto nested_function = std::make_shared<FunctionNode>("nested");
+    auto & nested_arguments = nested_function->getArguments().getNodes();
+    nested_arguments.push_back(std::make_shared<ConstantNode>(std::move(names_array), std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())));
+
+    for (const auto & element_name : element_names)
+    {
+        auto element_function = std::make_shared<FunctionNode>("tupleElement");
+        element_function->getArguments().getNodes() = {column_expression->clone(), std::make_shared<ConstantNode>(element_name)};
+        resolveOrdinaryFunctionNodeByName(*element_function, "tupleElement", context);
+        nested_arguments.push_back(std::move(element_function));
+    }
+
+    resolveOrdinaryFunctionNodeByName(*nested_function, "nested", context);
+    column_expression = nested_function;
+    return *nested_function;
+}
 
 /// Prune unused subcolumn arguments from a nested() function and build an index remap
 /// so that numeric tupleElement indices can be updated to reflect the new positions.
@@ -475,7 +526,13 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
 
             auto * function_node = column_node->getExpression()->as<FunctionNode>();
             if (!function_node)
-                continue;
+            {
+                const auto & names = expr_usage.nested_subcolumn_names;
+                if (std::ranges::all_of(names, [&](const auto & name) { return expr_usage.used_subcolumns.contains(name); }))
+                    continue;
+
+                function_node = &splitTupleArrayColumn(*column_node, names, context);
+            }
 
             pruneNestedFunctionArguments(*column_node, *function_node, expr_usage, context);
         }
