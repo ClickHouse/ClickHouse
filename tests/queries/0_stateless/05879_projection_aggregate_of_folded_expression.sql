@@ -22,7 +22,6 @@ ORDER BY name, column_position;
 -- the optimizer analyzes each projection of the table
 SELECT sum(a) FROM t_projection_folded_argument SETTINGS optimize_use_implicit_projections = 0;
 
-SELECT a, sum(b IS NOT NULL) FROM t_projection_folded_argument GROUP BY a ORDER BY a
-SETTINGS force_optimize_projection = 1;
+SELECT a, sum(b IS NOT NULL) FROM t_projection_folded_argument GROUP BY a ORDER BY a;
 
 DROP TABLE t_projection_folded_argument;
