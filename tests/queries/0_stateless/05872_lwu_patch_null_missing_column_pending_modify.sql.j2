@@ -40,8 +40,7 @@ SELECT 'pending {{ col }} {{ version }}',
         AND active AND name NOT LIKE 'patch-%' AND column = '{{ col }}');
 SELECT '{{ col }} {{ version }}', id, {{ expr }} FROM t_pending_{{ col }}_{{ version }} ORDER BY id;
 {% if col == 's' -%}
-SELECT '{{ col }} {{ version }} prewhere', id FROM t_pending_{{ col }}_{{ version }} WHERE s = 'abc' ORDER BY id
-SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SELECT '{{ col }} {{ version }} prewhere', id FROM t_pending_{{ col }}_{{ version }} PREWHERE s = 'abc' ORDER BY id;
 {% endif -%}
 DROP TABLE t_pending_{{ col }}_{{ version }} SYNC;
 
@@ -74,9 +73,11 @@ INSERT INTO t_killed_{{ version }} VALUES (1), (2), (3);
 SYSTEM STOP MERGES t_killed_{{ version }};
 ALTER TABLE t_killed_{{ version }} ADD COLUMN arr Nullable(String) DEFAULT '[9]';
 UPDATE t_killed_{{ version }} SET arr = NULL WHERE id = 1;
+UPDATE t_killed_{{ version }} SET arr = '[6]' WHERE id = 3;
 ALTER TABLE t_killed_{{ version }} MODIFY COLUMN arr LowCardinality(Nullable(String)) DEFAULT '[9]' SETTINGS alter_sync = 0, mutations_sync = 0;
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_killed_{{ version }}' SYNC FORMAT Null;
 UPDATE t_killed_{{ version }} SET arr = '[5]' WHERE id = 2;
+UPDATE t_killed_{{ version }} SET arr = NULL WHERE id = 3;
 ALTER TABLE t_killed_{{ version }} MODIFY COLUMN arr Array(UInt8) DEFAULT [7] SETTINGS alter_sync = 0, mutations_sync = 0;
 SELECT 'killed {{ version }} patch type', type FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_killed_{{ version }}' AND active AND name LIKE 'patch-%' AND column = 'arr'
@@ -93,6 +94,8 @@ SYSTEM STOP MERGES t_nodefault_{{ version }};
 ALTER TABLE t_nodefault_{{ version }} ADD COLUMN s Nullable(String) DEFAULT 'old';
 UPDATE t_nodefault_{{ version }} SET s = NULL WHERE id = 1;
 UPDATE t_nodefault_{{ version }} SET s = 'u' WHERE id = 2;
+UPDATE t_nodefault_{{ version }} SET s = 'w' WHERE id = 3;
+UPDATE t_nodefault_{{ version }} SET s = NULL WHERE id = 3;
 ALTER TABLE t_nodefault_{{ version }} MODIFY COLUMN s String DEFAULT 'abc' SETTINGS alter_sync = 0, mutations_sync = 0;
 ALTER TABLE t_nodefault_{{ version }} MODIFY COLUMN s REMOVE DEFAULT;
 SELECT 'nodefault {{ version }} pending',

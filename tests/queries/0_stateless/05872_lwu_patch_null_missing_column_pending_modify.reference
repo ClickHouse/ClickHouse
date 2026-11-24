@@ -75,6 +75,8 @@ done y v1	1	7
 done y v1	2	5
 done y v1	3	7
 killed v1 patch type	LowCardinality(Nullable(String))
+killed v1 patch type	LowCardinality(Nullable(String))
+killed v1 patch type	Nullable(String)
 killed v1 patch type	Nullable(String)
 killed v1	1	[7]
 killed v1	2	[5]
@@ -161,6 +163,8 @@ done y v2	1	7
 done y v2	2	5
 done y v2	3	7
 killed v2 patch type	LowCardinality(Nullable(String))
+killed v2 patch type	LowCardinality(Nullable(String))
+killed v2 patch type	Nullable(String)
 killed v2 patch type	Nullable(String)
 killed v2	1	[7]
 killed v2	2	[5]
