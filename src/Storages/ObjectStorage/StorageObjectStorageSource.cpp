@@ -438,6 +438,7 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool optimize_count_from_files;
     extern const SettingsString filesystem_cache_name;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
     extern const SettingsBool use_iceberg_partition_pruning;
@@ -1978,7 +1979,66 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
-    if (num_rows_from_cache)
+    /// A query can need nothing from the object itself: a Delta Lake table takes its partition columns from the
+    /// table metadata, so reading only them (and virtual columns) leaves the format header empty, and the reader
+    /// would open the object only to count its rows. The table metadata records the exact number of rows of the
+    /// object (`numRecords`), so take it from there and do not open the object at all.
+    auto try_get_num_rows_from_data_lake_metadata = [&]() -> std::optional<size_t>
+    {
+        if (!context_->getSettingsRef()[Setting::optimize_count_from_files])
+            return std::nullopt;
+
+        const auto & data_lake_metadata = object_info->data_lake_metadata;
+        if (!data_lake_metadata || !data_lake_metadata->num_rows || !data_lake_metadata->schema_transform)
+            return std::nullopt;
+
+        /// Deletes remove rows of the object, a bucket or a set of rows is only a part of it, and the other
+        /// conditions need values that only the reader of the object provides.
+        if (hasAttachedDeletes(*object_info) || object_info->file_bucket_info || object_info->rows_to_read || initial_schema
+            || headers_requested || VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns))
+            return std::nullopt;
+
+        if (read_from_format_info.format_header.columns() != 0 || read_from_format_info.prewhere_info
+            || read_from_format_info.columns_description.hasDefaults())
+            return std::nullopt;
+
+        if (format_filter_info && (format_filter_info->row_level_filter || format_filter_info->prewhere_info))
+            return std::nullopt;
+
+        if (!getMaterializedRowLineageColumns(
+                 *object_info, read_from_format_info, object_info->getFileFormat().value_or(configuration->format)).empty())
+            return std::nullopt;
+
+        return *data_lake_metadata->num_rows;
+    };
+
+    std::optional<size_t> num_rows_from_data_lake_metadata
+        = num_rows_from_cache ? std::nullopt : try_get_num_rows_from_data_lake_metadata();
+
+    if (num_rows_from_data_lake_metadata)
+    {
+        LOG_TEST(
+            log,
+            "Taking {} rows of object '{}' from the table metadata without reading it",
+            *num_rows_from_data_lake_metadata,
+            object_info->getPath());
+
+        /// Chunks of at most `max_block_size` rows without columns: the schema transform of the object adds the
+        /// partition columns, and the virtual columns are added in `generate`.
+        builder.init(Pipe(std::make_shared<ConstChunkGenerator>(
+            std::make_shared<const Block>(read_from_format_info.format_header.cloneEmpty()),
+            *num_rows_from_data_lake_metadata,
+            max_block_size)));
+
+        auto schema_transform = object_info->data_lake_metadata->schema_transform->clone();
+        schema_transform.removeUnusedActions(read_from_format_info.requested_columns.getNames());
+        auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(schema_transform));
+        builder.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
+        });
+    }
+    else if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later
