@@ -1,14 +1,12 @@
 -- the aggregate: two arrays in either order, and one array with both samples
-gauge_vs_no	[('gauge',0)]	[('gauge',0)]	[('gauge',0)]
-gauge_vs_no_schema	[('gauge',0)]	[('gauge',0)]	[('gauge',0)]
-no_vs_no	[('not_reset',0)]	[('not_reset',0)]	[('not_reset',0)]
-reset_vs_no	[('unknown',0)]	[('unknown',0)]	[('unknown',0)]
-unknown_vs_reset	[('unknown',0)]	[('unknown',0)]	[('unknown',0)]
-unknown_vs_reset_schema	[('reset',1)]	[('reset',1)]	[('reset',1)]
--- the sink: one sample per series after the deduplication, the first, which keeps the common hint or gets an unknown one
+gauge_vs_unknown	[('gauge',0)]	[('gauge',0)]	[('gauge',0)]
+gauge_vs_unknown_schema	[('gauge',0)]	[('gauge',0)]	[('gauge',0)]
+unknown_vs_unknown	[('unknown',0)]	[('unknown',0)]	[('unknown',0)]
+unknown_vs_unknown_schema	[('unknown',1)]	[('unknown',1)]	[('unknown',1)]
+-- the sink: one sample per series after the deduplication, the first of its row, which gets an unknown hint unless it is a gauge
 gauge_first	['gauge']
 gauge_last	['gauge']
-no_both	['not_reset']
+no_both	['unknown']
 no_first	['unknown']
 no_last	['unknown']
 unknown_first	['unknown']

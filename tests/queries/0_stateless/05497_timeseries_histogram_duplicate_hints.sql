@@ -1,8 +1,7 @@
 -- Histogram samples with the same timestamp whose payloads are identical except for the counter reset hint: the order of
--- TimeSeriesDuplicateTimestampRule doesn't compare the counter hints, a gauge marker beats a counter hint, and the kept sample gets
--- the common hint of the two, or an unknown one if they differ. The sink (INSERT) and the aggregate `timeSeriesGroupArray`
--- apply the same rule, whatever the input order. A payload difference (here the schema) decides the winner, which keeps its own
--- hint, but not before the gauge marker.
+-- TimeSeriesDuplicateTimestampRule doesn't compare the counter hints, a gauge marker beats a counter hint, and the kept sample, the
+-- first of its array, has an unknown hint unless it is a gauge. The sink (INSERT) and the aggregate `timeSeriesGroupArray` apply the
+-- same rule, whatever the input order. A payload difference (here the schema) decides the winner, but not before the gauge marker.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -32,12 +31,10 @@ SELECT name,
        [(100, 0, a_hint, a_schema, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], [])],
        [(100, 0, b_hint, b_schema, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], [])]
 FROM values('name String, a_hint UInt8, a_schema Int8, b_hint UInt8, b_schema Int8',
-    ('gauge_vs_no', 3, 0, 2, 0),
-    ('unknown_vs_reset', 0, 0, 1, 0),
-    ('reset_vs_no', 1, 0, 2, 0),
-    ('no_vs_no', 2, 0, 2, 0),
-    ('gauge_vs_no_schema', 3, 0, 2, 1),
-    ('unknown_vs_reset_schema', 0, 0, 1, 1));
+    ('gauge_vs_unknown', 3, 0, 0, 0),
+    ('unknown_vs_unknown', 0, 0, 0, 0),
+    ('gauge_vs_unknown_schema', 3, 0, 0, 1),
+    ('unknown_vs_unknown_schema', 0, 0, 0, 1));
 
 SELECT '-- the aggregate: two arrays in either order, and one array with both samples';
 SELECT name,
@@ -47,7 +44,7 @@ SELECT name,
 FROM hint_pairs
 ORDER BY name;
 
-SELECT '-- the sink: one sample per series after the deduplication, the first, which keeps the common hint or gets an unknown one';
+SELECT '-- the sink: one sample per series after the deduplication, the first of its row, which gets an unknown hint unless it is a gauge';
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
 -- Two samples of every series with the timestamp 100 and the same payload, with the hints of `hints`.
 INSERT INTO ts (metric_name, tags, histograms)

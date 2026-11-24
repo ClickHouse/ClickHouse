@@ -2,8 +2,8 @@
 -- the merges. Every sample whose predecessor may have changed gets its counter reset hint detected from the data against its
 -- predecessor in the result, whatever hint it had: an explicit or an earlier detected hint was about another predecessor. The hints
 -- of the other samples are kept: the sink detected them, so they are what detection would give. The counter hints don't take part in
--- choosing between samples with the same timestamp, and a winner whose equal rivals had other counter hints gets an unknown hint, so
--- the first sample of the result doesn't depend on which of them was kept either.
+-- choosing between samples with the same timestamp, and the first sample of an array has an unknown hint unless it is a gauge, so the
+-- first sample of the result doesn't depend on which of equal ones was kept either.
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS histogram_arrays;
@@ -28,12 +28,11 @@ FROM values('name String, samples Array(Tuple(UInt32, Int64, UInt8))',
     ('pair', [(100, 10, 2), (300, 15, 1)]),
     ('middle', [(200, 12, 0)]),
     ('later', [(400, 20, 0)]),
-    ('reported_reset', [(100, 1, 0), (200, 2, 1)]),
-    ('no_reset', [(100, 1, 2)]),
-    ('with_reset', [(100, 1, 1)]),
+    ('rising', [(100, 1, 0), (200, 2, 2)]),
+    ('equal', [(100, 1, 0)]),
     ('gauge', [(100, 1, 3)]),
     ('before', [(50, 5, 0)]),
-    ('two', [(50, 5, 0), (100, 1, 0)]));
+    ('two', [(50, 5, 0), (100, 1, 1)]));
 
 SELECT '-- the hint of B is detected against C, whichever merge made C its predecessor';
 WITH (SELECT h FROM histogram_arrays WHERE name = 'a') AS a,
@@ -59,16 +58,16 @@ SELECT hints(arrayReduce('timeSeriesGroupArray', [pair])),
        hints(arrayReduce('timeSeriesGroupArray', [pair, middle]));
 
 SELECT '-- which of two equal samples wins does not change the hint of the sample after them';
-WITH (SELECT h FROM histogram_arrays WHERE name = 'reported_reset') AS reported,
-     (SELECT h FROM histogram_arrays WHERE name = 'no_reset') AS equal,
+WITH (SELECT h FROM histogram_arrays WHERE name = 'rising') AS rising,
+     (SELECT h FROM histogram_arrays WHERE name = 'equal') AS equal,
      (SELECT h FROM histogram_arrays WHERE name = 'before') AS earlier,
      x -> arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), x) AS hints,
      (x, y) -> arrayReduce('timeSeriesGroupArray', [x, y]) AS merge
-SELECT hints(arrayReduce('timeSeriesGroupArray', [reported, equal, earlier])) AS at_once,
-       hints(merge(merge(reported, earlier), equal)) = at_once,
-       hints(merge(merge(reported, equal), earlier)) = at_once,
-       hints(merge(merge(equal, earlier), reported)) = at_once,
-       hints(merge(reported, merge(equal, earlier))) = at_once;
+SELECT hints(arrayReduce('timeSeriesGroupArray', [rising, equal, earlier])) AS at_once,
+       hints(merge(merge(rising, earlier), equal)) = at_once,
+       hints(merge(merge(rising, equal), earlier)) = at_once,
+       hints(merge(merge(equal, earlier), rising)) = at_once,
+       hints(merge(rising, merge(equal, earlier))) = at_once;
 
 SELECT '-- an equal duplicate of the predecessor does not change the hint of the sample after it, whichever is kept';
 WITH (SELECT h FROM histogram_arrays WHERE name = 'two') AS two,
@@ -77,18 +76,12 @@ WITH (SELECT h FROM histogram_arrays WHERE name = 'two') AS two,
 SELECT hints(arrayReduce('timeSeriesGroupArray', [two, before])),
        hints(arrayReduce('timeSeriesGroupArray', [before, two]));
 
-SELECT '-- the first sample keeps its hint if its equal duplicates agree, gets an unknown one if they differ, and a gauge marker wins';
-WITH (SELECT h FROM histogram_arrays WHERE name = 'no_reset') AS no_reset,
-     (SELECT h FROM histogram_arrays WHERE name = 'with_reset') AS with_reset,
+SELECT '-- a gauge marker wins over an equal counter sample';
+WITH (SELECT h FROM histogram_arrays WHERE name = 'equal') AS equal,
      (SELECT h FROM histogram_arrays WHERE name = 'gauge') AS gauge,
      x -> arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), x) AS hints,
      (x, y) -> arrayReduce('timeSeriesGroupArray', [x, y]) AS merge
-SELECT hints(merge(no_reset, no_reset)),
-       hints(merge(no_reset, with_reset)),
-       hints(merge(with_reset, no_reset)),
-       hints(merge(merge(no_reset, no_reset), with_reset)),
-       hints(merge(no_reset, merge(no_reset, with_reset))),
-       hints(merge(no_reset, gauge)),
-       hints(merge(gauge, no_reset));
+SELECT hints(merge(equal, gauge)),
+       hints(merge(gauge, equal));
 
 DROP TABLE histogram_arrays;

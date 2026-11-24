@@ -16,7 +16,7 @@ DROP TABLE IF EXISTS ts_recent;
 -- The buckets are 60 seconds long; the recent samples table is disabled because its TTL would drop the old samples.
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0;
 
-SELECT '-- an integer histogram and a float histogram, stored as sent';
+SELECT '-- an integer histogram and a float histogram, stored as sent but for the hint of the first sample of a row: unknown unless a gauge';
 INSERT INTO ts (metric_name, tags, histograms)
 SELECT 'int_hist', map('job', 'api'),
     CAST([(toDateTime64(100, 3), false, 'not_reset', 3, 0.001, 12.5, 10, 2, [(-2, 3), (-1, 2), (1, 3)], [(0, 0)])],

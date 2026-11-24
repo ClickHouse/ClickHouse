@@ -94,6 +94,10 @@ TimeSeriesHistogramCounterResetHint detectReset(const View & view, size_t previo
     const Hint hint = view.counterResetHintAt(current);
     if (hint == Hint::Gauge)
         return hint;
+    /// The predecessor is in another array, which can be merged with this one in any order: as Prometheus does for the first sample
+    /// of a chunk, the reader detects the reset from the data.
+    if (previous == NO_PREVIOUS)
+        return Hint::Unknown;
 
     return detectResetFromData(view, previous, current);
 }

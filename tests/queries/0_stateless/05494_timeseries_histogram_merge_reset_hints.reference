@@ -5,7 +5,7 @@ interleave	[(100,1,'not_reset'),(101,2,'not_reset'),(102,3,'not_reset'),(103,4,'
 single	[(100,1,'not_reset'),(101,2,'reset')]	1
 [(100,'not_reset'),(120,'not_reset'),(3,'reset')]
 [(1,'not_reset')]	[(0,'not_reset'),(1,'unknown')]
-[(1,'not_reset'),(2,'not_reset'),(3,'not_reset')]
-[(100,'not_reset'),(120,'not_reset')]
-[(100,'not_reset'),(120,'not_reset'),(3,'reset')]
-[(100,'not_reset'),(120,'not_reset'),(3,'reset')]
+[(1,'unknown'),(2,'not_reset'),(3,'not_reset')]
+[(100,'unknown'),(120,'not_reset')]
+[(100,'unknown'),(120,'not_reset'),(3,'reset')]
+[(100,'unknown'),(120,'not_reset'),(3,'reset')]

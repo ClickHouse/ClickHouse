@@ -7,7 +7,7 @@ histograms	Array(Tuple(timestamp DateTime, is_float Bool, counter_reset_hint Enu
 samples	Array(Tuple(DateTime, Float64))
 -- UInt32 timestamps: the histograms are sorted and split into the buckets with the float samples, the time range covers both kinds
 60	70	80	[(70,1.5)]	[80]	[1]	['unknown']
-120	125	130	[]	[125,130]	[2,3]	['not_reset','not_reset']
+120	125	130	[]	[125,130]	[2,3]	['unknown','not_reset']
 -- the outer columns and the selector
 [80]	[1]
 [125,130]	[2,3]

@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/detectTimeSeriesHistogramResets.h>
 
-#include <DataTypes/TimeSeries/PrometheusStaleMarker.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramCounterResetRule.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
@@ -8,24 +7,30 @@
 namespace DB
 {
 
-void detectTimeSeriesHistogramResets(
-    ColumnTuple & histograms,
-    std::span<const size_t> series_offsets,
-    std::span<const size_t> sorted_indices,
-    std::span<const UInt8> duplicate_hints_differ)
+namespace Rule = TimeSeriesHistogramCounterResetRule;
+
+void detectTimeSeriesHistogramResets(ColumnTuple & histograms, std::span<const size_t> offsets)
 {
-    namespace Rule = TimeSeriesHistogramCounterResetRule;
     const TimeSeriesHistogramsColumnsMutableView columns{histograms};
     const TimeSeriesHistogramPayloadColumnsView payload{columns};
     size_t begin = 0;
-    for (const size_t end : series_offsets)
+    for (const size_t end : offsets)
     {
-        /// The predecessor of the first sample is in an earlier insert, which isn't consulted: the sample keeps the hint it was
-        /// sent with, unless it is a stale marker or the dropped duplicates of it had other hints.
-        if ((begin < end) && (isPrometheusStaleMarker(payload.sum.getData()[begin]) || duplicate_hints_differ[sorted_indices[begin]]))
-            columns.setCounterResetHintAt(begin, TimeSeriesHistogramCounterResetHint::Unknown);
-        for (size_t i = begin + 1; i < end; ++i)
-            columns.setCounterResetHintAt(i, Rule::detectReset(payload, i - 1, i));
+        for (size_t i = begin; i < end; ++i)
+            columns.setCounterResetHintAt(i, Rule::detectReset(payload, (i == begin) ? Rule::NO_PREVIOUS : i - 1, i));
+        begin = end;
+    }
+}
+
+void setFirstTimeSeriesHistogramHints(ColumnTuple & histograms, std::span<const size_t> offsets)
+{
+    const TimeSeriesHistogramsColumnsMutableView columns{histograms};
+    const TimeSeriesHistogramPayloadColumnsView payload{columns};
+    size_t begin = 0;
+    for (const size_t end : offsets)
+    {
+        if (begin < end)
+            columns.setCounterResetHintAt(begin, Rule::detectReset(payload, Rule::NO_PREVIOUS, begin));
         begin = end;
     }
 }

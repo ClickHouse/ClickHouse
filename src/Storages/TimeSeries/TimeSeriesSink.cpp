@@ -431,17 +431,11 @@ namespace
         };
     }
 
-    /// The histogram comparator also marks in `duplicate_hints_differ` (indexed like the nested columns of `view`) the kept sample
-    /// of a pair the rule considers equal but with different counter hints: its stored hint is made unknown (see
-    /// detectTimeSeriesHistogramResets), as `timeSeriesGroupArray` does, so that it doesn't depend on which one was kept.
-    auto makeHistogramSampleWins(const TimeSeriesHistogramsColumnsView & view, PaddedPODArray<UInt8> & duplicate_hints_differ)
+    auto makeHistogramSampleWins(const TimeSeriesHistogramsColumnsView & view)
     {
-        return [&view, &duplicate_hints_differ](size_t kept_index, size_t new_index)
+        return [&view](size_t kept_index, size_t new_index)
         {
-            const int comparison = TimeSeriesDuplicateTimestampRule::compareHistogramSamples(view, new_index, kept_index);
-            if ((comparison == 0) && (view.counterResetHintAt(kept_index) != view.counterResetHintAt(new_index)))
-                duplicate_hints_differ[kept_index] = 1;
-            return comparison > 0;
+            return TimeSeriesDuplicateTimestampRule::compareHistogramSamples(view, new_index, kept_index) > 0;
         };
     }
 
@@ -794,30 +788,34 @@ namespace
                 TimeSeriesColumnNames::Histograms,
                 histograms_array_type}};
         kinds[0].sort(filter, ts_offsets, makeFloatSampleWins(ts_values), "samples");
-        PaddedPODArray<UInt8> duplicate_hints_differ(histograms ? histograms->timestamps.size() : 0, 0);
         if (histograms)
-            kinds[1].sort(filter, *histograms->outer_offsets, makeHistogramSampleWins(*histograms, duplicate_hints_differ), "histogram samples");
+            kinds[1].sort(filter, *histograms->outer_offsets, makeHistogramSampleWins(*histograms), "histogram samples");
         const std::span<const SortedSamples<TimestampColumn>> used_kinds = std::span(kinds.data(), histograms_array_type ? 2 : 1);
 
-        ColumnPtr normalized_histogram_hints;
+        ColumnPtr series_histogram_hints;
         const auto make_block = [&](Decimal64 bucket_step)
         {
             auto block = makeSamplesBlock(filter, id_column, id_type, ts_timestamps, timestamp_type, used_kinds, bucket_step);
             if (histograms)
             {
                 /// The writer creates fresh columns, so mutation does not copy their data. Both tables have the same flattened
-                /// sample order: detect resets once, then share the corrected hint column even when their bucket sizes differ.
+                /// sample order: detect resets within the series once and share the hints between their blocks.
                 auto & column = block.getByName(TimeSeriesColumnNames::Histograms).column;
                 auto mutable_column = IColumn::mutate(std::move(column));
-                auto & tuple = assert_cast<ColumnTuple &>(assert_cast<ColumnArray &>(*mutable_column).getData());
+                auto & array = assert_cast<ColumnArray &>(*mutable_column);
+                auto & tuple = assert_cast<ColumnTuple &>(array.getData());
                 auto & hints = tuple.getColumnPtr(TimeSeriesHistogramsColumns::getTuplePosition(TimeSeriesHistogramsColumn::CounterResetHint));
-                if (normalized_histogram_hints)
-                    hints = normalized_histogram_hints;
+                if (series_histogram_hints)
+                    hints = series_histogram_hints;
                 else
                 {
-                    detectTimeSeriesHistogramResets(tuple, kinds[1].sorted_offsets, kinds[1].sorted_indices, duplicate_hints_differ);
-                    normalized_histogram_hints = hints;
+                    detectTimeSeriesHistogramResets(tuple, kinds[1].sorted_offsets);
+                    series_histogram_hints = hints;
                 }
+                /// The rows of a series start at other samples in the two tables, whose bucket steps differ: the first sample of each
+                /// row gets its hint in a copy of the shared hints.
+                hints = IColumn::mutate(std::move(hints));
+                setFirstTimeSeriesHistogramHints(tuple, array.getOffsets());
                 column = std::move(mutable_column);
             }
             return block;

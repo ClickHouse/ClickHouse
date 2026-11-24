@@ -135,6 +135,7 @@ def test_integer_histogram():
     # Two positive spans covering the bucket indexes -2, -1 and 1, one negative span covering the index 0 with an empty bucket.
     # The deltas [3, -1, 1] decode to the absolute counts [3, 2, 3]; with the zero bucket they sum up to `count_int`. The spans
     # become pairs of the bucket index and the count, the empty bucket included; the float flavour stays at zeros and empty arrays.
+    # The sent `NO` is stored as unknown: the predecessor of the first sample of a row is in another row.
     histogram = types_pb2.Histogram(
         count_int=10,
         sum=12.5,
@@ -149,7 +150,7 @@ def test_integer_histogram():
         timestamp=TIMESTAMP_MS,
     )
     check_histogram_round_trip(
-        histogram, f"{TIMESTAMP_MS}\tfalse\tnot_reset\t3\t0.001\t12.5\t10\t2\t[(-2,3),(-1,2),(1,3)]\t[(0,0)]\t0\t0\t[]\t[]\t[]"
+        histogram, f"{TIMESTAMP_MS}\tfalse\tunknown\t3\t0.001\t12.5\t10\t2\t[(-2,3),(-1,2),(1,3)]\t[(0,0)]\t0\t0\t[]\t[]\t[]"
     )
 
 
@@ -440,9 +441,9 @@ def test_remote_read_returns_stored_resets_as_unknown():
     # Prometheus returns `GAUGE`, `NO` or `UNKNOWN` over remote read, never `YES`: a reset, explicit or detected, starts a new chunk
     # whose first sample is returned with an unknown hint, and PromQL trusts `YES` without checking the data. A stored reset is
     # returned as unknown the same way. A sender's `YES` the data doesn't show (the counts increase) isn't stored at all: the sink
-    # detects every hint but the first of an insert from the data, so it is returned as `NO`. The first histogram of a series is
-    # returned as unknown: the sink keeps the sender's hint of the first sample of an insert without checking it against the
-    # predecessor, which is in an earlier insert, and Prometheus never trusts a sender's `NO`. The other hints are returned as stored.
+    # detects every hint but the first of a row from the data, so it is returned as `NO`. The first histogram of a series is
+    # returned as unknown, as it is stored: the predecessor of the first sample of a row is in another row, and Prometheus never
+    # trusts the hint of the first sample of a chunk either. The other hints are returned as stored.
     timestamps = [TIMESTAMP_MS + i * 1000 for i in range(3)]
 
     def histogram(timestamp, count, hint):
@@ -453,11 +454,11 @@ def test_remote_read_returns_stored_resets_as_unknown():
     detected = [histogram(t, count, types_pb2.Histogram.UNKNOWN) for t, count in zip(timestamps, [5, 2, 3])]
     send(make_write_request(({"__name__": "explicit"}, explicit), ({"__name__": "detected"}, detected)))
 
-    # Stored: the hint of the first sample is kept, the decrease of the count is detected as a reset, the increases as no reset,
+    # Stored: the first sample gets an unknown hint, the decrease of the count is detected as a reset, the increases as no reset,
     # the sender's reset included.
     assert node.query(
         "SELECT metric_name, histograms.counter_reset_hint FROM prometheus WHERE metric_name IN ('explicit', 'detected') ORDER BY metric_name"
-    ) == "detected\t['unknown','reset','not_reset']\nexplicit\t['not_reset','not_reset','not_reset']\n"
+    ) == "detected\t['unknown','reset','not_reset']\nexplicit\t['unknown','not_reset','not_reset']\n"
 
     series = remote_read(timestamps[0], timestamps[-1])
     assert [h.reset_hint for h in series[labels_key(__name__="detected")].histograms] == [

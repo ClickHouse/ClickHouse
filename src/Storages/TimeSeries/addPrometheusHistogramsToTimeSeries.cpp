@@ -153,9 +153,8 @@ void addPrometheusHistogramsToTimeSeries(
     const auto & float_samples = time_series.samples();
     int float_index = 0;
 
-    /// The predecessor of the first histogram isn't in the response: it is in an earlier insert, whose hint of the first sample the
-    /// sink keeps as sent without checking it, or before the time range. So the first histogram gets an unknown counter hint, like
-    /// the first sample of a chunk in Prometheus, which never trusts a sender's `NO` either.
+    /// The predecessor of the first histogram isn't in the response: its hint was detected against a sample before the time range.
+    /// So the first histogram gets an unknown counter hint, like the first sample of a chunk in Prometheus.
     bool previous_histogram_skipped = true;
 
     const size_t begin = histograms.getOffsets()[static_cast<ssize_t>(row) - 1];

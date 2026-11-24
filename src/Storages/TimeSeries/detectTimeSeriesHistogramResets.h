@@ -9,15 +9,13 @@ namespace DB
 {
 class ColumnTuple;
 
-/// Sets the counter reset hints of a uniquely owned tuple column of histogram samples sorted and deduplicated by timestamp, as the sink
-/// stores them: `series_offsets` delimit the series (the input rows), independently of the output buckets. Within a series every
-/// sample but the first gets the hint of `TimeSeriesHistogramCounterResetRule::detectReset` against its predecessor; the first
-/// sample keeps the hint it was sent with, unless it is a stale marker or `duplicate_hints_differ` is set for it: then its hint is
-/// unknown. Sample `i` of the column is sample `sorted_indices[i]` of the input, which indexes `duplicate_hints_differ`.
-void detectTimeSeriesHistogramResets(
-    ColumnTuple & histograms,
-    std::span<const size_t> series_offsets,
-    std::span<const size_t> sorted_indices,
-    std::span<const UInt8> duplicate_hints_differ);
+/// Sets the counter reset hints of a uniquely owned tuple column of histogram samples sorted and deduplicated by timestamp within each
+/// of the ranges `offsets` delimit, by `TimeSeriesHistogramCounterResetRule::detectReset`: every sample but the first of a range against
+/// its predecessor, the first one with `NO_PREVIOUS`.
+void detectTimeSeriesHistogramResets(ColumnTuple & histograms, std::span<const size_t> offsets);
+
+/// Sets the hint of the first sample of each of the ranges `offsets` delimit in a uniquely owned tuple column of histogram samples by
+/// `TimeSeriesHistogramCounterResetRule::detectReset` with `NO_PREVIOUS`, keeping the hints of the other samples.
+void setFirstTimeSeriesHistogramHints(ColumnTuple & histograms, std::span<const size_t> offsets);
 
 }

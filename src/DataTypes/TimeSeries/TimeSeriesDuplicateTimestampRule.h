@@ -16,8 +16,9 @@ namespace DB
 /// duplicates across the rows of the samples tables, when parts are merged or read.
 /// Both must apply the same rule, or the stored result would depend on whether the duplicates arrived in one block or in two.
 /// The histogram rule doesn't compare the counter reset hints, which merging changes (see TimeSeriesHistogramCounterResetRule); of
-/// the hints only the gauge marker, which merging keeps, takes part. Where the kept one of two samples equal under the rule keeps
-/// its hint, the callers make it unknown unless the two hints agree, so that it doesn't depend on which one was kept.
+/// the hints only the gauge marker, which merging keeps, takes part. Which of two samples equal under the rule is kept doesn't change
+/// the stored hints either: a sample with a predecessor has the hint detected against it, the first sample of an array an unknown one
+/// unless it is a gauge (see TimeSeriesHistogramCounterResetRule).
 namespace TimeSeriesDuplicateTimestampRule
 {
     /// An order over the float samples `lhs` and `rhs`: the greater sample is preferred. Returns a negative number, 0 or a positive
@@ -64,6 +65,10 @@ namespace TimeSeriesDuplicateTimestampRule
     /// Floats compare as in `CompareHelper`: a NaN is less than any number, two NaNs are equal, as are `0.0` and `-0.0`; only for
     /// payloads equal up to those does the kept sample depend on the order of the samples (the limit of `compareFloatSamples` too).
     int compareHistogramSamples(const TimeSeriesHistogramPayloadColumnsView & view, size_t lhs, size_t rhs);
+
+    /// The same order for the sample `lhs` of `lhs_view` and the sample `rhs` of `rhs_view`, views over columns of the same types.
+    int compareHistogramSamples(
+        const TimeSeriesHistogramPayloadColumnsView & lhs_view, size_t lhs, const TimeSeriesHistogramPayloadColumnsView & rhs_view, size_t rhs);
 }
 
 }

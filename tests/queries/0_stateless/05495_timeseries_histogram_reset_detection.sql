@@ -103,11 +103,12 @@ SELECT 'explicit_reset_after_stale', [0, 1], [reinterpretAsFloat64(toUInt64(9218
 UNION ALL
 SELECT 'gauge_after_stale', [0, 3], [reinterpretAsFloat64(toUInt64(9218868437227405314)), 1.], [10, 0], [0, 3];
 
--- Detect against the final sorted neighbours, whatever hint the sample was sent with.
+-- Detect against the final sorted neighbours, whatever hint the sample was sent with. The first sample of every row gets an unknown
+-- hint, also when its predecessor in the same insert is in the previous bucket.
 INSERT INTO histogram_reset_cases (name, timestamps, hints, zeros, expected) VALUES
-    ('unsorted_decrease', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [2, 2], [1, 2], [2, 1]),
-    ('moved_explicit_reset', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [1, 2], [2, 1], [2, 2]),
-    ('bucket_boundary', ['2026-01-01 00:01:59', '2026-01-01 00:02:00'], [0, 2], [2, 1], [0, 1]);
+    ('unsorted_decrease', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [2, 2], [1, 2], [0, 1]),
+    ('moved_explicit_reset', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [1, 2], [2, 1], [0, 2]),
+    ('bucket_boundary', ['2026-01-01 00:01:59', '2026-01-01 00:02:00'], [0, 2], [2, 1], [0, 0]);
 
 -- The hint is detected against the winner of the deduplication of equal timestamps (the sample with the greatest count), whether or
 -- not it is the predecessor the sender saw: the counts don't decrease in either case, so a reported reset isn't kept.
@@ -117,15 +118,15 @@ INSERT INTO histogram_reset_cases (name, timestamps, hints, schemas, thresholds,
     ('explicit_reset_after_winning_duplicate', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
      [0, 0, 1], [0, 0, 0], [0, 0, 0], [1, 1, 1], [1, 5, 6], [[], [], []], [[], [], []], [[], [], []], [0, 2]);
 
--- The first sample of a series keeps an explicit reset hint.
+-- The first sample of a series gets an unknown hint, also when it was sent with an explicit reset.
 INSERT INTO histogram_reset_cases (name, hints, zeros, expected) VALUES
-    ('first_sample_explicit_reset', [1, 2], [1, 2], [1, 2]);
+    ('first_sample_explicit_reset', [1, 2], [1, 2], [0, 2]);
 
--- Duplicates of the first sample with the same payload: its hint is kept if they agree and unknown if they differ, so it doesn't depend
--- on which one was kept. A gauge marker is part of the payload and wins over a counter hint; the sample after a gauge is unknown.
+-- Duplicates of the first sample with the same payload: its hint is unknown whatever their hints, so it doesn't depend on which one
+-- was kept. A gauge marker is part of the payload and wins over a counter hint; the sample after a gauge is unknown.
 INSERT INTO histogram_reset_cases (name, timestamps, hints, schemas, thresholds, sums, zeros, positive, negative, bounds, expected) VALUES
     ('first_sample_duplicates_agree', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
-     [2, 2, 0], [0, 0, 0], [0, 0, 0], [1, 1, 1], [1, 1, 2], [[], [], []], [[], [], []], [[], [], []], [2, 2]),
+     [2, 2, 0], [0, 0, 0], [0, 0, 0], [1, 1, 1], [1, 1, 2], [[], [], []], [[], [], []], [[], [], []], [0, 2]),
     ('first_sample_duplicates_differ', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
      [2, 1, 0], [0, 0, 0], [0, 0, 0], [1, 1, 1], [1, 1, 2], [[], [], []], [[], [], []], [[], [], []], [0, 2]),
     ('first_sample_duplicate_gauge_wins', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
