@@ -145,7 +145,9 @@ void StorageFromMergeTreeProjection::read(
             /// likewise for pending alter and metadata mutations (e.g. `MODIFY COLUMN`, `DROP COLUMN`, `RENAME COLUMN`),
             /// which the parent read applies on the fly via `AlterConversions` but the projection read does not.
             /// The snapshot counters also include already finished mutations, so check the commands for this part.
-            if (has_row_policy && !snapshot_data.mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part).empty())
+            if (has_row_policy
+                && std::ranges::any_of(snapshot_data.mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part),
+                    [&](const MutationCommand & command) { return !command.dropsProjectionDefinition() || command.column_name == projection->name; }))
                 throw Exception(ErrorCodes::ACCESS_DENIED,
                     "Cannot read from projection `{}` of table {} under a row policy while part {} has unmaterialized "
                     "mutations, since the projection may show stale values the policy would hide",

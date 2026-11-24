@@ -165,6 +165,7 @@ struct MutationCounters
     Int64 num_data = 0;
     Int64 num_alter = 0;
     Int64 num_metadata = 0;
+    Int64 num_projection_drops = 0;
 
     void assertNotNegative() const;
 };

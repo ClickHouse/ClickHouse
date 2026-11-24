@@ -146,6 +146,8 @@ struct MutationCommand
 
     /// This command shouldn't stick with other commands
     [[nodiscard]] bool isBarrierCommand() const;
+    /// `DROP PROJECTION`, not `CLEAR PROJECTION`: the projection parts it has not removed yet belong to a dropped definition.
+    [[nodiscard]] bool dropsProjectionDefinition() const;
     [[nodiscard]] bool isPureMetadataCommand() const;
     [[nodiscard]] bool isEmptyCommand() const;
     [[nodiscard]] bool isDropOrRename() const;

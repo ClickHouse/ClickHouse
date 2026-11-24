@@ -400,7 +400,7 @@ private:
 
         ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
-        void prepareProjectionsToMergeAndRebuild() const;
+        void prepareProjectionsToMergeAndRebuild(const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot) const;
         void calculateProjections(const Block & block, UInt64 starting_offset) const;
         void calculateProjectionForBlock(size_t projection_idx, const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;

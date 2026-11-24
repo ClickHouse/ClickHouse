@@ -912,11 +912,21 @@ bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Para
             return true;
 
         /// Metadata mutations must be included into the snapshot regardless of the parameters.
-        if (AlterConversions::isSupportedMetadataMutation(command.type))
+        if (AlterConversions::isSupportedMetadataMutation(command.type) || command.dropsProjectionDefinition())
             return true;
     }
 
     return false;
+}
+
+bool MergeTreeData::IMutationsSnapshot::isProjectionDroppedForPart(const DataPartPtr & part, const String & projection_name) const
+{
+    if (!hasProjectionDrops())
+        return false;
+    return std::ranges::any_of(getOnFlyMutationCommandsForPart(part), [&](const MutationCommand & command)
+    {
+        return command.dropsProjectionDefinition() && command.column_name == projection_name;
+    });
 }
 
 MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_)
@@ -977,6 +987,7 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
     for (const auto & command : commands | std::views::reverse)
     {
         bool is_supported = AlterConversions::isSupportedMetadataMutation(command.type)
+            || command.dropsProjectionDefinition()
             || (params.need_data_mutations && AlterConversions::isSupportedDataMutation(command.type))
             || (params.need_alter_mutations && AlterConversions::isSupportedAlterMutation(command.type));
 
@@ -16557,6 +16568,7 @@ static void updateMutationsCounters(MutationCounters & mutation_counters, const 
     bool has_data_mutation = false;
     bool has_alter_mutation = false;
     bool has_metadata_mutation = false;
+    bool has_projection_drop = false;
 
     for (const auto & command : commands)
     {
@@ -16576,6 +16588,12 @@ static void updateMutationsCounters(MutationCounters & mutation_counters, const 
         {
             mutation_counters.num_metadata += increment;
             has_metadata_mutation = true;
+        }
+
+        if (!has_projection_drop && command.dropsProjectionDefinition())
+        {
+            mutation_counters.num_projection_drops += increment;
+            has_projection_drop = true;
         }
 
         mutation_counters.assertNotNegative();

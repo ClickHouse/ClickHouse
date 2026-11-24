@@ -4894,7 +4894,12 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
         patch_parts = getPatchPartsVectorForInternalUsage();
 
     std::lock_guard lock(currently_processing_in_background_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
+    /// Finished drops too: the part list was taken before this snapshot, so it may hold a part a drop rewrote since.
+    const bool has_projection_drops = std::ranges::any_of(current_mutations_by_version, [](const auto & version_and_entry)
+    {
+        return std::ranges::any_of(*version_and_entry.second.commands, [](const MutationCommand & command) { return command.dropsProjectionDefinition(); });
+    });
+    if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0 && !has_projection_drops)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 
     UInt64 max_mutation_version = std::numeric_limits<UInt64>::max();

@@ -31,6 +31,11 @@ bool MutationCommand::isBarrierCommand() const
     return type == RENAME_COLUMN;
 }
 
+bool MutationCommand::dropsProjectionDefinition() const
+{
+    return type == DROP_PROJECTION && !clear;
+}
+
 bool MutationCommand::isPureMetadataCommand() const
 {
     return type == ALTER_WITHOUT_MUTATION;

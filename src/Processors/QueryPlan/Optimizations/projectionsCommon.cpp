@@ -463,7 +463,10 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken ? it->second : nullptr;
+        MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken
+                && !parent_mutations_snapshot->isProjectionDroppedForPart(part_with_ranges.data_part, candidate.projection->name)
+            ? it->second
+            : nullptr;
         if (!projection_part && hypothetical_projection && candidate.projection == &hypothetical_projection->projection)
             projection_part = hypothetical_projection->findPart(part_with_ranges.data_part->name);
         /// A projection part returns every matching row of its part, so it cannot replace a read cut by exact counting.
@@ -588,6 +591,7 @@ void filterPartsAndCollectProjectionCandidates(
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(projection.name);
         if (it != created_projections.end() && !it->second->is_broken
+            && !reading.getMutationsSnapshot()->isProjectionDroppedForPart(part_with_ranges.data_part, projection.name)
             && projectionPartHasRequiredColumns(
                 *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
             && !partHasPendingMetadataMutationsOnColumns(

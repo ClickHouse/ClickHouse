@@ -684,7 +684,11 @@ public:
         [[nodiscard]] virtual bool hasDataMutations() const = 0;
         [[nodiscard]] virtual bool hasAlterMutations() const = 0;
         [[nodiscard]] virtual bool hasMetadataMutations() const = 0;
+        [[nodiscard]] virtual bool hasProjectionDrops() const = 0;
         [[nodiscard]] virtual bool hasLightweightDeletedMask() const = 0;
+
+        /// The part's projection part of that name was built for a definition a pending `DROP PROJECTION` removed.
+        [[nodiscard]] bool isProjectionDroppedForPart(const DataPartPtr & part, const String & projection_name) const;
     };
 
     struct MutationsSnapshotBase : public IMutationsSnapshot
@@ -704,6 +708,7 @@ public:
         [[nodiscard]] bool hasDataMutations() const final { return counters.num_data > 0; }
         [[nodiscard]] bool hasAlterMutations() const final { return counters.num_alter > 0; }
         [[nodiscard]] bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
+        [[nodiscard]] bool hasProjectionDrops() const final { return counters.num_projection_drops > 0; }
         [[nodiscard]] bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
         [[nodiscard]] bool hasLightweightDeletedMask() const final;
 

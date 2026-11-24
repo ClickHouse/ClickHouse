@@ -921,7 +921,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// which only the rebuild and merge paths erase from. Clearing the worklists afterwards left
     /// those names in `system.merges.projections_remaining` for the lifetime of the merge entry.
     if (!can_short_circuit_ttl_drop)
-        prepareProjectionsToMergeAndRebuild();
+        prepareProjectionsToMergeAndRebuild(mutations_snapshot);
 
     /// Get list of skip indexes to exclude from merge
     std::unordered_set<String> exclude_index_names;
@@ -1641,7 +1641,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::cancel() noexcept
 }
 
 
-void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild() const
+void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild(const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot) const
 {
     const auto mode = (*global_ctx->data_settings)[MergeTreeSetting::deduplicate_merge_projection_mode];
     /// Under throw mode, we still choose to drop projections due to backward compatibility since some
@@ -1688,6 +1688,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         size_t parts_with_unloaded_projection = 0;
         for (const auto & part : global_ctx->future_part->parts)
         {
+            if (mutations_snapshot->isProjectionDroppedForPart(part, projection.name))
+                continue;
+
             auto it = part->getProjectionParts().find(projection.name);
             if (it != part->getProjectionParts().end() && !it->second->is_broken)
             {

@@ -744,6 +744,9 @@ void MutationCounters::assertNotNegative() const
 
     if (num_metadata < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata);
+
+    if (num_projection_drops < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly projection drops counter is negative ({})", num_projection_drops);
 }
 
 }
