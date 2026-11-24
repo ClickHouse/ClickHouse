@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/castColumnToRequestedType.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <Common/ErrnoException.h>
 
 #include <tins/tins.h>
@@ -210,20 +209,13 @@ void PCAPBlockInputFormat::initializeIfNeeded()
 
     ReadBuffer & input = *in;
 
-    /// If it's a local file at offset 0, let libpcap open it directly.
-    if (auto * file_in = dynamic_cast<ReadBufferFromFileBase *>(&input))
-    {
-        size_t offset = 0;
-        if (file_in->isRegularLocalFile(&offset) && offset == 0)
-        {
-            sniffer = std::make_unique<Tins::FileSniffer>(file_in->getFileName(), config);
-            return;
-        }
-    }
-
-    /// Otherwise let `libpcap` read the capture straight from the input buffer. `libpcap` reads
+    /// Let `libpcap` read the capture straight from the input buffer. `libpcap` reads
     /// a capture only through a path or a `FILE *`, but it reads it strictly sequentially, so a
     /// `FILE *` backed by the input buffer is enough and nothing has to be spooled anywhere.
+    /// The capture is never reopened by its file name, even for a local file: the caller has
+    /// already validated and opened it (for example, `file` resolves the path inside
+    /// `user_files_path`), and opening the name again could read another file if a symlink
+    /// or a rename changed what the name refers to in between.
     stream_cookie.in = &input;
     stream_cookie.exception = nullptr;
 
