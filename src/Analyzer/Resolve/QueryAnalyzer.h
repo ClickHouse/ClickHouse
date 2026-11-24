@@ -124,7 +124,8 @@ public:
         bool only_analyze_,
         bool positional_arguments_already_resolved_ = false,
         StoragePtr replaced_storage_ = nullptr,
-        bool view_source_in_subqueries_ = false);
+        bool view_source_in_subqueries_ = false,
+        bool allow_compound_table_identifier_qualification_ = true);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
@@ -402,6 +403,7 @@ private:
     const StoragePtr replaced_storage;
     /// See `SelectQueryOptions`. Not passed to the analyzers of inlined views: the inner query of a view reads the table itself.
     const bool view_source_in_subqueries;
+    const bool allow_compound_table_identifier_qualification;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
     /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early

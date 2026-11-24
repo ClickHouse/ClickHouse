@@ -288,10 +288,15 @@ void addQueryTreePasses(
     bool only_analyze,
     bool positional_arguments_already_resolved,
     StoragePtr replaced_storage,
-    bool view_source_in_subqueries)
+    bool view_source_in_subqueries,
+    bool allow_compound_table_identifier_qualification)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>(
-        only_analyze, positional_arguments_already_resolved, std::move(replaced_storage), view_source_in_subqueries));
+        only_analyze,
+        positional_arguments_already_resolved,
+        std::move(replaced_storage),
+        view_source_in_subqueries,
+        allow_compound_table_identifier_qualification));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     /// This pass should be run for the secondary queries

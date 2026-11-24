@@ -125,7 +125,8 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
         bool view_source_in_subqueries,
-        bool check_access_rights = false);
+        bool check_access_rights = false,
+        bool allow_compound_table_identifier_qualification = true);
 
 /// Build filter for specific table_expression
 /// `check_access_rights`: check column-level SELECT for the columns the filter reads (for user-supplied filters).

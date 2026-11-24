@@ -395,12 +395,17 @@ void hideLambdaArgumentsShadowingAliasExpression(
 }
 
 QueryAnalyzer::QueryAnalyzer(
-    bool only_analyze_, bool positional_arguments_already_resolved_, StoragePtr replaced_storage_, bool view_source_in_subqueries_)
+    bool only_analyze_,
+    bool positional_arguments_already_resolved_,
+    StoragePtr replaced_storage_,
+    bool view_source_in_subqueries_,
+    bool allow_compound_table_identifier_qualification_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
     , positional_arguments_already_resolved(positional_arguments_already_resolved_)
     , replaced_storage(std::move(replaced_storage_))
     , view_source_in_subqueries(view_source_in_subqueries_)
+    , allow_compound_table_identifier_qualification(allow_compound_table_identifier_qualification_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -408,6 +413,15 @@ QueryAnalyzer::~QueryAnalyzer() = default;
 void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+
+    if (!allow_compound_table_identifier_qualification)
+    {
+        scope.allow_compound_table_identifier_qualification = false;
+        if (auto * query_node = node->as<QueryNode>())
+            query_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
+        else if (auto * union_node = node->as<UnionNode>())
+            union_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
+    }
 
     if (!scope.context)
         scope.context = context;
@@ -499,6 +513,16 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+
+    if (!allow_compound_table_identifier_qualification)
+    {
+        scope.allow_compound_table_identifier_qualification = false;
+        if (auto * query_node = node->as<QueryNode>())
+            query_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
+        else if (auto * union_node = node->as<UnionNode>())
+            union_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
+    }
+
     if (!scope.context)
         scope.context = context;
 
