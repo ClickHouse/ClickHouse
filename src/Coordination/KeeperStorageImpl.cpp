@@ -980,14 +980,14 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperS
 
 /// CHECK WATCHES Request ///
 static Coordination::ZooKeeperResponsePtr
-processLocal(const Coordination::ZooKeeperCheckWatchRequest & zk_request, KeeperStorage & storage, int64_t /*session_id*/, bool /*check_acl*/)
+processLocal(const Coordination::ZooKeeperCheckWatchRequest & zk_request, KeeperStorage & storage, int64_t session_id, bool /*check_acl*/)
 {
     ProfileEvents::increment(ProfileEvents::KeeperCheckWatchRequest);
     auto response = zk_request.makeResponse();
 
     if (!magic_enum::enum_contains(zk_request.type))
         response->error = Coordination::Error::ZBADARGUMENTS;
-    else if (!storage.containsWatch(zk_request.getPath(), zk_request.type))
+    else if (!storage.containsWatch(zk_request.getPath(), zk_request.type, session_id))
         response->error = Coordination::Error::ZNOWATCHER;
     return response;
 }
