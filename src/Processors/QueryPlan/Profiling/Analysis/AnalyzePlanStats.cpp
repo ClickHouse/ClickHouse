@@ -549,7 +549,8 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuff
 
 void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & prefix, bool processors_info) const
 {
-    if (!step)
+    /// A step built outside of any query is not in the walk the statistics come from: see `PlanWalk`.
+    if (!step || step->getStepIndex() == PlanStepIndex::NONE)
         return;
 
     renderStep(analyzeStep(step), out, prefix, processors_info);

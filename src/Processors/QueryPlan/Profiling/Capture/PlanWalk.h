@@ -24,7 +24,8 @@ struct VisitedStep
     const QueryPlan * owning_plan = nullptr;
 };
 
-/// Every step of a plan and of the child plans its steps hold, visited once.
+/// Every step of a plan and of the child plans its steps hold, visited once. A step without an
+/// identity (`PlanStepIndex::NONE`) is left out, and its children are attached to its parent.
 ///
 /// The single source of what is below what: `CapturedPlan` and `PlanAnalysisSnapshot` want
 /// different things from each step but the same shape, and both take it from here.

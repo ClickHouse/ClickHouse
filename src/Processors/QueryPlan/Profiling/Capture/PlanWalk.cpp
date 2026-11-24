@@ -14,7 +14,7 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         return walk;
 
     auto * root = plan.getRootNode();
-    if (!root || !root->step)
+    if (!root || !root->step || root->step->getStepIndex() == PlanStepIndex::NONE)
         return walk;
 
     walk.plan = &plan;
@@ -28,13 +28,46 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
 
     VectorWithMemoryTracking<Frame> to_visit{{&plan, root}};
 
+    /// The children of a node: its own, then the roots of the child plans its step holds.
+    const auto for_each_child = [only_built_child_plans](const Frame & frame, const auto & callback)
+    {
+        for (auto * child : frame.node->children)
+        {
+            if (child && child->step)
+                callback(Frame{frame.owning_plan, child});
+        }
+
+        auto & step = *frame.node->step;
+        for (auto * child_plan : only_built_child_plans ? step.getBuiltChildPlans() : step.getChildPlans(/*for_explain=*/ false))
+        {
+            if (!child_plan || !child_plan->isInitialized())
+                continue;
+            auto * child_root = child_plan->getRootNode();
+            if (child_root && child_root->step)
+                callback(Frame{child_plan, child_root});
+        }
+    };
+
+    /// A step with `PlanStepIndex::NONE` was built outside of any query and has no identity to key
+    /// it by: it would collide with every other such step. It is left out of the walk, and the
+    /// steps below it hang from the nearest step above it instead.
+    const auto attach = [&](this auto && self, VisitedStep & parent, const Frame & child) -> void
+    {
+        const UInt64 child_id = child.node->step->getStepIndex();
+        if (child_id != PlanStepIndex::NONE)
+        {
+            parent.children.push_back(child_id);
+            to_visit.push_back(child);
+            return;
+        }
+
+        for_each_child(child, [&](const Frame & grandchild) { self(parent, grandchild); });
+    };
+
     while (!to_visit.empty())
     {
         const auto frame = to_visit.back();
         to_visit.pop_back();
-
-        if (!frame.node || !frame.node->step)
-            continue;
 
         auto & step = *frame.node->step;
 
@@ -43,24 +76,7 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         visited.step = &step;
         visited.owning_plan = frame.owning_plan;
 
-        for (auto * child : frame.node->children)
-        {
-            if (!child || !child->step)
-                continue;
-            visited.children.push_back(child->step->getStepIndex());
-            to_visit.push_back({frame.owning_plan, child});
-        }
-
-        for (auto * child_plan : only_built_child_plans ? step.getBuiltChildPlans() : step.getChildPlans(/*for_explain=*/ false))
-        {
-            if (!child_plan || !child_plan->isInitialized())
-                continue;
-            auto * child_root = child_plan->getRootNode();
-            if (!child_root || !child_root->step)
-                continue;
-            visited.children.push_back(child_root->step->getStepIndex());
-            to_visit.push_back({child_plan, child_root});
-        }
+        for_each_child(frame, [&](const Frame & child) { attach(visited, child); });
 
         walk.steps.push_back(std::move(visited));
     }
