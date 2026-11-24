@@ -78,7 +78,7 @@ template <typename Bucket>
 class TimeSeriesBuckets
 {
 public:
-    size_t size() const { return map ? map->size() : count; }
+    [[nodiscard]] size_t size() const { return map ? map->size() : count; }
 
     /// Returns the bucket with this index (less than `limit`), adding an empty one if it is missing.
     Bucket & get(size_t index, size_t limit)
@@ -105,7 +105,7 @@ public:
         return slots[slot];
     }
 
-    const Bucket * find(size_t index) const
+    [[nodiscard]] const Bucket * find(size_t index) const
     {
         if (map)
         {
@@ -118,7 +118,7 @@ public:
     }
 
     /// Whether looking up a missing index is cheap: always in the array, and in the map only with a cell per index.
-    bool hasCellPerIndex(size_t limit) const { return !map || map->getBufferSizeInBytes() / sizeof(typename Map::cell_type) >= limit; }
+    [[nodiscard]] bool hasCellPerIndex(size_t limit) const { return !map || map->getBufferSizeInBytes() / sizeof(typename Map::cell_type) >= limit; }
 
     /// Calls `f(index, bucket)` for each bucket, in index order when they are in the array.
     template <typename F>
