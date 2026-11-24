@@ -1839,7 +1839,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
 {
     const auto & projection = *global_ctx->projections_to_rebuild[projection_idx];
     Stopwatch projection_watch(CLOCK_MONOTONIC_COARSE);
-    Block block_to_squash = projection.calculate(block, starting_offset, global_ctx->context);
+    Block block_to_squash = projection.calculate(block, starting_offset, *global_ctx->metadata_snapshot, global_ctx->context);
 
     /// Everything is deleted by lightweight delete
     if (block_to_squash.rows() == 0)

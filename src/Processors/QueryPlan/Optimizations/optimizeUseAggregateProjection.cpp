@@ -314,10 +314,11 @@ struct AggregateProjectionInfo
 /// Ideally, this should be pre-calculated and stored inside ProjectionDescription.
 static AggregateProjectionInfo getAggregatingProjectionInfo(
     const ProjectionDescription & projection,
+    const StorageInMemoryMetadata & table_metadata,
     const ContextPtr & context,
     const Block & key_virtual_columns)
 {
-    ProjectionPlanner projection_planner(projection.query_ast, projection.query_source, context);
+    ProjectionPlanner projection_planner(projection.query_ast, projection.createQuerySource(table_metadata), context);
 
     AggregateProjectionInfo info;
     info.context = projection_planner.getContext();
@@ -827,7 +828,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     if (can_use_minmax_projection)
     {
         const auto * projection = &*(metadata->minmax_count_projection);
-        auto info = getAggregatingProjectionInfo(*projection, context, key_virtual_columns);
+        auto info = getAggregatingProjectionInfo(*projection, *metadata, context, key_virtual_columns);
         if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
@@ -891,7 +892,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             if (projection->where_clause_ast && dag.filter_node && dag.dag)
                 dag.filter_node = buildResidualFilterNode(original_filter, projection->where_clause_ast, *dag.dag);
 
-            auto info = getAggregatingProjectionInfo(*projection, context, key_virtual_columns);
+            auto info = getAggregatingProjectionInfo(*projection, *metadata, context, key_virtual_columns);
             if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
             {
                 AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
@@ -975,7 +976,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection->where_clause_ast && dag.filter_node && dag.dag)
             dag.filter_node = buildResidualFilterNode(original_filter, projection->where_clause_ast, *dag.dag);
 
-        auto info = getAggregatingProjectionInfo(*projection, context, key_virtual_columns);
+        auto info = getAggregatingProjectionInfo(*projection, *metadata, context, key_virtual_columns);
         if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};

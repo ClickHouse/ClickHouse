@@ -3377,7 +3377,7 @@ void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & 
     Chunk squashed_chunk;
     {
         ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-        Block block_to_squash = projection.calculate(projection_input, starting_offset, ctx->context);
+        Block block_to_squash = projection.calculate(projection_input, starting_offset, *ctx->metadata_snapshot, ctx->context);
 
         /// Everything is deleted by lightweight delete
         if (block_to_squash.rows() == 0)

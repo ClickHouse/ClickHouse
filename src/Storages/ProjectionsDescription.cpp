@@ -113,7 +113,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.index = index;
     other.settings_changes = settings_changes;
     other.has_index_granularity_overrides = has_index_granularity_overrides;
-    other.query_source = query_source;
     if (where_clause_ast)
         other.where_clause_ast = where_clause_ast->clone();
 
@@ -239,8 +238,7 @@ void sortByPositionInTable(NamesAndTypesList & source_columns, const ColumnsDesc
 std::pair<ProjectionPlanner, NamesAndTypesList> planProjectionQuery(
     ProjectionDescription & result, const ColumnsDescription & columns, const KeyDescription * partition_key, const ContextPtr & context)
 {
-    auto virtuals = MergeTreeData::createVirtuals(partition_key);
-    auto table = createProjectionQuerySource(columns, virtuals);
+    auto table = createProjectionQuerySource(columns, MergeTreeData::createVirtuals(partition_key));
     storeValuesOfScalarSubqueries(result.query_ast, table, context);
 
     ProjectionPlanner planner(result.query_ast, table, context);
@@ -257,22 +255,6 @@ std::pair<ProjectionPlanner, NamesAndTypesList> planProjectionQuery(
     /// one column is needed to count the rows
     if (result.required_columns.empty())
         result.required_columns.push_back(ExpressionActions::getSmallestColumn(columns.getAllPhysical()).name);
-
-    /// the query is analyzed again at calculation: keep the columns it reads and the `ALIAS` columns
-    ColumnsDescription query_columns;
-    for (const auto & column_name : result.required_columns)
-    {
-        if (!columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
-            continue;
-
-        const auto & name_in_storage = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_name).getNameInStorage();
-        if (!query_columns.has(name_in_storage))
-            query_columns.add(columns.get(name_in_storage));
-    }
-    for (const auto & column : columns)
-        if (column.default_desc.kind == ColumnDefaultKind::Alias)
-            query_columns.add(column);
-    result.query_source = createProjectionQuerySource(query_columns, std::move(virtuals));
 
     return {std::move(planner), std::move(source_columns)};
 }
@@ -705,8 +687,33 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     return result;
 }
 
+StoragePtr ProjectionDescription::createQuerySource(const StorageInMemoryMetadata & table_metadata) const
+{
+    const auto & columns = table_metadata.getColumns();
+
+    ColumnsDescription query_columns;
+    for (const auto & column_name : required_columns)
+    {
+        if (!columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+            continue;
+
+        const auto & name_in_storage = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_name).getNameInStorage();
+        if (!query_columns.has(name_in_storage))
+            query_columns.add(columns.get(name_in_storage));
+    }
+    for (const auto & column : columns)
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            query_columns.add(column);
+
+    return createProjectionQuerySource(query_columns, MergeTreeData::createVirtuals(&table_metadata.partition_key));
+}
+
 Block ProjectionDescription::calculate(
-    const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
+    const Block & block,
+    UInt64 starting_offset,
+    const StorageInMemoryMetadata & table_metadata,
+    ContextPtr context,
+    const IColumnPermutation * perm_ptr) const
 {
     if (index)
     {
@@ -721,14 +728,18 @@ Block ProjectionDescription::calculate(
                 name,
                 index->getName());
         }
-        return index->calculate(*this, block, starting_offset, context, perm_ptr);
+        return index->calculate(*this, block, starting_offset, table_metadata, context, perm_ptr);
     }
 
-    return calculateByQuery(block, starting_offset, context, perm_ptr);
+    return calculateByQuery(block, starting_offset, table_metadata, context, perm_ptr);
 }
 
 Block ProjectionDescription::calculateByQuery(
-    const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
+    const Block & block,
+    UInt64 starting_offset,
+    const StorageInMemoryMetadata & table_metadata,
+    ContextPtr context,
+    const IColumnPermutation * perm_ptr) const
 {
     /// Nothing to project from an empty block. This can happen when TTL deletes all rows during merge.
     /// Aggregate projections with constant GROUP BY keys (e.g., GROUP BY 0.674) would produce 1 row
@@ -796,7 +807,7 @@ Block ProjectionDescription::calculateByQuery(
     }
 
     /// `_part_offset` is added above, so it is an ordinary column of the source block.
-    ProjectionPlanner planner(query_ast, query_source, context);
+    ProjectionPlanner planner(query_ast, createQuerySource(table_metadata), context);
     auto plan = type == ProjectionDescription::Type::Aggregate
         ? planner.buildPlanForAggregateProjection(std::move(source_block))
         : planner.buildPlanForNormalProjection(std::move(source_block));
