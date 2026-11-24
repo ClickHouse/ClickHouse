@@ -659,39 +659,20 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
 
-    StoragePtr storage = createProjectionQuerySource(columns, MergeTreeData::createVirtuals(partition_key));
-    InterpreterSelectQuery select(
-        result.query_ast,
-        query_context,
-        storage,
-        {},
-        /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}
-            .modify()
-            .ignoreAlias()
-            .ignoreASTOptimizations()
-            .ignoreSettingConstraints());
-    result.required_columns = select.getRequiredColumns();
-    result.sample_block = *select.getSampleBlock();
+    ProjectionPlanner planner(result.query_ast, columns, query_context);
+    for (const auto & column : planner.getSourceColumns())
+        result.required_columns.push_back(column.name);
+    /// one column is needed to count the rows
+    if (result.required_columns.empty())
+        result.required_columns.push_back(ExpressionActions::getSmallestColumn(columns.getAllPhysical()).name);
+    result.sample_block = planner.getHeaderOfAggregateProjection();
 
-    std::set<size_t> constant_positions;
-    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    for (const auto & key : planner.getAggregationKeys())
     {
-        if (typeid_cast<const ColumnConst *>(result.sample_block.getByPosition(i).column.get()))
-            constant_positions.insert(i);
-    }
-    result.sample_block.erase(constant_positions);
-
-    const auto & analysis_result = select.getAnalysisResult();
-    if (analysis_result.need_aggregate)
-    {
-        for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
+        if (result.sample_block.has(key))
         {
-            if (result.sample_block.has(key.name))
-            {
-                result.sample_block_for_keys.insert({nullptr, key.type, key.name});
-                result.partition_value_indices.push_back(result.sample_block.getPositionByName(key.name));
-            }
+            result.sample_block_for_keys.insert({nullptr, result.sample_block.getByName(key).type, key});
+            result.partition_value_indices.push_back(result.sample_block.getPositionByName(key));
         }
     }
 

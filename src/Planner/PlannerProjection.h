@@ -24,9 +24,13 @@ public:
     /// the query has no FROM, it reads source_columns
     ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context);
 
+    /// the columns of the source that the query reads
+    [[nodiscard]] NamesAndTypes getSourceColumns() const;
+
     /// the functions in the actions refer to this context, so keep it while you use the actions
     [[nodiscard]] ContextPtr getContext() const { return planner_context->getQueryContext(); }
 
+    [[nodiscard]] const Names & getAggregationKeys() const { return aggregation_keys; }
     [[nodiscard]] const AggregateDescriptions & getAggregates() const { return aggregates; }
 
     /// calculates the aggregation keys and the aggregate function arguments from the source columns
@@ -40,12 +44,20 @@ public:
     /// the plan that calculates the aggregate states of an aggregate projection from a block of the source columns
     QueryPlan buildPlanForAggregateProjection(Block source);
 
+    /// the columns that the plan of an aggregate projection returns; no function is executed, so the description of a projection uses these
+    Block getHeaderOfAggregateProjection();
+
 private:
     /// calculates the expressions from the identifiers of the source columns, the outputs have the names that the planner gives
     ActionsDAG buildActions(const QueryTreeNodes & expressions);
 
     /// calculates the aggregation keys and the aggregate function arguments
     ActionsDAG buildKeysAndArgumentsActions();
+
+    /// renames the keys after the aggregation to the names that the part stores
+    [[nodiscard]] ActionsDAG buildStoredNamesActions(const Block & aggregated_header) const;
+
+    [[nodiscard]] Names getUniquePlannerKeyNames() const;
 
     /// the first steps of both plans: reads the block under the identifiers of the columns and applies WHERE
     QueryPlan buildPlanForSource(Block source);
