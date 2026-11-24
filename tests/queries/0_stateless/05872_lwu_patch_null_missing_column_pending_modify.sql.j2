@@ -146,4 +146,23 @@ SELECT 'dropreadd {{ suffix }} {{ version }} nodefault', id, s FROM t_dropreadd_
 DROP TABLE t_dropreadd_{{ suffix }}_{{ version }} SYNC;
 
 {% endfor -%}
+
+-- omitted ({{ version }}): a column the part omits with a frozen default reads as the stored column of that type.
+{% for suffix, skip in [('frozen', 1), ('stored', 0)] -%}
+DROP TABLE IF EXISTS t_omitted_{{ suffix }}_{{ version }} SYNC;
+CREATE TABLE t_omitted_{{ suffix }}_{{ version }} (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+SETTINGS skip_empty_columns_on_insert = {{ skip }}, serialization_info_version = 'with_missing_columns',
+    enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_omitted_{{ suffix }}_{{ version }} VALUES (1, ''), (2, '');
+SYSTEM STOP MERGES t_omitted_{{ suffix }}_{{ version }};
+ALTER TABLE t_omitted_{{ suffix }}_{{ version }} MODIFY COLUMN s Nullable(String) SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_omitted_{{ suffix }}_{{ version }}' SYNC FORMAT Null;
+UPDATE t_omitted_{{ suffix }}_{{ version }} SET s = NULL WHERE id = 1;
+ALTER TABLE t_omitted_{{ suffix }}_{{ version }} MODIFY COLUMN s String DEFAULT 'abc' SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'omitted {{ suffix }} {{ version }} stored', count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_omitted_{{ suffix }}_{{ version }}' AND active AND name NOT LIKE 'patch-%' AND column = 's';
+SELECT 'omitted {{ suffix }} {{ version }}', id, s FROM t_omitted_{{ suffix }}_{{ version }} ORDER BY id; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+DROP TABLE t_omitted_{{ suffix }}_{{ version }} SYNC;
+
+{% endfor -%}
 {% endfor -%}

@@ -110,6 +110,9 @@ public:
     /// Such columns should not be read from the part; defaults should be used instead.
     [[nodiscard]] bool isColumnDroppedByPendingMutation(size_t pos) const;
 
+    /// Returns true if the column at position @pos in columns_to_read is filled from the frozen default the part records.
+    [[nodiscard]] bool isColumnFrozen(size_t pos) const;
+
     [[nodiscard]] size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;

@@ -747,11 +747,11 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                 if (!parent && (!isNullableOrLowCardinalityNullable(type_in_patch) || isNullableOrLowCardinalityNullable(type)))
                     continue;
 
-                /// Before the conversions, only a column the part does not store, or one a pending mutation drops, holds the
-                /// default of the requested type.
+                /// Before the conversions, only a column the part does not store, not even as a frozen default, or one a
+                /// pending mutation drops, holds the default of the requested type.
                 if (order == ColumnForPatch::Order::BeforeConversions && !merge_tree_reader->isColumnDroppedByPendingMutation(pos)
                     && (merge_tree_reader->data_part_info_for_read->getColumnPosition(columns_in_part[pos].getNameInStorage()).has_value()
-                        || !columns_in_part[pos].type->equals(*type)))
+                        || merge_tree_reader->isColumnFrozen(pos) || !columns_in_part[pos].type->equals(*type)))
                     continue;
 
                 if (columns_for_other_patches.empty())
