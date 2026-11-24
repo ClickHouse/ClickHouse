@@ -80,12 +80,11 @@ def test_on_cluster_ddl_is_not_rewritten_second_time_on_workers(started_cluster)
         node.query("DROP RULE rule_reject")
 
 
-def test_on_cluster_ddl_v1_entry_skips_worker_default_rules(started_cluster):
+def test_on_cluster_ddl_entry_skips_worker_default_rules(started_cluster):
     # `DDLLogEntry::setSettingsIfRequired` does not record `query_rules` in the entry (an older
-    # worker would not know the setting), and `distributed_ddl_entry_format_version = 1` entries
-    # carry no `settings` at all, so `DDLTaskBase::makeQueryContext` starts from the worker's local
-    # profile defaults. The worker must still not apply rewrite rules to the replayed DDL:
-    # `executeQuery` skips rule application on the `isDDLOrOnClusterInternal` flag.
+    # worker would not know the setting), so `DDLTaskBase::makeQueryContext` starts from the
+    # worker's local profile default of it. The worker must still not apply rewrite rules to the
+    # replayed DDL: `executeQuery` skips rule application on the `isDDLOrOnClusterInternal` flag.
     node1.query(
         "CREATE TABLE t_v1 ON CLUSTER test_cluster (x UInt64) ENGINE = MergeTree ORDER BY x"
     )
@@ -105,12 +104,9 @@ def test_on_cluster_ddl_v1_entry_skips_worker_default_rules(started_cluster):
     # is rejected.
     assert "denied on worker" in node2.query_and_get_error("DROP TABLE default.t_v1")
 
-    # The replayed v1 DDL on node2 must not be matched against node2's default rules, so the
+    # The replayed DDL on node2 must not be matched against node2's default rules, so the
     # `DROP` succeeds on both nodes.
-    node1.query(
-        "DROP TABLE t_v1 ON CLUSTER test_cluster",
-        settings={"distributed_ddl_entry_format_version": 1},
-    )
+    node1.query("DROP TABLE t_v1 ON CLUSTER test_cluster")
     for node in (node1, node2):
         assert node.query("EXISTS TABLE t_v1").strip() == "0"
 
