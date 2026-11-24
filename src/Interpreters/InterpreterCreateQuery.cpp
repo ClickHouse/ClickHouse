@@ -902,7 +902,8 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
 /// insert by another user, could go outside a filter such as `WRITE ON S3('<regex>')`. Without this grant,
 /// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
 /// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
-std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context)
+/// A function with a source but no engine, such as `filesystem`, needs unfiltered `READ` and `WRITE` on its source instead.
+std::optional<AccessRightsElement> InterpreterCreateQuery::getRequiredAccessOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context)
 {
     /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`. A copy is
     /// parsed, because parsing may change the arguments, e.g. `mysql` takes out its `SETTINGS`, which the structure
@@ -913,8 +914,14 @@ std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(con
     throwIfTableFunctionCannotBeUsedToCreateTable(parsed_ast, *table_function, query_context);
     String engine_name = table_function->getEngineNameForAccessCheck();
     const auto & storages = StorageFactory::instance().getAllStorages();
-    if (auto it = storages.find(engine_name); it != storages.end() && it->second.features.source_access_type)
-        return engine_name;
+    if (auto it = storages.find(engine_name); it != storages.end())
+    {
+        if (it->second.features.source_access_type)
+            return AccessRightsElement(AccessType::TABLE_ENGINE, engine_name);
+        return {};
+    }
+    if (const auto source = table_function->getSourceAccessObject())
+        return AccessRightsElement(AccessType::READ | AccessType::WRITE, toStringSource(*source));
     return {};
 }
 
@@ -943,8 +950,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// A table function inherited by `CREATE TABLE copy AS src` from `src`.
     if (create.as_table_function)
-        if (auto engine_name = getSourceEngineOfTableFunction(create.as_table_function->ptr(), getContext()))
-            getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
+        if (auto access = getRequiredAccessOfTableFunction(create.as_table_function->ptr(), getContext()))
+            getContext()->checkAccess(*access);
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
@@ -3869,8 +3876,8 @@ BlockIO InterpreterCreateQuery::execute()
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
                 if (inherited.as_table_function)
-                    if (auto engine_name = getSourceEngineOfTableFunction(inherited.as_table_function->ptr(), getContext()))
-                        getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
+                    if (auto access = getRequiredAccessOfTableFunction(inherited.as_table_function->ptr(), getContext()))
+                        getContext()->checkAccess(*access);
 
                 /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
                 /// its inner engines while normalizing, so add the ones this query does not give itself
@@ -4031,8 +4038,8 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Required here, not where the table is built: `ON CLUSTER` and `Replicated` databases build it with full access.
     if (create.as_table_function)
-        if (auto engine_name = getSourceEngineOfTableFunction(create.as_table_function->ptr(), getContext()))
-            required_access.emplace_back(AccessType::TABLE_ENGINE, *engine_name);
+        if (auto access = getRequiredAccessOfTableFunction(create.as_table_function->ptr(), getContext()))
+            required_access.push_back(std::move(*access));
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
     /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and

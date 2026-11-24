@@ -120,6 +120,9 @@ public:
     /// Use this instead of `getActualTableStructure` from outside `execute`.
     ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
 
+    /// The source whose READ/WRITE grants the function needs (e.g. S3, FILE), if any.
+    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
@@ -152,8 +155,6 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
-    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
-
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
     /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
     virtual bool isClusterFunction() const { return false; }
