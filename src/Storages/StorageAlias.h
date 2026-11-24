@@ -42,11 +42,7 @@ public:
 
     /// The alias holds no metadata of its own, so the answer is the target's. Without this a
     /// unique-key table read through an alias would look unconstrained to the planner.
-    bool hasUniqueKey() const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->hasUniqueKey();
-    }
+    bool hasUniqueKey() const override;
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
@@ -149,6 +145,8 @@ public:
 
     /// Lightweight update on target table
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr local_context) override;
+
+    void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr local_context) override;
 
     CancellationCode killMutation(const String & mutation_id) override;
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
@@ -273,14 +271,19 @@ public:
         return target->getStoragePolicy();
     }
 
-    SerializationInfoByName getSerializationHints() const override { auto target = tryGetTargetTable(); return target ? target->getSerializationHints() : IStorage::getSerializationHints(); }
-    std::optional<SerializationInfoByName> tryGetSerializationHints() const override
+    SerializationInfoByName getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override
+    {
+        auto target = tryGetTargetTable();
+        return target ? target->getSerializationHints(metadata_snapshot) : IStorage::getSerializationHints(metadata_snapshot);
+    }
+
+    std::optional<SerializationInfoByName> tryGetSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override
     {
         auto target = tryGetTargetTable();
         if (!target)
             return std::nullopt;
 
-        return target->getSerializationHints();
+        return target->getSerializationHints(metadata_snapshot);
     }
 
     ActionLock getActionLock(StorageActionBlockType type) override

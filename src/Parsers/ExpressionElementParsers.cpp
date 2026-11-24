@@ -56,6 +56,7 @@
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
 #include <Core/UUID.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -259,22 +260,20 @@ bool ParserSubquery::parseSubquery(Pos & pos, ASTPtr & node, Expected & expected
     ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
     ParserExplainQuery explain;
 
-    const auto opening_bracket_pos = pos;
-    ++pos;
-
-    /// Lookahead for inner subquery
-    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
-
     /// A subquery in the FROM-first form, where the SELECT clause is omitted (`(FROM t)` means
     /// `(SELECT * FROM t)`), starts with a word that is also a valid unquoted column name: `from`.
     /// Unlike a leading `SELECT`, `EXPLAIN` or `VALUES`, that word is therefore not evidence that the
     /// parentheses hold a subquery at all. Where the contents read as an expression over a column
     /// named `from`, that older reading wins and these are not a subquery.
+    if (parenthesesHoldExpressionOverColumnNamedFrom(pos))
+        return false;
+    ++pos;
+
+    /// Lookahead for inner subquery
+    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+
     const bool starts_with_from_clause
         = pos->type == TokenType::BareWord && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from");
-
-    if (starts_with_from_clause && parenthesesHoldExpressionOverColumnNamedFrom(opening_bracket_pos))
-        return false;
 
     ASTPtr result_node = nullptr;
 
@@ -1539,6 +1538,7 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
     errno = 0;    /// Functions strto* don't clear errno.
