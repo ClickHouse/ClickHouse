@@ -1069,6 +1069,8 @@ SYSTEM FLUSH LOGS;
 
 SELECT
     id,
+    parent_ids,
+    plan_step,
     name,
     plan_step_name,
     plan_step_description,
@@ -1083,10 +1085,10 @@ ORDER BY plan_step, id;
 To interpret the result:
 
 - Look at the source processors, whose `name` is `MergeTreeSelect(...)` (or `MergeTreeSource`) and whose `plan_step_name` is `ReadFromMergeTree`. Their `output_rows` is the number of rows each source produced. Sum it per read step (`plan_step`), not over the whole query. The value is the number of rows that the read step passed on to the rest of the pipeline.
-- Each side of the join has its own `ReadFromMergeTree` step with a different `plan_step`. Use `parent_ids` and `id` to follow the processors from a source towards the join processor and see which side they belong to.
+- Each side of the join has its own `ReadFromMergeTree` step with a different `plan_step`. In the rows from this execution, `parent_ids` lists the IDs of downstream processors. Starting from a source, recursively match every `parent_ids` value to an `id` in the same `query_id` to follow the branch towards the join. This identifies, for example, the branch that feeds `FillingRightJoinSide`.
 - Processors above the sources (for example `ExpressionTransform`, `FillingRightJoinSide`, `ConcatProcessor`, or the join transform itself) consume and produce rows derived from the sources. Do not add their counters to the source counters, because that counts the same rows again.
-- The step information is not always enough to identify a source. If both tables are read by steps with the same `plan_step_name` and a similar `plan_step_description`, or if a processor has `plan_step = 0` because it was not added from any step, determine the table by following `parent_ids` from the `EXPLAIN PIPELINE` output, or by comparing the row counts with the known sizes of the tables.
-- The row and byte counters of processors describe the data passing through the pipeline, not physical storage reads. They do not include granules or marks that were read and then filtered out, they are affected by the primary key and other index filtering, `PREWHERE`, and column pruning, and they do not reflect compressed bytes read from disk. For physical reads, use `system.query_log` and its `ProfileEvents`, such as `SelectedRows`, `SelectedBytes`, and `SelectedMarks`.
+- The step information is not always enough to identify a source. `EXPLAIN PIPELINE` is a separate plan: it helps compare processor names and branch shapes, but its plain-text output has neither the logged `id` values nor `parent_ids`. If both tables have similar step descriptions, use the graph from the executed query and the known row counts. In this example, the read sources for `big` sum to 1,000,000 rows and those for `small` sum to 1,000 rows.
+- The row and byte counters of processors describe the data passing through the pipeline, not physical storage reads. They do not include granules or marks that were read and then filtered out, they are affected by the primary key and other index filtering, `PREWHERE`, and column pruning, and they do not reflect compressed bytes read from disk. `SelectedRows`, `SelectedBytes`, and `SelectedMarks` in `system.query_log` are logical selection statistics: they can be nonzero when all data comes from cache. To investigate file reads, use `ReadBufferFromFileDescriptorReadBytes`, which includes reads served by the OS page cache. To investigate local disk or block-device reads that exclude the OS page cache, use `OSReadBytes`.
 
 .see_also
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
