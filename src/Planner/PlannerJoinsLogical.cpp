@@ -288,7 +288,7 @@ static void buildJoinCondition(const QueryTreeNodePtr & node, JoinOperatorBuildC
     if (function_node)
     {
         function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
+        if (!function_node->isOrdinaryCall())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",

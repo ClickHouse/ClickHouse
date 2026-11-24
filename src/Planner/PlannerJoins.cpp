@@ -1,10 +1,14 @@
 #include <Planner/PlannerJoins.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+
+#include <base/PackedStringRef.h>
+#include <base/getL2CacheSize.h>
 
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -291,7 +295,7 @@ static void buildJoinClauseImpl(
     if (function_node)
     {
         function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
+        if (!function_node->isOrdinaryCall())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
@@ -495,7 +499,7 @@ static void buildJoinClause(
     if (function_node)
     {
         function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
+        if (!function_node->isOrdinaryCall())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
@@ -1157,6 +1161,34 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
     return join_expression;
 }
 
+/// Whether a hash join on a single `String` key packs the keys, see `enable_packed_string_keys_in_hash_join`.
+/// Exact keys are cheaper while their hash table fits in the L2 cache of this host, so each host decides for itself.
+/// A packed key of more than 15 bytes is hashed for every probe row, which the table size does not account for. A runtime
+/// filter leaves only the probe rows that hit, so without one the join also needs `min_rows_for_packed_string_keys_in_hash_join`
+/// rows. The same holds for a key of unknown length: `right_key_avg_bytes` is `ColumnStats::avg_bytes` of the right key,
+/// 0 if unknown. The rows are the optimizer's estimate, else this host's estimate of its read. With neither, the keys are
+/// packed unless the sender of the plan estimated the right side small. A minimum of 0 packs every join.
+static bool shouldPackStringJoinKeys(const JoinAlgorithmParams & params, Float64 right_key_avg_bytes)
+{
+    if (params.min_rows_for_packed_string_keys_in_hash_join == 0)
+        return true;
+
+    const auto rows = params.rhs_size_estimation ? params.rhs_size_estimation : params.local_rhs_rows_estimation;
+    if (!rows)
+        return !params.sender_estimated_small_right_side;
+
+    /// A cell holds the key, its saved hash and the row reference. The map is never full, so the real table is larger.
+    constexpr size_t exact_key_cell_bytes = sizeof(HashJoin::JoinHashMapWithSavedHash<std::string_view, RowRefList>::cell_type);
+    const bool key_length_known = right_key_avg_bytes > 0;
+    const Float64 avg_key_length = std::max<Float64>(right_key_avg_bytes - sizeof(ColumnString::Offset), 0);
+    const Float64 exact_table_bytes = static_cast<Float64>(*rows) * (exact_key_cell_bytes + avg_key_length);
+    const bool keys_are_hashed
+        = (!key_length_known || avg_key_length > UnhashedPackedStringRef::MAX_SMALL_LEN) && !params.runtime_filter_keeps_matching_rows;
+
+    return exact_table_bytes > static_cast<Float64>(getL2CacheSize())
+        && (!keys_are_hashed || *rows >= params.min_rows_for_packed_string_keys_in_hash_join);
+}
+
 static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
@@ -1193,8 +1225,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 *table_join, *right_table_expression_header, params.rhs_size_estimation.value_or(0),
                 params.min_string_column_bytes_for_hash_join_row_store));
 
-    /// The hash table of a small right side stays in the cache. There, hashing the long keys costs more than packed keys save.
-    if (params.rhs_size_estimation && *params.rhs_size_estimation < params.min_rows_for_packed_string_keys_in_hash_join)
+    if (!shouldPackStringJoinKeys(params, table_join->getRightHashKeyAvgBytes()))
         table_join->setPackedStringKeysInHashJoinEnabled(false);
 
     const auto build_layout

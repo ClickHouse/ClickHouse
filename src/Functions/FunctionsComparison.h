@@ -272,11 +272,6 @@ struct NumComparisonImpl
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
-        /** GCC 4.8.2 vectorizes a loop only if it is written in this form.
-          * In this case, if you loop through the array index (the code will look simpler),
-          *  the loop will not be vectorized.
-          */
-
         size_t size = a.size();
         const A * __restrict a_pos = a.data();
         const B * __restrict b_pos = b.data();
