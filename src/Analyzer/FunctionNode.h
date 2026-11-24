@@ -218,7 +218,7 @@ public:
     [[nodiscard]] bool isConvertedToNullable() const { return wrap_with_nullable; }
 
     /// Compares what `isEqualImpl` compares except the result type. Children are not compared.
-    bool isEqualExceptResultType(const FunctionNode & rhs) const;
+    [[nodiscard]] bool isEqualExceptResultType(const FunctionNode & rhs) const;
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
