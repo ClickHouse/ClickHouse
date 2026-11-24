@@ -292,6 +292,10 @@ bool convertLogicalJoinToPhysical(
     return true;
 }
 
+/// The statistics of the relations of join graphs. A graph gets its relations from here: `collectJoinGraphRelations` decides
+/// what they are and `estimateJoinGraphRelations` fills them in before the graph is built.
+using RelationStatsTable = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, RelationStats>;
+
 struct QueryGraphBuilder
 {
     JoinExpressionActions expression_actions;
@@ -330,6 +334,7 @@ struct QueryGraphBuilder
     struct BuilderContext
     {
         const QueryPlanOptimizationSettings & optimization_settings;
+        RelationStatsTable & relation_stats;
         RuntimeHashStatisticsContext statistics_context;
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
@@ -343,10 +348,12 @@ struct QueryGraphBuilder
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
+            RelationStatsTable & relation_stats_,
             const QueryPlan::Node & root_node,
             const JoinSettings & join_settings_,
             const SortingStep::Settings & sorting_settings_)
             : optimization_settings(optimization_settings_)
+            , relation_stats(relation_stats_)
             , statistics_context(optimization_settings_, root_node)
             , join_settings(join_settings_)
             , sorting_settings(sorting_settings_)
@@ -357,23 +364,16 @@ struct QueryGraphBuilder
 
     std::shared_ptr<BuilderContext> context;
 
-    /// Whether this (sub)graph lies inside a null-supplying input of an outer, semi or anti join
-    /// above it, see `canFlattenThroughExpression`.
-    bool below_null_supplying = false;
-
     explicit QueryGraphBuilder(std::shared_ptr<BuilderContext> context_)
         : context(std::move(context_)) {}
 
-    QueryGraphBuilder(const QueryPlanOptimizationSettings & optimization_settings_, const QueryPlan::Node & root_node,
-                      const JoinSettings & join_settings_, const SortingStep::Settings & sorting_settings_)
-        : context(std::make_shared<BuilderContext>(optimization_settings_, root_node, join_settings_, sorting_settings_))
+    QueryGraphBuilder(const QueryPlanOptimizationSettings & optimization_settings_, RelationStatsTable & relation_stats_,
+                      const QueryPlan::Node & root_node, const JoinSettings & join_settings_, const SortingStep::Settings & sorting_settings_)
+        : context(std::make_shared<BuilderContext>(optimization_settings_, relation_stats_, root_node, join_settings_, sorting_settings_))
     {}
-
-    [[nodiscard]] bool hasCompatibleSettings(const JoinStepLogical & join_step) const
-    {
-        return context && join_step.getJoinSettings() == context->join_settings; // && join_step.getSortingSettings() == context->sorting_settings;
-    }
 };
+
+using BuilderContext = QueryGraphBuilder::BuilderContext;
 
 static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 {
@@ -438,9 +438,11 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
     lhs.disjunctions_optimization_applied |= rhs.disjunctions_optimization_applied;
 }
 
-void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
+void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
-void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeJoinLogicalImpl(
+    JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings, RelationStatsTable & relation_stats);
 
 constexpr bool isInnerOrCross(JoinKind kind)
 {
@@ -571,94 +573,43 @@ static bool canFlattenThroughExpression(const ActionsDAG & dag, bool merge_expre
     return canMergeExpressionIntoJoinGraph(dag, merge_expression_into_join);
 }
 
-static size_t addChildQueryGraph(
-    QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit,
-    bool below_null_supplying)
+/// A trivial expression changes no columns, so a join graph takes its input in its place.
+static QueryPlan::Node * skipPassthroughExpression(QueryPlan::Node * node)
 {
-    auto * join_node = node;
-    auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
-    if (expression_step && node->children.size() == 1  && !expression_step->getExpression().hasArrayJoin())
+    const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get());
+    if (expression_step && node->children.size() == 1 && isPassthroughActions(expression_step->getExpression()))
+        return node->children[0];
+    return node;
+}
+
+static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label)
+{
+    node = skipPassthroughExpression(node);
+
+    const auto relation = graph.context->relation_stats.find(node);
+    if (relation == graph.context->relation_stats.end())
     {
-        if (isPassthroughActions(expression_step->getExpression()))
-        {
-            /// Just skip trivial expression step, it doesn't change any columns
-            expression_step = nullptr;
-            join_node = node->children[0];
-            node = node->children[0];
-        }
-        else if (canFlattenThroughExpression(
-                     expression_step->getExpression(), graph.context->optimization_settings.merge_expression_into_join, below_null_supplying))
-        {
-            join_node = node->children[0];
-        }
-    }
+        /// Not a relation of the graph, so `collectJoinGraphRelations` flattens it: a child join, or an expression
+        /// above one, which is merged into the graph.
+        auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+        auto * join_node = expression_step ? node->children.at(0) : node;
 
-    {
-        auto * child_join_step = typeid_cast<JoinStepLogical *>(join_node->step.get());
-        if (child_join_step && !child_join_step->isOptimized())
+        QueryGraphBuilder child_graph(graph.context);
+        buildQueryGraph(child_graph, *join_node, nodes);
+
+        if (expression_step)
         {
-            /// Normally only plain joins enter the group of tables we reorder. For the conflict
-            /// detector semi/anti and `FULL` joins come along too, so DPsub can reorder them as well.
-            bool allow_child_join_kind = isFlattenableChildJoin(
-                child_join_step->getJoinOperator().kind, child_join_step->getJoinOperator().strictness,
-                graph.context->allow_semi_anti_flattening);
-            /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
-            /// with `join_use_nulls` making right-side columns Nullable). Flattening
-            /// such joins allows the optimizer to reorder them, which can separate
-            /// a relation from the join that causes its type change, leading to
-            /// type changes being applied at the wrong step and the exception
-            /// "Cannot fold actions for projection".
-            allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
-            if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
-            {
-                QueryGraphBuilder child_graph(graph.context);
-                child_graph.below_null_supplying = below_null_supplying;
-                buildQueryGraph(child_graph, *join_node, nodes, join_steps_limit);
-
-                if (expression_step)
-                {
-                    ActionsDAG::NodeMapping node_mapping;
-                    child_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_step->getExpression()), node_mapping, true);
-                }
-
-                size_t count = child_graph.inputs.size();
-                uniteGraphs(graph, std::move(child_graph));
-                return count;
-            }
-            /// Optimize child subplan before continuing to get size estimation
-            optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings);
-        }
-    }
-
-    /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
-    /// those child Join to get proper statistics to use in the parent Join reordering.
-    {
-        auto * child_node = node;
-        while (child_node->children.size() == 1)
-        {
-            child_node = child_node->children[0];
+            ActionsDAG::NodeMapping node_mapping;
+            child_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_step->getExpression()), node_mapping, true);
         }
 
-        auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
-        if (child_join_step && !child_join_step->isOptimized())
-        {
-            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
-        }
+        size_t count = child_graph.inputs.size();
+        uniteGraphs(graph, std::move(child_graph));
+        return count;
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(
-        *node, RelationStatsOptions{.find_single_node_read = &graph.context->optimization_settings.find_single_node_read});
-
-    std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
-        && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
-    {
-        /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
-        stats.estimated_rows = num_rows_from_cache;
-        stats.imprecise_estimate = false;
-        stats.source = RowEstimateSource::HashTableCache;
-    }
+    RelationStats stats = relation->second;
 
     if (!label.empty())
         stats.table_name = label;
@@ -667,7 +618,7 @@ static size_t addChildQueryGraph(
         stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
-        num_rows_from_cache.has_value() ? " (from cache)" : "",
+        stats.source == RowEstimateSource::HashTableCache ? " (from cache)" : "",
         node->step->getName(), dumpRelationStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;
@@ -779,41 +730,83 @@ static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, con
     return strictOnRelations(node, actions);
 }
 
-void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit)
+static void collectJoinGraphRelationsOfJoin(
+    const BuilderContext & context, QueryPlan::Node & node, int join_steps_limit, bool below_null_supplying,
+    VectorWithMemoryTracking<QueryPlan::Node *> & relations);
+
+/// An input of a join: a child join that is flattened into the graph, also through an expression merged into the graph
+/// (see `canFlattenThroughExpression`), or a single relation.
+static void collectJoinGraphRelations(
+    const BuilderContext & context, QueryPlan::Node * node, int join_steps_limit, bool below_null_supplying,
+    VectorWithMemoryTracking<QueryPlan::Node *> & relations)
 {
-    auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
-    if (!join_step)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical expected");
-    query_graph.disjunctions_optimization_applied |= join_step->isDisjunctionsOptimizationApplied();
-    if (node.children.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
+    auto * join_node = skipPassthroughExpression(node);
+    if (join_node != node)
+        node = join_node;
+    else if (const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get());
+        expression_step && node->children.size() == 1
+        && canFlattenThroughExpression(
+            expression_step->getExpression(), context.optimization_settings.merge_expression_into_join, below_null_supplying))
+        join_node = node->children[0];
 
-    QueryPlan::Node * lhs_plan = node.children[0];
-    QueryPlan::Node * rhs_plan = node.children[1];
-    auto [lhs_label, rhs_label] = join_step->getInputLabels();
-    auto join_kind = join_step->getJoinOperator().kind;
+    if (const auto * child_join_step = typeid_cast<const JoinStepLogical *>(join_node->step.get());
+        child_join_step && !child_join_step->isOptimized() && join_steps_limit > 1)
+    {
+        /// Normally only plain joins enter the group of tables we reorder. For the conflict
+        /// detector semi/anti and `FULL` joins come along too, so DPsub can reorder them as well.
+        bool allow_child_join_kind = isFlattenableChildJoin(
+            child_join_step->getJoinOperator().kind, child_join_step->getJoinOperator().strictness,
+            context.allow_semi_anti_flattening);
+        /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
+        /// with `join_use_nulls` making right-side columns Nullable). Flattening
+        /// such joins allows the optimizer to reorder them, which can separate
+        /// a relation from the join that causes its type change, leading to
+        /// type changes being applied at the wrong step and the exception
+        /// "Cannot fold actions for projection".
+        allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
+        if (child_join_step->getJoinSettings() == context.join_settings && allow_child_join_kind)
+        {
+            collectJoinGraphRelationsOfJoin(context, *join_node, join_steps_limit, below_null_supplying, relations);
+            return;
+        }
+    }
 
-    const bool for_conflict_detector = query_graph.context->allow_semi_anti_flattening;
-    auto type_changing_sides = join_step->typeChangingSides();
+    relations.push_back(node);
+}
+
+/// Collects the relations of the join graph of the join `node`, at most `join_steps_limit` of them: its inputs, where a child
+/// join that can be reordered together with it is replaced by its own relations. This decides the shape of the graph:
+/// `buildQueryGraph` flattens exactly the inputs that are not relations.
+static void collectJoinGraphRelationsOfJoin(
+    const BuilderContext & context, QueryPlan::Node & node, int join_steps_limit, bool below_null_supplying,
+    VectorWithMemoryTracking<QueryPlan::Node *> & relations)
+{
+    const auto & join_step = typeid_cast<const JoinStepLogical &>(*node.step);
+    QueryPlan::Node * lhs_plan = node.children.at(0);
+    QueryPlan::Node * rhs_plan = node.children.at(1);
+    auto join_kind = join_step.getJoinOperator().kind;
+
+    const bool for_conflict_detector = context.allow_semi_anti_flattening;
+    auto type_changing_sides = join_step.typeChangingSides();
     bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left)
         && isFlattenableJoinSide(join_kind, JoinTableSide::Left, for_conflict_detector);
     bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right)
         && isFlattenableJoinSide(join_kind, JoinTableSide::Right, for_conflict_detector);
-    const bool lhs_below_null_supplying = query_graph.below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Left);
-    const bool rhs_below_null_supplying = query_graph.below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Right);
+    const bool lhs_below_null_supplying = below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Left);
+    const bool rhs_below_null_supplying = below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Right);
 
     /// Check if flattening children would cause column name clashes between sides.
     if (allow_left_subgraph || allow_right_subgraph)
     {
-        auto get_exposed_columns = [&](QueryPlan::Node * plan, bool allow_flatten, bool below_null_supplying) -> NameSet
+        auto get_exposed_columns = [&](QueryPlan::Node * plan, bool allow_flatten, bool plan_below_null_supplying) -> NameSet
         {
             NameSet names;
             auto * check = plan;
             if (allow_flatten)
             {
-                bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
+                bool merge_expression_into_join = context.optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
-                if (expr && canFlattenThroughExpression(expr->getExpression(), merge_expression_into_join, below_null_supplying))
+                if (expr && canFlattenThroughExpression(expr->getExpression(), merge_expression_into_join, plan_below_null_supplying))
                 {
                     check = check->children[0];
                 }
@@ -842,10 +835,39 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         }
     }
 
-    size_t lhs_count = addChildQueryGraph(
-        query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0, lhs_below_null_supplying);
-    size_t rhs_count = addChildQueryGraph(
-        query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, rhs_below_null_supplying);
+    const size_t lhs_before = relations.size();
+    collectJoinGraphRelations(context, lhs_plan, allow_left_subgraph ? join_steps_limit - 1 : 0, lhs_below_null_supplying, relations);
+    const size_t lhs_count = relations.size() - lhs_before;
+    collectJoinGraphRelations(
+        context, rhs_plan, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, rhs_below_null_supplying, relations);
+}
+
+static VectorWithMemoryTracking<QueryPlan::Node *>
+collectJoinGraphRelations(const BuilderContext & context, QueryPlan::Node & join_node, int join_steps_limit)
+{
+    VectorWithMemoryTracking<QueryPlan::Node *> relations;
+    collectJoinGraphRelationsOfJoin(context, join_node, join_steps_limit, /*below_null_supplying=*/ false, relations);
+    return relations;
+}
+
+void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+{
+    auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
+    if (!join_step)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical expected");
+    query_graph.disjunctions_optimization_applied |= join_step->isDisjunctionsOptimizationApplied();
+    if (node.children.size() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
+
+    QueryPlan::Node * lhs_plan = node.children[0];
+    QueryPlan::Node * rhs_plan = node.children[1];
+    auto [lhs_label, rhs_label] = join_step->getInputLabels();
+    auto join_kind = join_step->getJoinOperator().kind;
+
+    const bool for_conflict_detector = query_graph.context->allow_semi_anti_flattening;
+
+    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label);
+    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label);
 
     size_t total_inputs = query_graph.inputs.size();
 
@@ -1166,6 +1188,18 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
+    /// Two relations have no order to choose, only the build side, and the written one is kept over an assumed row count.
+    if (query_graph.relation_stats.size() == 2)
+    {
+        for (auto & relation : query_graph.relation_stats)
+        {
+            if (relation.source == RowEstimateSource::AssumedSelectivity)
+            {
+                relation.estimated_rows.reset();
+                relation.source = RowEstimateSource::NoStatistics;
+            }
+        }
+    }
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.edge_conflict_ops = std::move(query_graph_builder.join_edge_ops);
     BitSet null_supplying_relations;
@@ -1591,7 +1625,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .composite = true,
                 .column_stats = entry->column_stats};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            /// A join without a row count was not costed, see `computeJoinCost`.
+            const auto cost = entry->estimated_rows ? std::make_optional(entry->cost) : std::nullopt;
+            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, cost, entry->selectivity, cluster_id);
 
             auto & new_node = nodes.emplace_back();
 
@@ -1619,91 +1655,39 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     return result;
 }
 
-static void collectJoinGraphRelationHeaders(
-    const QueryPlan::Node * node,
-    int join_steps_limit,
-    const JoinSettings & join_settings,
-    bool merge_expression_into_join,
-    VectorWithMemoryTracking<SharedHeader> & relation_headers,
-    bool allow_semi_anti_children,
-    bool below_null_supplying);
-
-/// Mirrors `buildQueryGraph` for a single join node: collects the output headers of the relations
-/// that the join order optimizer would produce for it (descending into flattenable child joins).
-/// `allow_semi_anti_children` must match `addChildQueryGraph`'s flatten gate so this header shadow
-/// stays in sync when CD-A semi/anti reordering is enabled.
-static void collectJoinGraphRelationHeadersForJoin(
-    const QueryPlan::Node & join_node,
-    int join_steps_limit,
-    const JoinSettings & join_settings,
-    bool merge_expression_into_join,
-    VectorWithMemoryTracking<SharedHeader> & relation_headers,
-    bool allow_semi_anti_children,
-    bool below_null_supplying = false)
+/// Estimates `relations` into the table that their join graph is built from. A join below a relation is optimized first,
+/// so that the relation gets the row count of its join order.
+static void estimateJoinGraphRelations(
+    BuilderContext & context, const VectorWithMemoryTracking<QueryPlan::Node *> & relations, QueryPlan::Nodes & nodes)
 {
-    const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
-    if (!join_step || join_node.children.size() != 2)
+    for (auto * node : relations)
     {
-        relation_headers.push_back(join_node.step->getOutputHeader());
-        return;
-    }
+        if (context.relation_stats.contains(node))
+            continue;
 
-    const auto join_kind = join_step->getJoinOperator().kind;
-    const auto type_changing_sides = join_step->typeChangingSides();
+        auto * child_node = node;
+        while (child_node->children.size() == 1)
+            child_node = child_node->children[0];
 
-    const bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left)
-        && isFlattenableJoinSide(join_kind, JoinTableSide::Left, allow_semi_anti_children);
-    const size_t lhs_before = relation_headers.size();
-    collectJoinGraphRelationHeaders(
-        join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join, relation_headers,
-        allow_semi_anti_children, below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Left));
-    const size_t lhs_count = relation_headers.size() - lhs_before;
+        if (auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
+            child_join_step && !child_join_step->isOptimized())
+            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, context.optimization_settings, context.relation_stats);
 
-    const bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right)
-        && isFlattenableJoinSide(join_kind, JoinTableSide::Right, allow_semi_anti_children);
-    collectJoinGraphRelationHeaders(
-        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, merge_expression_into_join, relation_headers,
-        allow_semi_anti_children, below_null_supplying || isNullSupplyingSide(join_kind, JoinTableSide::Right));
-}
+        RelationStats stats = estimateReadRowsCount(
+            *node, RelationStatsOptions{.find_single_node_read = &context.optimization_settings.find_single_node_read});
 
-/// Mirrors `addChildQueryGraph`: either flattens a child join into multiple relations, or treats
-/// the (possibly expression-step-peeled) node as a single relation and records its output header.
-static void collectJoinGraphRelationHeaders(
-    const QueryPlan::Node * node,
-    int join_steps_limit,
-    const JoinSettings & join_settings,
-    bool merge_expression_into_join,
-    VectorWithMemoryTracking<SharedHeader> & relation_headers,
-    bool allow_semi_anti_children,
-    bool below_null_supplying)
-{
-    /// Peeling must match `addChildQueryGraph`, see `canFlattenThroughExpression`.
-    const auto * effective = node;
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
-        expression_step && effective->children.size() == 1
-        && canFlattenThroughExpression(expression_step->getExpression(), merge_expression_into_join, below_null_supplying))
-    {
-        effective = effective->children[0];
-    }
-
-    if (const auto * child_join_step = typeid_cast<const JoinStepLogical *>(effective->step.get());
-        child_join_step && !child_join_step->isOptimized())
-    {
-        /// Keep in sync with `addChildQueryGraph`.
-        const bool allow_child_join_kind = isFlattenableChildJoin(
-                child_join_step->getJoinOperator().kind, child_join_step->getJoinOperator().strictness, allow_semi_anti_children)
-            && child_join_step->typeChangingSides().empty();
-
-        if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
+        std::optional<size_t> num_rows_from_cache = context.statistics_context.getCachedHint(node);
+        if (context.join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
+            && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
         {
-            collectJoinGraphRelationHeadersForJoin(
-                *effective, join_steps_limit, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children,
-                below_null_supplying);
-            return;
+            /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
+            stats.estimated_rows = num_rows_from_cache;
+            stats.imprecise_estimate = false;
+            stats.source = RowEstimateSource::HashTableCache;
         }
-    }
 
-    relation_headers.push_back(node->step->getOutputHeader());
+        context.relation_stats.emplace(node, std::move(stats));
+    }
 }
 
 /// The join order optimizer reconstructs join steps using `JoinExpressionActions`, which requires
@@ -1713,19 +1697,12 @@ static void collectJoinGraphRelationHeaders(
 /// query rewriting reuses table identifiers (e.g. both relations produce `__table1`), or when scalar
 /// subquery results collide with join table aliases. The unoptimized join handles such names
 /// correctly, so detect this up front and skip the reordering in that case.
-static bool joinGraphHasOverlappingColumnNames(
-    const QueryPlan::Node & join_node,
-    int join_steps_limit,
-    const JoinSettings & join_settings,
-    bool merge_expression_into_join,
-    bool allow_semi_anti_children)
+static bool joinGraphHasOverlappingColumnNames(const VectorWithMemoryTracking<QueryPlan::Node *> & relations)
 {
-    VectorWithMemoryTracking<SharedHeader> relation_headers;
-    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
-
     UnorderedSetWithMemoryTracking<std::string_view> seen_names;
-    for (const auto & header : relation_headers)
+    for (const auto * relation : relations)
     {
+        const auto & header = relation->step->getOutputHeader();
         if (!header)
             continue;
         for (const auto & column : *header)
@@ -1747,10 +1724,13 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinOptimizeMicroseconds);
-    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
+    RelationStatsTable relation_stats;
+    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings, relation_stats);
 }
 
-void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeJoinLogicalImpl(
+    JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings, RelationStatsTable & relation_stats)
 {
     for (auto * child : node.children)
     {
@@ -1775,46 +1755,53 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
 
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
 
+    QueryGraphBuilder query_graph_builder(
+        optimization_settings, relation_stats, node, join_step->getJoinSettings(), join_step->getSortingSettings());
+    auto & context = *query_graph_builder.context;
+    context.stats_hint = join_step->getTableStatsHint();
+
     /// With a conflict detector (CD) the group of tables is built for DPsub: semi/anti and outer joins
     /// come in with both of their sides (see `isFlattenableJoinSide`). Only DPsub can plan such a
     /// group, and it turns down more tables than `DPSUB_MAX_RELATIONS`. So count the tables the group
     /// would end up with, and build it the ordinary way when there are too many: greedy can then take
     /// it over, whole, instead of it being cut down to a size DPsub accepts.
-    bool reorder_semi_anti = conflictDetectorReordersSemiAnti(optimization_settings);
-    if (reorder_semi_anti)
-    {
-        VectorWithMemoryTracking<SharedHeader> flattened_relations;
-        collectJoinGraphRelationHeadersForJoin(
-            node, query_graph_size_limit, join_step->getJoinSettings(),
-            optimization_settings.merge_expression_into_join, flattened_relations, /*allow_semi_anti_children=*/ true);
-        reorder_semi_anti = flattened_relations.size() <= DPSUB_MAX_RELATIONS;
-    }
+    context.allow_semi_anti_flattening = conflictDetectorReordersSemiAnti(optimization_settings);
+    if (context.allow_semi_anti_flattening)
+        context.allow_semi_anti_flattening = collectJoinGraphRelations(context, node, query_graph_size_limit).size() <= DPSUB_MAX_RELATIONS;
 
     /// For CD, semi/anti and `FULL` joins are fully reorderable rather than swap-only, so they keep the
     /// full graph size limit. The `ANY` strictness stays capped, as CD does not model it.
-    const bool cd_reorders_top = reorder_semi_anti
+    const bool cd_reorders_top = context.allow_semi_anti_flattening
         && (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti || isFull(kind));
     if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2 && !cd_reorders_top)
         /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
 
+    auto relations = collectJoinGraphRelations(context, node, query_graph_size_limit);
+    estimateJoinGraphRelations(context, relations, nodes);
+
+    /// A relation without a row count is a barrier for reordering: the join keeps its written order, with its two inputs
+    /// optimized on their own, and it keeps its sides, as a swap needs the row counts of both inputs.
+    /// Randomized estimates give every relation a row count.
+    const bool has_relation_without_row_count = std::ranges::any_of(
+        relations, [&](const auto * relation) { return !context.relation_stats.at(relation).estimated_rows; });
+    if (relations.size() > 2 && has_relation_without_row_count && !context.effective_randomize_seed)
+    {
+        relations = collectJoinGraphRelations(context, node, 2);
+        estimateJoinGraphRelations(context, relations, nodes);
+    }
+
     /// Skip join order optimization when the join graph contains relations with overlapping column
     /// names, which the `JoinExpressionActions`-based reconstruction does not support. See the comment
     /// on `joinGraphHasOverlappingColumnNames`. This generalizes a check over the immediate children to
     /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
-    if (joinGraphHasOverlappingColumnNames(
-            node, query_graph_size_limit, join_step->getJoinSettings(),
-            optimization_settings.merge_expression_into_join, reorder_semi_anti))
+    if (joinGraphHasOverlappingColumnNames(relations))
     {
         join_step->setOptimized();
         return;
     }
 
-    QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
-    query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
-
-    buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
+    buildQueryGraph(query_graph_builder, node, nodes);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 }
 

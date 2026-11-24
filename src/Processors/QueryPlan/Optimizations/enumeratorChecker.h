@@ -138,10 +138,17 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     const auto & left_entry = dp_table[lhs_subset];
     const auto & right_entry = dp_table[rhs_subset];
-    const double joined_rows = estimateJoinedRows(selectivity, left_entry.estimated_rows, right_entry.estimated_rows);
+    /// A join with an input without a row count adds no cost: it is the only join of its graph (see `optimizeJoinLogicalImpl`),
+    /// so its plan is not compared with another one.
+    double joined_rows = 0;
+    double hash_join_work = 0;
+    if (left_entry.estimated_rows && right_entry.estimated_rows)
+    {
+        joined_rows = estimateJoinedRows(selectivity, *left_entry.estimated_rows, *right_entry.estimated_rows);
+        hash_join_work = optimizer.hashJoinWork(left_mask, *left_entry.estimated_rows, right_mask, *right_entry.estimated_rows);
+    }
     const double rows_cost = left_entry.rows_cost + right_entry.rows_cost + joined_rows;
-    const double plan_cost = left_entry.cost + right_entry.cost + joined_rows
-        + optimizer.hashJoinWork(left_mask, left_entry.estimated_rows, right_mask, right_entry.estimated_rows);
+    const double plan_cost = left_entry.cost + right_entry.cost + joined_rows + hash_join_work;
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
              selectivity.value,

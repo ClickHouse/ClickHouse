@@ -124,6 +124,24 @@ void floorReadWithRows(RelationProfile & profile)
         column_stats.num_distinct_values = std::max<UInt64>(column_stats.num_distinct_values, 1);
 }
 
+/// The share of rows assumed to pass a filter that neither the primary index nor column statistics estimate, as in DuckDB.
+/// Without a value such a read has no row count, and the joins above it keep their written order.
+constexpr std::optional<Float64> unestimated_filter_selectivity = 0.2;
+
+/// Applies a filter that nothing estimated to the row count of `stats`.
+void applyUnestimatedFilter(RelationStats & stats)
+{
+    stats.rows_exact = false;
+    if (!unestimated_filter_selectivity || !stats.estimated_rows)
+    {
+        stats.estimated_rows.reset();
+        stats.source = RowEstimateSource::NoStatistics;
+        return;
+    }
+    stats.estimated_rows = std::max<UInt64>(toUInt64Saturating(Float64(*stats.estimated_rows) * *unestimated_filter_selectivity), 1);
+    stats.source = RowEstimateSource::AssumedSelectivity;
+}
+
 /// A filter on the elements or on the output of an array join leaves its row count unknown unless the input is empty.
 void forgetFilteredArrayJoinRows(RelationStats & stats)
 {
@@ -150,7 +168,12 @@ bool applyRowLimit(RelationStats & stats, UInt64 limit, UInt64 offset, bool with
         }
     }
     if (!stats.estimated_rows || *stats.estimated_rows > limit)
+    {
         stats.estimated_rows = limit;
+        /// The limit bounds the rows whatever was assumed about the input.
+        if (stats.source == RowEstimateSource::AssumedSelectivity)
+            stats.source = RowEstimateSource::NoStatistics;
+    }
     stats.rows_exact = false;
     return true;
 }
@@ -629,21 +652,16 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
 
-        /// If any conditions are pushed down to storage but not used in the index,
-        /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
-            return RelationStats{
-                .estimated_rows = {},
-                .table_name = table_display_name,
-                .imprecise_estimate = true,
-                .source = RowEstimateSource::NoStatistics};
-
-        return RelationStats{
+        RelationStats stats{
             .estimated_rows = analyzed_result->selected_rows,
             .table_name = table_display_name,
             .imprecise_estimate = true,
             .rows_exact = !coverage.mayDropRows(analyzed_result->selected_rows),
             .source = RowEstimateSource::PrimaryIndex};
+        /// Conditions pushed down to the storage that the index did not use are not in the selected rows.
+        if (has_filter && !is_filtered_by_index)
+            applyUnestimatedFilter(stats);
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
@@ -698,7 +716,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             return stats;
         }
 
-        /// As for MergeTree without column statistics, conditions that pruned nothing give no estimate.
+        /// Conditions that pruned nothing give no estimate.
         if (!estimate->pruned_data_files)
             return stats;
 

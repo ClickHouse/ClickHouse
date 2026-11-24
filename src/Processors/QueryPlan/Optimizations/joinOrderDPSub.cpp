@@ -191,7 +191,7 @@ private:
     [[nodiscard]] double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
     /// The work of a hash join of the two sides, see `computeHashJoinWork`. 0 without interesting orders, where costs
     /// count output rows only.
-    [[nodiscard]] double hashJoinWork(UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const;
+    [[nodiscard]] double hashJoinWork(UInt32 left_mask, UInt64 left_rows, UInt32 right_mask, UInt64 right_rows) const;
     /// The overlap of the key range of the build side with the key range of a probe table sorted by a key of the join: what
     /// a hash join's runtime filter lets it read, and what a sharded merge reads. 1 when unknown.
     [[nodiscard]] double probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const;
@@ -947,17 +947,14 @@ double DPSubJoinOrderOptimizer::distinctValues(UInt32 relations, Int32 order_cla
     return static_cast<double>(std::clamp<UInt64>(ndv, 1, std::max<UInt64>(rows, 1)));
 }
 
-double DPSubJoinOrderOptimizer::hashJoinWork(
-    UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const
+double DPSubJoinOrderOptimizer::hashJoinWork(UInt32 left_mask, UInt64 left_rows, UInt32 right_mask, UInt64 right_rows) const
 {
     if (!dpsub_data.interesting_orders)
         return 0;
-    const UInt64 left = left_rows.value_or(0);
-    const UInt64 right = right_rows.value_or(0);
     double probe_fraction = 1.0;
     if (query_graph.runtime_filter_prunes_probe)
-        probe_fraction = left < right ? probeReadFraction(right_mask, left_mask) : probeReadFraction(left_mask, right_mask);
-    return computeHashJoinWork(left, right, probe_fraction);
+        probe_fraction = left_rows < right_rows ? probeReadFraction(right_mask, left_mask) : probeReadFraction(left_mask, right_mask);
+    return computeHashJoinWork(left_rows, right_rows, probe_fraction);
 }
 
 double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const
@@ -1238,14 +1235,12 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     {
         const auto & left_rows = left->estimated_rows;
         const auto & right_rows = right->estimated_rows;
-        /// On equal estimates, or when an input has none (e.g. a `UNION ALL` subquery), put the input
-        /// with more relations on the left: the enumeration reaches a lone relation against the rest
-        /// first, and would otherwise build the hash table from a whole subtree. Two single
-        /// relations without an estimate keep their sides.
+        /// On equal estimates put the input with more relations on the left: the enumeration reaches
+        /// a lone relation against the rest first, and would otherwise build the hash table from a
+        /// whole subtree. A join with an input without a row count keeps its sides.
         const bool fewer_relations_left = std::popcount(entry.left) < std::popcount(entry.right);
-        const bool swap_sides = (left_rows && right_rows)
-            ? (*left_rows < *right_rows || (*left_rows == *right_rows && fewer_relations_left))
-            : fewer_relations_left;
+        const bool swap_sides = left_rows && right_rows
+            && (*left_rows < *right_rows || (*left_rows == *right_rows && fewer_relations_left));
 
         if (swap_sides)
         {

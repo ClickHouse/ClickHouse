@@ -1,0 +1,17 @@
+a filter that neither the index nor statistics estimate keeps an assumed share of the rows
+Join: orders[no_stats~100000] ⋈ (customer[no_stats~10000] ⋈ nation[guess~1])
+Join: customer[no_stats~10000] ⋈ nation[guess~1]
+two relations: an assumed row count does not swap the written sides
+Join: n[no_stats~?] ⋈ orders[no_stats~100000]
+a relation without a row count: the joins below it are reordered, the joins above it are as written
+Join: orders[no_stats~100000] ⋈ (customer[no_stats~10000] ⋈ nation[no_stats~4]) ⋈ u[no_stats~?] ⋈ n2[no_stats~4]
+Join: orders[no_stats~100000] ⋈ (customer[no_stats~10000] ⋈ nation[no_stats~4]) ⋈ u[no_stats~?]
+Join: orders[no_stats~100000] ⋈ (customer[no_stats~10000] ⋈ nation[no_stats~4])
+Join: customer[no_stats~10000] ⋈ nation[no_stats~4]
+a relation without a row count comes first: every join is as written
+Join: u[no_stats~?] ⋈ nation[no_stats~4] ⋈ customer[no_stats~10000] ⋈ orders[no_stats~100000]
+Join: u[no_stats~?] ⋈ nation[no_stats~4] ⋈ customer[no_stats~10000]
+Join: u[no_stats~?] ⋈ nation[no_stats~4]
+the result does not depend on the join order
+33335
+33335
