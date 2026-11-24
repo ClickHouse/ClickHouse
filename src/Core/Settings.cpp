@@ -2499,7 +2499,7 @@ Possible values:
 )", 0, \
         {"26.11", false, true, "New setting: TopN dynamic filtering for a single `String` `ORDER BY` column of a `MergeTree` table."}) \
     DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
-For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
+For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column. When the column is read from `Parquet` files (the `file`, `s3`, `azureBlobStorage`, `hdfs` and data lake table functions and engines), the reader drops such rows itself and skips whole row groups that lie beyond the boundary by their statistics.
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
@@ -2816,7 +2816,9 @@ The plan carries the same information [`EXPLAIN ANALYZE`](/reference/statements/
 
 Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured, and only where the row itself is written, so [`log_queries`](/reference/settings/session-settings/log#log_queries) must also be enabled. A query that failed during execution is captured with the plan it was running but without statistics. The column is empty on `QueryStart` rows, because no plan exists yet when they are written.
 
-Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected.
+The plan is masked with the [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) of the server, like the `query` column. A query in which a rule matches, in its text or in a query parameter, stores no plan, because constant folding can carry the masked text into the plan in a form no rule matches. Otherwise every text the plan holds, such as filter conditions, `IN` lists and output column names, is masked before it is stored. A query with secret arguments, such as the key of `encrypt`, stores no plan either, because they cannot be reliably hidden inside it.
+
+Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected. Use [`log_query_plans_probability`](/reference/settings/session-settings/log-query#log_query_plans_probability) to capture only a random sample of queries.
 
 That cost is decided before the query runs, so a captured query pays it even where its row is dropped afterwards by [`log_queries_min_type`](/reference/settings/session-settings/log#log_queries_min_type) or [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log#log_queries_min_query_duration_ms) — neither is knowable that early. A query answered from the [query cache](/concepts/features/performance/caches/query-cache) executes no plan and so has none to store.
 
@@ -2828,6 +2830,22 @@ See also:
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
+    DECLARE(Float, log_query_plans_probability, 1., R"(
+Captures the query plan, as enabled by [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans), only for a sample of queries selected randomly with the specified probability. A query that is not selected does not pay the profiling cost of [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans), and its `system.query_log` rows are still written, with an empty `query_plan` column.
+
+The choice is made per query, once it is known that the plan of the query can be captured, so queries that are never captured (for example, queries other than `SELECT`) do not take part in the sampling.
+
+It applies on top of [`log_queries_probability`](/reference/settings/session-settings/log-queries#log_queries_probability): a query whose rows are not written has no plan captured either, so with both settings at `0.5` about a quarter of the queries have their plan captured.
+
+The choice is made before the query runs, so it cannot depend on how long the query takes. With [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log-queries#log_queries_min_query_duration_ms), every slow query still writes its row, but only the given share of those rows carry a plan, while the same share of all queries, fast ones included, pay the profiling cost.
+
+Possible values:
+
+- 0 — No query plans are captured.
+- Positive floating-point number in the range [0..1]. For example, if the setting value is `0.1`, the plans of about one in ten queries are captured.
+- 1 — The plan of every query is captured.
+)", EXPERIMENTAL, \
+        {"26.12", 1., 1., "New setting to capture the query plan of only a random sample of queries when `log_query_plans` is enabled."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 
@@ -4059,7 +4077,7 @@ Note, that `max_bytes_before_external_sort` is still respected, spilling to disk
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.
 )", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
@@ -7249,6 +7267,14 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
+    DECLARE(NonZeroUInt64, iceberg_metadata_previous_versions_max, 100, R"(
+The maximum number of entries in the `metadata-log` of an Iceberg table that a write keeps, including the entry of the metadata file it writes. When a write adds an entry over the limit, the oldest entries are removed. The metadata files themselves are not deleted.
+
+The Iceberg table property `write.metadata.previous-versions-max` takes precedence over this setting. As in the Java implementation, the property is the number of previous metadata files and is at least one, so the `metadata-log` keeps one entry more than its value.
+
+The setting has no effect on tables in a catalog that writes the metadata files itself, such as a REST catalog: the catalog maintains the `metadata-log` according to its own configuration and the table property.
+)", 0, \
+        {"26.12", std::numeric_limits<UInt64>::max(), 100, "New setting. Writes into Iceberg tables bound the `metadata-log`, which previously grew with every commit."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
 Data files smaller than this are selected for compaction.
 
@@ -7327,16 +7353,6 @@ With `enable_cleanup_old_data_files_compaction`, the time after which a snapshot
 expired, together with the files that only it references. The longer of this and `iceberg_outdated_snapshot_lifetime_seconds` applies.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
-    DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
-Number of merged data files that background Iceberg compaction accumulates before publishing them in a new snapshot.
-
-Compaction results are published in any case once there are no candidates left to compact, so this setting only bounds
-how long already merged files stay unpublished while compaction keeps finding new work. `0` restores the old behaviour
-of publishing only when compaction runs out of candidates - a state that is never reached while the table keeps
-receiving new data files, so every merged output is then written to object storage and never referenced by a snapshot.
-)", 0, \
-        {"26.9", 100, 100, "New setting"}, \
-        {"26.8", 100, 100, "New setting"}) \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](/concepts/features/performance/caches/query-cache). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
@@ -10722,6 +10738,19 @@ snapshot with its own manifest, so an `INSERT` writes exactly one manifest only 
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0, \
         {"25.12", 100, 100, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_initial_backoff_ms, 10, R"(
+The upper bound of the delay before the first retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit.
+The bound doubles with each next retry, up to `iceberg_insert_commit_retry_max_backoff_ms`, and each delay is chosen at random
+between zero and the bound, so that the writers that lost the same race do not retry at the same moment and collide again.
+The delay is taken before the latest metadata is looked up, so with many concurrent writers it also limits how often the metadata
+directory is listed. `0` retries without a delay.
+)", 0, \
+        {"26.12", 0, 10, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_max_backoff_ms, 5000, R"(
+The maximum of the delay bound before a retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit,
+see `iceberg_insert_commit_retry_initial_backoff_ms`.
+)", 0, \
+        {"26.12", 0, 5000, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
     DECLARE(Bool, database_datalake_require_metadata_access, true, R"(
 Either to throw error or not if we don't have rights to get table's metadata in database engine DataLakeCatalog.
 )", 0, \
@@ -10915,6 +10944,10 @@ instead of glob listing. 0 means disabled.
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0, \
         {"26.1", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."}) \
+    DECLARE(Bool, json_use_optimized_type_conversion, true, R"(
+When enabled, conversions between JSON types with different parameters (typed paths, skip rules) use an optimized path that reuses unchanged sub-columns by pointer and applies CAST only to changed paths. This avoids the full serialize-to-string and parse-from-string pipeline. Disable to force the legacy format+parse conversion for all JSON type changes.
+)", 0, \
+        {"26.12", true, true, "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."}) \
     DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, true, R"(
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
@@ -10977,17 +11010,23 @@ Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nu
 
 Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join` is not affected either.
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join keeps exact keys when its hash table fits in the L2 cache of the CPU, and also when it would hash every left key and the right side has fewer rows than `min_rows_for_packed_string_keys_in_hash_join`. With that setting at 0, every join is packed, also one whose hash table fits in the L2 cache.
 )", 0, \
         {"26.11", false, true, "New setting to make hash joins on a single `String` key faster and use less memory."}) \
     DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 100'000, R"(
-The minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. Smaller joins gain little from it, and can be slower with long keys.
+A hash join whose right side has a row estimate packs its `String` keys (see `enable_packed_string_keys_in_hash_join`) only when the hash table with exact keys would be larger than about the L2 cache of the CPU, or when this setting is 0. The size of the table is the number of right-side rows times the bytes of one row: a cell of 32 bytes plus the average length of the key, which adds 0 when unknown. Smaller joins gain little from packed keys, and can be slower.
 
-The estimate is the number of right-side rows in an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate always uses `enable_packed_string_keys_in_hash_join`.
+A packed key of more than 15 bytes is hashed for every row of the left side. A join with a runtime filter that passes mostly the rows with a match (see `enable_join_runtime_filters`) hashes only the rows that match, so it needs no minimum. Without such a filter, this setting is the minimum number of right-side rows. It applies when the average length of the key is more than 15 bytes, and when the length is unknown, because it then counts as long. The length is known from the `basic` column statistics of the key. `MergeTree` tables collect them by default, see `auto_statistics_types`.
 
-0 means no minimum.
+The key has no statistics when it is a column of a `Memory` table, the result of an aggregate function of a subquery, or the result of an expression in `ON`, such as `concat(k, 'x')` or `hex(k)`. A join with `OR` does not use them. A subquery that only passes the column on, or groups by it, keeps them.
+
+A `LEFT` join other than `SEMI` and `ANTI`, and a `FULL` join, keep all rows of their left side, so they get no runtime filter. The filter of a `LEFT ANTI` join passes the rows without a match, so it does not count.
+
+The number of rows is the right-side rows of an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate, which `parallel_hash_join_threshold` uses too. Without an optimizer estimate, it is the estimate of this server for its own read of the right table. A join with neither packs the keys, unless the server that planned the query estimated the right side below this minimum. Each server of a distributed query decides from its own estimate, statistics and cache size.
+
+0 packs the keys of every join.
 )", 0, \
-        {"26.11", 0, 100'000, "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}) \
+        {"26.11", 0, 100'000, "New setting: the minimum number of right-side rows for a hash join that would hash every left key, that is a key of an average length of more than 15 bytes, or of unknown length, without a runtime filter. `enable_packed_string_keys_in_hash_join` also needs a hash table larger than the L2 cache. 0 packs every join."}) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0, \
         {"26.6", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"}) \
@@ -11895,6 +11934,10 @@ Enable table function `eval`.
         {"26.11", 512 * 1024 * 1024, 512 * 1024 * 1024, "Obsolete: a compaction merge of Iceberg data files writes one output file, without a limit on its size."}) \
     MAKE_OBSOLETE(M, UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, \
         {"26.11", 512ULL * 1024 * 1024 * 9 / 5, 512ULL * 1024 * 1024 * 9 / 5, "Obsolete: compaction no longer splits big data files, because a compaction merge writes one output file without a limit on its size."}) \
+    MAKE_OBSOLETE(M, UInt64, iceberg_compaction_commit_batch_size, 100, \
+        {"26.12", 100, 100, "Obsolete: the background compaction of Iceberg tables publishes the result of every merge in a new snapshot as soon as the merge finishes, instead of accumulating merged files."}, \
+        {"26.9", 100, 100, "New setting"}, \
+        {"26.8", 100, 100, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, enable_optimize_predicate_expression, true, \
         {"18.12.17", 0, 1, "Optimize predicates to subqueries by default"}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_only_with_analyzer, true, \

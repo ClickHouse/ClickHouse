@@ -144,7 +144,7 @@ private:
     static constexpr ptrdiff_t SCALAR_PREFIX = 16;
 
 #if defined(__SSSE3__) || defined(__aarch64__)
-    /// GCC/Clang vector extensions lower each lane operation to one SSE/NEON instruction.
+    /// Vector extensions lower each lane operation to one SSE/NEON instruction.
     /// Only the byte permutation has no portable spelling.
     using UInt8x16 = UInt8 __attribute__((vector_size(16)));
     using Int8x16 = Int8 __attribute__((vector_size(16)));
