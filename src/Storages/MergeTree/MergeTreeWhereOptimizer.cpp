@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool enable_multiple_prewhere_read_steps;
     extern const SettingsBool optimize_move_to_prewhere_respect_short_circuit;
+    extern const SettingsBool join_runtime_filter_adaptive_prewhere_order;
 }
 
 namespace
@@ -244,6 +245,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     /// to the cache (the cache must not keep the substituted values), but the condition is still worth moving to PREWHERE:
     /// a column served from the cache is filtered by the reader then, and the next read is likely to be served from it.
     where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan];
+    where_optimizer_context.join_runtime_filter_adaptive_prewhere_order = settings[Setting::join_runtime_filter_adaptive_prewhere_order];
     /// Resolve the columns to their storage columns: the reader disables the scan filter for a storage column
     /// when anything reads it before the filter, including its subcolumns (e.g. `payload.size0` for `payload`).
     NameSet storage_columns_read_before_filter;
@@ -688,14 +690,18 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     {
         NameSet columns;
         bool uses_primary_key = false;
+        /// A join runtime filter in a group of ordinary conditions would make the group sort as an ordinary condition,
+        /// ahead of the runtime filter groups that the reader orders by measurement.
+        bool is_runtime_filter = false;
         std::vector<size_t> indices;
     };
     std::vector<Group> groups;
 
-    auto find_group_idx = [&](const NameSet & cols, bool uses_pk) -> std::optional<size_t>
+    auto find_group_idx = [&](const NameSet & cols, bool uses_pk, bool is_runtime_filter) -> std::optional<size_t>
     {
         for (size_t g = 0; g < groups.size(); ++g)
-            if (groups[g].columns == cols && groups[g].uses_primary_key == uses_pk && !infos[groups[g].indices.front()].expensive)
+            if (groups[g].columns == cols && groups[g].uses_primary_key == uses_pk && groups[g].is_runtime_filter == is_runtime_filter
+                && !infos[groups[g].indices.front()].expensive)
                 return g;
         return std::nullopt;
     };
@@ -709,7 +715,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             continue;
         const auto & key = group_key(infos[i]);
         const bool uses_pk = uses_primary_key(infos[i]);
-        auto g = infos[i].expensive ? std::nullopt : find_group_idx(key, uses_pk);
+        /// A guarded group keeps its conditions together, runtime filters included.
+        const bool is_runtime_filter
+            = where_optimizer_context.join_runtime_filter_adaptive_prewhere_order && !is_guarded(infos[i]) && isJoinRuntimeFilter(infos[i].node);
+        auto g = infos[i].expensive ? std::nullopt : find_group_idx(key, uses_pk, is_runtime_filter);
         /// The group is emitted at its first conjunct, so do not join it across conjuncts that are not in it.
         if (g.has_value() && infos[i].must_follow_preceding_conditions)
         {
@@ -722,7 +731,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (!g.has_value())
         {
             group_of[i] = groups.size();
-            groups.push_back({key, uses_pk, {i}});
+            groups.push_back({key, uses_pk, is_runtime_filter, {i}});
         }
         else
         {

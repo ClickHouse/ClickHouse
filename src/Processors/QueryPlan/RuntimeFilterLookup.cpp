@@ -38,6 +38,7 @@
 #include <Common/FailPoint.h>
 #include <Common/MergeLock.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -65,6 +66,18 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char runtime_filter_skip_finish_insert[];
+}
+
+namespace
+{
+
+/// A probe call costs about 10 µs whatever its size, so on the small blocks a step gets behind a selective one the call, not
+/// the filter, sets the time per row. Only large blocks tell what the filter would cost if it ran first.
+constexpr UInt64 min_rows_in_large_block = 16384;
+/// An exact set of at most this many keys counts as cheap to probe. A set of a date range probes at about 1 ns per row
+/// and one of 6,140 keys at 12-16 ns; the bound sits between them.
+constexpr size_t max_exact_set_keys_cheap_to_probe = 4096;
+
 }
 
 namespace detail
@@ -164,11 +177,24 @@ RuntimeFilterEvaluationState::RuntimeFilterEvaluationState(RuntimeFilterConfig c
 {
 }
 
-void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
+void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_passed, UInt64 probe_nanoseconds) const
 {
     stats->blocks_processed++;
     stats->rows_checked += rows_checked;
     stats->rows_passed += rows_passed;
+
+    const bool large_block = rows_checked >= min_rows_in_large_block;
+    if (large_block)
+    {
+        stats->large_block_rows += rows_checked;
+        stats->large_block_probe_nanoseconds += probe_nanoseconds;
+    }
+    if (rows_passed == 0)
+    {
+        stats->rows_in_rejected_blocks += rows_checked;
+        if (large_block)
+            stats->large_block_rows_in_rejected_blocks += rows_checked;
+    }
 
     ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksProcessed);
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsChecked, rows_checked);
@@ -297,6 +323,8 @@ bool equalsCanDisagreeWithHashTable(const IDataType & type)
     return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
 }
 
+}
+
 /// A runtime filter key comes from an `=` predicate, which never matches NULL, so a `Nullable` integer key keeps
 /// only its non-NULL values, in the set of the nested type.
 bool canDropNullKeys(const DataTypePtr & type)
@@ -306,6 +334,9 @@ bool canDropNullKeys(const DataTypePtr & type)
     const auto nested = removeNullable(type);
     return nested->isValueRepresentedByInteger() && nested->getSizeOfValueInMemory() <= 16;
 }
+
+namespace
+{
 
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
 {
@@ -567,6 +598,15 @@ ColumnPtr ExactSetRuntimeFilter<negate>::getRecordedKeyValues() const
     if (is_full || !is_finished)
         return nullptr;
     return getValuesColumn();
+}
+
+template <bool negate>
+bool ExactSetRuntimeFilter<negate>::cheapToProbe() const
+{
+    if (const auto * many = std::get_if<Many>(&lookup_state); many && many->exact_values)
+        return many->exact_values->getTotalRowCount() <= max_exact_set_keys_cheap_to_probe;
+    /// No key, one key, or the exact values already released (the filter stopped filtering): nothing to look up, so cheap.
+    return true;
 }
 
 template <bool negate>
@@ -977,6 +1017,13 @@ ColumnPtr AdaptiveSetRuntimeFilter::getRecordedKeyValues() const
     return nullptr;
 }
 
+bool AdaptiveSetRuntimeFilter::cheapToProbe() const
+{
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter))
+        return exact_filter->cheapToProbe();
+    return std::holds_alternative<KeySetDropped>(filter);
+}
+
 void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source)
 {
     if (state_serialized)
@@ -1264,8 +1311,10 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
         return DataTypeUInt8().createColumnConst(rows_in_block, true);
 
     std::optional<size_t> rows_passed;
+    Stopwatch watch;
     auto result = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values, rows_passed); }, data.filter);
-    evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
+    const UInt64 probe_nanoseconds = watch.elapsedNanoseconds();
+    evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result), probe_nanoseconds);
     return result;
 }
 
@@ -1323,6 +1372,12 @@ ColumnPtr RuntimeFilter::getRecordedKeyValues() const
     if (!data.index_analysis.canUseExactValues() || !data.build_state.isFinished())
         return nullptr;
     return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, data.filter);
+}
+
+bool RuntimeFilter::cheapToProbe() const
+{
+    SharedLockGuard lock(mutex);
+    return std::visit([](const auto & filter) { return filter.cheapToProbe(); }, data.filter);
 }
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
@@ -1417,14 +1472,19 @@ public:
             const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(
                 getLogger("RuntimeFilter"),
-                "Stats for '{}' (key '{}'): rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
+                "Stats for '{}' (key '{}'): rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}, "
+                "rows in rejected blocks {}, large block rows {}, large block probe ns {}, large block rows in rejected blocks {}",
                 name,
                 filter_key,
                 stats.rows_skipped.load(),
                 stats.rows_checked.load(),
                 stats.rows_passed.load(),
                 stats.blocks_skipped.load(),
-                stats.blocks_processed.load());
+                stats.blocks_processed.load(),
+                stats.rows_in_rejected_blocks.load(),
+                stats.large_block_rows.load(),
+                stats.large_block_probe_nanoseconds.load(),
+                stats.large_block_rows_in_rejected_blocks.load());
         }
     }
 

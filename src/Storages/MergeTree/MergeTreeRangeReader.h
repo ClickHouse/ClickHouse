@@ -85,6 +85,9 @@ struct PrewhereExprInfo
     [[nodiscard]] std::string dumpConditions() const;
 };
 
+/// Element `i` is the index of the PREWHERE step that runs `i`-th.
+using PrewhereStepOrder = std::vector<size_t>;
+
 struct ReadStepPerformanceCounters
 {
     std::atomic<UInt64> rows_read = 0;

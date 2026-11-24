@@ -168,6 +168,7 @@ private:
         bool has_existing_prewhere = false;
         const std::unordered_set<const ActionsDAG::Node *> * shared_nodes = nullptr;
         bool apply_string_filters_during_scan = false;
+        bool join_runtime_filter_adaptive_prewhere_order = false;
         const NameSet * columns_read_before_filter = nullptr;
         String top_k_filter_column;
     };

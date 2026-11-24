@@ -11745,6 +11745,10 @@ If, at query planning time, the probe side of a JOIN is estimated to produce no 
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0, \
         {"26.6", false, true, "New setting."}) \
+    DECLARE(Bool, join_runtime_filter_adaptive_prewhere_order, true, R"(
+Put the JOIN runtime filters of `PREWHERE` in steps of their own after the other conditions, and run those steps in an order chosen per read task (per file for Parquet) from the selectivity and probe time each filter has shown so far in the query.
+)", 0, \
+        {"26.12", false, true, "New setting."}) \
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
 Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
 Only has an effect if `use_skip_indexes_on_data_read = 1`.

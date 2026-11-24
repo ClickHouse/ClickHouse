@@ -219,12 +219,14 @@ public:
         MergeTreeBlockSizePredictorPtr size_predictor_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
+    /// `prewhere_step_order` is the order in which the chain runs the steps of `prewhere_actions`; empty keeps their order.
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
         MergeTreeIndexBuildContextPtr index_build_context,
         LazyMaterializingRowsPtr lazy_materializing_rows,
         const ReadStepsPerformanceCounters & read_steps_performance_counters,
-        bool collect_predicate_statistics);
+        bool collect_predicate_statistics,
+        const PrewhereStepOrder & prewhere_step_order);
 
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
@@ -269,11 +271,13 @@ public:
         const MarkRangesPtr & read_request_map = nullptr,
         const std::vector<MarkRangesPtr> & patch_read_request_maps = {});
 
+    /// `chain_step_order` is the order in which the chain runs the steps of `prewhere_actions`; empty keeps their order.
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
         const ReadStepsPerformanceCounters & read_steps_performance_counters,
-        bool collect_predicate_statistics);
+        bool collect_predicate_statistics,
+        const PrewhereStepOrder & chain_step_order);
 
 private:
     using DataflowCacheUpdateCallback = std::function<void(
