@@ -198,7 +198,7 @@ namespace
         const ColumnArray::Offsets * hist_offsets,
         const IColumn * hist_timestamps)
     {
-        size_t ts_start = (row == 0) ? 0 : ts_offsets[row - 1];
+        size_t ts_start = (row == 0) ? 0 : ts_offsets[static_cast<ssize_t>(row) - 1];
         size_t ts_end = ts_offsets[row];
 
         std::optional<std::pair<Field, Field>> min_max;
@@ -207,7 +207,7 @@ namespace
 
         if (hist_offsets)
         {
-            size_t hist_start = (row == 0) ? 0 : (*hist_offsets)[row - 1];
+            size_t hist_start = (row == 0) ? 0 : (*hist_offsets)[static_cast<ssize_t>(row) - 1];
             size_t hist_end = (*hist_offsets)[row];
             if (hist_start != hist_end)
             {
@@ -698,7 +698,7 @@ namespace
         size_t id_index = 0;
         for (size_t i = 0; i < filter.size(); ++i)
         {
-            size_t hist_start = (i == 0) ? 0 : hist_offsets[i - 1];
+            size_t hist_start = (i == 0) ? 0 : hist_offsets[static_cast<ssize_t>(i) - 1];
             size_t hist_end = hist_offsets[i];
             size_t num_histograms = hist_end - hist_start;
 
