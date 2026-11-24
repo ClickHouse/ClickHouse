@@ -99,39 +99,6 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    /// Whether the buckets may switch to the Robin Hood mode when they become large. Call it before inserting.
-    void setRobinHoodAllowed(bool allowed) requires GrowerWithRobinHood<Grower>
-    {
-        for (auto & impl : impls)
-            impl.grower.setRobinHoodAllowed(allowed);
-    }
-
-    /// `bucket_cells_prefix[b]` is the number of cells in the buckets before `b`. See `computeBucketPrefix`.
-    std::vector<size_t> bucket_cells_prefix;
-
-    /// The cells of one bucket, for a lookup that walks the cells itself (`Interpreters/HashJoin/AmacLookup.h`).
-    /// 32 bytes and aligned to 32, so that an entry is in one cache line.
-    struct alignas(32) BucketCells
-    {
-        const Cell * cells;     /// the first cell
-        const Cell * cells_end; /// one past the last cell
-        size_t mask;            /// the home cell of a key is the cell `hash & mask`
-        size_t prefix;          /// `bucket_cells_prefix` of the bucket
-    };
-
-    /// Which buckets are in the Robin Hood mode.
-    enum class RobinHoodBuckets : uint8_t
-    {
-        None,
-        All,
-        Mixed,
-    };
-
-    /// Set by `computeBucketPrefix`. Valid until the next insert, which may move the cells of a bucket.
-    std::vector<BucketCells> bucket_cells;
-    RobinHoodBuckets robin_hood_buckets = RobinHoodBuckets::None;
-
-
     TwoLevelHashTable() = default;
 
     explicit TwoLevelHashTable(size_t size_hint)
@@ -260,23 +227,6 @@ public:
 
     [[nodiscard]] const_iterator end() const         { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
-
-    [[nodiscard]] const_iterator iteratorAt(size_t bucket) const
-    {
-        if (bucket >= NUM_BUCKETS)
-            return end();
-        auto impl_it = beginOfNextNonEmptyBucket(bucket);
-        return { this, bucket, impl_it };
-    }
-
-    iterator iteratorAt(size_t bucket)
-    {
-        if (bucket >= NUM_BUCKETS)
-            return end();
-        auto impl_it = beginOfNextNonEmptyBucket(bucket);
-        return { this, bucket, impl_it };
-    }
-
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
@@ -461,42 +411,16 @@ public:
         return res;
     }
 
-    /// Prefix sums that `offsetInternal` uses to number cells across all buckets, and the cells and the mode of every bucket.
-    /// Call it after the last insert and before reading offsets, never while another thread reads them.
-    void computeBucketPrefix()
-    {
-        bucket_cells_prefix.assign(NUM_BUCKETS, 0);
-        bucket_cells.resize(NUM_BUCKETS);
-        size_t run = 0;
-        size_t robin_hood = 0;
-        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-        {
-            const size_t cells = impls[i].getBufferSizeInCells();
-            bucket_cells_prefix[i] = run;
-            bucket_cells[i] = {impls[i].buf, impls[i].buf + cells, cells - 1, run};
-            robin_hood += impls[i].isRobinHood();
-            run += cells;
-        }
-        if (robin_hood == 0)
-            robin_hood_buckets = RobinHoodBuckets::None;
-        else if (robin_hood == NUM_BUCKETS)
-            robin_hood_buckets = RobinHoodBuckets::All;
-        else
-            robin_hood_buckets = RobinHoodBuckets::Mixed;
-    }
-
     /// Number of the cell over all buckets. The zero cell gets 0. Any other cell gets its position in the
     /// concatenated bucket buffers plus one. So the number fits an array of `getBufferSizeInCells() + 1`.
     size_t offsetInternal(ConstLookupResult ptr) const
     {
-        if constexpr (NUM_BUCKETS == 1)
-            return impls[0].offsetInternal(ptr);
-
         const size_t buck = getBucketFromHash(ptr->getHash(*this));
         if (ptr->isZero(impls[buck]))
             return 0;
-
-        chassert(!bucket_cells_prefix.empty(), "computeBucketPrefix must run before an offset is read");
-        return bucket_cells_prefix[buck] + (ptr - impls[buck].buf) + 1;
+        size_t res = 0;
+        for (UInt32 i = 0; i < buck; ++i)
+            res += impls[i].getBufferSizeInCells();
+        return res + (ptr - impls[buck].buf) + 1;
     }
 };
