@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/getLeastSuperColumn.h>
@@ -202,8 +203,11 @@ void addConvertingToCommonHeaderActionsIfNeeded(
 const ActionsDAG::Node & addCastThroughSimpleAggregateFunction(
     ActionsDAG & dag, const ActionsDAG::Node & node, const DataTypePtr & type, const ContextPtr & context)
 {
-    const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(node.result_type->getCustomName());
-    const auto & source = simple ? dag.addCast(node, simple->getArgumentsDataTypes().front(), {}, context) : node;
+    DataTypePtr argument;
+    if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(node.result_type->getCustomName()))
+        argument = simple->getArgumentsDataTypes().front();
+    const bool has_variant = argument && anyInTypeTree(*argument, [](const IDataType & child) { return isVariant(child); });
+    const auto & source = has_variant ? dag.addCast(node, argument, {}, context) : node;
     return dag.addCast(source, type, {}, context);
 }
 

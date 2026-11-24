@@ -66,3 +66,9 @@ UInt8	0	1
 UInt8	1	0
 UInt8	0	1
 UInt8	1	0
+0	UInt16
+2	UInt16
+0	UInt16
+2	UInt16
+UInt8	2	0
+UInt8	1	1

@@ -43,3 +43,7 @@ SELECT toTypeName(x.1), x.1, x.2 FROM (SELECT anySimpleState(tuple(true, toUInt8
 SELECT toTypeName(x.1), x.1, x.2 FROM (SELECT anySimpleState(tuple(toUInt8(0), true, [toUInt8(2)]::Variant(Array(UInt8), String))) AS x UNION ALL SELECT anySimpleState(tuple(true, toUInt8(0), [true]::Variant(Array(Bool), String)))) ORDER BY ALL;
 SELECT toTypeName(k.1), k.1, k.2 FROM (SELECT anySimpleState(tuple(true, toUInt8(0), [true]::Variant(Array(Bool), String))) AS k) a FULL JOIN (SELECT anySimpleState(tuple(toUInt8(0), true, [toUInt8(2)]::Variant(Array(UInt8), String))) AS k) b USING k ORDER BY ALL;
 SELECT toTypeName(k.1), k.1, k.2 FROM (SELECT anySimpleState(tuple(toUInt8(0), true, [toUInt8(2)]::Variant(Array(UInt8), String))) AS k) a FULL JOIN (SELECT anySimpleState(tuple(true, toUInt8(0), [true]::Variant(Array(Bool), String))) AS k) b USING k ORDER BY ALL;
+SELECT k, toTypeName(k) FROM (SELECT CAST(number + 2 AS SimpleAggregateFunction(groupBitOr, Bool)) AS k FROM numbers(1)) a FULL JOIN (SELECT toUInt16(number) AS k FROM numbers(1)) b USING k ORDER BY k SETTINGS join_use_nulls = 0;
+SELECT k, toTypeName(k) FROM (SELECT toUInt16(number) AS k FROM numbers(1)) a FULL JOIN (SELECT CAST(number + 2 AS SimpleAggregateFunction(groupBitOr, Bool)) AS k FROM numbers(1)) b USING k ORDER BY k SETTINGS join_use_nulls = 0;
+SELECT toTypeName(x), x, x = true FROM (SELECT ifNull(CAST(NULL, 'Nullable(Bool)'), toUInt8(2)) AS x);
+SELECT toTypeName(x), x, x = true FROM (SELECT ifNull(CAST(NULL, 'Nullable(UInt8)'), true) AS x);
