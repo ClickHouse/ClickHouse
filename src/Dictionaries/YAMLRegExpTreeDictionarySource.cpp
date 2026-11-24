@@ -49,7 +49,7 @@
 namespace DB
 {
 
-inline const String kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
+[[clang::no_destroy]] inline const String kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
 inline const String kYAMLRegExpTree = "yamlregexptree";
 
 namespace ErrorCodes
