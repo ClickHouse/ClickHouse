@@ -334,7 +334,7 @@ inline void Logger::log(const std::string & text, Message::Priority prio, const 
 {
     if (_level >= prio && _pChannel)
     {
-        _pChannel->log(Message(_name, text, prio, file, line));
+        _pChannel->log(Message(_name, text, prio, file, "", line));
     }
 }
 

@@ -185,6 +185,7 @@
             "integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
           ]
         },
+        "integrations/connectors/data-ingestion/etl-tools/workos",
         {
           "expanded": false,
           "group": "Community integrations",
