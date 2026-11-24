@@ -193,7 +193,7 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     }
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, path_depends_on_server ? nullptr : predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context,
         /*distributed_processing_=*/ false, /*archive_member_path_=*/ String{}, /*format_settings_=*/ std::nullopt, user_files_volume);
-    auto next_callback = [iter = std::move(iterator), volume = user_files_volume](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator), volume = user_files_volume](size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();
         if (file.empty())

@@ -1,4 +1,5 @@
-/// clickhouse docker-init — Docker entrypoint for distroless ClickHouse images.
+/// clickhouse docker-init — Docker entrypoint for ClickHouse images without a shell:
+/// the default image built `FROM scratch` and the distroless image.
 /// Replaces entrypoint.sh in shell-free environments (no bash, no coreutils).
 ///
 /// Usage:
@@ -13,14 +14,44 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <charconv>
 #include <csignal>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iostream>
+#include <iterator>
+#include <limits>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <Poco/AutoPtr.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/Element.h>
+#include <Poco/Exception.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/Timespan.h>
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <base/argsToConfig.h>
+#include <IO/CompressionMethod.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/copyData.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/Exception.h>
+
+#include "config.h"
+
+#if USE_SSL
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/HTTPSClientSession.h>
+#endif
 
 #include <fcntl.h>
 #include <grp.h>
@@ -58,10 +89,12 @@ void shutdownHandler(int sig)
 }
 
 /// Get an environment variable value, returning default_value if not set.
+/// An empty variable is the same as an unset one, as `${VAR:-default}` in entrypoint.sh: e.g. `CLICKHOUSE_USER=`
+/// is the user `default`, and `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=` is `0`.
 std::string getEnv(const char * name, const std::string & default_value = "")
 {
     const char * val = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
-    return val ? std::string(val) : default_value;
+    return (val && *val) ? std::string(val) : default_value;
 }
 
 /// Build an execvp-compatible argv array from a vector of strings.
@@ -166,38 +199,29 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
     return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, std::move(lines)};
 }
 
-/// Run two commands connected by a pipe: lhs | rhs.
-/// Returns the exit code of the rhs process.
-int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::string> & rhs)
+/// Decompress the gzip file `path` into the standard input of the command `rhs`, as `gunzip -c path | rhs`: streaming,
+/// so the memory does not depend on the size of the file. Returns the exit code of `rhs`, or non-zero if the
+/// decompression fails (then the input of `rhs` ends early, like with `set -o pipefail` in entrypoint.sh).
+int runDecompressedGzipInto(const std::string & path, const std::vector<std::string> & rhs)
 {
+    /// An empty file is not gzip (`gunzip -c` fails on it), although the decompressing buffer reads it as an empty
+    /// stream: running it would mark the initialization done without running anything.
+    std::error_code ec;
+    if (fs::file_size(path, ec) == 0 && !ec)
+    {
+        std::cerr << "docker-init: error: " << path << " is empty, not a gzip file\n";
+        return 1;
+    }
+
     int pipefd[2];
     if (pipe(pipefd) < 0)
         return -1;
-
-    pid_t lhs_pid = fork();
-    if (lhs_pid < 0)
-    {
-        (void)close(pipefd[0]);
-        (void)close(pipefd[1]);
-        return -1;
-    }
-    if (lhs_pid == 0)
-    {
-        (void)close(pipefd[0]);
-        (void)dup2(pipefd[1], STDOUT_FILENO);
-        (void)close(pipefd[1]);
-        auto argv = buildArgv(lhs);
-        execvp(argv[0], argv.data());
-        _exit(127);
-    }
 
     pid_t rhs_pid = fork();
     if (rhs_pid < 0)
     {
         (void)close(pipefd[0]);
         (void)close(pipefd[1]);
-        kill(lhs_pid, SIGTERM);
-        while (waitpid(lhs_pid, nullptr, 0) < 0 && errno == EINTR) {}
         return -1;
     }
     if (rhs_pid == 0)
@@ -209,15 +233,38 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
         execvp(argv[0], argv.data());
         _exit(127);
     }
-
     (void)close(pipefd[0]);
+
+    /// A command that exits early closes the pipe: the write fails with `EPIPE` instead of killing this process.
+    struct sigaction ignore_sigpipe{};
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+    ignore_sigpipe.sa_handler = SIG_IGN;
+#pragma clang diagnostic pop
+    sigemptyset(&ignore_sigpipe.sa_mask);
+    struct sigaction old_sigpipe{};
+    (void)sigaction(SIGPIPE, &ignore_sigpipe, &old_sigpipe);
+
+    bool decompressed = false;
+    try
+    {
+        auto in = DB::wrapReadBufferWithCompressionMethod(std::make_unique<DB::ReadBufferFromFile>(path), DB::CompressionMethod::Gzip);
+        DB::WriteBufferFromFileDescriptor out(pipefd[1]);
+        DB::copyData(*in, out);
+        out.finalize();
+        decompressed = true;
+    }
+    catch (...)
+    {
+        std::cerr << "docker-init: error: cannot decompress " << path << ": " << DB::getCurrentExceptionMessage(false) << "\n";
+    }
     (void)close(pipefd[1]);
+    (void)sigaction(SIGPIPE, &old_sigpipe, nullptr);
 
-    int lhs_status = 0;
     int rhs_status = 0;
-    while (waitpid(lhs_pid, &lhs_status, 0) < 0 && errno == EINTR) {}
     while (waitpid(rhs_pid, &rhs_status, 0) < 0 && errno == EINTR) {}
-
+    if (!decompressed)
+        return 1;
     return WIFEXITED(rhs_status) ? WEXITSTATUS(rhs_status) : -1;
 }
 
@@ -236,21 +283,111 @@ bool isValidIdentifier(const std::string & s)
     return true;
 }
 
-/// Extract a single value from a ClickHouse config key via `clickhouse extract-from-config`.
-/// Returns an empty string if the key is absent (--try flag suppresses errors).
-std::string extractConfigValue(const std::string & config_file, const std::string & key, bool use_users = false)
+/// Returns true if the string can be used as the name of an XML element, the way a user is declared in `users.d`:
+/// an ASCII letter or underscore, followed by letters, digits, underscores, hyphens, and dots (e.g. `service-account`).
+/// Used to validate CLICKHOUSE_USER before embedding it in XML.
+bool isValidXMLName(const std::string & s)
 {
-    std::vector<std::string> args = {
-        g_clickhouse_binary, "extract-from-config",
-        "--config-file", config_file,
-        "--key", key,
-        "--try",
-    };
-    if (use_users)
-        args.emplace_back("--users");
+    if (s.empty())
+        return false;
+    if (!std::isalpha(static_cast<unsigned char>(s[0])) && s[0] != '_')
+        return false;
+    for (unsigned char c : s)
+        if (!std::isalnum(c) && c != '_' && c != '-' && c != '.')
+            return false;
+    return true;
+}
 
-    auto [code, lines] = captureCommand(args);
-    return (code == 0 && !lines.empty()) ? lines[0] : std::string{};
+/// The value of a configuration key overridden by the server arguments after `--` (e.g. `--tcp_port=19001`
+/// or `--tcp_port 19001`), parsed the same way the server parses them. Empty if the arguments do not set it.
+std::string getOverriddenConfigValue(const std::vector<std::string> & server_args, const std::string & key)
+{
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> config = new Poco::Util::LayeredConfiguration;
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, 0);
+    return config->getString(key, "");
+}
+
+/// The names of the child elements of a configuration key overridden by the server arguments after `--`
+/// (e.g. `bootstrap` for `--protocols.bootstrap.host=0.0.0.0`), parsed the same way the server parses them.
+std::vector<std::string> getOverriddenConfigChildren(const std::vector<std::string> & server_args, const std::string & key)
+{
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> config = new Poco::Util::LayeredConfiguration;
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, 0);
+    Poco::Util::AbstractConfiguration::Keys children;
+    config->keys(key, children);
+    return children;
+}
+
+/// Whether an element included from ZooKeeper (`from_zk`) under `element` can change the configuration under the
+/// top-level elements `names`: the root, an `<include>` directly under it (its contents are spliced into the root),
+/// `include_from` (the file of the `incl` substitutions), or one of `names` and anything inside it. Others, e.g.
+/// `<macros from_zk="..."/>` for `protocols`, cannot.
+bool hasZooKeeperIncludeAffecting(
+    const Poco::XML::Element & element, bool is_root, bool in_selector, const std::vector<std::string> & names)
+{
+    if ((is_root || in_selector) && element.hasAttribute("from_zk"))
+        return true;
+    for (const Poco::XML::Node * child = element.firstChild(); child; child = child->nextSibling())
+    {
+        if (child->nodeType() != Poco::XML::Node::ELEMENT_NODE)
+            continue;
+        const Poco::XML::XMLString & name = child->nodeName();
+        bool child_in_selector = in_selector
+            || (is_root
+                && (name == "include" || name == "include_from"
+                    || std::find(names.begin(), names.end(), std::string(name.begin(), name.end())) != names.end()));
+        if (hasZooKeeperIncludeAffecting(
+                *static_cast<const Poco::XML::Element *>(child), /* is_root = */ false, child_in_selector, names))
+            return true;
+    }
+    return false;
+}
+
+/// The names of the child elements of a configuration key in the configuration as the server loads it: `config_file`
+/// with `config.d`, includes and substitutions applied.
+/// Elements included from ZooKeeper (`from_zk`) are known only to the server, which loads them after it connects
+/// to ZooKeeper and on every reload. A configuration where one of them can add or change the element is rejected:
+/// the caller must not rely on an incomplete list. Others, elsewhere in the configuration, do not matter.
+std::vector<std::string> getConfigChildren(const std::string & config_file, const std::string & key)
+{
+    DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
+    /// Without ZooKeeper, its elements are left as they are in the configuration, with the `from_zk` attribute.
+    if (loaded.has_zk_includes
+        && hasZooKeeperIncludeAffecting(
+            *loaded.preprocessed_xml->documentElement(), /* is_root = */ true, /* in_selector = */ false,
+            {key.substr(0, key.find('.'))}))
+        throw Poco::Exception("`" + key + "` is affected by elements included from ZooKeeper (`from_zk`), "
+            "so it cannot be read without ZooKeeper");
+    Poco::Util::AbstractConfiguration::Keys children;
+    loaded.configuration->keys(key, children);
+    return children;
+}
+
+/// Whether `key` is `name` or one of its repeated entries (e.g. `listen_host[1]`), as `getMultipleKeysFromConfig` matches them.
+bool isMultipleConfigKey(const std::string & key, const std::string & name)
+{
+    return key == name || (key.starts_with(name + "[") && key.ends_with("]"));
+}
+
+/// Append every property of `config` under `prefix` to `out` as `--key=value`, except the top-level keys rejected by `keep`.
+void appendConfigProperties(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & prefix,
+    const std::function<bool(const std::string &)> & keep,
+    std::vector<std::string> & out)
+{
+    Poco::Util::AbstractConfiguration::Keys children;
+    config.keys(prefix, children);
+    for (const auto & child : children)
+    {
+        if (prefix.empty() && !keep(child))
+            continue;
+        std::string key = prefix.empty() ? child : prefix + "." + child;
+        if (config.has(key))
+            out.push_back("--" + key + "=" + config.getRawString(key));
+        appendConfigProperties(config, key, keep, out);
+    }
 }
 
 /// Extract multiple values from a ClickHouse config key (wildcard patterns return multiple lines).
@@ -263,6 +400,22 @@ std::vector<std::string> extractConfigValues(const std::string & config_file, co
         "--try",
     });
     return (code == 0) ? std::move(lines) : std::vector<std::string>{};
+}
+
+/// The value of a configuration key as the server takes it: from the server arguments if they set it, even to an
+/// empty value (e.g. `-- --http_port=` disables the listener), else from the configuration file.
+std::string getEffectiveConfigValue(
+    const std::vector<std::string> & server_args, const std::string & config_file, const std::string & key)
+{
+    /// One configuration of both, as the server has it: the properties of the arguments in a layer over the loaded file,
+    /// so that `${...}` references are expanded the same way, e.g. `<path>${macros.data_path}</path>` with
+    /// `-- --macros.data_path=/mnt/clickhouse/`.
+    DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> config = new Poco::Util::LayeredConfiguration;
+    config->add(loaded.configuration, /* priority = */ 0);
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, /* priority = */ -100);
+    return config->getString(key, "");
 }
 
 /// Recursively chown a path. Logs warnings but does not abort on failure.
@@ -360,11 +513,126 @@ bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool
     return true;
 }
 
-/// Write the user management XML to `/etc/clickhouse-server/users.d/default-user.xml`.
+/// The users configuration file the server loads the users from, as `AccessControl::addStoragesFromMainConfig`
+/// finds it: `users_config`, else the main configuration itself if it has no `user_directories`, or the path of
+/// the `users.xml` storage in `user_directories`. A relative path is taken from the directory of the main
+/// configuration if it exists there. Empty if the configuration has no users configuration file; an exception if it
+/// has several.
+/// The configuration is `config_file` with the properties of the server arguments (`extra_args`) over it, e.g.
+/// `-- --user_directories.users_xml.path=...`, as the server combines them.
+std::string getUsersConfigFile(const std::string & config_file, const std::vector<std::string> & extra_args)
+{
+    const fs::path config_dir = fs::path(config_file).parent_path();
+    auto resolve = [&](const std::string & path)
+    {
+        if (fs::path(path).is_relative() && fs::exists(config_dir / path))
+            return (config_dir / path).string();
+        return path;
+    };
+
+    DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
+    /// Without ZooKeeper, its elements are left as they are in the configuration, with the `from_zk` attribute.
+    if (loaded.has_zk_includes
+        && hasZooKeeperIncludeAffecting(
+            *loaded.preprocessed_xml->documentElement(), /* is_root = */ true, /* in_selector = */ false,
+            {"users_config", "user_directories"}))
+        throw Poco::Exception("the users configuration file is selected by elements included from ZooKeeper (`from_zk`), "
+            "so it cannot be found without ZooKeeper");
+
+    /// The server parses its whole command line with `argsToConfig` into a layer that takes precedence over the files.
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> layered = new Poco::Util::LayeredConfiguration;
+    layered->add(loaded.configuration, /* priority = */ 0);
+    std::vector<std::string> server_args = {"--config-file=" + config_file};
+    server_args.insert(server_args.end(), extra_args.begin(), extra_args.end());
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *layered, /* priority = */ -100);
+    const auto & config = *layered;
+
+    /// A selector can refer to another property (`${macros.users_file}`), which the server reads only after it resolves
+    /// the elements included from ZooKeeper, and those can be anywhere: its value is not known without ZooKeeper.
+    auto get_selector = [&](const std::string & key)
+    {
+        std::string raw = config.getRawString(key, "");
+        if (loaded.has_zk_includes && raw.contains("${"))
+            throw Poco::Exception("the users configuration file is selected by `" + key + "` = `" + raw
+                + "`, which refers to other properties, and the configuration has elements included from ZooKeeper "
+                "(`from_zk`), so it cannot be found without ZooKeeper");
+        return config.getString(key, "");
+    };
+
+    /// Every users configuration file the server loads: `users_config` (or the main configuration itself without
+    /// `user_directories`), and the storages of the `users_xml` type in `user_directories` under any of their names,
+    /// possibly repeated (`users_xml[1]`), as `AccessControl::addStoragesFromUserDirectoriesConfig` reads them.
+    std::vector<std::string> users_files;
+    if (std::string path = get_selector("users_config"); !path.empty())
+        users_files.push_back(resolve(path));
+    else if (!config.has("user_directories"))
+        users_files.push_back(config_file);
+
+    Poco::Util::AbstractConfiguration::Keys storages;
+    config.keys("user_directories", storages);
+    for (const auto & storage : storages)
+    {
+        std::string type = storage.substr(0, storage.find('['));
+        if (type == "users_xml" || type == "users.xml" || type == "users_config")
+            users_files.push_back(resolve(get_selector("user_directories." + storage + ".path")));
+    }
+
+    /// The same file referenced twice (e.g. the legacy `users_config` and the `users_xml` storage both naming
+    /// `users.xml`) is one storage. The rule is the server's: `UsersConfigAccessStorage::load` keeps the lexically
+    /// normal path of an added storage, and `isPathEqual` skips a later path equal to it as written. The paths are
+    /// kept as written: the server reads the file and finds its `.d` directory through them, and through a symbolic
+    /// link followed by `..` the lexically normal path can name another directory.
+    {
+        std::vector<std::string> unique_files;
+        for (const auto & file : users_files)
+        {
+            bool added = std::any_of(unique_files.begin(), unique_files.end(), [&](const std::string & unique_file)
+            {
+                return fs::path(unique_file).lexically_normal().string() == file;
+            });
+            if (!added)
+                unique_files.push_back(file);
+        }
+        users_files = std::move(unique_files);
+    }
+
+    /// The server authenticates against every storage in turn: removing or restricting `default` in one of them would
+    /// leave a `default` of another one as it is, possibly without a password and open to the network.
+    if (users_files.size() > 1)
+    {
+        std::string list;
+        for (const auto & file : users_files)
+            list += (list.empty() ? "" : ", ") + file;
+        throw Poco::Exception("the configuration has several users configuration files (" + list
+            + "), and the user setup can manage only one");
+    }
+
+    /// A path with `..` after a symbolic link names one directory as written and another one lexically normalized.
+    /// The server lists the `.d` directory through the path as written but opens the files found there through the
+    /// XML parser, which normalizes the path lexically, so it cannot load a generated user there: refuse it.
+    if (!users_files.empty())
+    {
+        const fs::path file = users_files.front();
+        /// An error resolving the path (e.g. no permission) is reported by reading the file later.
+        std::error_code ec_written;
+        std::error_code ec_normal;
+        const fs::path written = fs::weakly_canonical(file, ec_written);
+        const fs::path normal = fs::weakly_canonical(file.lexically_normal(), ec_normal);
+        if (!ec_written && !ec_normal && written != normal)
+            throw Poco::Exception("the users configuration file " + file.string() + " is named through `..` after a symbolic link, "
+                "so the server cannot load users from its `.d` directory; name it without `..` (e.g. " + written.string() + ")");
+    }
+    return users_files.empty() ? std::string{} : users_files.front();
+}
+
+/// Write the user management XML to `default-user.xml` in the `.d` directory of the users configuration file
+/// (`/etc/clickhouse-server/users.d` for the shipped configuration).
 /// Returns false if a user-requested setup (CLICKHOUSE_USER/PASSWORD/ACCESS_MANAGEMENT)
-/// is invalid — caller should treat this as fatal.
+/// is invalid or the file cannot be written — caller should treat this as fatal.
 bool manageClickHouseUser(
     const std::string & config_file,
+    const std::vector<std::string> & extra_args,
     const std::string & clickhouse_user,
     const std::string & clickhouse_password,
     const std::string & access_management,
@@ -376,7 +644,40 @@ bool manageClickHouseUser(
         return true;
     }
 
-    const std::string users_d_dir = "/etc/clickhouse-server/users.d";
+    bool has_custom_user = !clickhouse_user.empty() && clickhouse_user != "default";
+    bool has_password = !clickhouse_password.empty();
+    bool has_access_mgmt = access_management != "0";
+    bool setup_requested = has_custom_user || has_password || has_access_mgmt;
+
+    std::string abs_users_xml;
+    try
+    {
+        abs_users_xml = getUsersConfigFile(config_file, extra_args);
+    }
+    catch (...)
+    {
+        std::cerr << "docker-init: error: cannot find the users configuration file of " << config_file << ": "
+                  << DB::getCurrentExceptionMessage(false)
+                  << "; set CLICKHOUSE_SKIP_USER_SETUP=1 to manage the users yourself\n";
+        return false;
+    }
+    if (abs_users_xml.empty())
+    {
+        if (setup_requested)
+        {
+            std::cerr << "docker-init: error: " << config_file << " has no `users.xml` storage in `user_directories`, "
+                         "so CLICKHOUSE_USER, CLICKHOUSE_PASSWORD, and CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT cannot be applied; "
+                         "set CLICKHOUSE_SKIP_USER_SETUP=1 to manage the users yourself\n";
+            return false;
+        }
+        std::cerr << "docker-init: " << config_file << " has no `users.xml` storage in `user_directories`, "
+                     "so there is no user 'default' to restrict to local connections\n";
+        return true;
+    }
+
+    /// The server merges `<users file without extension>.d` into the users file, as `config.d` into `config.xml`:
+    /// write there, so the generated user applies to the users file the configuration selects.
+    const std::string users_d_dir = fs::path(abs_users_xml).replace_extension("d").string();
     const std::string default_user_xml = users_d_dir + "/default-user.xml";
 
     std::error_code ec;
@@ -384,12 +685,7 @@ bool manageClickHouseUser(
 
     /// Detect whether the default user was customised via a mounted config file.
     bool clickhouse_default_changed = false;
-    std::string users_xml_path = extractConfigValue(config_file, "user_directories.users_xml.path");
-    if (!users_xml_path.empty())
     {
-        std::string abs_users_xml = (users_xml_path[0] == '/')
-            ? users_xml_path
-            : (fs::path(config_file).parent_path() / users_xml_path).string();
 
         auto join = [](const std::vector<std::string> & v)
         {
@@ -399,26 +695,44 @@ bool manageClickHouseUser(
             return s;
         };
 
+        /// Read the shipped configuration from a copy in a separate directory, like entrypoint.sh: in place,
+        /// `extract-from-config` would merge `users.d` into it as well, and a `default` user customised there
+        /// would look unchanged.
+        char tmp_dir_template[] = "/tmp/docker-init-users-XXXXXX";
+        if (!mkdtemp(tmp_dir_template))
+        {
+            std::cerr << "docker-init: error: cannot create a temporary directory in /tmp: "
+                      << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+            return false;
+        }
+        const fs::path tmp_dir = tmp_dir_template;
+        const fs::path users_xml_copy = tmp_dir / fs::path(abs_users_xml).filename();
+        fs::copy_file(abs_users_xml, users_xml_copy, ec);
+        if (ec)
+        {
+            std::cerr << "docker-init: error: cannot copy " << abs_users_xml << " to " << users_xml_copy
+                      << ": " << ec.message() << "\n";
+            fs::remove_all(tmp_dir, ec);
+            return false;
+        }
+
         auto [c1, original] = captureCommand({
+            g_clickhouse_binary, "extract-from-config",
+            "--config-file", users_xml_copy.string(),
+            "--key", "users.default", "--try",
+        });
+        fs::remove_all(tmp_dir, ec);
+        auto [c2, processed] = captureCommand({
             g_clickhouse_binary, "extract-from-config",
             "--config-file", abs_users_xml,
             "--key", "users.default", "--try",
-        });
-        auto [c2, processed] = captureCommand({
-            g_clickhouse_binary, "extract-from-config",
-            "--config-file", config_file,
-            "--users", "--key", "users.default", "--try",
         });
 
         if (c1 == 0 && c2 == 0 && join(original) != join(processed))
             clickhouse_default_changed = true;
     }
 
-    bool has_custom_user = !clickhouse_user.empty() && clickhouse_user != "default";
-    bool has_password = !clickhouse_password.empty();
-    bool has_access_mgmt = access_management != "0";
-
-    if (has_custom_user || has_password || has_access_mgmt)
+    if (setup_requested)
     {
         if (access_management != "0" && access_management != "1")
         {
@@ -427,11 +741,11 @@ bool manageClickHouseUser(
             return false;
         }
 
-        if (!isValidIdentifier(clickhouse_user))
+        if (!isValidXMLName(clickhouse_user))
         {
             std::cerr << "docker-init: error: CLICKHOUSE_USER '" << clickhouse_user
-                      << "' contains characters not allowed in an XML element name; "
-                         "use only alphanumeric characters and underscores\n";
+                      << "' is not allowed as an XML element name; "
+                         "use letters, digits, underscores, hyphens, and dots, starting with a letter or an underscore\n";
             return false;
         }
 
@@ -474,8 +788,14 @@ bool manageClickHouseUser(
               << "    </" << clickhouse_user << ">\n"
               << "  </users>\n"
               << "</clickhouse>\n";
-            if (!f.good())
+            f.close();
+            if (!f)
+            {
+                /// Fail closed, like entrypoint.sh with `set -e`: starting without this file would leave
+                /// the shipped `default` user without the requested password or network restriction.
                 std::cerr << "docker-init: error: failed to write " << default_user_xml << "\n";
+                return false;
+            }
         }
     }
     else if (clickhouse_default_changed)
@@ -500,8 +820,14 @@ bool manageClickHouseUser(
               << "    </default>\n"
               << "  </users>\n"
               << "</clickhouse>\n";
-            if (!f.good())
+            f.close();
+            if (!f)
+            {
+                /// Fail closed, like entrypoint.sh with `set -e`: starting without this file would leave
+                /// the shipped `default` user without the requested password or network restriction.
                 std::cerr << "docker-init: error: failed to write " << default_user_xml << "\n";
+                return false;
+            }
         }
     }
     return true;
@@ -530,6 +856,65 @@ bool createClickHouseDatabase(
         return false;
     }
     return true;
+}
+
+/// Whether the server on 127.0.0.1:`port` answers `/ping`. It is polled while the server is starting,
+/// so failing to connect means "not ready yet". The certificate of HTTPS is not verified, as `wget --no-check-certificate`
+/// in entrypoint.sh: the server is local, and the check sends nothing secret.
+bool pingServer(Poco::UInt16 port_number, [[maybe_unused]] bool secure)
+{
+    try
+    {
+        std::unique_ptr<Poco::Net::HTTPClientSession> session;
+#if USE_SSL
+        if (secure)
+        {
+            Poco::Net::Context::Ptr context = new Poco::Net::Context(
+                Poco::Net::Context::CLIENT_USE, "", Poco::Net::Context::VERIFY_NONE);
+            session = std::make_unique<Poco::Net::HTTPSClientSession>("127.0.0.1", port_number, context);
+        }
+        else
+#endif
+            session = std::make_unique<Poco::Net::HTTPClientSession>("127.0.0.1", port_number);
+        session->setTimeout(Poco::Timespan(1, 0));
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/ping", Poco::Net::HTTPMessage::HTTP_1_1);
+        session->sendRequest(request);
+        Poco::Net::HTTPResponse response;
+        std::istream & body = session->receiveResponse(response);
+        body.ignore(std::numeric_limits<std::streamsize>::max());
+        return response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK;
+    }
+    catch (const Poco::Exception &)
+    {
+        return false;
+    }
+}
+
+/// Whether the server on 127.0.0.1:`port` of the native interface answers. It is polled while the server is starting,
+/// so failing to connect means "not ready yet". Like `/ping`, the check needs no credentials: the server answers
+/// an HTTP request on the native port with `HTTP/1.0 400 Bad Request` and a hint to use `clickhouse-client`
+/// (see `formatHTTPErrorResponseWhenUserIsConnectedToWrongPort` in `TCPHandler`). It does that only once
+/// it handles connections, the same as `/ping` on the HTTP port.
+bool pingNativeServer(Poco::UInt16 port_number)
+{
+    try
+    {
+        Poco::Net::HTTPClientSession session("127.0.0.1", port_number);
+        session.setTimeout(Poco::Timespan(1, 0));
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/ping", Poco::Net::HTTPMessage::HTTP_1_0);
+        session.sendRequest(request);
+        Poco::Net::HTTPResponse response;
+        std::istream & body = session.receiveResponse(response);
+        std::string text{std::istreambuf_iterator<char>(body), std::istreambuf_iterator<char>()};
+        return response.getStatus() == Poco::Net::HTTPResponse::HTTP_BAD_REQUEST
+            && text.contains("is for clickhouse-client program");
+    }
+    catch (const Poco::Exception &)
+    {
+        return false;
+    }
 }
 
 /// Returns false on first script failure (fail-fast, matches shell `set -e`).
@@ -562,22 +947,8 @@ bool runInitScripts(const std::vector<std::string> & client_base)
         else if (filename.ends_with(".sql.gz"))
         {
             std::cerr << "docker-init: running " << path << " (decompressing)\n";
-            /// Decompress via clickhouse-local (auto-detects .gz) and pipe to clickhouse-client.
-            /// Escape single quotes in the path to prevent SQL injection via crafted filenames.
-            std::string escaped_path;
-            for (char c : path.string())
-            {
-                if (c == '\'')
-                    escaped_path += "''";
-                else
-                    escaped_path += c;
-            }
-            std::vector<std::string> decompress_args = {
-                g_clickhouse_binary, "local",
-                "--query",
-                "SELECT * FROM file('" + escaped_path + "', RawBLOB) FORMAT RawBLOB",
-            };
-            if (runPipeline(decompress_args, client_base) != 0)
+            /// Streaming, like `gunzip -c` in entrypoint.sh: the decompressed script can be larger than the memory.
+            if (runDecompressedGzipInto(path.string(), client_base) != 0)
             {
                 std::cerr << "docker-init: error: init script " << path << " failed\n";
                 return false;
@@ -585,8 +956,35 @@ bool runInitScripts(const std::vector<std::string> & client_base)
         }
         else if (filename.ends_with(".sh"))
         {
-            std::cerr << "docker-init: WARNING: shell scripts cannot run in a distroless "
-                         "environment, skipping " << path << "\n";
+            /// An executable script is run directly, so the kernel starts the interpreter from its `#!` line.
+            /// A non-executable one is given to `sh`: unlike entrypoint.sh, which sources it, we have no shell
+            /// to source it into, so the variables it sets do not reach the scripts that follow.
+            /// The image may have no shell at all. Then the script cannot run, and the initialization fails
+            /// instead of starting the server without it.
+            const bool executable = access(path.c_str(), X_OK) == 0;
+            std::vector<std::string> args;
+            if (executable)
+                args = {path.string()};
+            else
+                /// Fail on the first failed command, including one in a pipeline, as `set -eo pipefail` in entrypoint.sh.
+                /// A shell without `pipefail` rejects the option and exits with an error, so the script does not run.
+                args = {"sh", "-e", "-o", "pipefail", path.string()};
+
+            std::cerr << "docker-init: running " << path << (executable ? "" : " with sh -e -o pipefail") << "\n";
+            const int code = runCommand(args);
+            if (code != 0)
+            {
+                std::cerr << "docker-init: error: init script " << path << " failed with exit code " << code << "\n";
+                if (code == 127)
+                    std::cerr << "docker-init: the image may have no shell to run it; mount one into the container "
+                                 "(for example, a statically linked busybox as /bin/sh), "
+                                 "or use the `*.sql` and `*.sql.gz` init scripts\n";
+                else if (code == 2 && !executable)
+                    std::cerr << "docker-init: if the shell does not support `-o pipefail`, mount one that does "
+                                 "(for example, a statically linked busybox as /bin/sh), or make the script executable "
+                                 "so that it runs with the interpreter from its `#!` line\n";
+                return false;
+            }
         }
         else
         {
@@ -626,9 +1024,45 @@ bool initClickHouseDB(
     if (!has_init_files && clickhouse_db.empty())
         return true;
 
-    std::string native_port = extractConfigValue(config_file, "tcp_port");
+    /// The temporary server gets the same arguments as the final one (e.g. `--path`), so the port of its clients
+    /// is the one the arguments set, if any, the same as the server takes it.
+    std::string native_port = getEffectiveConfigValue(extra_server_args, config_file, "tcp_port");
     if (native_port.empty())
         native_port = "9000";
+
+    /// The readiness check is `/ping` over HTTP (or HTTPS), the same as in entrypoint.sh. It needs no credentials:
+    /// the user from the environment may be unable to log in, e.g. when a mounted `users.d` sets the password
+    /// of `default` and an init script passes that password itself.
+    /// A configuration with only the native interface has nothing to ping, so then the check is the answer of
+    /// the native port to an HTTP request, which needs no credentials either.
+    /// A port set to an empty value in the server arguments (`-- --http_port=`) opens no listener, so it is not taken
+    /// from the configuration file then.
+    std::string ping_port = getEffectiveConfigValue(extra_server_args, config_file, "http_port");
+    bool ping_secure = false;
+#if USE_SSL
+    if (ping_port.empty())
+    {
+        ping_port = getEffectiveConfigValue(extra_server_args, config_file, "https_port");
+        ping_secure = true;
+    }
+#endif
+    auto parse_port = [](const std::string & port, std::string_view setting, Poco::UInt16 & port_number)
+    {
+        const char * port_end = port.data() + port.size();
+        auto [ptr, error] = std::from_chars(port.data(), port_end, port_number);
+        if (error != std::errc() || ptr != port_end || port_number == 0)
+        {
+            std::cerr << "docker-init: error: invalid `" << setting << "` '" << port << "'\n";
+            return false;
+        }
+        return true;
+    };
+    Poco::UInt16 ping_port_number = 0;
+    if (!ping_port.empty() && !parse_port(ping_port, ping_secure ? "https_port" : "http_port", ping_port_number))
+        return false;
+    Poco::UInt16 native_port_number = 0;
+    if (ping_port.empty() && !parse_port(native_port, "tcp_port", native_port_number))
+        return false;
 
     std::string run_as = std::to_string(run_uid) + ":" + std::to_string(run_gid);
 
@@ -636,13 +1070,55 @@ bool initClickHouseDB(
     /// The "--" separator is required: positional arguments after "--" override config.xml
     /// properties (e.g. --listen_host=127.0.0.1), while options before "--" are parsed by
     /// Poco and must be registered. Without "--", Poco rejects "--listen_host" as unknown.
+    /// `extra_server_args` already starts with "--" when it has properties to override.
     std::vector<std::string> server_args = {
         g_clickhouse_binary, "su", run_as, "clickhouse-server",
         "--config-file=" + config_file,
-        "--", "--listen_host=127.0.0.1",
     };
-    for (const auto & arg : extra_server_args)
-        server_args.push_back(arg);
+    /// The options before "--" are passed as is, the properties after it are passed parsed the same way the server
+    /// parses them, without any listen address: the server must not accept remote connections until the initialization
+    /// (e.g. setting the password) is done, even with `-- --listen_host=0.0.0.0` or `-- --listen_host[1]=0.0.0.0`.
+    auto properties_begin = std::find(extra_server_args.begin(), extra_server_args.end(), "--");
+    server_args.insert(server_args.end(), extra_server_args.begin(), properties_begin);
+    server_args.emplace_back("--");
+    if (properties_begin != extra_server_args.end())
+    {
+        Poco::AutoPtr<Poco::Util::LayeredConfiguration> properties = new Poco::Util::LayeredConfiguration;
+        argsToConfig(Poco::Util::Application::ArgVec(std::next(properties_begin), extra_server_args.end()), *properties, 0);
+        appendConfigProperties(*properties, "", [](const std::string & key)
+        {
+            return !isMultipleConfigKey(key, "listen_host") && !isMultipleConfigKey(key, "interserver_listen_host");
+        }, server_args);
+    }
+    /// A single `listen_host` from the command line replaces all of them from the configuration files.
+    server_args.emplace_back("--listen_host=127.0.0.1");
+    server_args.emplace_back("--interserver_listen_host=127.0.0.1");
+    /// The streaming exchange of distributed queries has its own `streaming_exchange_listen_host`, not `listen_host`:
+    /// no listener for it during the initialization (port 0 disables it), whatever the configuration or the arguments
+    /// above request; the final server gets the requested one.
+    server_args.emplace_back("--distributed_query.streaming_exchange_port=0");
+    /// A protocol with its own `host` does not use `listen_host`, e.g. `<protocols><bootstrap><host>0.0.0.0</host>...`
+    /// in a mounted configuration file or `-- --protocols.bootstrap.host=0.0.0.0`. Every protocol, wherever it is
+    /// defined, gets `127.0.0.1` as its host. A protocol without a port opens no listener, so the host does not affect it.
+    std::vector<std::string> protocols;
+    try
+    {
+        protocols = getConfigChildren(config_file, "protocols");
+    }
+    catch (...)
+    {
+        /// Do not start a server whose listeners are not known to be bound to localhost.
+        std::cerr << "docker-init: error: cannot read the protocols from " << config_file << ": "
+                  << DB::getCurrentExceptionMessage(false)
+                  << "; the temporary server of the initialization (init scripts or `CLICKHOUSE_DB`) is not started, "
+                     "because its listeners cannot be restricted to localhost\n";
+        return false;
+    }
+    for (auto & protocol : getOverriddenConfigChildren(extra_server_args, "protocols"))
+        if (std::find(protocols.begin(), protocols.end(), protocol) == protocols.end())
+            protocols.push_back(std::move(protocol));
+    for (const auto & protocol : protocols)
+        server_args.push_back("--protocols." + protocol + ".host=127.0.0.1");
 
     if (g_shutdown_requested)
         return true;
@@ -683,40 +1159,10 @@ bool initClickHouseDB(
 
     while (tries > 0 && !server_ready && !g_shutdown_requested)
     {
-        pid_t check_pid = fork();
-        if (check_pid < 0)
-        {
-            /// fork failed — skip this iteration and retry.
-            --tries;
-            sleep(1); // NOLINT(concurrency-mt-unsafe)
-            continue;
-        }
-        if (check_pid == 0)
-        {
-            int devnull = open("/dev/null", O_WRONLY);
-            if (devnull >= 0)
-            {
-                dup2(devnull, STDOUT_FILENO);
-                dup2(devnull, STDERR_FILENO);
-                close(devnull);
-            }
-            /// Keep args in a named variable so the strings outlive argv.
-            std::vector<std::string> check_args = {
-                g_clickhouse_binary, "client",
-                "--host", "127.0.0.1",
-                "--port", native_port,
-                "-u", clickhouse_user,
-                "--password", clickhouse_password,
-                "--query", "SELECT 1",
-            };
-            auto argv = buildArgv(check_args);
-            execvp(argv[0], argv.data());
-            _exit(127);
-        }
-
-        int check_status = 0;
-        while (waitpid(check_pid, &check_status, 0) < 0 && errno == EINTR) {}
-        if (WIFEXITED(check_status) && WEXITSTATUS(check_status) == 0)
+        const bool ready = ping_port_number != 0
+            ? pingServer(ping_port_number, ping_secure)
+            : pingNativeServer(native_port_number);
+        if (ready)
         {
             server_ready = true;
         }
@@ -763,38 +1209,45 @@ bool initClickHouseDB(
 
 } // anonymous namespace
 
-int mainEntryClickHouseDockerInit(int argc, char ** argv);
-int mainEntryClickHouseDockerInit(int argc, char ** argv)
+namespace
+{
+
+int mainImpl(int argc, char ** argv)
 {
     g_clickhouse_binary = (argc > 0 && argv[0][0] != '\0') ? argv[0] : "clickhouse";
 
     bool keeper_mode = false;
     bool show_help = false;
-    bool separator_seen = false;
     std::vector<std::string> extra_args;
 
+    /// Our own options come first. The first other argument and everything after it are passed on unchanged:
+    /// a command to run with its own arguments (see the passthrough mode below), e.g. `clickhouse-client -h host`
+    /// or `clickhouse-local --help`, or the arguments of the server, including the `--` that separates
+    /// the configuration overrides, e.g. `-- --logger.level=warning`, exactly as entrypoint.sh passes "$@".
     for (int i = 1; i < argc; ++i)
     {
         std::string_view arg = argv[i];
 
-        if (!separator_seen && (arg == "--help" || arg == "-h"))
+        if (extra_args.empty() && (arg == "--help" || arg == "-h"))
         {
             show_help = true;
             break;
         }
-        else if (!separator_seen && arg == "--keeper")
+        if (extra_args.empty() && arg == "--keeper")
             keeper_mode = true;
-        else if (!separator_seen && arg == "--")
-            separator_seen = true;
         else
             extra_args.emplace_back(arg);
     }
+
+    /// `-- <command> ...` runs the command, as `<command> ...` does.
+    if (extra_args.size() >= 2 && extra_args[0] == "--" && !extra_args[1].starts_with("-"))
+        extra_args.erase(extra_args.begin());
 
     if (show_help)
     {
         std::cout
             << "Usage: clickhouse docker-init [--keeper] [-- <extra-args>...]\n"
-               "Docker entrypoint for distroless ClickHouse images.\n"
+               "Docker entrypoint for ClickHouse images without a shell.\n"
                "\nOptions:\n"
                "  --keeper   Start ClickHouse Keeper instead of server\n"
                "  --help     Show this help message\n"
@@ -873,7 +1326,11 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
 
         auto exec_argv = buildArgv(exec_cmd);
         execvp(exec_argv[0], exec_argv.data());
-        std::cerr << "docker-init: failed to exec '" << extra_args[0] << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+        const int exec_errno = errno;
+        std::cerr << "docker-init: failed to exec '" << extra_args[0] << "': " << strerror(exec_errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+        if (exec_errno == ENOENT)
+            std::cerr << "docker-init: the image contains only ClickHouse, without a shell or other programs; "
+                         "mount the program you need into the container\n";
         return 1;
     }
 
@@ -990,29 +1447,49 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// --- Server mode ---
     std::string config_file = getEnv("CLICKHOUSE_CONFIG", "/etc/clickhouse-server/config.xml");
 
-    /// Extract all relevant paths from the config.
-    std::string data_dir = extractConfigValue(config_file, "path");
-    std::string tmp_dir = extractConfigValue(config_file, "tmp_path");
+    /// The server arguments can select another configuration file, e.g. `-- --config-file=/etc/clickhouse-server/other.xml`:
+    /// the server parses its whole command line with `argsToConfig`, where the last `config-file` wins over the one
+    /// passed below. Everything here (the paths, the users, the listeners of the temporary server) must be read
+    /// from the file the server is going to load, so it is resolved the same way.
+    {
+        std::vector<std::string> server_args = {"--config-file=" + config_file};
+        server_args.insert(server_args.end(), extra_args.begin(), extra_args.end());
+        config_file = getOverriddenConfigValue(server_args, "config-file");
+    }
+
+    /// Extract all relevant paths as the server takes them: from the server arguments if they set them (e.g.
+    /// `-- --path=/mnt/clickhouse/`), else from the configuration file. The data path also decides whether the
+    /// initialization has already been done.
+    std::string data_dir = getEffectiveConfigValue(extra_args, config_file, "path");
+    std::string tmp_dir = getEffectiveConfigValue(extra_args, config_file, "tmp_path");
     /// With a configured `user_files_policy`, `user_files_path` is a directory inside the disk of
     /// that policy (prepared below with the other `storage_configuration` disks) and not a local
     /// path, so it must not be created or chowned here.
     std::string user_files_path;
-    if (extractConfigValue(config_file, "user_files_policy").empty())
-        user_files_path = extractConfigValue(config_file, "user_files_path");
-    std::string format_schema_path = extractConfigValue(config_file, "format_schema_path");
+    if (getEffectiveConfigValue(extra_args, config_file, "user_files_policy").empty())
+        user_files_path = getEffectiveConfigValue(extra_args, config_file, "user_files_path");
+    std::string format_schema_path = getEffectiveConfigValue(extra_args, config_file, "format_schema_path");
 
     std::string log_dir;
-    std::string log_path = extractConfigValue(config_file, "logger.log");
+    std::string log_path = getEffectiveConfigValue(extra_args, config_file, "logger.log");
     if (!log_path.empty())
         log_dir = fs::path(log_path).parent_path().string();
 
     std::string error_log_dir;
-    std::string error_log_path = extractConfigValue(config_file, "logger.errorlog");
+    std::string error_log_path = getEffectiveConfigValue(extra_args, config_file, "logger.errorlog");
     if (!error_log_path.empty())
         error_log_dir = fs::path(error_log_path).parent_path().string();
 
     auto disk_paths = extractConfigValues(config_file, "storage_configuration.disks.*.path");
     auto disk_metadata_paths = extractConfigValues(config_file, "storage_configuration.disks.*.metadata_path");
+
+    /// A `filesystem_caches` entry is not a `storage_configuration` disk, so the paths above do not cover it,
+    /// and `FileCache::initialize` cannot create one under a directory the server does not own.
+    /// Absolute entries only: those are used verbatim, while a relative one is resolved by the server against
+    /// a prefix (`filesystem_caches_path`, or `<path>/caches` when unset), and preparing it as written would
+    /// create a directory that nothing opens.
+    auto filesystem_caches_paths = extractConfigValues(config_file, "filesystem_caches.*.path");
+    std::erase_if(filesystem_caches_paths, [](const std::string & cache_path) { return !cache_path.starts_with('/'); });
 
     /// Create and chown data directory first, then cd into it.
     if (!data_dir.empty() && !createDirectoryAndChown(data_dir, run_uid, run_gid, do_chown))
@@ -1031,6 +1508,9 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     for (const auto & dir : disk_metadata_paths)
         if (!createDirectoryAndChown(dir, run_uid, run_gid, do_chown))
             return 1;
+    for (const auto & dir : filesystem_caches_paths)
+        if (!createDirectoryAndChown(dir, run_uid, run_gid, do_chown))
+            return 1;
 
     /// Resolve password (from env or file).
     std::string clickhouse_user = getEnv("CLICKHOUSE_USER", "default");
@@ -1038,18 +1518,43 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     std::string password_file = getEnv("CLICKHOUSE_PASSWORD_FILE");
     if (!password_file.empty())
     {
+        /// Fail closed: continuing with an empty password would create the requested user
+        /// without a password and open to the network.
         std::ifstream pf(password_file);
-        if (pf.is_open())
-            std::getline(pf, clickhouse_password);
-        else
-            std::cerr << "docker-init: warning: cannot read CLICKHOUSE_PASSWORD_FILE '"
+        if (!pf.is_open())
+        {
+            std::cerr << "docker-init: error: cannot open CLICKHOUSE_PASSWORD_FILE '"
                       << password_file << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+            return 1;
+        }
+        /// The whole file without the trailing newlines, like `$(cat file)` in entrypoint.sh: reading only the first line
+        /// would make an empty password of a secret that starts with an empty line.
+        clickhouse_password.assign(std::istreambuf_iterator<char>(pf), std::istreambuf_iterator<char>());
+        while (!clickhouse_password.empty() && clickhouse_password.back() == '\n')
+            clickhouse_password.pop_back();
+        if (pf.bad())
+        {
+            std::cerr << "docker-init: error: cannot read CLICKHOUSE_PASSWORD_FILE '"
+                      << password_file << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+            return 1;
+        }
+    }
+
+    /// `clickhouse-client` rejects a password with ASCII control characters (e.g. a line break inside a password file),
+    /// so neither the initialization nor the users could log in with it. Fail instead of creating such a user.
+    if (std::any_of(clickhouse_password.begin(), clickhouse_password.end(),
+            [](unsigned char c) { return c < 0x20 || c == 0x7F; }))
+    {
+        std::cerr << "docker-init: error: the password from "
+                  << (password_file.empty() ? "CLICKHOUSE_PASSWORD" : "CLICKHOUSE_PASSWORD_FILE '" + password_file + "'")
+                  << " contains ASCII control characters, such as a line break other than at the end of the file\n";
+        return 1;
     }
 
     std::string access_management = getEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "0");
     bool skip_user_setup = (getEnv("CLICKHOUSE_SKIP_USER_SETUP") == "1");
 
-    if (!manageClickHouseUser(config_file, clickhouse_user, clickhouse_password, access_management, skip_user_setup))
+    if (!manageClickHouseUser(config_file, extra_args, clickhouse_user, clickhouse_password, access_management, skip_user_setup))
         return 1;
 
     /// Install signal handlers so `docker stop` during init triggers graceful shutdown.
@@ -1097,4 +1602,21 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     execvp(exec_argv[0], exec_argv.data());
     std::cerr << "docker-init: failed to exec clickhouse server: " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
     return 1;
+}
+
+}
+
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
+int mainEntryClickHouseDockerInit(int argc, char ** argv)
+{
+    /// Fail closed on any error reading the configuration: a server must not start with the requested setup undone.
+    try
+    {
+        return mainImpl(argc, argv);
+    }
+    catch (...)
+    {
+        std::cerr << "docker-init: error: " << DB::getCurrentExceptionMessage(false) << "\n";
+        return 1;
+    }
 }

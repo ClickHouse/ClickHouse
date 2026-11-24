@@ -1,0 +1,8 @@
+1
+bnl and hash	2	['BLOCK_NESTED_LOOP','HASH']	['LEFT','LEFT']	['ALL','ALL']
+bnl full all	1	['BLOCK_NESTED_LOOP']	['FULL']	['ALL']
+bnl left all	1	['BLOCK_NESTED_LOOP']	['LEFT']	['ALL']
+bnl left any	1	['BLOCK_NESTED_LOOP']	['LEFT']	['ANY']
+bnl left semi	1	['BLOCK_NESTED_LOOP']	['LEFT']	['SEMI']
+bnl right all	1	['BLOCK_NESTED_LOOP']	['RIGHT']	['ALL']
+bnl right anti	1	['BLOCK_NESTED_LOOP']	['RIGHT']	['ANTI']

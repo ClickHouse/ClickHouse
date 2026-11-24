@@ -59,12 +59,6 @@ public:
         throwNotImplemented();
     }
 
-    [[nodiscard]] virtual bool supportsChmod() const = 0;
-    virtual void chmod(const String & /* path */, mode_t /* mode */)
-    {
-        throwNotImplemented();
-    }
-
     virtual void setReadOnly(const std::string & /* path */)
     {
         throwNotImplemented();
@@ -232,8 +226,6 @@ public:
     {
         throwNotImplemented();
     }
-
-    [[nodiscard]] virtual bool supportsChmod() const = 0;
 
     [[nodiscard]] virtual bool supportsStat() const = 0;
     [[nodiscard]] virtual struct stat stat(const String & /* path */) const
