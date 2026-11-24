@@ -2312,8 +2312,8 @@ class PartMergerWriter
 {
 public:
 
-    explicit PartMergerWriter(MutationContextPtr ctx_)
-        : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
+    PartMergerWriter(MutationContextPtr ctx_, MergeTreeDataPartChecksums & subtask_checksums_)
+        : ctx(ctx_), subtask_checksums(subtask_checksums_), projections(ctx->metadata_snapshot->projections)
     {
     }
 
@@ -2373,6 +2373,7 @@ private:
 
     State state{State::NEED_PREPARE};
     MutationContextPtr ctx;
+    MergeTreeDataPartChecksums & subtask_checksums;
 
     size_t projection_block_num = 0;
     std::vector<std::unique_ptr<MergeProjectionsIndexesTask>> merge_subtasks;
@@ -2554,7 +2555,7 @@ void PartMergerWriter::createBuildTextIndexesTask()
         ctx->out->getWriterSettings(),
         ctx->compression_codec,
         ctx->mrk_extension,
-        *ctx->data->getSettings());
+        ctx->data->getSettings());
 }
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
@@ -2743,7 +2744,7 @@ bool PartMergerWriter::iterateThroughAllMergeSubtasks()
     if (task->executeStep())
         return true;
 
-    task->addToChecksums(ctx->new_data_part->checksums);
+    task->addToChecksums(subtask_checksums);
     merge_subtasks.pop_back();
 
     if (!projection_name.empty())
@@ -2979,7 +2980,10 @@ private:
 
             if (need_recalculate)
             {
-                skip_indices.push_back(std::move(index_ptr));
+                if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
+                    ctx->text_indices_to_recalc.insert(std::move(index_ptr));
+                else
+                    skip_indices.push_back(std::move(index_ptr));
             }
             else
             {
@@ -3086,7 +3090,10 @@ private:
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            MergeTreeIndices indices_to_calculate = skip_indices;
+            indices_to_calculate.insert(indices_to_calculate.end(), ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
+
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, indices_to_calculate)->getActionsDAG().clone();
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
             if (!extracting_subcolumns_dag.getNodes().empty())
                 indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
@@ -3192,7 +3199,8 @@ private:
         ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
-        part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
+        /// `finalizePart` replaces the checksums of the part with `all_gathered_data`.
+        part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx, ctx->all_gathered_data.checksums);
     }
 
     void finalize()
@@ -3597,7 +3605,7 @@ private:
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
-            part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
+            part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx, ctx->new_data_part->checksums);
         }
     }
 

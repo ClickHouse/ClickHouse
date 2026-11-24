@@ -102,6 +102,7 @@ void decodeBlockedPositions(
             "Corrupt text index positions: {} posting documents but {} position lists", rank, doc_offsets.size() - 1);
 }
 
+/// Long stream names are replaced with hashes, as the part writer does.
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
 makeOutputStreams(
     const MergeTreeIndexSubstreams & index_substreams,
@@ -109,7 +110,8 @@ makeOutputStreams(
     const MutableDataPartStoragePtr & data_part_storage,
     const CompressionCodecPtr & default_codec,
     const String & marks_file_extension,
-    const MergeTreeWriterSettings & settings)
+    const MergeTreeWriterSettings & settings,
+    const MergeTreeSettings & storage_settings)
 {
     auto marks_compression_codec = makeMarksCompressionCodec(settings.marks_compression_codec);
     MergeTreeIndexOutputStreams streams;
@@ -117,7 +119,7 @@ makeOutputStreams(
 
     for (const auto & index_substream : index_substreams)
     {
-        auto stream_name = index_name + index_substream.suffix;
+        auto stream_name = replaceFileNameToHashIfNeeded(index_name + index_substream.suffix, storage_settings, data_part_storage.get());
 
         auto stream = std::make_unique<MergeTreeIndexWriterStream>(
             stream_name,
@@ -162,7 +164,7 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     MergeTreeWriterSettings writer_settings_,
     CompressionCodecPtr default_codec_,
     String marks_file_extension_,
-    const MergeTreeSettings & storage_settings)
+    MergeTreeSettingsPtr storage_settings_)
     : ISimpleTransform(header, header, false)
     , index_file_prefix(std::move(index_file_prefix_))
     , indexes(std::move(indexes_))
@@ -170,10 +172,11 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     , writer_settings(std::move(writer_settings_))
     , default_codec(std::move(default_codec_))
     , marks_file_extension(std::move(marks_file_extension_))
+    , storage_settings(std::move(storage_settings_))
     , segment_numbers(indexes.size(), 0)
     , estimated_allocated_bytes(indexes.size(), 0)
-    , max_processed_tokens(storage_settings[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
-    , max_allocated_bytes(storage_settings[MergeTreeSetting::text_index_max_memory_usage_before_flush])
+    , max_processed_tokens((*storage_settings)[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
+    , max_allocated_bytes((*storage_settings)[MergeTreeSetting::text_index_max_memory_usage_before_flush])
 {
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -264,7 +267,8 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         temporary_storage,
         default_codec,
         marks_file_extension,
-        writer_settings);
+        writer_settings,
+        *storage_settings);
 
     writeMarks(streams, writer_settings.can_use_adaptive_granularity);
     granule->serializeBinaryWithMultipleStreams(streams);
@@ -315,13 +319,16 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
+    const auto storage_settings = new_data_part->storage.getSettings();
+
     std::tie(output_streams, output_streams_holders) = makeOutputStreams(
         index_ptr->getSubstreams(),
         index_ptr->getFileName(),
         new_data_part->getDataPartStoragePtr(),
         new_data_part->default_codec,
         new_data_part->getMarksFileExtension(),
-        writer_settings);
+        writer_settings,
+        *storage_settings);
 
     auto substreams = index_ptr->getSubstreams();
 
