@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <queue>
 #include <vector>
@@ -1485,7 +1486,11 @@ String transformQueryForExternalDatabaseImpl(
         }
     }
 
-    if (limit)
+    /// A `LIMIT` in ClickHouse is any `UInt64` (for example MySQL's "all rows" idiom,
+    /// `LIMIT 18446744073709551615`), while PostgreSQL and SQLite accept only a signed 64-bit value and
+    /// fail on a larger one (`bigint out of range`, `datatype mismatch`). A limit that large does not
+    /// cut off the rows of any table, so it is not sent to the external database at all.
+    if (limit && *limit <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
         select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
 
     /// This is done after the `LIMIT` is decided: the filter selects the rows that the original one selects
