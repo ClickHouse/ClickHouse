@@ -710,9 +710,11 @@ FROM "system"."query_log" {})", settings);
     countIf(ProfileEvents['SelectedMarks'] > 0) AS reading_marks, countIf(ProfileEvents['ParallelReplicasQueryCount'] > 0) AS pr_plan_built
 {1} AND {0} AND type = 'QueryFinish' GROUP BY ALL ORDER BY queries DESC LIMIT 20 {2})", bundled, from_log, settings);
     /// Bundled queries that read MergeTree data and still built no parallel replicas plan
-    static const String missed = fmt::format(R"(SELECT ProfileEvents['SelectedMarks'] AS marks, tables, substring(query, 1, 4000)
+    static const String missed = fmt::format(R"(SELECT ProfileEvents['SelectedMarks'] AS marks, tables,
+    mapFilter((k, v) -> match(k, 'parallel|replica|analyzer|hedged|query_plan_enable|serialize_query_plan|distributed|max_threads|final'),
+        Settings) AS pr_settings, substring(query, 1, 1000)
 {1} AND {0} AND type = 'QueryFinish' AND marks > 0 AND ProfileEvents['ParallelReplicasQueryCount'] = 0
-ORDER BY event_time_microseconds LIMIT 10 {2})", bundled, from_log, settings);
+ORDER BY event_time_microseconds LIMIT 1 BY normalized_query_hash LIMIT 10 {2})", bundled, from_log, settings);
 
     if (!processServerQuery(false, "SYSTEM FLUSH LOGS;"))
     {

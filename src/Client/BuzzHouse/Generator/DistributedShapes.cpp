@@ -160,6 +160,7 @@ void StatementGenerator::addParallelReplicasSettings(RandomGenerator & rg, Setti
     add("log_queries_min_query_duration_ms", "0");
     add("log_queries_min_type", "'QUERY_START'");
     add("log_queries_probability", "1");
+    add("log_query_settings", "1");
     add("parallel_replicas_allow_in_with_subquery", "1");
     /// Set either way: an inherited mode 2 only collects statistics, which keeps a query off the replicas
     add("automatic_parallel_replicas_mode", automatic ? "1" : "0");
