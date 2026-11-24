@@ -68,6 +68,11 @@ DROP TABLE t_json_source_alter_data;
 SELECT 'CAST between the types with and without the source';
 SELECT x, x.__source FROM (SELECT materialize('{"a" :  1}')::JSON::JSON(with_source=1) AS x);
 SELECT toTypeName(x), x FROM (SELECT materialize('{"a" :  1}')::JSON(with_source=1)::JSON AS x);
+SELECT 'CAST between the types with the source keeps the stored text';
+SELECT x, x.__source FROM (SELECT materialize('{"a" :  1}')::JSON(with_source=1)::JSON(with_source=1, a UInt32) AS x);
+SELECT x, x.__source FROM (SELECT materialize('{"a" : 1, "b" : 2}')::JSON(with_source=1)::JSON(with_source=1, SKIP b) AS x);
+SELECT x, x.__source FROM (SELECT materialize('{"a" :  1}')::JSON(with_source=1)::JSON(with_source=1, a UInt32) AS x) SETTINGS json_use_optimized_type_conversion = 0;
+SELECT x, x.__source FROM (SELECT accurateCastOrNull(materialize('{"a" :  1}')::JSON(with_source=1), 'JSON(with_source=1, a UInt32)') AS x);
 
 SELECT 'a conversion keeps the parsed object, not the stored source, under either output setting';
 SELECT JSONAllPaths(CAST(CAST(materialize('{"secret":1}') AS JSON(with_source=1, SKIP secret)) AS JSON)) SETTINGS output_format_json_type_use_source = 0;

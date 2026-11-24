@@ -3274,6 +3274,40 @@ ColumnPtr castColumnRejectingInvalid(
     return castColumnWithSettings({column, from, ""}, to, convert_settings, CastType::nonAccurate);
 }
 
+/// The JSON text of each row of a converted object, written as the format+parse conversion writes it.
+/// The paths reserved for the source subcolumn are rejected, as the parser does.
+ColumnPtr createSourceFromObject(const ColumnObject & column, const DataTypeObject & type, const FormatSettings & format_settings)
+{
+    auto check_path = [](std::string_view path)
+    {
+        if (DataTypeObject::isSourceSubcolumnPath(path))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+                path,
+                DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+    };
+    for (const auto & [path, _] : column.getDynamicPaths())
+        check_path(path);
+    const auto [shared_data_paths, _] = column.getSharedDataPathsAndValues();
+    for (size_t i = 0; i != shared_data_paths->size(); ++i)
+        check_path(shared_data_paths->getDataAt(i));
+
+    auto source = ColumnString::create();
+    ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*source, column.size());
+    auto & write_buffer = write_helper.getWriteBuffer();
+    FormatSettings settings = getJSONRoundTripFormatSettings(format_settings);
+    settings.json.json_type_use_source = false;
+    auto serialization = type.getDefaultSerialization();
+    for (size_t i = 0; i != column.size(); ++i)
+    {
+        serialization->serializeTextJSON(column, i, write_buffer, settings);
+        write_helper.finishRow();
+    }
+    write_helper.finalize();
+    return source;
+}
+
 /// Main optimized Object-to-Object conversion.
 ColumnPtr convertObjectColumns(
     const ColumnPtr & src_col_ptr,
@@ -3780,7 +3814,7 @@ ColumnPtr convertObjectColumns(
     dst_max_dynamic_paths_upper_bound = std::max(dst_max_dynamic_paths_upper_bound, dst_dynamic_columns.size());
     effective_max_dynamic_paths = std::min(effective_max_dynamic_paths, dst_max_dynamic_paths_upper_bound);
 
-    return ColumnObject::create(
+    auto result = ColumnObject::create(
         dst_typed_columns,
         dst_dynamic_columns,
         dst_shared_data,
@@ -3788,6 +3822,42 @@ ColumnPtr convertObjectColumns(
         dst_max_dynamic_paths_upper_bound,
         dst_global_max_dynamic_paths,
         dst_max_dynamic_types);
+    if (!dst_type.hasSource())
+        return result;
+
+    /// The source is the JSON text as it was given, so it is kept; a type that gains the source gets the text of the
+    /// converted object.
+    ColumnPtr source = src.hasSource()
+        ? src.getSourcePtr()
+        : createSourceFromObject(assert_cast<const ColumnObject &>(*result), dst_type, format_settings);
+    return ColumnObject::create(
+        dst_typed_columns,
+        dst_dynamic_columns,
+        dst_shared_data,
+        effective_max_dynamic_paths,
+        dst_max_dynamic_paths_upper_bound,
+        dst_global_max_dynamic_paths,
+        dst_max_dynamic_types,
+        /*statistics_=*/ {},
+        dst_type.getPtr(),
+        source);
+}
+
+/// A conversion between types with the source keeps the stored JSON text of each row, as `convertObjectColumns` does.
+ColumnPtr keepStoredSource(ColumnPtr result, const IColumn & src_column)
+{
+    const auto * src_object = typeid_cast<const ColumnObject *>(&src_column);
+    if (!src_object || !src_object->hasSource())
+        return result;
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(result.get()))
+        return ColumnNullable::create(keepStoredSource(nullable->getNestedColumnPtr(), src_column), nullable->getNullMapColumnPtr());
+
+    auto mutable_result = IColumn::mutate(std::move(result));
+    auto & result_object = assert_cast<ColumnObject &>(*mutable_result);
+    if (result_object.hasSource())
+        result_object.getSourcePtr() = src_object->getSourcePtr();
+    return mutable_result;
 }
 
 /// Format+parse fallback for Object->Object conversion (existing approach).
@@ -3816,9 +3886,13 @@ ColumnPtr convertObjectViaFormatParse(
 
     ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
     if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, cast_settings);
+        return keepStoredSource(
+            ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, cast_settings),
+            *arguments[0].column);
 
-    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, cast_settings);
+    return keepStoredSource(
+        ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, cast_settings),
+        *arguments[0].column);
 }
 
 } /// anonymous namespace
@@ -3850,7 +3924,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         auto plan = buildObjectConversionPlan(*from_object, *to_object);
 
         /// Identity: only metadata changes (e.g. removing skip rules) — return source column directly.
-        if (plan.isIdentity())
+        /// A change of `with_source` adds or drops the source column, so it is not an identity.
+        if (plan.isIdentity() && from_object->hasSource() == to_object->hasSource())
         {
             return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t)
             {

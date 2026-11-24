@@ -17,7 +17,7 @@ ALTER TABLE t_tuple_json_default ADD COLUMN added Tuple(j JSON(a Enum8('x' = 1, 
 SELECT 'add column', id, added, added.j.a FROM t_tuple_json_default;
 SELECT 'default', defaultValueOfArgumentType(t), defaultValueOfTypeName('Tuple(j JSON(a Enum8(\'x\' = 1, \'y\' = 2)))') FROM t_tuple_json_default;
 
--- The all-zero value is skipped and reads back as 'zero'; an omitted column holds 'neg', the Enum default.
+-- The column zero 'zero' is not the Enum default, so it is stored and reads back as 'zero'; an omitted column holds 'neg', the Enum default.
 CREATE TABLE t_tuple_json_default_skip_empty (id UInt32, t Tuple(j JSON(z Enum8('neg' = -1, 'zero' = 0, 'pos' = 1))))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';

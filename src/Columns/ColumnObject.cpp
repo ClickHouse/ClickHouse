@@ -266,7 +266,7 @@ ColumnObject::Ptr ColumnObject::create(
         max_dynamic_types_,
         statistics_,
         object_type_,
-        source_ ? source_->assumeMutable() : nullptr);
+        source_ ? IColumn::mutate(source_) : nullptr);
 }
 
 ColumnObject::MutablePtr ColumnObject::create(
