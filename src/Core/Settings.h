@@ -111,6 +111,7 @@ class WriteBuffer;
     M(CLASS_NAME, SetOperationMode) \
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
     M(CLASS_NAME, SnappyMode) \
+    M(CLASS_NAME, S3RequestPayer) \
     M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
@@ -207,7 +208,7 @@ struct Settings
     [[nodiscard]] FlatStringMap changedToFlatMap(bool show_secrets) const;
 
     void write(WriteBuffer & out) const;
-    void read(ReadBuffer & in);
+    void read(ReadBuffer & in, bool skip_invalid_values = false);
     /// Equivalent to Settings().write(out) but faster.
     static void writeEmpty(WriteBuffer & out);
 

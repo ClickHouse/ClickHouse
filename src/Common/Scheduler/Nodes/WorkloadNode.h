@@ -862,7 +862,7 @@ private:
         // Deactivate if necessary
         child_active = child_now_active;
         if (!child_active)
-            this->busy_periods++;
+            incrementCounter(this->busy_periods);
 
         if (request)
         {
