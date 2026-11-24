@@ -1205,9 +1205,9 @@ static bool writeMetadataFiles(
         /// Per source manifest: its rewritten data files with the partition index of each, since one manifest may hold several partitions.
         struct ManifestMember
         {
-            const DataFilePlan * data_file;
-            Int64 added_snapshot_id;
-            size_t partition_index;
+            const DataFilePlan * data_file = nullptr;
+            Int64 added_snapshot_id = 0;
+            size_t partition_index = 0;
         };
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::vector<ManifestMember>> grouped_by_manifest_files_result;
 

@@ -58,7 +58,7 @@ void appendInsertedFiles(
 
 struct ManifestToMerge
 {
-    const ManifestFileCacheKey * manifest;
+    const ManifestFileCacheKey * manifest = nullptr;
     ManifestFileIterator::ManifestFileEntriesHandle files;
 };
 
