@@ -2132,9 +2132,12 @@ void Reader::initializePrefetches()
                 && primitive_columns[column_idx].levels.back().rep == 0 && !hasOneDataPage(column.meta->meta_data))
                 column.locate_pages_from_headers = true;
 
-            /// Column index.
-            column.use_column_index = !primitive_columns[column_idx].column_index_conditions.empty()
-                && (column.offset_index_prefetch || !column.offset_index.page_locations.empty())
+            /// Column index. One used only by JOIN runtime filters is read only together with the offset index.
+            const auto & column_index_conditions = primitive_columns[column_idx].column_index_conditions;
+            const bool only_join_runtime_filter_conditions = std::ranges::all_of(
+                column_index_conditions, &PrimitiveColumnInfo::ColumnIndexCondition::from_join_runtime_filter);
+            column.use_column_index = !column_index_conditions.empty()
+                && (column.offset_index_prefetch || (!column.offset_index.page_locations.empty() && !only_join_runtime_filter_conditions))
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
                 column.column_index_prefetch = prefetcher.registerRange(
