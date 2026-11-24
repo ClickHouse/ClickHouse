@@ -228,7 +228,11 @@ int runDecompressedGzipInto(const std::string & path, const std::vector<std::str
 
     /// A command that exits early closes the pipe: the write fails with `EPIPE` instead of killing this process.
     struct sigaction ignore_sigpipe{};
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     ignore_sigpipe.sa_handler = SIG_IGN;
+#pragma clang diagnostic pop
+    sigemptyset(&ignore_sigpipe.sa_mask);
     struct sigaction old_sigpipe{};
     (void)sigaction(SIGPIPE, &ignore_sigpipe, &old_sigpipe);
 
