@@ -11,6 +11,10 @@ ALTER TABLE t_projection_constant_order_by ADD PROJECTION p (SELECT a ORDER BY t
 ALTER TABLE t_projection_constant_order_by ADD PROJECTION p (SELECT a, b WHERE b = 1 ORDER BY (1, 2)); -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE t_projection_constant_order_by ADD PROJECTION p INDEX 78 TYPE basic(); -- { serverError ILLEGAL_COLUMN }
 
+-- the projection reads no column of the table
+ALTER TABLE t_projection_constant_order_by ADD PROJECTION p (SELECT 1 AS x ORDER BY x); -- { serverError ILLEGAL_COLUMN }
+ALTER TABLE t_projection_constant_order_by ADD PROJECTION p (SELECT 1); -- { serverError BAD_ARGUMENTS }
+
 -- the expression of the index has no columns
 ALTER TABLE t_projection_constant_order_by ADD PROJECTION p_no_columns INDEX * EXCEPT '.*' TYPE basic();
 
