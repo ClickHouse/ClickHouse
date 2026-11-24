@@ -553,7 +553,7 @@ std::string getUsersConfigFile(const std::string & config_file, const std::vecto
     auto get_selector = [&](const std::string & key)
     {
         std::string raw = config.getRawString(key, "");
-        if (loaded.has_zk_includes && raw.find("${") != std::string::npos)
+        if (loaded.has_zk_includes && raw.contains("${"))
             throw Poco::Exception("the users configuration file is selected by `" + key + "` = `" + raw
                 + "`, which refers to other properties, and the configuration has elements included from ZooKeeper "
                 "(`from_zk`), so it cannot be found without ZooKeeper");
