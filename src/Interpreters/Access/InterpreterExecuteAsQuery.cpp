@@ -44,6 +44,7 @@ namespace
 
         new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
         new_context->setProgressCallback(context->getProgressCallback());
+        new_context->setQueryExecutionStartedCallback(context->getQueryExecutionStartedCallback());
         new_context->setProcessListElement(context->getProcessListElement());
 
         if (context->getCurrentTransaction())

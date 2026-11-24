@@ -40,7 +40,7 @@ public:
     void addDirectory(DirectoryPathForSQLObject && directory_path_for_sql_object);
 
     /// Returns all added paths to directories if `host_id` is a host chosen to store user-defined SQL objects.
-    Strings getDirectories(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const;
+    [[nodiscard]] Strings getDirectories(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const;
 
 private:
     using ZkPathAndObjectType = std::pair<String, UserDefinedSQLObjectType>;

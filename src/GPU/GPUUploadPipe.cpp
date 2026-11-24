@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -26,7 +27,7 @@ DeviceFixedColumnBuffer::DeviceFixedColumnBuffer(GPUElementType element_type_)
 {
 }
 
-DeviceFixedColumnBuffer::DeviceFixedColumnBuffer(GPUElementType element_type_, rmm::cuda_stream_view stream_)
+DeviceFixedColumnBuffer::DeviceFixedColumnBuffer(GPUElementType element_type_, cuda::stream_ref stream_)
     : element_type(element_type_)
     , stream(stream_)
     , values(stream)
@@ -49,12 +50,12 @@ void DeviceFixedColumnBuffer::dropFront(size_t num_rows)
 
     spare.clear();
     checkCuda(
-        cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, stream),
+        cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, stream.get()),
         "Cannot move bytes to the front of a device column");
     std::swap(values, spare);
 }
 
-DeviceVariableColumnBuffer::DeviceVariableColumnBuffer(rmm::cuda_stream_view stream_)
+DeviceVariableColumnBuffer::DeviceVariableColumnBuffer(cuda::stream_ref stream_)
     : stream(stream_)
     , offsets(stream)
     , chars(stream)
@@ -66,7 +67,7 @@ DeviceVariableColumnBuffer::DeviceVariableColumnBuffer(rmm::cuda_stream_view str
 
 void DeviceVariableColumnBuffer::startOffsets()
 {
-    checkCuda(cudaMemsetAsync(offsets.grow(sizeof(uint64_t)), 0, sizeof(uint64_t), stream), "Cannot start the offsets of a column");
+    checkCuda(cudaMemsetAsync(offsets.grow(sizeof(uint64_t)), 0, sizeof(uint64_t), stream.get()), "Cannot start the offsets of a column");
 }
 
 void DeviceVariableColumnBuffer::append(std::string_view host_row_ends, std::string_view host_chars)
@@ -85,7 +86,7 @@ void DeviceVariableColumnBuffer::appendSizes(const char * device_sizes, size_t b
 {
     /// After the rest of the size the last call ended with, which also puts the sizes where they are aligned.
     checkCuda(
-        cudaMemcpyAsync(pending_sizes.grow(bytes), device_sizes, bytes, cudaMemcpyDeviceToDevice, stream),
+        cudaMemcpyAsync(pending_sizes.grow(bytes), device_sizes, bytes, cudaMemcpyDeviceToDevice, stream.get()),
         "Cannot gather the sizes of a column of values of varying width");
 
     const size_t count = pending_sizes.size() / sizeof(uint64_t);
@@ -105,7 +106,7 @@ void DeviceVariableColumnBuffer::appendSizes(const char * device_sizes, size_t b
 
     spare.clear();
     checkCuda(
-        cudaMemcpyAsync(spare.grow(tail), pending_sizes.data() + count * sizeof(uint64_t), tail, cudaMemcpyDeviceToDevice, stream),
+        cudaMemcpyAsync(spare.grow(tail), pending_sizes.data() + count * sizeof(uint64_t), tail, cudaMemcpyDeviceToDevice, stream.get()),
         "Cannot keep a partial size of a column of values of varying width");
     std::swap(pending_sizes, spare);
 }
@@ -127,7 +128,7 @@ void DeviceVariableColumnBuffer::dropFront(size_t num_rows)
     uint64_t dropped_bytes = 0;
     checkCuda(
         cudaMemcpyAsync(
-            &dropped_bytes, reinterpret_cast<const uint64_t *>(offsets.data()) + num_rows, sizeof(uint64_t), cudaMemcpyDeviceToHost, stream),
+            &dropped_bytes, reinterpret_cast<const uint64_t *>(offsets.data()) + num_rows, sizeof(uint64_t), cudaMemcpyDeviceToHost, stream.get()),
         "Cannot copy an offset back from the device");
     synchronizeStream(stream);
 
@@ -141,7 +142,7 @@ void DeviceVariableColumnBuffer::dropFront(size_t num_rows)
     spare.clear();
     if (kept_chars != 0)
         checkCuda(
-            cudaMemcpyAsync(spare.grow(kept_chars), chars.data() + dropped_bytes, kept_chars, cudaMemcpyDeviceToDevice, stream),
+            cudaMemcpyAsync(spare.grow(kept_chars), chars.data() + dropped_bytes, kept_chars, cudaMemcpyDeviceToDevice, stream.get()),
             "Cannot move bytes to the front of a device column");
     std::swap(chars, spare);
 
@@ -177,7 +178,7 @@ DeviceColumnView DeviceVariableColumnBuffer::view() const
 namespace
 {
 
-std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer> deviceColumnFor(GPUElementType type, rmm::cuda_stream_view stream)
+std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer> deviceColumnFor(GPUElementType type, cuda::stream_ref stream)
 {
     switch (columnKindOf(type))
     {
@@ -201,8 +202,8 @@ ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_)
 {
 }
 
-ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, rmm::cuda_stream_view stream_)
-    : column_type(columnTypeOrThrow(type))
+ColumnUploadPipe::ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, cuda::stream_ref stream_)
+    : column_type(uploadTypeOrThrow(type))
     , stage_bytes(stage_bytes_)
     , stream(stream_)
     , device(deviceColumnFor(column_type, stream))
@@ -325,7 +326,7 @@ void ColumnUploadPipe::sendStagedToDevice()
                 break;
         }
 
-        checkCuda(cudaEventRecord(copied.get(), stream), "Cannot mark a point in an upload stream");
+        checkCuda(cudaEventRecord(copied.get(), stream.get()), "Cannot mark a point in an upload stream");
     });
     in_flight = true;
 }
@@ -335,6 +336,35 @@ const IDeviceColumn & ColumnUploadPipe::flush()
     sendStagedToDevice();
     waitForUploads();
     return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
+}
+
+const IDeviceColumn & ColumnUploadPipe::sendWithoutWaiting()
+{
+    sendStagedToDevice();
+    return deviceColumn();
+}
+
+const IDeviceColumn & ColumnUploadPipe::deviceColumn() const
+{
+    return std::visit([](const auto & column) -> const IDeviceColumn & { return column; }, device);
+}
+
+DeviceColumnBuffer ColumnUploadPipe::takeDeviceColumn()
+{
+    DeviceColumnBuffer taken(std::move(device));
+    switch (columnKindOf(column_type))
+    {
+        case GPUColumnKind::Fixed:
+            device.emplace<DeviceFixedColumnBuffer>(column_type, stream);
+            break;
+        case GPUColumnKind::Variable:
+            device.emplace<DeviceVariableColumnBuffer>(stream);
+            break;
+    }
+    staged_rows = 0;
+    staged_bytes = 0;
+    staged_chars = 0;
+    return taken;
 }
 
 void ColumnUploadPipe::waitForUploads()

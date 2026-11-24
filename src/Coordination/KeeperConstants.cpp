@@ -281,6 +281,7 @@
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
     M(KeeperReadSnapshotDeferred) \
+    M(KeeperReadSnapshotStreamingSeeks) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -303,6 +304,7 @@
     M(KeeperWatchTriggeredNodeDeleted) \
     M(KeeperWatchTriggeredNodeDataChanged) \
     M(KeeperWatchTriggeredNodeChildrenChanged) \
+    M(KeeperRejectedCommittedLogRollback) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperChangelogStartupReadMicroseconds) \
@@ -407,7 +409,7 @@ namespace ProfileEvents
 #undef M
 
 #define M(NAME) NAME,
-extern const std::vector<Event> keeper_profile_events
+[[clang::no_destroy]] extern const std::vector<Event> keeper_profile_events
 {
     APPLY_FOR_KEEPER_PROFILE_EVENTS(M)
 };
@@ -493,7 +495,7 @@ namespace CurrentMetrics
 #undef M
 
 #define M(NAME) NAME,
-extern const std::vector<Metric> keeper_metrics
+[[clang::no_destroy]] extern const std::vector<Metric> keeper_metrics
 {
     APPLY_FOR_KEEPER_METRICS(M)
 };
