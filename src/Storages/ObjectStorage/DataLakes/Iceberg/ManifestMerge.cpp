@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include <Core/Settings.h>
+#include <Core/SettingsFieldsConversionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
@@ -27,7 +28,6 @@ namespace DB::Setting
 
 namespace DB::ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -98,15 +98,9 @@ std::optional<ManifestMergeSettings> getManifestMergeSettings(const Poco::JSON::
     if (!properties)
         return result;
 
-    if (properties->has("commit.manifest-merge.enabled"))
-    {
-        const auto enabled = properties->getValue<String>("commit.manifest-merge.enabled");
-        if (Poco::icompare(enabled, "false") == 0)
-            return std::nullopt;
-        if (Poco::icompare(enabled, "true") != 0)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Iceberg table property 'commit.manifest-merge.enabled' must be 'true' or 'false', got '{}'", enabled);
-    }
+    if (properties->has("commit.manifest-merge.enabled")
+        && !stringToBoolSettingValue(properties->getValue<String>("commit.manifest-merge.enabled")))
+        return std::nullopt;
     if (properties->has("commit.manifest.min-count-to-merge"))
         result.min_count_to_merge = parse<UInt64>(properties->getValue<String>("commit.manifest.min-count-to-merge"));
     if (properties->has("commit.manifest.target-size-bytes"))
