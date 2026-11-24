@@ -182,11 +182,13 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         {
             /// For a non-NULL constant `c`, `key <=> c` matches the same rows as `key = c`.
             /// The NULL-constant case (`<=>` meaning "is NULL") is rejected earlier, before the atom is built.
+            /// Unlike `key = c`, it is false rather than NULL for a NULL key.
             "isNotDistinctFrom",
             [] (RPNElement & out, const Field & value)
             {
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.range = Range(value);
+                out.null_safe = true;
                 return true;
             }
         },

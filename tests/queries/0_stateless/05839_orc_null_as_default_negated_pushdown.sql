@@ -39,3 +39,24 @@ SELECT 't.x', count() FROM file(currentDatabase() || '_05839.orc', ORC, 't Tuple
 SYSTEM FLUSH LOGS query_log;
 SELECT 't.x rows read', read_rows FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05839_tx';
+
+-- `x <=> c` is false, not NULL, for a NULL, so its negation is true and the row groups with NULLs must be read.
+-- The first row group holds only NULLs, the second only `5` (or `true`) and NULLs.
+INSERT INTO FUNCTION file(currentDatabase() || '_05839_null_safe.orc', ORC)
+SELECT
+    multiIf(number < 10000, NULL, number < 20000, if(number % 2 = 0, NULL, 5), number)::Nullable(Int64) AS x,
+    multiIf(number < 10000, NULL, number < 20000, if(number % 2 = 0, NULL, true), false)::Nullable(Bool) AS b,
+    tuple(x)::Tuple(y Nullable(Int64)) AS t
+FROM numbers(30000);
+
+SELECT 'x <=> 5', count(), countIf(x IS NULL) FROM file(currentDatabase() || '_05839_null_safe.orc', ORC, 'x Nullable(Int64)') WHERE x <=> 5;
+SELECT 'not x <=> 5', count(), countIf(x IS NULL) FROM file(currentDatabase() || '_05839_null_safe.orc', ORC, 'x Nullable(Int64)') WHERE NOT (x <=> 5);
+SELECT 'not x <=> 5', count(), countIf(x IS NULL) FROM file(currentDatabase() || '_05839_null_safe.orc', ORC, 'x Nullable(Int64)') WHERE NOT (x <=> 5)
+    SETTINGS input_format_orc_filter_push_down = 0;
+SELECT 'not x is not distinct from 5', count(), countIf(x IS NULL) FROM file(currentDatabase() || '_05839_null_safe.orc', ORC, 'x Nullable(Int64)')
+    WHERE NOT (x IS NOT DISTINCT FROM 5);
+SELECT 'not x <=> 5 inferred', count(), countIf(x IS NULL) FROM file(currentDatabase() || '_05839_null_safe.orc', ORC) WHERE NOT (x <=> 5);
+SELECT 'not b is true', count(), countIf(b IS NULL) FROM file(currentDatabase() || '_05839_null_safe.orc', ORC, 'b Nullable(Bool)') WHERE NOT (b IS TRUE);
+SELECT 'not b is true', count(), countIf(b IS NULL) FROM file(currentDatabase() || '_05839_null_safe.orc', ORC, 'b Nullable(Bool)') WHERE NOT (b IS TRUE)
+    SETTINGS input_format_orc_filter_push_down = 0;
+SELECT 'not t.y <=> 5', count(), countIf(t.y IS NULL) FROM file(currentDatabase() || '_05839_null_safe.orc', ORC, 't Tuple(y Nullable(Int64))') WHERE NOT (t.y <=> 5);

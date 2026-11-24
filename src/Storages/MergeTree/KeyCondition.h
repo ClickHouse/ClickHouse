@@ -383,6 +383,10 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// The predicate of the atom is false, not NULL, for a NULL key, as `key <=> c` is. A reader that
+        /// evaluates the atom with three-valued logic, such as ORC, must keep its negation true for a NULL key.
+        bool null_safe = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 

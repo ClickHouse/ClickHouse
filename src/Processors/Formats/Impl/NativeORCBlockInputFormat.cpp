@@ -824,6 +824,14 @@ static void buildORCSearchArgumentImpl(
 
             bool and_not_null = false;
 
+            const auto is_top_level_column = [&]
+            {
+                for (UInt64 i = 0; i < schema.getSubtypeCount(); ++i)
+                    if (schema.getSubtype(i) == orc_type)
+                        return true;
+                return false;
+            };
+
             /// A non-nullable element converts NULL to its default even when a nullable ancestor makes
             /// its extracted type nullable. Pruning must agree with the values produced by the reader.
             const auto & declared_type = column_types->declared_type;
@@ -845,16 +853,26 @@ static void buildORCSearchArgumentImpl(
                 /// so read the row groups with NULLs. Element statistics need not count the NULLs of ancestors.
                 if (negated)
                 {
-                    bool is_top_level = false;
-                    for (UInt64 i = 0; i < schema.getSubtypeCount() && !is_top_level; ++i)
-                        is_top_level = schema.getSubtype(i) == orc_type;
-                    if (!is_top_level)
+                    if (!is_top_level_column())
                     {
                         builder.literal(ORC::TruthValue::YES_NO_NULL);
                         break;
                     }
                     and_not_null = true;
                 }
+            }
+
+            /// A null-safe atom, such as `x <=> c`, is false for a NULL, so its negation is true. ORC keeps
+            /// the atom NULL for a NULL under a negation, so exclude the NULLs from the atom explicitly.
+            /// Element statistics need not count the NULLs of ancestors.
+            if (negated && curr.null_safe && !and_not_null)
+            {
+                if (!is_top_level_column())
+                {
+                    builder.literal(ORC::TruthValue::YES_NO_NULL);
+                    break;
+                }
+                and_not_null = true;
             }
 
             auto predicate_type = convertORCTypeToPredicateType(*orc_type);

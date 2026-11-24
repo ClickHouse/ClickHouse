@@ -8,3 +8,11 @@ s lc	3
 t.x	6
 t.x	6
 t.x rows read	40000
+x <=> 5	5000	0
+not x <=> 5	25000	15000
+not x <=> 5	25000	15000
+not x is not distinct from 5	25000	15000
+not x <=> 5 inferred	25000	15000
+not b is true	25000	15000
+not b is true	25000	15000
+not t.y <=> 5	25000	15000
