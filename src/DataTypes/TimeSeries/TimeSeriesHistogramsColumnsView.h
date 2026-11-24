@@ -91,7 +91,7 @@ public:
 
     void setCounterResetHintAt(size_t row, TimeSeriesHistogramCounterResetHint hint) const requires (!is_const)
     {
-        counter_reset_hint.getData()[row] = std::to_underlying(hint);
+        counter_reset_hint.getData()[row] = static_cast<Int8>(hint);
     }
 
     /// The total count of the observations of sample `row` of either flavour, as `Float64`.

@@ -60,13 +60,13 @@ namespace TimeSeriesDuplicateTimestampRule
     /// 1. a stale marker is less than any non-stale sample;
     /// 2. the total count (`count_int` or `count_float` by flavour), compared exactly across flavours;
     /// 3. `sum`;
-    /// 4. the other elements in the stored order by `IColumn::compareAt` (arrays and tuples lexicographically); of the counter
-    ///    reset hint only the gauge marker, so samples differing in their counter hints only are equal.
+    /// 4. the other elements in the stored order, compared as `IColumn::compareAt` compares them (arrays and tuples lexicographically);
+    ///    of the counter reset hint only the gauge marker, so samples differing in their counter hints only are equal.
     /// Floats compare as in `CompareHelper`: a NaN is less than any number, two NaNs are equal, as are `0.0` and `-0.0`; only for
     /// payloads equal up to those does the kept sample depend on the order of the samples (the limit of `compareFloatSamples` too).
     int compareHistogramSamples(const TimeSeriesHistogramPayloadColumnsView & view, size_t lhs, size_t rhs);
 
-    /// The same order for the sample `lhs` of `lhs_view` and the sample `rhs` of `rhs_view`, views over columns of the same types.
+    /// The same order for the sample `lhs` of `lhs_view` and the sample `rhs` of `rhs_view`.
     int compareHistogramSamples(
         const TimeSeriesHistogramPayloadColumnsView & lhs_view, size_t lhs, const TimeSeriesHistogramPayloadColumnsView & rhs_view, size_t rhs);
 }

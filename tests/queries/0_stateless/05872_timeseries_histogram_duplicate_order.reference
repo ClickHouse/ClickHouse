@@ -1,0 +1,12 @@
+custom_values	a	a
+is_float	a	a
+negative_float	a	a
+negative_int	a	a
+positive_float	a	a
+positive_int_count	a	a
+positive_int_index	a	a
+positive_int_size	a	a
+schema	a	a
+zero_count_float	a	a
+zero_count_int	a	a
+zero_threshold	a	a
