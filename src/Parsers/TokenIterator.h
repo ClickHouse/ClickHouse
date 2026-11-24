@@ -123,6 +123,6 @@ inline std::string_view textBetween(TokenIterator begin, TokenIterator end)
 
 /// Returns positions of unmatched parentheses.
 using UnmatchedParentheses = std::vector<Token>;
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin);
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, bool stop_at_semicolon);
 
 }

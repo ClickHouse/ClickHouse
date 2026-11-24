@@ -1,4 +1,4 @@
 --- SELECT ARRAY[f(1); 2]
-Syntax error: failed at position 18 (end of query): ;.
+Syntax error: failed at position 18 (end of query): [f(1);. Unmatched parentheses: '[' at position 13 is never closed. (SYNTAX_ERROR)
 --- SELECT ARRAY[f(1); SELECT 1, 2]
-Syntax error: failed at position 18 (end of query): ;.
+Syntax error: failed at position 18 (end of query): [f(1);. Unmatched parentheses: '[' at position 13 is never closed. (SYNTAX_ERROR)
