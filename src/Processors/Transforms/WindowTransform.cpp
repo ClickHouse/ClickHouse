@@ -1,8 +1,12 @@
 #include <Processors/Transforms/WindowTransform.h>
-#include <Common/VectorWithMemoryTracking.h>
+
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <iterator>
@@ -137,8 +141,8 @@ WindowTransform::WindowTransform(
         for (size_t function_index = 0; function_index < functions.size(); ++function_index)
         {
             const WindowFunctionDescription & function = functions[function_index];
-            if (auto general = asGeneralWindowFunction(function.aggregate_function))
-                general_functions.push_back(createGeneralSlot(std::move(general), function_index));
+            if (function.general_function)
+                general_functions.push_back(createGeneralSlot(function.general_function, function_index));
             else
                 aggregate_functions.push_back(createAggregateSlot(function.aggregate_function, params.window_description, function_index));
         }

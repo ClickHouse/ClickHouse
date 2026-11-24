@@ -11,6 +11,7 @@
 #include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
 #include <base/Decimal.h>
+#include <base/sanitizer_defs.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
@@ -1003,6 +1004,7 @@ inline Int64 wholeSecondsRoundedDown(Int64 t, Int64 scale_multiplier)
 /// Implementation shared by the subsecond ToStartOfInterval specializations (millisecond, microsecond, nanosecond).
 /// t is the time in the scale given by scale_multiplier, num_units is the interval length in the interval unit,
 /// unit_scale is the scale of the interval unit (1000 for millisecond and so on). The result is in the unit scale.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_scale, Int64 scale_multiplier, std::optional<Int64> origin)
 {
     if (scale_multiplier < unit_scale)
@@ -1556,7 +1558,7 @@ struct ToStartOfMillisecondImpl
         if (scale_multiplier <= 1000)
         {
             /// Use unsigned arithmetic to avoid signed overflow UB.
-            return static_cast<DateTime64>(static_cast<UInt64>(datetime64) * static_cast<UInt64>(1000 / scale_multiplier));
+            return static_cast<DateTime64>(common::mulIgnoreOverflow(static_cast<UInt64>(datetime64), static_cast<UInt64>(1000 / scale_multiplier)));
         }
 
         auto droppable_part_with_sign
@@ -1628,7 +1630,7 @@ struct ToStartOfMicrosecondImpl
         if (scale_multiplier <= 1000000)
         {
             /// Use unsigned arithmetic to avoid signed overflow UB.
-            return static_cast<DateTime64>(static_cast<UInt64>(datetime64) * static_cast<UInt64>(1000000 / scale_multiplier));
+            return static_cast<DateTime64>(common::mulIgnoreOverflow(static_cast<UInt64>(datetime64), static_cast<UInt64>(1000000 / scale_multiplier)));
         }
 
         auto droppable_part_with_sign
@@ -2323,7 +2325,9 @@ public:
 
     static UInt32 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(t));
+        /// Compute in `Int64` and saturate to `[0, UInt32 max]`, as for `Date32` below.
+        return static_cast<UInt32>(std::clamp<Int64>(
+            Int64(DAYS_BETWEEN_YEARS_0_AND_1970) + time_zone.toDayNum(t).toUnderType(), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt32 d, const DateLUTImpl &)
     {
