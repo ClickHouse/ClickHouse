@@ -6048,9 +6048,11 @@ std::set<String> typingSettingsCarriedBy(const IAST & ast)
 }
 
 /// Adds the typing settings of the stored queries that reading the tables `query` names analyzes: the query of a view and
-/// the ALIAS columns. A table that the dump does not know adds every typing setting.
+/// the ALIAS columns. A table that the dump does not know adds every typing setting. The known ALIAS columns of the tables
+/// `query` itself names, which analyzing `query` expands in place, unlike a view, also add to `expanded`.
 void addTypingSettingsOfReads(
-    const IAST & query, const String & database, const ProbeCatalog & catalog, size_t depth, std::set<String> & out)
+    const IAST & query, const String & database, const ProbeCatalog & catalog, size_t depth, std::set<String> & out,
+    std::set<String> * expanded = nullptr)
 {
     const std::set<String> all = {"allow_lossy_numeric_supertype", "enable_named_columns_in_function_tuple"};
     std::set<String> cte_names;
@@ -6105,6 +6107,8 @@ void addTypingSettingsOfReads(
                 {
                     const auto carried = typingSettingsCarriedBy(*column->getDefaultExpression());
                     out.insert(carried.begin(), carried.end());
+                    if (expanded)
+                        expanded->insert(carried.begin(), carried.end());
                 }
     });
 }
@@ -6168,8 +6172,16 @@ void markTypingSettings(
         std::set<String> read_carried;
         for (const auto * subquery : constraint_subqueries)
             addTypingSettingsOfReads(*subquery, table.database, catalog, 0, read_carried);
+        /// A materialized view's SELECT, and so its probe, expands the ALIAS columns it reads.
+        std::set<String> expanded_carried;
+        if (create->is_materialized_view && create->select)
+        {
+            std::set<String> select_read_carried;
+            addTypingSettingsOfReads(*create->select, table.database, catalog, 0, select_read_carried, &expanded_carried);
+        }
         std::set<String> carried_names = own_carried;
         carried_names.insert(read_carried.begin(), read_carried.end());
+        carried_names.insert(expanded_carried.begin(), expanded_carried.end());
         const std::vector<String> carried(carried_names.begin(), carried_names.end());
         if (carried.empty())
             continue;
@@ -6405,7 +6417,7 @@ void markTypingSettings(
         /// A setting that only a stored query read by a constraint subquery carries keeps the session's value.
         if (mask)
             for (size_t i = 0; i < values.size(); ++i)
-                if (own_carried.contains(values[i].first))
+                if (own_carried.contains(values[i].first) || expanded_carried.contains(values[i].first))
                     values[i].second = ((*mask >> i) & 1) != 0;
         const bool unverified = !mask && !values.empty() && (!can_probe || !session_probes.empty());
         if (unverified)
@@ -6436,12 +6448,30 @@ void markTypingSettings(
     }
 }
 
-/// The SET statements that go right before a table's CREATE.
-String typingSettingsPrefix(const TableInfo & table)
+/// The SET statements that go right before a table's CREATE. A typing setting that an earlier prefix set (`replay_values`) and
+/// this table does not pick goes back to the dump session's value, which the dump keeps for what it cannot tell, so the earlier
+/// table's value does not leak into this CREATE.
+String typingSettingsPrefix(
+    const TableInfo & table, const std::map<String, bool> & session_values, std::map<String, bool> & replay_values)
 {
     String res;
+    for (auto & replayed : replay_values)
+    {
+        const bool session_value = session_values.at(replayed.first);
+        if (replayed.second != session_value
+            && std::ranges::none_of(table.typing_settings, [&](const auto & setting) { return setting.first == replayed.first; }))
+        {
+            replayed.second = session_value;
+            res += "SET " + replayed.first + (session_value ? " = 1;\n" : " = 0;\n");
+        }
+    }
     for (const auto & [name, value] : table.typing_settings)
+    {
         res += "SET " + name + (value ? " = 1;\n" : " = 0;\n");
+        /// An analyzer gate only allows more, and the prelude may set it for every CREATE.
+        if (session_values.contains(name))
+            replay_values[name] = value;
+    }
     return res;
 }
 
@@ -6746,6 +6776,7 @@ void dumpDatabaseSchema(
 
     std::vector<TableInfo> tables;
     std::vector<size_t> order;
+    std::map<String, bool> typing_session_values;
     if (!target_databases.empty())
     {
         /// Databases the dump leaves out but a `merge(REGEXP(...), ...)` in it can still refer to.
@@ -6775,7 +6806,6 @@ void dumpDatabaseSchema(
         order = orderTablesByDependencies(tables);
         markMaterializedViewsNeedingBadSelectGate(tables, context, user_defined_functions, analyzes_on_source, err);
 
-        std::map<String, bool> typing_session_values;
         std::map<String, bool> typing_default_values;
         executeQuery(connection, timeouts, client_info,
             "SELECT name, value, `default` FROM system.settings "
@@ -6820,6 +6850,7 @@ void dumpDatabaseSchema(
         /// Stored queries can keep names unqualified and resolve them against the session's current
         /// database, so restore that context whenever the effective database changes.
         String current_database;
+        std::map<String, bool> replay_typing_values;
         for (size_t i : order)
         {
             if (!tables[i].emit)
@@ -6829,7 +6860,7 @@ void dumpDatabaseSchema(
                 current_database = tables[i].database;
                 out << "USE " << backQuoteIfNeed(current_database) << ";\n\n";
             }
-            out << typingSettingsPrefix(tables[i]) << tables[i].create_query + ";\n\n";
+            out << typingSettingsPrefix(tables[i], typing_session_values, replay_typing_values) << tables[i].create_query + ";\n\n";
         }
         out.flush();
         if (out.fail())
@@ -6873,6 +6904,8 @@ void dumpDatabaseSchema(
 
     std::filesystem::create_directories(output_dir);
 
+    /// The files may be replayed in one session, in the printed order.
+    std::map<String, bool> replay_typing_values;
     for (const auto & db : *database_order)
     {
         const auto path = file_path(db);
@@ -6898,7 +6931,7 @@ void dumpDatabaseSchema(
         file << create_database_query_by_db.at(db) << ";\n\nUSE " << backQuoteIfNeed(db) << ";\n\n";
         for (size_t i : order)
             if (tables[i].emit && tables[i].database == db)
-                file << typingSettingsPrefix(tables[i]) << tables[i].create_query << ";\n\n";
+                file << typingSettingsPrefix(tables[i], typing_session_values, replay_typing_values) << tables[i].create_query << ";\n\n";
         file.flush();
         if (file.fail())
             throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE, "Failed writing {}", path.string());
