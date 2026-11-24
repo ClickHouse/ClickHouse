@@ -153,7 +153,7 @@ public:
     /// @param include_credentials_in_cache_key  When true, object storage credentials are
     ///        included in the cache key hash. Set to true for table engine reads (s3(...), etc.)
     ///        where different users may access the same path with different credentials.
-    /// @param include_etag_in_cache_key  When true, `StoredObject::etag_hash` is included in the
+    /// @param include_etag_in_cache_key  When true, `StoredObject::cache_token_hash` is included in the
     ///        cache key hash and pins an S3 cache fill, as table engine objects can be rewritten.
     void needDistributedCache(bool include_credentials_in_cache_key = false, bool include_etag_in_cache_key = false);
 

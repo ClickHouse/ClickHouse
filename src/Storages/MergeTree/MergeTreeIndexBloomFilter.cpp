@@ -41,6 +41,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/StringUtils.h>
 #include <base/arithmeticOverflow.h>
 
 
@@ -1463,7 +1464,7 @@ static Field coerceStringFieldLikeSearchFunction(
         if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
             return {};
 
-        value.resize(value.find_last_not_of('\0') + 1);
+        trimRight(value, '\0');
     }
 
     if (fixed_string_type)
@@ -1506,7 +1507,7 @@ static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field
 
     String name = value_field.safeGet<String>();
     if (isFixedString(removeLowCardinalityAndNullable(value_type)))
-        name.resize(name.find_last_not_of('\0') + 1);
+        trimRight(name, '\0');
 
     return tryConvertFieldToType(Field(std::move(name)), *enum_type, nullptr, {}, /* strict */ true);
 }
