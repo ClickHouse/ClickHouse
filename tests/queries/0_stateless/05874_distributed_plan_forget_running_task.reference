@@ -1,0 +1,3 @@
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+coordinator stopped waiting for a task: 1
+query controllers left: 0

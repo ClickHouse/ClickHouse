@@ -125,6 +125,12 @@ StatelessTaskExecutor::StatelessTaskExecutor(size_t max_queries_)
 {
 }
 
+StatelessTaskExecutor::~StatelessTaskExecutor()
+{
+    /// The task jobs use the members declared after `thread_pool` when they end.
+    thread_pool.wait();
+}
+
 struct StatelessTaskExecutor::TaskSetup
 {
     ContextMutablePtr query_context;
@@ -288,7 +294,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
         failure_slot->set(std::move(failure));
     };
 
-    auto task_function = [unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
+    auto task_function = [this, unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
         collectors = task_state->collectors, trace_context = std::move(trace_context_), logs_queue_slot = task_state->logs_queue,
         cancellation = task_state->cancellation, task_promise, update_progress, report_failure] mutable
     {
@@ -342,6 +348,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
             task_failure = currentTaskFailure();
         }
         task_promise->set_value(task_failure);
+        onTaskEnded(unique_task_id);
     };
 
     try
@@ -462,7 +469,32 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
 StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTask(const String & task_id)
 {
     std::lock_guard lock(tasks_mutex);
-    return eraseTaskLocked(task_id) ? Result::Ok : Result::UnknownTaskId;
+    auto it = tasks.find(task_id);
+    if (it == tasks.end())
+        return Result::UnknownTaskId;
+    /// Dropping a running task would orphan it, and its end would never release its query's controller.
+    if (it->second->completion_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    {
+        it->second->forget_when_ended = true;
+        LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Task {} is forgotten while running, so it is dropped when it ends", task_id);
+        return Result::Ok;
+    }
+    eraseTaskLocked(task_id);
+    return Result::Ok;
+}
+
+void StatelessTaskExecutor::onTaskEnded(const String & unique_task_id) noexcept
+{
+    try
+    {
+        std::lock_guard lock(tasks_mutex);
+        if (auto it = tasks.find(unique_task_id); it != tasks.end() && it->second->forget_when_ended)
+            eraseTaskLocked(unique_task_id);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state)

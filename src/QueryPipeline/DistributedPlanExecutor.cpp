@@ -1695,10 +1695,8 @@ protected:
                 }
             }
 
-            /// `forget` drops the worker's only handle to a task, so forgetting one that is still
-            /// running would orphan a fragment that keeps writing exchange and temporary outputs.
-            /// `cancel` only requests termination, so wait for the terminal state before forgetting,
-            /// and leave a task that does not settle for the worker to reclaim on shutdown.
+            /// Waits for each task to end, since its last status carries its failure and its last logs; a task that is still
+            /// running is forgotten anyway, and the worker drops it when it ends.
             for (auto & task : tasks_to_cancel)
             {
                 if (auto terminal_status = waitForTaskTerminal(task))
@@ -1707,11 +1705,11 @@ protected:
                     /// effect first, e.g. the result reader's socket closing.
                     if (terminal_status->status != "Finished" && terminal_status->status != "Unknown task")
                         recordTaskFailureOnce(task, *terminal_status);
-                    tryForgetTask(task);
                 }
                 else
                     LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after cancellation; "
-                        "leaving it for the worker to reclaim", task.task_id, task.endpoint_uri);
+                        "the worker drops it when it ends", task.task_id, task.endpoint_uri);
+                tryForgetTask(task);
             }
         }
 

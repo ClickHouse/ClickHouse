@@ -27,7 +27,7 @@ class StatelessTaskExecutor
 {
 public:
     explicit StatelessTaskExecutor(size_t max_queries_);
-    virtual ~StatelessTaskExecutor() = default;
+    virtual ~StatelessTaskExecutor();
 
     enum Result
     {
@@ -79,6 +79,7 @@ public:
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     /// Remembers an unknown id, so its start, still on the wire, is ignored when it arrives.
     Result cancelTask(const String & task_id);
+    /// Drops a task that has ended; a running one is dropped when it ends.
     Result forgetTask(const String & task_id);
 
     void shutdown();
@@ -143,6 +144,8 @@ private:
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
         /// The query of a task started by `startTasks`, which keys its `WorkerQueryController`; empty for `startTask`.
         String unique_query_id;
+        /// Set under `tasks_mutex` by a `forget` that came while the task was running.
+        bool forget_when_ended = false;
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
@@ -157,6 +160,8 @@ private:
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
+    /// Called by a task's thread after its promise is set: removes the task if it was forgotten while running.
+    void onTaskEnded(const String & unique_task_id) noexcept;
 
     /// Schedules a registered task in `thread_pool`; `trace_context_` is the dispatch request's.
     void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
