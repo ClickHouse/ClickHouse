@@ -73,6 +73,7 @@ const char * auto_config_build[]
     "USE_ORC", "@USE_ORC@",
     "USE_MSGPACK", "@USE_MSGPACK@",
     "USE_DELTA_KERNEL_RS", "@USE_DELTA_KERNEL_RS@",
+    "USE_VORTEX", "@USE_VORTEX@",
     "USE_XRAY", "@USE_XRAY@",
     "USE_WASMTIME", "@USE_WASMTIME@",
     "WITH_COVERAGE", "@WITH_COVERAGE@",
