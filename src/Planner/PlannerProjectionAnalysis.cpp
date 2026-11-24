@@ -262,6 +262,11 @@ using AliasedIfArguments = std::map<String, std::array<ASTPtr, 3>>;
 /// returns true if an `if` has a new argument to replace
 bool collectAliasedIfArguments(const QueryTreeNodePtr & node, bool with_chains, AliasedIfArguments & result)
 {
+    /// the analyzer folds `if(1, 1, a)`: the `if` is then the source of the constant
+    const auto * folded_node = node->as<ConstantNode>();
+    if (folded_node && folded_node->hasSourceExpression() && !isQueryOrUnionNode(folded_node->getSourceExpression()))
+        return collectAliasedIfArguments(folded_node->getSourceExpression(), with_chains, result);
+
     bool found = false;
     for (const auto & child : node->getChildren())
         if (child && !isQueryOrUnionNode(child))
@@ -579,8 +584,14 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
                 constant_node && constant_node->hasSourceExpression() && !isQueryOrUnionNode(constant_node->getSourceExpression()))
                 argument = constant_node->getSourceExpression();
 
-    /// `count(1)` and `sum(1)` are stored as `count()`
-    NormalizeCountVariantsPass().run(query_tree, query_node.getContext());
+    /// `count(1)` and `sum(1)` are stored as `count()` where the query writes the literal: the old analysis did this before aliases and `if`
+    for (auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
+    {
+        const auto * function_ast = aggregate_function_node->hasOriginalAST() ? aggregate_function_node->getOriginalAST()->as<ASTFunction>() : nullptr;
+        if (function_ast && function_ast->arguments && function_ast->arguments->children.size() == 1
+            && function_ast->arguments->children[0]->as<ASTLiteral>())
+            NormalizeCountVariantsPass().run(aggregate_function_node, query_node.getContext());
+    }
 
     return query_tree;
 }
