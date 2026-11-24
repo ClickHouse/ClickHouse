@@ -48,6 +48,13 @@ struct QueryAnalysisResult
     bool is_limit_by_length_negative = false;
     bool is_limit_by_offset_negative = false;
 
+    /// Scalar subqueries whose value became the LIMIT or OFFSET of `LIMIT ... BY`. Kept apart from
+    /// `limit_offset_subquery_ids`, because those bounds go to other steps.
+    std::vector<size_t> limit_by_subquery_ids;
+
+    /// Marks `step` as reading the scalar subqueries of the LIMIT BY bounds.
+    void addLimitBySubqueryIdsTo(IQueryPlanStep & step) const;
+
 public:
     static QueryAnalysisResult create(const QueryTreeNodePtr & query_tree,
         const PlannerQueryProcessingInfo & query_processing_info,

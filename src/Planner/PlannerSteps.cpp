@@ -1484,12 +1484,14 @@ void addLimitByStep(
         /// LIMIT N [OFFSET M] BY cols - standard positive case
         auto step = std::make_unique<LimitByStep>(
             query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names, always_read_till_end);
+        query_analysis_result.addLimitBySubqueryIdsTo(*step);
         query_plan.addStep(std::move(step));
     }
     else if (is_limit_negative && is_offset_negative)
     {
         /// LIMIT -N OFFSET -M BY cols -> NegativeLimitByStep(limit=N, offset=M)
         auto step = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names);
+        query_analysis_result.addLimitBySubqueryIdsTo(*step);
         query_plan.addStep(std::move(step));
     }
     else if (is_limit_negative && !is_offset_negative)
@@ -1501,9 +1503,11 @@ void addLimitByStep(
         {
             auto step1 = std::make_unique<LimitByStep>(
                 query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names, always_read_till_end);
+            query_analysis_result.addLimitBySubqueryIdsTo(*step1);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
+        query_analysis_result.addLimitBySubqueryIdsTo(*step2);
         query_plan.addStep(std::move(step2));
     }
     else // !is_limit_negative && is_offset_negative
@@ -1514,9 +1518,11 @@ void addLimitByStep(
         ///      (N==0 is not a no-op here: it means "keep 0 per group" -> empty result)
         auto step1 = std::make_unique<NegativeLimitByStep>(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
+        query_analysis_result.addLimitBySubqueryIdsTo(*step1);
         query_plan.addStep(std::move(step1));
         auto step2 = std::make_unique<LimitByStep>(
             query_plan.getCurrentHeader(), limit_by_length, 0, column_names, always_read_till_end);
+        query_analysis_result.addLimitBySubqueryIdsTo(*step2);
         query_plan.addStep(std::move(step2));
     }
 }
@@ -1567,6 +1573,9 @@ void addLimitRangeStep(
         limit_length,
         always_read_till_end);
     limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
+    /// The count of `LIMIT n AFTER ...` is a plain field, unlike the conditions, which the step
+    /// reports through its `ActionsDAG`.
+    query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit_range_step);
     query_plan.addStep(std::move(limit_range_step));
 }
 

@@ -151,13 +151,21 @@ QueryAnalysisResult QueryAnalysisResult::create(const QueryTreeNodePtr & query_t
     if (query_node.hasLimitBy())
     {
         Float64 fractional_limitby_limit = 0;
+        const auto & limit_by_limit_constant = query_node.getLimitByLimit()->as<ConstantNode &>();
         std::tie(result.limit_by_length, fractional_limitby_limit, result.is_limit_by_length_negative)
-            = getLimitOffsetValue(query_node.getLimitByLimit()->as<ConstantNode &>());
+            = getLimitOffsetValue(limit_by_limit_constant);
+        for (size_t id : limit_by_limit_constant.getScalarSubqueryIds())
+            result.limit_by_subquery_ids.push_back(id);
 
         Float64 fractional_limitby_offset = 0;
         if (query_node.hasLimitByOffset())
+        {
+            const auto & limit_by_offset_constant = query_node.getLimitByOffset()->as<ConstantNode &>();
             std::tie(result.limit_by_offset, fractional_limitby_offset, result.is_limit_by_offset_negative)
-                = getLimitOffsetValue(query_node.getLimitByOffset()->as<ConstantNode &>());
+                = getLimitOffsetValue(limit_by_offset_constant);
+            for (size_t id : limit_by_offset_constant.getScalarSubqueryIds())
+                result.limit_by_subquery_ids.push_back(id);
+        }
 
         if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
@@ -175,6 +183,12 @@ void QueryAnalysisResult::collectLimitOffsetSubqueryIdsFrom(const ConstantNode &
 void QueryAnalysisResult::addLimitOffsetSubqueryIdsTo(IQueryPlanStep & step) const
 {
     for (size_t id : limit_offset_subquery_ids)
+        step.addConsumedSubqueryId(id);
+}
+
+void QueryAnalysisResult::addLimitBySubqueryIdsTo(IQueryPlanStep & step) const
+{
+    for (size_t id : limit_by_subquery_ids)
         step.addConsumedSubqueryId(id);
 }
 
