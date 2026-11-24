@@ -22,6 +22,9 @@
 -- the conjuncts that can move do not read an element: no fusion
 0
 60
+-- the step does not read a column that only the conjunct above reads
+['String']
+[4,14,24,34,44,54]
 -- a conjunct that can throw keeps its guard above: no fusion
 0
 1

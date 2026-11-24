@@ -58,6 +58,11 @@ SELECT count() FROM (EXPLAIN SELECT a FROM t_aj_partial ARRAY JOIN A AS a WHERE 
 WHERE explain LIKE '%Element filter column%';
 SELECT count() FROM t_aj_partial ARRAY JOIN A AS a WHERE id % 2 = 0 AND rand() % 1 + length(a) = 2 SETTINGS query_plan_filter_push_down = 0;
 
+SELECT '-- the step does not read a column that only the conjunct above reads';
+SELECT extractAll(extract(explain, '"Element Filter Expression": \\{\\s*"Inputs": \\[([^\\]]*)\\]'), '"Type": "([^"]*)"')
+FROM (EXPLAIN json = 1, actions = 1 SELECT a FROM t_aj_partial ARRAY JOIN A AS a WHERE a = 'a3' AND rand(id) >= 0);
+SELECT groupArray(id) FROM (SELECT id FROM t_aj_partial ARRAY JOIN A AS a WHERE a = 'a3' AND (rand(id) % 1 + id) % 2 = 0 ORDER BY id);
+
 DROP TABLE t_aj_partial;
 
 SELECT '-- a conjunct that can throw keeps its guard above: no fusion';
