@@ -59,7 +59,7 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesHistogramLastToGrid = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesHistogramLastToGrid = {26, 12};
     FunctionDocumentation::Category category_timeSeriesHistogramLastToGrid = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_timeSeriesHistogramLastToGrid = {description_timeSeriesHistogramLastToGrid, syntax_timeSeriesHistogramLastToGrid, arguments_timeSeriesHistogramLastToGrid, parameters_timeSeriesHistogramLastToGrid, returned_value_timeSeriesHistogramLastToGrid, examples_timeSeriesHistogramLastToGrid, introduced_in_timeSeriesHistogramLastToGrid, category_timeSeriesHistogramLastToGrid};
 

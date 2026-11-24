@@ -11,6 +11,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/FailPoint.h>
 
 
@@ -335,8 +336,16 @@ ManifestFileCacheKeys getManifestList(
                 if (!manifest_list_deserializer.hasPath(count_field))
                     continue;
                 auto count = manifest_list_deserializer.getValueFromRowByName(i, count_field);
-                if (!count.isNull())
-                    live_files_count += std::max<Int64>(0, count.safeGet<Int64>());
+                if (count.isNull())
+                    continue;
+                /// The counts are `int` in the specification, but the type is taken from the schema of the file,
+                /// so the values can be arbitrary `long`s and their sum can overflow.
+                if (common::addOverflow(live_files_count, std::max<Int64>(0, count.safeGet<Int64>()), live_files_count))
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Manifest list entry at index {} has too large value of the field '{}'",
+                        i,
+                        count_field);
             }
 
             std::optional<UInt64> first_row_id;

@@ -81,7 +81,7 @@ FROM
             example_output
         }
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
         return FunctionDocumentation{description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     };
