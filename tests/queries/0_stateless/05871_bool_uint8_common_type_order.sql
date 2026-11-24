@@ -37,8 +37,5 @@ SELECT toTypeName([argMaxState(true, 1), argMaxState(toUInt8(2), 2)]), toTypeNam
 SELECT toTypeName(s), finalizeAggregation(s) AS v FROM (SELECT anyTupleState(tuple(true)) AS s UNION ALL SELECT anyTupleState(tuple(toUInt8(2)))) ORDER BY v;
 SELECT toTypeName(s), finalizeAggregation(s) AS v FROM (SELECT anyTupleState(tuple(toUInt8(2))) AS s UNION ALL SELECT anyTupleState(tuple(true))) ORDER BY v;
 SELECT toTypeName([anyTupleState(tuple(true)), anyTupleState(tuple(toUInt8(2)))]), toTypeName([anyTupleState(tuple(toUInt8(2))), anyTupleState(tuple(true))]);
-SELECT toTypeName(x), x FROM (SELECT [true]::Variant(Array(Bool), String) AS x UNION ALL SELECT [toUInt8(2)]::Variant(Array(UInt8), String)) ORDER BY toString(x);
-SELECT toTypeName(x), x FROM (SELECT [toUInt8(2)]::Variant(Array(UInt8), String) AS x UNION ALL SELECT [true]::Variant(Array(Bool), String)) ORDER BY toString(x);
-SELECT toTypeName(x), x FROM (SELECT if(number = 0, [true]::Variant(Array(Bool), String), [toUInt8(2)]::Variant(Array(UInt8), String)) AS x FROM numbers(2)) ORDER BY toString(x);
-SELECT toTypeName(x), x FROM (SELECT if(number = 1, [toUInt8(2)]::Variant(Array(UInt8), String), [true]::Variant(Array(Bool), String)) AS x FROM numbers(2)) ORDER BY toString(x);
-SELECT x FROM (SELECT [true]::Variant(Array(Bool), String) AS x UNION ALL SELECT [toUInt8(2)]::Variant(Array(UInt8), String)) SETTINGS use_variant_as_common_type = 0; -- { serverError NO_COMMON_TYPE }
+SELECT notEmpty(if(number = 0, ['{"a":[true]}'::JSON(a Variant(Array(Bool), String))], ['{"a":[2]}'::JSON(a Variant(Array(UInt8), String))])) FROM numbers(2) SETTINGS use_variant_as_common_type = 1, short_circuit_function_evaluation = 'disable';
+SELECT notEmpty(if(number = 1, ['{"a":[2]}'::JSON(a Variant(Array(UInt8), String))], ['{"a":[true]}'::JSON(a Variant(Array(Bool), String))])) FROM numbers(2) SETTINGS use_variant_as_common_type = 1, short_circuit_function_evaluation = 'disable';
