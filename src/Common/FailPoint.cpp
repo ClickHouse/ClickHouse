@@ -523,6 +523,8 @@ static struct InitFiu
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_local_start_stage_fails_after_first_task) \
     ONCE(stateless_worker_fail_after_registering_task) \
+    ONCE(distributed_plan_status_poll_snapshot_fault) \
+    PAUSEABLE_ONCE(distributed_plan_status_poll_pause_before_snapshot) \
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(distributed_plan_delay_failed_task_release) \
     PAUSEABLE(stateless_worker_pause_before_start_task) \

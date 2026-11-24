@@ -135,6 +135,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char distributed_plan_record_failure_while_starting_tasks[];
+    extern const char distributed_plan_status_poll_snapshot_fault[];
+    extern const char distributed_plan_status_poll_pause_before_snapshot[];
     extern const char distributed_plan_local_start_stage_fails_after_first_task[];
     extern const char distributed_plan_runtime_filter_receive_branch_fails_before_connect[];
 }
@@ -1852,20 +1854,25 @@ protected:
         {
             while (true)
             {
-                VectorWithMemoryTracking<PolledTask> tasks;
-                {
-                    std::lock_guard g(lock);
-                    auto & worker = polled_workers[endpoint_uri];
-                    if (cancel_started || worker.tasks.empty())
-                    {
-                        worker.polling = false;
-                        return;
-                    }
-                    tasks = worker.tasks;
-                }
-
                 try
                 {
+                    FailPointInjection::pauseFailPoint(FailPoints::distributed_plan_status_poll_pause_before_snapshot);
+                    VectorWithMemoryTracking<PolledTask> tasks;
+                    {
+                        std::lock_guard g(lock);
+                        auto & worker = polled_workers[endpoint_uri];
+                        if (cancel_started || worker.tasks.empty())
+                        {
+                            worker.polling = false;
+                            return;
+                        }
+                        fiu_do_on(FailPoints::distributed_plan_status_poll_snapshot_fault,
+                        {
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while copying the tasks to poll on {}", endpoint_uri);
+                        });
+                        tasks = worker.tasks;
+                    }
+
                     checkCancelled();
                     Strings task_ids;
                     for (const auto & task : tasks)
