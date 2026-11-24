@@ -9,7 +9,14 @@
 # The image with a full Ubuntu userland is published with the `-ubuntu` tag suffix (`Dockerfile.ubuntu`).
 #
 # Usage:
-#   docker build -f Dockerfile.scratch -t clickhouse/clickhouse-server .
+#   docker build -f Dockerfile.scratch -t clickhouse/clickhouse-server \
+#       --build-arg single_binary_location_url=<URL of a statically linked clickhouse binary> .
+# or, from the package repository, with a release whose binary is statically linked (`musl`):
+#   docker build -f Dockerfile.scratch -t clickhouse/clickhouse-server --build-arg VERSION=<version> .
+# The image has no C library, so the binary must be static. Until a release built with the `musl` toolchain is
+# published, the default `VERSION` (the latest release, set by `utils/list-versions/update-docker-version.sh`) is
+# linked against glibc, and the build stops with an error saying so: pass `single_binary_location_url` (e.g. of a
+# master build) instead.
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Stage 1: Install ClickHouse and assemble the output directory tree.
@@ -44,6 +51,7 @@ RUN apt_update() { apt-get update --error-on=any || { sed -i -e "s|${apt_archive
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
+# The latest release, updated on every release; see "Usage" above for a release whose binary is not static.
 ARG VERSION="26.10.2.103"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
@@ -167,9 +175,11 @@ RUN mkdir -p \
         fi ; \
     done \
     # The image has no C library and no dynamic loader, so the binary must be statically linked
-    # (the `musl` build, since 26.11): a dynamically linked one would fail to start with `no such file`.
+    # (the `musl` build): a dynamically linked one would fail to start with `no such file`.
     && if ldd /usr/bin/clickhouse 2>&1 | grep -q '=>'; then \
-        echo "ERROR: /usr/bin/clickhouse is dynamically linked, but the FROM scratch image needs a static binary" ; \
+        echo "ERROR: /usr/bin/clickhouse is dynamically linked, but the FROM scratch image needs a static binary." ; \
+        echo "The releases built with the glibc toolchain cannot be used: pass a VERSION whose binary is statically linked (musl)," ; \
+        echo "or single_binary_location_url of a static binary (e.g. of a master build). See the usage at the top of Dockerfile.scratch." ; \
         ldd /usr/bin/clickhouse ; \
         exit 1 ; \
     fi \
