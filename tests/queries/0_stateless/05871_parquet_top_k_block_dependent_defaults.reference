@@ -1,10 +1,26 @@
 -- file
+k UInt64, v UInt64, g UInt64 DEFAULT v % 7
+row groups skipped: 1
 OK
+k UInt64, v UInt64, g UInt64 DEFAULT rowNumberInBlock()
+row groups skipped: 0
 OK
+k UInt64, v UInt64, g UInt64 DEFAULT blockSize()
+row groups skipped: 0
 OK
+k UInt64, v UInt64 DEFAULT 1000000000, g UInt64 DEFAULT if(v < 1000000000, rowNumberInBlock(), 42)
+row groups skipped: 0
 OK
 -- s3
+k UInt64, v UInt64, g UInt64 DEFAULT v % 7
+row groups skipped: 1
 OK
+k UInt64, v UInt64, g UInt64 DEFAULT rowNumberInBlock()
+row groups skipped: 0
 OK
+k UInt64, v UInt64, g UInt64 DEFAULT blockSize()
+row groups skipped: 0
 OK
+k UInt64, v UInt64 DEFAULT 1000000000, g UInt64 DEFAULT if(v < 1000000000, rowNumberInBlock(), 42)
+row groups skipped: 0
 OK

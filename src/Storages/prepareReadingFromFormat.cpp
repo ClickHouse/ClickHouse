@@ -467,32 +467,27 @@ bool ReadFromFormatInfo::hasDefaultOfColumnOrParent(const String & name) const
 
 bool ReadFromFormatInfo::defaultsDependOnTheirBlock(const ContextPtr & context) const
 {
-    Block available;
-    NamesAndTypesList with_defaults;
-    NameSet added;
-    for (const auto & column : format_header)
-    {
-        String column_with_default;
-        if (columns_description.hasDefault(column.name))
-            column_with_default = column.name;
-        for (size_t pos = column.name.find('.'); column_with_default.empty() && pos != String::npos; pos = column.name.find('.', pos + 1))
-            if (columns_description.hasDefault(column.name.substr(0, pos)))
-                column_with_default = column.name.substr(0, pos);
-
-        if (column_with_default.empty())
-            available.insert(column.cloneEmpty());
-        else if (added.insert(column_with_default).second)
-            with_defaults.emplace_back(column_with_default, columns_description.get(column_with_default).type);
-    }
-
-    if (with_defaults.empty())
+    if (!columns_description.hasDefaults())
         return false;
 
-    if (!available.columns())
-        available.insert({DataTypeUInt8().createColumn(), std::make_shared<DataTypeUInt8>(), "_dummy"});
+    const auto physical_columns = columns_description.getAllPhysical();
+    for (const auto & column : columns_description)
+    {
+        if (!column.default_desc.expression)
+            continue;
 
-    auto dag = evaluateMissingDefaults(available, with_defaults, columns_description, context, false);
-    return dag && dag->hasNonDeterministicOrStatefulFunctions();
+        Block available;
+        for (const auto & physical_column : physical_columns)
+            if (physical_column.name != column.name)
+                available.insert({physical_column.type->createColumn(), physical_column.type, physical_column.name});
+        if (!available.columns())
+            available.insert({DataTypeUInt8().createColumn(), std::make_shared<DataTypeUInt8>(), "_dummy"});
+
+        auto dag = evaluateMissingDefaults(available, {{column.name, column.type}}, columns_description, context, false);
+        if (dag && dag->hasNonDeterministicOrStatefulFunctions())
+            return true;
+    }
+    return false;
 }
 
 std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const
