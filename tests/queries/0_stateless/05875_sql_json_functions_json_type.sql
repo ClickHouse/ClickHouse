@@ -89,6 +89,13 @@ FROM
     FROM numbers(1000)
 );
 
+SELECT 'deep key';
+CREATE TABLE t_deep (j JSON) ENGINE = Memory;
+INSERT INTO t_deep SELECT ('{"' || arrayStringConcat(arrayMap(x -> 'k', range(1100)), '.') || '":1,"o":2}')::JSON;
+SELECT JSON_VALUE(j, '$.o'), JSON_VALUE(j::String, '$.o'), JSON_EXISTS(j, '$.o'), JSON_EXISTS(j::String, '$.o') FROM t_deep;
+SELECT JSON_QUERY(j, '$') FROM t_deep; -- { serverError INCORRECT_DATA }
+DROP TABLE t_deep;
+
 DROP VIEW oracle;
 DROP TABLE t;
 DROP TABLE t_memory;

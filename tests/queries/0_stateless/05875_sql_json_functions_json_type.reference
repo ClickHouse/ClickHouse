@@ -65,3 +65,5 @@ Nullable, Dynamic
 allow_simdjson
 many rows
 1000	1000	333
+deep key
+2		1	0

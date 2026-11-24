@@ -15,6 +15,8 @@ If the value does not exist, `0` will be returned.
 
 For the `JSON` type, the path is evaluated on its typed paths, dynamic paths and shared data.
 The result is the same as for the value cast to `String`.
+The exception is a row with a value that the `String` input cannot parse, such as a key with more than 1024 dotted components.
+For such a row, the `String` input treats every path as missing, and the `JSON` input can throw an exception.
         )";
         FunctionDocumentation::Syntax syntax = "JSON_EXISTS(json, path)";
         FunctionDocumentation::Arguments arguments = {
@@ -61,6 +63,8 @@ If the value does not exist, an empty string will be returned.
 
 For the `JSON` type, the path is evaluated on its typed paths, dynamic paths and shared data.
 The result is the same as for the value cast to `String`.
+The exception is a row with a value that the `String` input cannot parse, such as a key with more than 1024 dotted components.
+For such a row, the `String` input treats every path as missing, and the `JSON` input can throw an exception.
         )";
         FunctionDocumentation::Syntax syntax = "JSON_QUERY(json, path)";
         FunctionDocumentation::Arguments arguments = {
@@ -102,6 +106,8 @@ This function is controlled by the following settings:
 
 For the `JSON` type, the path is evaluated on its typed paths, dynamic paths and shared data.
 The result is the same as for the value cast to `String`.
+The exception is a row with a value that the `String` input cannot parse, such as a key with more than 1024 dotted components.
+For such a row, the `String` input treats every path as missing, and the `JSON` input can throw an exception.
         )";
         FunctionDocumentation::Syntax syntax = "JSON_VALUE(json, path)";
         FunctionDocumentation::Arguments arguments = {
