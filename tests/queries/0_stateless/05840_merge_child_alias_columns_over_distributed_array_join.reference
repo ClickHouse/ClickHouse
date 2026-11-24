@@ -13,3 +13,17 @@ merge_alias_aj_dist	merge_alias_aj_child
 merge_alias_aj_dist	merge_alias_aj_child
 merge_alias_aj_dist	merge_alias_aj_child	1	a-2
 merge_alias_aj_dist	merge_alias_aj_child	1	b-3
+merge_alias_quoted_dist	2
+merge_alias_quoted_dist	3
+merge_alias_quoted_dist	2
+merge_alias_quoted_dist	3
+13
+14
+merge_alias_quoted_dist	1	2	3	13	(1)
+merge_alias_quoted_dist	2	3	4	14	(2)
+2	13
+3	14
+merge_alias_quoted_dist	2	13
+merge_alias_quoted_dist	3	14
+2	13
+3	14
