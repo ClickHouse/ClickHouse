@@ -11,9 +11,6 @@ namespace DB
 
 REGISTER_FUNCTION(Hashing)
 {
-    /// The key argument (1st arg) in "keyed" hash functions is secret. Block it from appearing in the query_log.
-    const SecretArgumentsSpec keyed_hash_secret_arguments{.positional_secret_slots = {0}};
-
     FunctionDocumentation::Description sipHash64_description = R"(
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
@@ -75,7 +72,7 @@ Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument i
     FunctionDocumentation::IntroducedIn sipHash64Keyed_introduced_in = {23, 2};
     FunctionDocumentation::Category sipHash64Keyed_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation sipHash64Keyed_documentation = {sipHash64Keyed_description, sipHash64Keyed_syntax, sipHash64Keyed_arguments, {}, sipHash64Keyed_returned_value, sipHash64Keyed_examples, sipHash64Keyed_introduced_in, sipHash64Keyed_category};
-    factory.registerFunction<FunctionSipHash64Keyed>(sipHash64Keyed_documentation, FunctionFactory::Case::Sensitive, keyed_hash_secret_arguments);
+    factory.registerFunction<FunctionSipHash64Keyed>(sipHash64Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128_description = R"(
 Like [`sipHash64`](#sipHash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
@@ -136,7 +133,7 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
     FunctionDocumentation::IntroducedIn sipHash128Keyed_introduced_in = {23, 2};
     FunctionDocumentation::Category sipHash128Keyed_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation sipHash128Keyed_documentation = {sipHash128Keyed_description, sipHash128Keyed_syntax, sipHash128Keyed_arguments, {}, sipHash128Keyed_returned_value, sipHash128Keyed_examples, sipHash128Keyed_introduced_in, sipHash128Keyed_category};
-    factory.registerFunction<FunctionSipHash128Keyed>(sipHash128Keyed_documentation, FunctionFactory::Case::Sensitive, keyed_hash_secret_arguments);
+    factory.registerFunction<FunctionSipHash128Keyed>(sipHash128Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128Ref_description = R"(
 Like [`sipHash128`](/reference/functions/regular-functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
@@ -185,7 +182,7 @@ Same as [`sipHash128Reference`](#sipHash128Reference) but additionally takes an 
     FunctionDocumentation::IntroducedIn sipHash128RefKeyed_introduced_in = {23, 2};
     FunctionDocumentation::Category sipHash128RefKeyed_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation sipHash128RefKeyed_documentation = {sipHash128RefKeyed_description, sipHash128RefKeyed_syntax, sipHash128RefKeyed_arguments, {}, sipHash128RefKeyed_returned_value, sipHash128RefKeyed_examples, sipHash128RefKeyed_introduced_in, sipHash128RefKeyed_category};
-    factory.registerFunction<FunctionSipHash128ReferenceKeyed>(sipHash128RefKeyed_documentation, FunctionFactory::Case::Sensitive, keyed_hash_secret_arguments);
+    factory.registerFunction<FunctionSipHash128ReferenceKeyed>(sipHash128RefKeyed_documentation);
 
     FunctionDocumentation::Description cityHash64_description = R"(
 Produces a 64-bit [CityHash](https://github.com/google/cityhash) hash value.
