@@ -17,6 +17,8 @@
 
 #include <fmt/format.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -126,6 +128,20 @@ void IcebergRESTCatalogWarehouse::validateLocation(const S3Location & location) 
     /// `S3ObjectStorage` re-parses a key of the form `<scheme>://<bucket>/...` and writes to the embedded bucket.
     if (location.key.contains("://"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Location s3://{}/{} contains an embedded URI", location.bucket, location.key);
+
+    /// Some clients normalize paths, so `a//b`, `a/./b` and `a/x/../b` would all name `a/b` for them.
+    /// The overlap check compares strings, so only one spelling of a location is allowed.
+    const String key = stripTrailingSlashes(location.key);
+    for (const auto part : std::views::split(key, '/'))
+    {
+        const std::string_view segment(part.begin(), part.end());
+        if (segment.empty() || segment == "." || segment == "..")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Location s3://{}/{} contains an empty, '.' or '..' path segment",
+                location.bucket,
+                location.key);
+    }
 }
 
 String IcebergRESTCatalogWarehouse::objectKey(const String & location) const

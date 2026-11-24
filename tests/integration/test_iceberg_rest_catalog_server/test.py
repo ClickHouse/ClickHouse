@@ -1176,6 +1176,18 @@ def test_table_location_overlap(started_cluster):
     # Same string prefix as `outer`, but another directory. Allowed.
     create_table(ns, "same_prefix", location=f"{outer}_x")
 
+    # Other spellings of `outer` for clients that normalize paths.
+    name = outer.rsplit("/", 1)[1]
+
+    def assert_bad_segment(table, location):
+        response = create_table(ns, table, location=location, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+        assert "path segment" in response.json()["error"]["message"]
+
+    assert_bad_segment("double_slash", f"{parent}//{name}/data")
+    assert_bad_segment("dot", f"{parent}/./{name}")
+    assert_bad_segment("dot_dot", f"{parent}/x/../{name}")
+
 
 def test_table_location_overlap_concurrent(started_cluster):
     ns = f"overlap_concurrent_{uuid.uuid4().hex[:8]}"
