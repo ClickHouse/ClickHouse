@@ -16,6 +16,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -260,16 +261,6 @@ public:
             text_settings.json.write_float_type_markers = true;
 
             auto text_column = ColumnString::create();
-            auto & chars = text_column->getChars();
-            auto & offsets = text_column->getOffsets();
-            offsets.reserve(num_rows);
-            auto write_text = [&](const ISerialization & serialization, const IColumn & column, size_t row)
-            {
-                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-                serialization.serializeTextJSON(column, row, buf, text_settings);
-                buf.finalize();
-            };
-
             ColumnsWithTypeAndName text_arguments;
             if (use_subcolumn)
             {
@@ -289,6 +280,8 @@ public:
                 for (size_t k = 0; k + 1 < prefixes.size(); ++k)
                     prefix_literals.push_back(data_type_object.getSubcolumn(prefixes[k], object_column));
 
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*text_column, num_rows);
+                auto & text_buffer = write_helper.getWriteBuffer();
                 for (size_t i = 0; i < num_rows; ++i)
                 {
                     bool present = always_present || !value->isNullAt(i);
@@ -296,9 +289,10 @@ public:
                         present = present && literal->isNullAt(i);
                     /// An absent value is an empty string, which is not a JSON document, so the result is the default.
                     if (present)
-                        write_text(*value_serialization, *value, i);
-                    offsets.push_back(chars.size());
+                        value_serialization->serializeTextJSON(*value, i, text_buffer, text_settings);
+                    write_helper.finishRow();
                 }
+                write_helper.finalize();
 
                 text_arguments.push_back(first_column);
                 text_arguments.insert(text_arguments.end(), arguments.begin() + 1 + num_index_arguments, arguments.end());
@@ -306,11 +300,14 @@ public:
             else
             {
                 auto serialization = data_type_object.getDefaultSerialization();
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*text_column, num_rows);
+                auto & text_buffer = write_helper.getWriteBuffer();
                 for (size_t i = 0; i < num_rows; ++i)
                 {
-                    write_text(*serialization, *object_column, i);
-                    offsets.push_back(chars.size());
+                    serialization->serializeTextJSON(*object_column, i, text_buffer, text_settings);
+                    write_helper.finishRow();
                 }
+                write_helper.finalize();
                 text_arguments = arguments;
             }
 
