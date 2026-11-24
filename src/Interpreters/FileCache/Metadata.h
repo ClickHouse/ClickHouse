@@ -196,8 +196,8 @@ public:
         size_t background_download_threads_,
         bool write_cache_per_user_directory_,
         bool use_real_disk_size_,
-        size_t background_cleanup_threads_ = FILECACHE_DEFAULT_BACKGROUND_CLEANUP_THREADS,
-        size_t background_cleanup_tasks_per_thread_ = FILECACHE_DEFAULT_BACKGROUND_CLEANUP_TASKS_PER_THREAD);
+        size_t background_cleanup_threads_,
+        size_t background_cleanup_tasks_per_thread_);
 
     virtual ~CacheMetadata();
 
@@ -342,9 +342,9 @@ private:
 
     void downloadThreadFunc(const bool & stop_flag);
 
-    /// Never deletes cache files: only removes emptied keys from metadata with their (prefix) directories,
-    /// and the empty key directories which the initial load found. `removeKey` and `removeAllKeys`
-    /// remove their keys at once and do not go through this cleanup.
+    /// Removes emptied keys from metadata and their directories from disk, with the files which metadata
+    /// does not know, and the empty key directories which the initial load found. `removeKey` and
+    /// `removeAllKeys` remove a key at once unless a file segment is held or is being evicted.
     void cleanupThreadFunc();
     /// Runs cleanup tasks until none is left; started by `cleanupThreadFunc` when they pile up.
     void cleanupThreadFuncImpl();

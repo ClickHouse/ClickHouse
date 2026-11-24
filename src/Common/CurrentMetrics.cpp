@@ -382,7 +382,7 @@
     M(FilesystemCacheEvictionThreads, "Number of threads in the filesystem cache background eviction (removal) pool") \
     M(FilesystemCacheEvictionThreadsActive, "Number of threads in the filesystem cache background eviction pool running a task") \
     M(FilesystemCacheEvictionThreadsScheduled, "Number of queued or active jobs in the filesystem cache background eviction pool") \
-    M(FilesystemCacheCleanupHelperThreads, "Number of helper threads in the filesystem cache background cleanup, which removes emptied keys and empty key directories found at startup") \
+    M(FilesystemCacheCleanupHelperThreads, "Number of helper threads in the filesystem cache background cleanup, which removes the keys without file segments from the cache metadata and from disk, and the empty key directories found at startup") \
     M(FilesystemCacheCleanupHelperThreadsActive, "Number of helper threads in the filesystem cache background cleanup running a task") \
     M(FilesystemCacheCleanupHelperThreadsScheduled, "Number of queued or active jobs of the helper threads in the filesystem cache background cleanup") \
     M(FilesystemCacheDropCacheThreads, "Number of threads in the filesystem cache pool for parallel keys removal on SYSTEM DROP FILESYSTEM CACHE") \
