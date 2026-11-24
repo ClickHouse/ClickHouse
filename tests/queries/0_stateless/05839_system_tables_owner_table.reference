@@ -24,7 +24,15 @@ src
 .inner_id.<uuid>	mv_renamed
 filter by name:
 metrics_renamed
+Atomic, no owner:
+.inner.mv_renamed	
+.inner.samples.metrics_renamed	
+.inner.src	
+.inner_id.00000000-0000-0000-0000-000000000000	
+.inner_id.11111111-2222-3333-4444-555555555555	
 Ordinary:
+.inner.src	
+.inner.tags.mv	
 metrics	
 mv	
 src	
@@ -35,6 +43,8 @@ src
 .inner.timeranges.metrics	metrics
 .inner.mv	mv
 Ordinary, after RENAME:
+.inner.src	
+.inner.tags.mv	
 metrics_renamed	
 mv_renamed	
 src	

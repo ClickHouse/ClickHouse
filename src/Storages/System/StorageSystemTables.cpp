@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -300,7 +301,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "For a materialized view, the name of the destination table the view writes to "
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
         },
-        {"parent_table", std::make_shared<DataTypeString>(),
+        {"owner_table", std::make_shared<DataTypeString>(),
             "For an inner table of a materialized view or a `TimeSeries` table, the name of that view or table "
             "(always in the same database). Empty for other tables."
         },
@@ -1092,9 +1093,9 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    const String & parent_table = getParentTable(database, database_name, table_name);
-                    if (!parent_table.empty() && is_dependency_visible(StorageID{database_name, parent_table}))
-                        res_columns[res_index++]->insert(parent_table);
+                    const String owner_table = getOwnerTable(database, StorageID{database_name, table_name, tables_it.uuid()});
+                    if (!owner_table.empty() && is_dependency_visible(StorageID{database_name, owner_table}))
+                        res_columns[res_index++]->insert(owner_table);
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -1112,45 +1113,50 @@ protected:
         return Chunk(std::move(res_columns), num_rows);
     }
 private:
-    /// Returns the materialized view or the `TimeSeries` table owning the inner table `table_name`, or an empty string.
-    /// The owners are taken from the definitions of the tables of the database (the name of an inner table may be out of date,
-    /// for example after `ATTACH` with another UUID), collected once per database and only if it has a table named like an inner table.
-    const String & getParentTable(const DatabasePtr & database, const String & database_name, const String & table_name)
+    /// Returns the materialized view or the `TimeSeries` table owning the inner table `table_id`, or an empty string. The owner is
+    /// found by its UUID or name in the inner table's name (see `StorageMaterializedView::generateInnerTableName`, `getTimeSeriesInnerTableName`).
+    String getOwnerTable(const DatabasePtr & database, const StorageID & table_id) const
     {
-        static const String no_parent;
-        if (!table_name.starts_with(".inner"))
-            return no_parent;
-
-        if (!parent_tables_database || *parent_tables_database != database_name)
+        std::string_view name = table_id.table_name;
+        StoragePtr owners[2];
+        if (name.starts_with(".inner_id."))
         {
-            parent_tables.clear();
-            parent_tables_database = database_name;
-            for (auto it = database->getTablesIterator(context); it->isValid(); it->next())
-            {
-                const auto table = it->table();
-                if (!table)
-                    continue;
-
-                if (const auto * view = table->as<StorageMaterializedView>())
-                {
-                    if (view->hasInnerTable())
-                        parent_tables.emplace(view->getTargetTableId().table_name, it->name());
-                }
-                else if (const auto * time_series = table->as<StorageTimeSeries>())
-                {
-                    for (auto target_kind : StorageTimeSeries::getTargetKinds())
-                    {
-                        if (!time_series->isInnerTable(target_kind))
-                            continue;
-                        if (auto inner_table_id = time_series->tryGetTargetTableID(target_kind, context))
-                            parent_tables.emplace(inner_table_id.table_name, it->name());
-                    }
-                }
-            }
+            /// `.inner_id.<uuid>` or `.inner_id.<kind>.<uuid>`
+            UUID uuid;
+            if (name.size() >= 36 && tryParse(uuid, name.substr(name.size() - 36)) && uuid != UUIDHelpers::Nil)
+                owners[0] = DatabaseCatalog::instance().tryGetByUUID(uuid).second;
+        }
+        else if (name.starts_with(".inner."))
+        {
+            /// `.inner.<name>` or `.inner.<kind>.<name>`
+            name.remove_prefix(strlen(".inner."));
+            owners[0] = database->tryGetTable(String{name}, context);
+            if (size_t pos = name.find('.'); pos != std::string_view::npos)
+                owners[1] = database->tryGetTable(String{name.substr(pos + 1)}, context);
         }
 
-        auto it = parent_tables.find(table_name);
-        return it == parent_tables.end() ? no_parent : it->second;
+        for (const auto & owner : owners)
+        {
+            if (owner && ownsInnerTable(*owner, table_id))
+                return owner->getStorageID().table_name;
+        }
+        return {};
+    }
+
+    bool ownsInnerTable(const IStorage & owner, const StorageID & table_id) const
+    {
+        if (const auto * view = owner.as<StorageMaterializedView>())
+            return view->hasInnerTable() && table_id == view->getTargetTableId();
+
+        if (const auto * time_series = owner.as<StorageTimeSeries>())
+        {
+            for (auto target_kind : StorageTimeSeries::getTargetKinds())
+            {
+                if (time_series->isInnerTable(target_kind) && table_id == time_series->tryGetTargetTableID(target_kind, context))
+                    return true;
+            }
+        }
+        return false;
     }
 
     std::vector<UInt8> columns_mask;
@@ -1161,9 +1167,6 @@ private:
     ContextMutablePtr totals_context;
     bool done = false;
     TablesFilter tables_filter;
-    /// The owners of the inner tables of the database `parent_tables_database`, by the inner table name (see `getParentTable`).
-    std::optional<String> parent_tables_database;
-    std::unordered_map<String, String> parent_tables;
 };
 
 class ReadFromSystemTables : public SourceStepWithFilter
