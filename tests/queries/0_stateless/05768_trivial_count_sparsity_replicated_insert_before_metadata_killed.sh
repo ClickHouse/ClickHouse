@@ -40,7 +40,13 @@ $CLICKHOUSE_CLIENT --query "
 
     SYSTEM STOP MERGES $TABLE;
     INSERT INTO $TABLE VALUES (0, 0);
-    ALTER TABLE $TABLE DROP PART 'all_0_0_0';
+"
+
+# The name of the seed part is not fixed: an insert retried after a Keeper fault allocates another block number.
+SEED_PART=$($CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = '$TABLE' AND active")
+
+$CLICKHOUSE_CLIENT --query "
+    ALTER TABLE $TABLE DROP PART '$SEED_PART';
 
     SYSTEM STOP REPLICATION QUEUES $TABLE;
     ALTER TABLE $TABLE DROP COLUMN x, ADD COLUMN x Int64 SETTINGS alter_sync = 0, mutations_sync = 0;
