@@ -1,9 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionSort.h>
 
 #include <Common/Exception.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 
@@ -18,37 +15,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// The struct holds what distinguishes the PromQL sort functions from each other.
-    struct SortFunctionInfo
-    {
-        /// Name of the PromQL sort function.
-        std::string_view function_name;
-
-        /// Direction of the sort.
-        SortDirection direction;
-
-        /// Whether the sort is by label.
-        bool by_label;
-    };
-
-    /// Returns the properties of the PromQL sort function with the specified name, or `std::nullopt` for any other name.
-    std::optional<SortFunctionInfo> getSortFunctionInfo(std::string_view function_name)
-    {
-        static constexpr SortFunctionInfo sort_functions[] = {
-            {"sort", SortDirection::ASCENDING, false},
-            {"sort_desc", SortDirection::DESCENDING, false},
-            {"sort_by_label", SortDirection::ASCENDING, true},
-            {"sort_by_label_desc", SortDirection::DESCENDING, true},
-        };
-
-        for (const auto & sort_function : sort_functions)
-        {
-            if (function_name == sort_function.function_name)
-                return sort_function;
-        }
-        return std::nullopt;
-    }
-
     /// Checks the arguments of a PromQL sort function: `sort` and `sort_desc` take exactly one argument, an instant vector;
     /// `sort_by_label` and `sort_by_label_desc` take an instant vector and then any number of label names, as string
     /// literals.
@@ -102,7 +68,6 @@ namespace
             }
         }
     }
-
 }
 
 bool isFunctionSort(std::string_view function_name)
@@ -125,52 +90,21 @@ SQLQueryPiece applyFunctionSort(
     return res;
 }
 
-std::optional<SortOrder> getSortOrder(const SQLQueryPiece & result)
+std::optional<SortFunctionInfo> getSortFunctionInfo(std::string_view function_name)
 {
-    /// Only this store method holds more than one series, and only it has the column `group` that the label keys read.
-    if (result.store_method != StoreMethod::VECTOR_GRID)
-        return std::nullopt;
+    static constexpr SortFunctionInfo sort_functions[] = {
+        {"sort", SortDirection::ASCENDING, false},
+        {"sort_desc", SortDirection::DESCENDING, false},
+        {"sort_by_label", SortDirection::ASCENDING, true},
+        {"sort_by_label_desc", SortDirection::DESCENDING, true},
+    };
 
-    if (result.node->node_type != PrometheusQueryTree::NodeType::Function)
-        return std::nullopt;
-
-    const auto * function_node = static_cast<const PrometheusQueryTree::Function *>(result.node);
-    const auto sort_function = getSortFunctionInfo(function_node->function_name);
-    if (!sort_function)
-        return std::nullopt;
-
-    ASTs keys;
-    if (sort_function->by_label)
+    for (const auto & sort_function : sort_functions)
     {
-        /// The first argument is the instant vector; the label names follow it. `applyFunctionSort` has checked
-        /// that their nodes are string literals.
-        const auto & arguments = function_node->getArguments();
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            const auto & label_name = static_cast<const PrometheusQueryTree::StringLiteral *>(arguments[i])->string;
-
-            /// No series has a label with an empty name, so it decides nothing, and `timeSeriesExtractTag` does not accept one.
-            if (label_name.empty())
-                continue;
-
-            /// A series without the label is ordered as if the label were empty, as in Prometheus.
-            auto label_value = makeASTFunction("ifNull",
-                makeASTFunction("timeSeriesExtractTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(label_name)),
-                make_intrusive<ASTLiteral>(String{}));
-            /// The labels are compared in natural order, as sort_by_label does in Prometheus;
-            /// why the mode is 1: the default mode puts host-1 before host2, and Prometheus puts it after.
-            keys.emplace_back(makeASTFunction("naturalSortKey", label_value, make_intrusive<ASTLiteral>(UInt64(1))));
-        }
+        if (function_name == sort_function.function_name)
+            return sort_function;
     }
-    else
-    {
-        keys.emplace_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-    }
-
-    /// Ties are ordered by tags, in the same direction, to make the result deterministic.
-    keys.emplace_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
-
-    return SortOrder{std::move(keys), sort_function->direction};
+    return std::nullopt;
 }
 
 }
