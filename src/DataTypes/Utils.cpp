@@ -1,6 +1,7 @@
 #include <DataTypes/Utils.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -404,7 +405,7 @@ static void appendNamesKeptByRelabelling(const IDataType & type, bool in_argumen
                 appendNamesKeptByRelabelling(*argument, /*in_arguments=*/ true, names);
         }
         else if (WhichDataType(child).isUInt8())
-            names.push_back(child.getName() == "Bool" ? "Bool" : "");
+            names.push_back(child.getName() == "Bool" || isSimpleAggregateFunctionOfBool(child) ? child.getName() : "");
         else
             names.emplace_back();
     });

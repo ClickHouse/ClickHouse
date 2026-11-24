@@ -33,6 +33,7 @@ CREATE VIEW v_wrap (m Map(String, DateTime('UTC')), t Tuple(a DateTime('UTC'))) 
 CREATE VIEW v_cast (ts DateTime('UTC')) AS SELECT CAST(ts AS DateTime('UTC')) AS ts FROM t_src;
 CREATE VIEW v_same (ts DateTime, u UInt8) AS SELECT ts, u FROM t_src;
 CREATE VIEW v_bool (u Bool) AS SELECT u FROM t_src;
+CREATE VIEW v_bool_saf (u SimpleAggregateFunction(any, Bool)) AS SELECT u FROM t_src;
 
 SELECT 'view';
 SELECT ts, toHour(ts), toString(ts), ts64, toHour(ts64), a FROM v;
@@ -47,8 +48,10 @@ SELECT 'explicit CAST and same types';
 SELECT ts, toHour(ts) FROM v_cast;
 SELECT ts, u FROM v_same;
 SELECT count() FROM (EXPLAIN actions = 1 SELECT ts, u FROM v_same) WHERE explain ILIKE '%\_CAST%';
--- A cast to `Bool` changes values, so it is not added for a column that differs only by `Bool`.
+-- A cast to `Bool` or `SimpleAggregateFunction(f, Bool)` changes values, so it is not added for a column that differs only by it.
 SELECT count() FROM (EXPLAIN actions = 1 SELECT u FROM v_bool) WHERE explain ILIKE '%\_CAST%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT u FROM v_bool_saf) WHERE explain ILIKE '%\_CAST%';
+SELECT reinterpretAsUInt8(u) FROM v_bool_saf;
 
 SELECT 'view over MergeTree';
 CREATE TABLE t_mt (ts DateTime) ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 1;
@@ -137,6 +140,7 @@ DROP VIEW v_wrap;
 DROP VIEW v_cast;
 DROP VIEW v_same;
 DROP VIEW v_bool;
+DROP VIEW v_bool_saf;
 DROP VIEW v_mt;
 DROP VIEW v_dist;
 DROP VIEW v_var;
