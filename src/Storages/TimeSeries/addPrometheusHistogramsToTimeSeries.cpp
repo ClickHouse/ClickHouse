@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <Storages/TimeSeries/PrometheusTimestamps.h>
@@ -13,6 +14,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 namespace
 {
@@ -34,11 +40,17 @@ namespace
                 return histogram.add_negative_spans();
         }
 
-        void addBucket(Int64 count)
+        void addBucket(Int64 index, Int64 count)
         {
-            /// A count stored bypassing the sink, e.g. by `INSERT INTO FUNCTION timeSeriesSamples`, can be negative, so the delta
-            /// can overflow `Int64`. The wrapped delta still decodes to `count`: Prometheus adds up integer deltas in wrapping `int64`.
-            const Int64 delta = static_cast<Int64>(static_cast<UInt64>(count) - static_cast<UInt64>(previous_count));
+            /// The sink rejects negative counts, but a write bypassing it can store one, and its delta could overflow `Int64`.
+            if (count < 0)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid histogram sample with timestamp {} ms: {} side: the bucket with index {} has a negative count {}. The "
+                    "TimeSeries engine rejects such samples on insert, so the sample was stored bypassing it, e.g. by an INSERT into an "
+                    "inner table or ATTACH PART",
+                    histogram.timestamp(), positive ? "positive" : "negative", index, count);
+            const Int64 delta = count - previous_count;
             if constexpr (positive)
                 histogram.add_positive_deltas(delta);
             else
@@ -66,7 +78,7 @@ namespace
                 return histogram.add_negative_spans();
         }
 
-        void addBucket(Float64 count) const
+        void addBucket(Int64 /* index */, Float64 count) const
         {
             if constexpr (positive)
                 histogram.add_positive_counts(count);
@@ -98,7 +110,7 @@ namespace
             }
             span->set_length(span->length() + 1);
             next_index = index + 1;
-            writer.addBucket(buckets.counts[i]);
+            writer.addBucket(index, buckets.counts[i]);
         }
     }
 
@@ -117,6 +129,8 @@ namespace
 
     void addHistogram(const ColumnsView & columns, const size_t row, const Int64 timestamp_ms, prometheus::Histogram & histogram)
     {
+        /// Before the buckets: their writer names the timestamp in its errors.
+        histogram.set_timestamp(timestamp_ms);
         if (columns.isFloatAt(row))
         {
             histogram.set_count_float(columns.count_float.getData()[row]);
@@ -136,7 +150,6 @@ namespace
         histogram.set_schema(columns.schema.getData()[row]);
         histogram.set_zero_threshold(columns.zero_threshold.getData()[row]);
         histogram.set_reset_hint(toPrometheusResetHint(columns.counterResetHintAt(row)));
-        histogram.set_timestamp(timestamp_ms);
         for (const Float64 bound : ColumnsView::floatsAt(columns.custom_values, row))
             histogram.add_custom_values(bound);
     }
