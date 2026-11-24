@@ -44,6 +44,7 @@ namespace FailPoints
     extern const char distributed_plan_delay_root_cause_report[];
     extern const char distributed_plan_delay_failed_task_release[];
     extern const char stateless_worker_fail_after_registering_task[];
+    extern const char stateless_worker_pause_task_cancel[];
 }
 
 namespace Setting
@@ -93,7 +94,10 @@ void StatelessTaskExecutor::TaskCancellation::cancel()
     }
     /// The way `KILL QUERY` cancels: it reaches the task's executors at once.
     if (running_query)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_task_cancel);
         running_query->cancelQuery(CancelReason::CANCELLED_BY_USER);
+    }
 }
 
 bool StatelessTaskExecutor::TaskCancellation::setQuery(std::weak_ptr<QueryStatus> query_)
@@ -445,23 +449,28 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)
 {
-    std::lock_guard lock(tasks_mutex);
-    auto it = tasks.find(task_id);
-    if (it == tasks.end())
+    std::shared_ptr<TaskCancellation> cancellation;
     {
-        if (cancelled_before_start.insert(task_id).second)
+        std::lock_guard lock(tasks_mutex);
+        auto it = tasks.find(task_id);
+        if (it == tasks.end())
         {
-            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Remembering cancelled unknown task {}, so a late start is ignored", task_id);
-            cancelled_before_start_order.push_back(task_id);
-            if (cancelled_before_start_order.size() > MAX_CANCELLED_BEFORE_START)
+            if (cancelled_before_start.insert(task_id).second)
             {
-                cancelled_before_start.erase(cancelled_before_start_order.front());
-                cancelled_before_start_order.pop_front();
+                LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Remembering cancelled unknown task {}, so a late start is ignored", task_id);
+                cancelled_before_start_order.push_back(task_id);
+                if (cancelled_before_start_order.size() > MAX_CANCELLED_BEFORE_START)
+                {
+                    cancelled_before_start.erase(cancelled_before_start_order.front());
+                    cancelled_before_start_order.pop_front();
+                }
             }
+            return Result::UnknownTaskId;
         }
-        return Result::UnknownTaskId;
+        cancellation = it->second->cancellation;
     }
-    it->second->cancellation->cancel();
+    /// Outside the lock: cancelling the task's query runs its processors' `onCancel`, which can block.
+    cancellation->cancel();
 
     return Result::Ok;
 }
