@@ -13,12 +13,13 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 Schema Advisor helps you migrate your schema in ClickHouse Cloud from a recommendation, through an impact analysis on a sample of your data, to a deployment you approve. 
 
-In ClickHouse, the schema decides how a table is stored: the primary key, the `ORDER BY` key, compression, indexes, and projections. A better `ORDER BY` can turn a full table scan into a read of a few granules, and a better compression codec can cut the storage a table uses. 
+In ClickHouse, the schema decides how a table is stored: the primary key, the `ORDER BY` key, compression, indexes, and projections. A better `ORDER BY` can turn a full table scan into a read of a few granules, 
+and a better compression codec can cut the storage a table uses. 
 Making that change on a production table requires that you have a plan, validation on the plan, and a rollout with as little downtime as possible.
 
 Schema Advisor helps you with that work. Recommendations come from your query logs in [Monitoring](/products/cloud/features/monitoring/cloud-console), based on deterministic tests, not AI-generated.
 If you want to action those recommendations, then Schema Advisor proposes the plan to help you get there.
-A durable workflow runs the SQL. You approve each step before the workflow continues.
+A durable workflow executes the SQL and you approve each step before the workflow continues.
 
 <Warning>
 Schema Advisor is a preview feature. It may change, and it is not covered by the standard ClickHouse Cloud SLA.
@@ -40,12 +41,11 @@ Sign in to the Cloud console, select your organization, and open **Preview featu
 
 Find **Schema Advisor**, select **Learn more**, and then select **Request access**. We will email you when access is turned on.
 
+Some previews are hidden for some organizations. Contact [Cloud Support](https://clickhouse.com/support/program) if Schema Advisor is missing from the list.
 
 </Step>
 
 </Steps>
-
-Some previews are hidden for some organizations. Contact [Cloud Support](https://clickhouse.com/support/program) if Schema Advisor is missing from the list.
 
 ## How a change moves {#how-a-change-moves}
 
@@ -69,8 +69,8 @@ Else, run impact analysis first so you can see what the change does to your quer
 
 ## Start from a recommendation {#start-from-a-recommendation}
 
-After your organization has access, open a service and go to [**Monitoring**](/products/cloud/features/monitoring/cloud-console), then **Tables**. Schema Advisor shows the recommendation for a table and the queries that produced it. See [Query insights](/products/cloud/features/sql-console-features/query-insights) for the query log those recommendations are based on.
-Recommendations come from deterministic tests on your query logs. The tests run in the background and do not consume compute on your service.
+After your organization has access, open a service and go to [**Monitoring**](/products/cloud/features/monitoring/cloud-console), then **Tables**. 
+Schema Advisor shows the recommendation for a table and the queries that produced it. See [Query insights](/products/cloud/features/sql-console-features/query-insights) for the query log those recommendations are based on.
 Once you're ready to apply the recommendation, click **Generate implementation plan** at the bottom of the recommendation page.
 
 ## Impact analysis {#impact-analysis}
@@ -85,7 +85,8 @@ Schema Advisor builds a plan and shows the SQL for every step. After you approve
 You choose where the analysis runs:
 
 - **In the current service.** The analysis uses the service you are already in.
-- **In an isolated service.** Schema Advisor creates a separate ephemeral service restored from your latest backup. The benchmarking queries run on that copy of the data. This is separate from a [warehouse](/products/cloud/features/infrastructure/warehouses), where services share the same storage.
+- **In an isolated service.** Schema Advisor creates a separate ephemeral service restored from your latest backup. You must have backups set up to use this. 
+The benchmarking queries run on that copy of the data. This is separate from a [warehouse](/products/cloud/features/infrastructure/warehouses), where services share the same storage.
 
 ## Deploy a change {#deploy-a-change}
 
