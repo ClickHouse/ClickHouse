@@ -1,5 +1,7 @@
 The first column of the key
 1
+Runs of two granules, with every second mark examined: the examined marks are not at the same place in every run
+1
 The second column of the key: no estimate, the marks take the first value of each run of the first column
 1
 A unique first column of the key changes in every granule: no estimate

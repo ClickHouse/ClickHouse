@@ -23,6 +23,17 @@ SELECT 'The first column of the key';
 SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) BETWEEN 500 AND 2000
 FROM (EXPLAIN SELECT count() FROM t AS a JOIN t AS b ON a.k = b.k);
 
+SELECT 'Runs of two granules, with every second mark examined: the examined marks are not at the same place in every run';
+DROP TABLE IF EXISTS aligned;
+-- 8192 granules of 64 rows, more than the 4096 marks that are examined, and 4096 values in runs of 128 rows.
+-- If the first mark of every pair of granules was examined, no change would be seen: every run starts there.
+CREATE TABLE aligned (k UInt32, x UInt64)
+ENGINE = MergeTree ORDER BY k
+SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granularity = 64, index_granularity_bytes = 0, use_primary_key_cache = 0;
+INSERT INTO aligned SELECT intDiv(number, 128), number FROM numbers(524288);
+SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) BETWEEN 2000 AND 8192
+FROM (EXPLAIN SELECT count() FROM aligned AS a JOIN aligned AS b ON a.k = b.k);
+
 SELECT 'The second column of the key: no estimate, the marks take the first value of each run of the first column';
 DROP TABLE IF EXISTS s;
 -- `sequence` has 64 values repeated for each `tenant`, and every mark takes `sequence = 0`, in two parts.
@@ -72,6 +83,7 @@ SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'),
 FROM (EXPLAIN SELECT count() FROM small AS a JOIN small AS b ON a.id = b.id);
 
 DROP TABLE t;
+DROP TABLE aligned;
 DROP TABLE u;
 DROP TABLE s;
 DROP TABLE u_last;

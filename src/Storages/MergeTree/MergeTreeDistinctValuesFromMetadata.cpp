@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/Statistics/DistinctValuesFromCompressedSize.h>
 
+#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 
 #include <Poco/String.h>
@@ -89,8 +90,18 @@ bool hasOnlyGeneralPurposeCodecs(const ASTPtr & codec, bool & uses_default)
 /// within the runs of the preceding columns, and the marks can take the same position in every run (e.g. the first
 /// value of a sequence repeated for each value of the first column).
 ///
-/// To bound the work of planning on large tables, at most `max_sampled_marks` marks are taken, evenly spaced in each
-/// part, each with its next mark. Only the index that is already in memory is used.
+/// To bound the work of planning on large tables, at most `max_sampled_marks` marks are taken, each with its next
+/// mark: one from every `stride` consecutive marks of a part, at a position that varies from one interval to the next
+/// (see `sampledMark`). Only the index that is already in memory is used.
+/// The mark sampled from the `interval`-th `stride` consecutive marks. The position within the interval is a hash of
+/// its number rather than a fixed one: with a fixed position, runs of a length that divides `stride` granules would
+/// be sampled at the same place in every run, e.g. always inside a run, and no change would ever be seen. It is the
+/// same in every planning of a query, so the estimate does not change between them.
+size_t sampledMark(size_t interval, size_t stride)
+{
+    return interval * stride + intHash64(interval) % stride;
+}
+
 std::optional<UInt64> estimateDistinctValuesOfFirstKeyColumnFromPrimaryIndex(const RangesInDataParts & parts)
 {
     static constexpr size_t max_sampled_marks = 4096;
@@ -136,8 +147,10 @@ std::optional<UInt64> estimateDistinctValuesOfFirstKeyColumnFromPrimaryIndex(con
         const auto & column = *(*index)[0];
         size_t pairs = 0;
         size_t changes = 0;
-        for (size_t i = 0; i + 1 < granules; i += stride)
+        for (size_t interval = 0; interval * stride + 1 < granules; ++interval)
         {
+            /// The last interval can be shorter than `stride`: its pair is the last one of the part at most.
+            const size_t i = std::min(sampledMark(interval, stride), granules - 2);
             ++pairs;
             changes += column.compareAt(i, i + 1, column, /*nan_direction_hint=*/ 1) != 0;
         }
@@ -169,8 +182,9 @@ std::optional<UInt64> estimateDistinctValuesOfFirstKeyColumnFromPrimaryIndex(con
         {
             const auto & column = *(*index)[0];
             std::unordered_set<UInt128> part_hashes;
-            for (size_t i = 0; i < granules; i += stride)
+            for (size_t interval = 0; interval * stride < granules; ++interval)
             {
+                const size_t i = std::min(sampledMark(interval, stride), granules - 1);
                 SipHash hash;
                 column.updateHashWithValue(i, hash);
                 const auto value_hash = hash.get128();
