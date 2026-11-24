@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestMerge.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Common/FieldAccurateComparison.h>
@@ -167,12 +168,8 @@ bool isSamePartition(const Row & lhs, const Row & rhs)
 
 }
 
-void appendInsertedFiles(
-    ManifestEntries & entries,
-    ManifestListEntryCounts & counts,
-    const Row & partition_value,
-    const MultipleFileWriter & writer,
-    std::optional<Int32> sort_order_id)
+std::vector<ManifestFileEntry> getInsertedFileEntries(
+    const Row & partition_value, const MultipleFileWriter & writer, std::optional<Int32> sort_order_id)
 {
     const auto & files = writer.getDataFiles();
     const auto & row_counts = writer.getDataFileRowCounts();
@@ -187,24 +184,20 @@ void appendInsertedFiles(
             byte_counts.size(),
             statistics.size());
 
-    DataFileEntryLineage lineage;
-    lineage.added_by_new_snapshot = true;
+    std::vector<ManifestFileEntry> entries;
+    entries.reserve(files.size());
     for (size_t i = 0; i < files.size(); ++i)
-    {
-        entries.paths.push_back(files[i]);
-        entries.row_counts.push_back(row_counts[i]);
-        entries.byte_counts.push_back(byte_counts[i]);
-        entries.partition_values.push_back(partition_value);
-        entries.fresh_statistics.push_back(statistics[i].get());
-        entries.carried_over_statistics.emplace_back();
-        entries.sort_order_ids.push_back(sort_order_id);
-        entries.lineage.push_back(lineage);
-        counts.files_count += 1;
-        counts.rows_count += static_cast<Int64>(row_counts[i]);
-    }
+        entries.push_back(ManifestFileEntry{
+            .path = files[i],
+            .record_count = row_counts[i],
+            .file_size_in_bytes = byte_counts[i],
+            .partition_value = partition_value,
+            .sort_order_id = sort_order_id,
+            .statistics = statistics[i].get()});
+    return entries;
 }
 
-std::vector<ManifestToMerge> selectManifestsToMerge(
+ManifestsToMerge selectManifestsToMerge(
     const ManifestMergeSettings & merge_settings,
     const ManifestFileCacheKeys & parent_manifests,
     const Row & partition_value,
@@ -221,7 +214,7 @@ std::vector<ManifestToMerge> selectManifestsToMerge(
         return {};
 
     auto log = getLogger("IcebergManifestMerge");
-    std::vector<ManifestToMerge> selected;
+    ManifestsToMerge selected;
     size_t selected_size = 0;
     for (auto it = parent_manifests.rbegin(); it != parent_manifests.rend(); ++it)
     {
@@ -247,42 +240,25 @@ std::vector<ManifestToMerge> selectManifestsToMerge(
                 }))
             continue;
 
-        selected.push_back({&*it, std::move(files_handle)});
-        selected_size += it->manifest_file_byte_size;
-    }
-    if (selected.size() + 1 < merge_settings.min_count_to_merge)
-        return {};
-    return selected;
-}
-
-void appendMergedManifests(
-    ManifestEntries & entries,
-    ManifestListEntryCounts & counts,
-    const Row & partition_value,
-    const std::vector<ManifestToMerge> & manifests)
-{
-    auto log = getLogger("IcebergManifestMerge");
-    for (const auto & [manifest, files_handle] : manifests)
-    {
-        const auto & files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
         for (const auto & file : files)
         {
             const auto & entry = *file->parsed_entry;
-            auto lineage = getEntryLineageForRewrite(entry, *manifest);
-            counts.min_sequence_number = std::min(counts.min_sequence_number, *lineage.sequence_number);
-            counts.existing_files_count += 1;
-            counts.existing_rows_count += entry.record_count;
-            entries.paths.push_back(entry.file_path_key);
-            entries.row_counts.push_back(static_cast<UInt64>(entry.record_count));
-            entries.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
-            entries.partition_values.push_back(partition_value);
-            entries.fresh_statistics.push_back(nullptr);
-            entries.carried_over_statistics.push_back(getColumnStatisticsForRewrite(entry));
-            entries.sort_order_ids.push_back(entry.sort_order_id);
-            entries.lineage.push_back(std::move(lineage));
+            selected.entries.push_back(ManifestFileEntry{
+                .path = entry.file_path_key,
+                .record_count = static_cast<UInt64>(entry.record_count),
+                .file_size_in_bytes = static_cast<UInt64>(entry.file_size_in_bytes),
+                .partition_value = partition_value,
+                .sort_order_id = entry.sort_order_id,
+                .statistics = getColumnStatisticsForRewrite(entry),
+                .existing_lineage = getEntryLineageForRewrite(entry, *it)});
         }
-        LOG_DEBUG(log, "Merging manifest file {} with {} data files into the new manifest", manifest->manifest_file_path.serialize(), files.size());
+        selected.manifest_paths.push_back(it->manifest_file_path);
+        selected_size += it->manifest_file_byte_size;
+        LOG_DEBUG(log, "Merging manifest file {} with {} data files into the new manifest", it->manifest_file_path.serialize(), files.size());
     }
+    if (selected.manifest_paths.size() + 1 < merge_settings.min_count_to_merge)
+        return {};
+    return selected;
 }
 }
 

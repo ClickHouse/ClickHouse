@@ -624,58 +624,20 @@ void ManifestPartitionSummary::add(const Row & partition_value)
 
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
+    Poco::JSON::Object::Ptr partition_spec,
+    Int64 partition_spec_id,
     const std::vector<String> & partition_columns,
-    const std::vector<Row> & per_file_partition_values,
     const DataTypes & partition_types,
-    const std::vector<IcebergPathFromMetadata> & data_file_names,
-    const std::vector<UInt64> & data_file_row_counts,
-    const std::vector<UInt64> & data_file_byte_counts,
-    const std::optional<DataFileStatistics> & data_file_statistics,
+    const std::vector<ManifestFileEntry> & entries,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
-    Poco::JSON::Object::Ptr partition_spec,
-    Int64 partition_spec_id,
-    WriteBuffer & buf,
     Iceberg::FileContentType content_type,
+    WriteBuffer & buf,
     std::optional<Int64> user_defined_sequence_number,
     std::optional<Int64> user_defined_snapshot_id,
-    const std::vector<String> & data_file_formats,
-    const std::vector<DataFileColumnStatistics> & per_file_statistics,
-    const std::vector<std::optional<Int32>> & data_file_sort_order_ids,
-    const std::vector<DataFileEntryLineage> & per_file_entry_lineage,
-    Poco::JSON::Object::Ptr schema_to_serialize,
-    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics)
+    Poco::JSON::Object::Ptr schema_to_serialize)
 {
-    /// A throw, not a `chassert`: mis-pairing statistics with data files publishes metadata that is
-    /// wrong in the unsafe direction for external readers, and `chassert` compiles out of release builds.
-    if (per_file_fresh_statistics && per_file_fresh_statistics->size() != data_file_names.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "per_file_fresh_statistics size does not match number of data files: {} vs {}",
-            per_file_fresh_statistics->size(),
-            data_file_names.size());
-
-    chassert(
-        data_file_formats.empty() || data_file_formats.size() == data_file_names.size(),
-        "data_file_formats size does not match number of data files");
-    chassert(
-        per_file_statistics.empty() || per_file_statistics.size() == data_file_names.size(),
-        "per_file_statistics size does not match number of data files");
-    chassert(
-        data_file_sort_order_ids.empty() || data_file_sort_order_ids.size() == data_file_names.size(),
-        "data_file_sort_order_ids size does not match number of data files");
-    chassert(
-        per_file_entry_lineage.empty() || per_file_entry_lineage.size() == data_file_names.size(),
-        "per_file_entry_lineage size does not match number of data files");
-
-    if (per_file_partition_values.size() != data_file_names.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Iceberg manifest needs one partition tuple per data file, got {} tuples for {} files",
-            per_file_partition_values.size(),
-            data_file_names.size());
-
     if (partition_types.size() != partition_columns.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -683,13 +645,13 @@ void generateManifestFile(
             partition_columns.size(),
             partition_types.size());
 
-    for (const auto & partition_values : per_file_partition_values)
-        if (partition_values.size() != partition_columns.size())
+    for (const auto & file_entry : entries)
+        if (file_entry.partition_value.size() != partition_columns.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Iceberg manifest partition arity mismatch: {} partition columns but {} values",
                 partition_columns.size(),
-                partition_values.size());
+                file_entry.partition_value.size());
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -725,17 +687,13 @@ void generateManifestFile(
     writer.setMetadata(Iceberg::f_partition_spec, stringifyJSON(partition_spec->getArray(Iceberg::f_fields)));
     writer.setMetadata(Iceberg::f_manifest_partition_spec_id, std::to_string(partition_spec_id));
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
-    for (size_t file_idx = 0; file_idx < data_file_names.size(); ++file_idx)
+    for (const auto & file_entry : entries)
     {
-        const auto & data_file_name = data_file_names[file_idx];
         avro::GenericDatum manifest_datum(root_schema);
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
-        /// A metadata-only rewrite (non-empty per_file_entry_lineage) writes each entry as EXISTING, keeping the snapshot-id and sequence number that originally added the file rather than re-stamping it as ADDED.
-        const DataFileEntryLineage * entry_lineage
-            = per_file_entry_lineage.empty() || per_file_entry_lineage[file_idx].added_by_new_snapshot
-            ? nullptr
-            : &per_file_entry_lineage[file_idx];
+        /// A carried-over file stays EXISTING, keeping the snapshot-id and sequence number that originally added it rather than re-stamping it as ADDED.
+        const DataFileEntryLineage * entry_lineage = file_entry.existing_lineage ? &*file_entry.existing_lineage : nullptr;
 
         manifest.field(Iceberg::f_status)
             = avro::GenericDatum(entry_lineage ? static_cast<Int32>(ManifestEntryStatus::EXISTING)
@@ -766,16 +724,11 @@ void generateManifestFile(
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
         if (version > 1)
             data_file.field(Iceberg::f_content) = avro::GenericDatum(static_cast<Int32>(content_type));
-        data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name.serialize());
-        data_file.field(Iceberg::f_file_format)
-            = avro::GenericDatum(data_file_formats.empty() ? format : data_file_formats[file_idx]);
+        data_file.field(Iceberg::f_file_path) = avro::GenericDatum(file_entry.path.serialize());
+        data_file.field(Iceberg::f_file_format) = avro::GenericDatum(file_entry.file_format.empty() ? format : file_entry.file_format);
 
-        /// When per-file statistics were supplied, this entry describes only its own data file; the shared
-        /// `data_file_statistics` accumulator covers every file of the manifest and is the fallback.
-        /// Independent of `per_file_statistics` below, which carries pre-serialized bytes over verbatim.
-        const DataFileStatistics * effective_statistics
-            = per_file_fresh_statistics ? (*per_file_fresh_statistics)[file_idx]
-                                        : (data_file_statistics ? &*data_file_statistics : nullptr);
+        const DataFileStatistics * const * new_file_statistics = std::get_if<const DataFileStatistics *>(&file_entry.statistics);
+        const DataFileStatistics * effective_statistics = new_file_statistics ? *new_file_statistics : nullptr;
 
         /// Writes (field-id, value) pairs into the union-typed `field_name` array of the data_file record.
         auto set_fields = [&]<typename K, typename T, typename U>(
@@ -795,10 +748,10 @@ void generateManifestFile(
             }
         };
 
-        if (!per_file_statistics.empty() && !effective_statistics)
+        if (const auto * carried_over_statistics = std::get_if<DataFileColumnStatistics>(&file_entry.statistics))
         {
             /// Manifest-only rewrite: carry over the source file's column stats verbatim.
-            const auto & stats = per_file_statistics[file_idx];
+            const auto & stats = *carried_over_statistics;
             /// Bounds are raw bytes; convert to std::vector<uint8_t> to produce an Avro `bytes` datum.
             auto to_bytes = [](Int32, const String & value)
             { return std::vector<uint8_t>(value.begin(), value.end()); };
@@ -851,10 +804,10 @@ void generateManifestFile(
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
             }
         }
-        data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(data_file_row_counts[file_idx]));
-        data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(data_file_byte_counts[file_idx]));
+        data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(file_entry.record_count));
+        data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(file_entry.file_size_in_bytes));
 
-        if (per_file_fresh_statistics && effective_statistics && !effective_statistics->getSplitOffsets().empty()
+        if (effective_statistics && !effective_statistics->getSplitOffsets().empty()
             && data_file.hasField(Iceberg::f_split_offsets))
         {
             auto & split_offsets_field = data_file.field(Iceberg::f_split_offsets);
@@ -865,14 +818,14 @@ void generateManifestFile(
         }
 
         /// Preserve the source file's sort_order_id.
-        if (!data_file_sort_order_ids.empty() && data_file_sort_order_ids[file_idx].has_value())
+        if (file_entry.sort_order_id)
         {
             auto & sort_order_field = data_file.field(Iceberg::f_sort_order_id);
             sort_order_field.selectBranch(1);
-            sort_order_field.value<Int32>() = *data_file_sort_order_ids[file_idx];
+            sort_order_field.value<Int32>() = *file_entry.sort_order_id;
         }
 
-        const Row & partition_values = per_file_partition_values[file_idx];
+        const Row & partition_values = file_entry.partition_value;
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
@@ -972,6 +925,89 @@ void generateManifestFile(
         writer.write(manifest_datum);
     }
     writer.close();
+}
+
+void generateManifestFile(
+    Poco::JSON::Object::Ptr metadata,
+    const std::vector<String> & partition_columns,
+    const std::vector<Row> & per_file_partition_values,
+    const DataTypes & partition_types,
+    const std::vector<IcebergPathFromMetadata> & data_file_names,
+    const std::vector<UInt64> & data_file_row_counts,
+    const std::vector<UInt64> & data_file_byte_counts,
+    const std::optional<DataFileStatistics> & data_file_statistics,
+    SharedHeader sample_block,
+    Poco::JSON::Object::Ptr new_snapshot,
+    const String & format,
+    Poco::JSON::Object::Ptr partition_spec,
+    Int64 partition_spec_id,
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type,
+    std::optional<Int64> user_defined_sequence_number,
+    std::optional<Int64> user_defined_snapshot_id,
+    const std::vector<String> & data_file_formats,
+    const std::vector<DataFileColumnStatistics> & per_file_statistics,
+    const std::vector<std::optional<Int32>> & data_file_sort_order_ids,
+    const std::vector<DataFileEntryLineage> & per_file_entry_lineage,
+    Poco::JSON::Object::Ptr schema_to_serialize,
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics)
+{
+    const size_t files_count = data_file_names.size();
+    /// A throw, not a `chassert`: mis-pairing the values with data files publishes metadata that is wrong in the unsafe
+    /// direction for external readers, and `chassert` compiles out of release builds.
+    auto check_size = [&](size_t size, bool may_be_empty, std::string_view name)
+    {
+        if (size != files_count && !(may_be_empty && size == 0))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest has {} data files but {} {}", files_count, size, name);
+    };
+    check_size(per_file_partition_values.size(), false, "partition tuples");
+    check_size(data_file_row_counts.size(), false, "row counts");
+    check_size(data_file_byte_counts.size(), false, "byte counts");
+    check_size(data_file_formats.size(), true, "file formats");
+    check_size(per_file_statistics.size(), true, "column statistics");
+    check_size(data_file_sort_order_ids.size(), true, "sort order ids");
+    check_size(per_file_entry_lineage.size(), true, "entry lineages");
+    if (per_file_fresh_statistics)
+        check_size(per_file_fresh_statistics->size(), false, "fresh statistics");
+
+    std::vector<ManifestFileEntry> entries;
+    entries.reserve(files_count);
+    for (size_t i = 0; i < files_count; ++i)
+    {
+        ManifestFileEntry & file_entry = entries.emplace_back();
+        file_entry.path = data_file_names[i];
+        file_entry.record_count = data_file_row_counts[i];
+        file_entry.file_size_in_bytes = data_file_byte_counts[i];
+        file_entry.partition_value = per_file_partition_values[i];
+        if (!data_file_formats.empty())
+            file_entry.file_format = data_file_formats[i];
+        if (!data_file_sort_order_ids.empty())
+            file_entry.sort_order_id = data_file_sort_order_ids[i];
+        const DataFileStatistics * new_file_statistics
+            = per_file_fresh_statistics ? (*per_file_fresh_statistics)[i] : (data_file_statistics ? &*data_file_statistics : nullptr);
+        if (new_file_statistics || per_file_statistics.empty())
+            file_entry.statistics = new_file_statistics;
+        else
+            file_entry.statistics = per_file_statistics[i];
+        if (!per_file_entry_lineage.empty())
+            file_entry.existing_lineage = per_file_entry_lineage[i];
+    }
+
+    generateManifestFile(
+        metadata,
+        partition_spec,
+        partition_spec_id,
+        partition_columns,
+        partition_types,
+        entries,
+        sample_block,
+        new_snapshot,
+        format,
+        content_type,
+        buf,
+        user_defined_sequence_number,
+        user_defined_snapshot_id,
+        schema_to_serialize);
 }
 
 void generateManifestList(
@@ -1380,6 +1416,73 @@ void generateManifestList(
     }
 
     writer.close();
+}
+
+void generateManifestList(
+    const Iceberg::IcebergPathResolver & path_resolver,
+    Poco::JSON::Object::Ptr metadata,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    Poco::JSON::Object::Ptr new_snapshot,
+    const std::vector<WrittenManifest> & manifests,
+    const std::unordered_set<String> & replaced_manifest_paths,
+    WriteBuffer & buf)
+{
+    /// Carried-over files need the manifest rewrite form of the entries, which reports the existing counts.
+    const bool has_existing_files = std::ranges::any_of(manifests, [](const auto & manifest) { return manifest.existing_files_count > 0; });
+    const Int64 new_sequence_number = has_existing_files ? new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number) : 0;
+
+    std::vector<Iceberg::IcebergPathFromMetadata> paths;
+    std::vector<Int64> sizes;
+    std::vector<Int64> partition_spec_ids;
+    std::vector<ManifestPartitionSummary> partition_summaries;
+    std::vector<Int64> row_counts;
+    std::vector<Int64> file_counts;
+    std::vector<ManifestListEntryCounts> counts;
+    for (const auto & manifest : manifests)
+    {
+        paths.push_back(manifest.path);
+        sizes.push_back(manifest.size);
+        partition_spec_ids.push_back(manifest.partition_spec_id);
+        if (manifest.partition_summary)
+            partition_summaries.push_back(*manifest.partition_summary);
+        row_counts.push_back(manifest.added_rows_count);
+        file_counts.push_back(manifest.added_files_count);
+        if (has_existing_files)
+            counts.push_back(ManifestListEntryCounts{
+                .files_count = manifest.added_files_count,
+                .rows_count = manifest.added_rows_count,
+                .min_sequence_number = std::min(manifest.min_existing_sequence_number.value_or(new_sequence_number), new_sequence_number),
+                .counts_are_added = true,
+                .existing_files_count = manifest.existing_files_count,
+                .existing_rows_count = manifest.existing_rows_count});
+    }
+    if (!partition_summaries.empty() && partition_summaries.size() != manifests.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest list has {} partition summaries for {} manifests",
+            partition_summaries.size(),
+            manifests.size());
+
+    generateManifestList(
+        path_resolver,
+        metadata,
+        object_storage,
+        context,
+        paths,
+        new_snapshot,
+        sizes,
+        buf,
+        Iceberg::FileContentType::DATA,
+        /* use_previous_snapshots */ true,
+        /* per_entry_content_types */ {},
+        counts,
+        /* carry_forward_manifest_paths */ {},
+        partition_spec_ids,
+        partition_summaries,
+        row_counts,
+        file_counts,
+        replaced_manifest_paths);
 }
 
 /// Drops the key columns `sortBlockByKeyDescription` appended after the first `num_columns`.
@@ -1814,25 +1917,70 @@ void IcebergStorageSink::removeDataFilesAndManifests()
 
 void IcebergStorageSink::removeManifests()
 {
-    for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+    for (const auto & manifest : written_manifests)
     {
         try
         {
-            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+            object_storage->removeObjectIfExists(StoredObject(persistent_table_components.path_resolver.resolve(manifest.path)));
         }
         catch (...)
         {
-            tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", manifest_filename_in_storage));
+            tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", manifest.path.serialize()));
         }
     }
-    manifest_entries_in_storage.clear();
-    manifest_entries.clear();
-    manifest_entry_sizes.clear();
-    manifest_entry_row_counts.clear();
-    manifest_entry_file_counts.clear();
-    entry_partition_summaries.clear();
-    manifest_entry_counts.clear();
+    written_manifests.clear();
+    manifests_depend_on_parent = false;
     replaced_manifest_paths.clear();
+}
+
+void IcebergStorageSink::writeManifest(
+    const std::vector<ManifestFileEntry> & entries,
+    std::optional<ManifestPartitionSummary> partition_summary,
+    Poco::JSON::Object::Ptr new_snapshot)
+{
+    const auto & resolver = persistent_table_components.path_resolver;
+
+    /// Appended before the write, so that the cleanup removes a partially written manifest too.
+    auto & manifest = written_manifests.emplace_back();
+    manifest.path = filename_generator.generateManifestEntryName();
+    manifest.partition_spec_id = partition_spec_id;
+    manifest.partition_summary = std::move(partition_summary);
+    for (const auto & entry : entries)
+    {
+        const auto rows = static_cast<Int64>(entry.record_count);
+        if (entry.existing_lineage)
+        {
+            manifest.existing_files_count += 1;
+            manifest.existing_rows_count += rows;
+            manifest.min_existing_sequence_number
+                = std::min(manifest.min_existing_sequence_number.value_or(std::numeric_limits<Int64>::max()), *entry.existing_lineage->sequence_number);
+        }
+        else
+        {
+            manifest.added_files_count += 1;
+            manifest.added_rows_count += rows;
+        }
+    }
+
+    const auto storage_path = resolver.resolve(manifest.path);
+    auto buffer = object_storage->writeObject(
+        StoredObject(storage_path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+    generateManifestFile(
+        metadata,
+        partititon_spec,
+        partition_spec_id,
+        partitioner ? partitioner->getColumns() : std::vector<String>{},
+        partitioner ? partitioner->getResultTypes() : DataTypes{},
+        entries,
+        sample_block,
+        new_snapshot,
+        write_format,
+        Iceberg::FileContentType::DATA,
+        *buffer);
+    buffer->finalize();
+    manifest.size = buffer->count();
+    if (manifest.size == 0)
+        manifest.size = object_storage->getObjectMetadata(storage_path, /*with_tags=*/false).size_bytes;
 }
 
 bool IcebergStorageSink::initializeMetadata()
@@ -1890,7 +2038,7 @@ bool IcebergStorageSink::initializeMetadata()
         /// unless the manifests were merged with the manifests of the parent snapshot.
         if (!retry_because_of_metadata_conflict)
             removeDataFilesAndManifests();
-        else if (!manifest_entry_counts.empty())
+        else if (manifests_depend_on_parent)
             removeManifests();
 
         /// After a conflict the caller rebases the next attempt with `readLatestMetadata`.
@@ -1902,9 +2050,10 @@ bool IcebergStorageSink::initializeMetadata()
     try
     {
         /// On a retry the manifests are reused and only the manifest list is written.
-        if (manifest_entries.empty())
+        if (written_manifests.empty())
         {
             const auto merge_settings = Iceberg::getManifestMergeSettings(metadata, context->getSettingsRef());
+            manifests_depend_on_parent = merge_settings.has_value();
             ManifestFileCacheKeys parent_manifests;
             if (merge_settings && parent_snapshot != -1)
             {
@@ -1922,68 +2071,14 @@ bool IcebergStorageSink::initializeMetadata()
                 parent_manifests = getManifestList(object_storage, persistent_table_components, context, *parent_manifest_list, log);
             }
 
-            const bool single_manifest = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
-
-            const ManifestListEntryCounts empty_counts{
-                .min_sequence_number = merge_settings ? new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number) : 0,
-                .counts_are_added = true};
-            Iceberg::ManifestEntries entries;
-            auto counts = empty_counts;
-            std::optional<ManifestPartitionSummary> partition_summary;
-
-            auto write_manifest = [&]
-            {
-                auto manifest_entry_path = filename_generator.generateManifestEntryName();
-                manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
-                manifest_entries.push_back(manifest_entry_path);
-                manifest_entry_row_counts.push_back(counts.rows_count);
-                manifest_entry_file_counts.push_back(counts.files_count);
-                if (merge_settings)
-                    manifest_entry_counts.push_back(counts);
-                if (partition_summary)
-                    entry_partition_summaries.push_back(std::move(*partition_summary));
-                partition_summary.reset();
-
-                auto buffer_manifest_entry = object_storage->writeObject(
-                    StoredObject(resolver.resolve(manifest_entry_path)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-                generateManifestFile(
-                    metadata,
-                    partitioner ? partitioner->getColumns() : std::vector<String>{},
-                    entries.partition_values,
-                    partitioner ? partitioner->getResultTypes() : DataTypes{},
-                    entries.paths,
-                    entries.row_counts,
-                    entries.byte_counts,
-                    /*data_file_statistics=*/std::nullopt,
-                    sample_block,
-                    new_snapshot,
-                    write_format,
-                    partititon_spec,
-                    partition_spec_id,
-                    *buffer_manifest_entry,
-                    Iceberg::FileContentType::DATA,
-                    /*user_defined_sequence_number=*/std::nullopt,
-                    /*user_defined_snapshot_id=*/std::nullopt,
-                    /*data_file_formats=*/{},
-                    entries.carried_over_statistics,
-                    entries.sort_order_ids,
-                    entries.lineage,
-                    /*schema_to_serialize=*/nullptr,
-                    &entries.fresh_statistics);
-                buffer_manifest_entry->finalize();
-                auto size = buffer_manifest_entry->count();
-                if (size == 0)
-                    size = object_storage->getObjectMetadata(resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
-                manifest_entry_sizes.push_back(size);
-
-                entries = {};
-                counts = empty_counts;
-            };
-
             /// Either one manifest for every partition the insert touched, or one manifest per partition.
+            const bool single_manifest = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
+            std::vector<ManifestFileEntry> entries;
+            std::optional<ManifestPartitionSummary> partition_summary;
             for (const auto & [partition_key, writer] : writer_per_partition_key)
             {
-                Iceberg::appendInsertedFiles(entries, counts, partition_key, writer, data_file_sort_order_id);
+                for (auto & entry : Iceberg::getInsertedFileEntries(partition_key, writer, data_file_sort_order_id))
+                    entries.push_back(std::move(entry));
                 if (partitioner)
                 {
                     if (!partition_summary)
@@ -1995,7 +2090,7 @@ bool IcebergStorageSink::initializeMetadata()
 
                 if (merge_settings)
                 {
-                    auto to_merge = Iceberg::selectManifestsToMerge(
+                    auto merged = Iceberg::selectManifestsToMerge(
                         *merge_settings,
                         parent_manifests,
                         partition_key,
@@ -2006,14 +2101,17 @@ bool IcebergStorageSink::initializeMetadata()
                         persistent_table_components,
                         object_storage,
                         context);
-                    for (const auto & manifest : to_merge)
-                        replaced_manifest_paths.insert(manifest.manifest->manifest_file_path.serialize());
-                    Iceberg::appendMergedManifests(entries, counts, partition_key, to_merge);
+                    for (const auto & path : merged.manifest_paths)
+                        replaced_manifest_paths.insert(path.serialize());
+                    for (auto & entry : merged.entries)
+                        entries.push_back(std::move(entry));
                 }
-                write_manifest();
+                writeManifest(entries, std::move(partition_summary), new_snapshot);
+                entries.clear();
+                partition_summary.reset();
             }
             if (single_manifest)
-                write_manifest();
+                writeManifest(entries, std::move(partition_summary), new_snapshot);
         }
         {
             auto buffer_manifest_list = object_storage->writeObject(
@@ -2023,22 +2121,13 @@ bool IcebergStorageSink::initializeMetadata()
             {
                 generateManifestList(
                     persistent_table_components.path_resolver,
-                    metadata, object_storage, context,
-                    manifest_entries,
+                    metadata,
+                    object_storage,
+                    context,
                     new_snapshot,
-                    manifest_entry_sizes,
-                    *buffer_manifest_list,
-                    Iceberg::FileContentType::DATA,
-                    /* use_previous_snapshots = */ true,
-                    /* per_entry_content_types = */ {},
-                    manifest_entry_counts,
-                    /* carry_forward_manifest_paths = */ {},
-                    /// Explicit, because after a conflict the default spec may differ from the one the manifests were written with.
-                    std::vector<Int64>(manifest_entries.size(), partition_spec_id),
-                    entry_partition_summaries,
-                    manifest_entry_row_counts,
-                    manifest_entry_file_counts,
-                    replaced_manifest_paths);
+                    written_manifests,
+                    replaced_manifest_paths,
+                    *buffer_manifest_list);
                 buffer_manifest_list->finalize();
             }
             catch (...)

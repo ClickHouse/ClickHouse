@@ -9,7 +9,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
@@ -37,32 +36,21 @@ struct ManifestMergeSettings
 
 std::optional<ManifestMergeSettings> getManifestMergeSettings(const Poco::JSON::Object::Ptr & metadata, const Settings & settings);
 
-struct ManifestEntries
+/// The entries of the data files that `writer` has written into the partition `partition_value`.
+std::vector<ManifestFileEntry> getInsertedFileEntries(
+    const Row & partition_value, const MultipleFileWriter & writer, std::optional<Int32> sort_order_id);
+
+/// The manifests of the parent snapshot that the new manifest of a partition replaces, and the entries of their files.
+struct ManifestsToMerge
 {
-    std::vector<IcebergPathFromMetadata> paths;
-    std::vector<UInt64> row_counts;
-    std::vector<UInt64> byte_counts;
-    std::vector<Row> partition_values;
-    std::vector<const DataFileStatistics *> fresh_statistics;
-    std::vector<DataFileColumnStatistics> carried_over_statistics;
-    std::vector<std::optional<Int32>> sort_order_ids;
-    std::vector<DataFileEntryLineage> lineage;
+    std::vector<IcebergPathFromMetadata> manifest_paths;
+    std::vector<ManifestFileEntry> entries;
 };
 
-void appendInsertedFiles(
-    ManifestEntries & entries,
-    ManifestListEntryCounts & counts,
-    const Row & partition_value,
-    const MultipleFileWriter & writer,
-    std::optional<Int32> sort_order_id);
-
-struct ManifestToMerge
-{
-    const ManifestFileCacheKey * manifest = nullptr;
-    ManifestFileIterator::ManifestFileEntriesHandle files;
-};
-
-std::vector<ManifestToMerge> selectManifestsToMerge(
+/// Selects the newest manifests of the parent snapshot that hold only data files of the partition `partition_value` with
+/// the schema and the format of the new files, up to `target_size_bytes` in total. Selects none if, with the new manifest,
+/// there would be fewer than `min_count_to_merge`.
+ManifestsToMerge selectManifestsToMerge(
     const ManifestMergeSettings & merge_settings,
     const ManifestFileCacheKeys & parent_manifests,
     const Row & partition_value,
@@ -73,12 +61,6 @@ std::vector<ManifestToMerge> selectManifestsToMerge(
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     ContextPtr context);
-
-void appendMergedManifests(
-    ManifestEntries & entries,
-    ManifestListEntryCounts & counts,
-    const Row & partition_value,
-    const std::vector<ManifestToMerge> & manifests);
 
 }
 

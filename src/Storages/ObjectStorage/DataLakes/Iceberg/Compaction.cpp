@@ -1289,25 +1289,13 @@ static bool writeMetadataFiles(
                     manifest_entry->path.serialize(),
                     snapshot_id);
 
-            std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec;
-            std::vector<Row> file_partition_values;
-            std::vector<UInt64> file_row_counts;
-            std::vector<UInt64> file_byte_counts;
-            std::vector<const DataFileStatistics *> file_statistics;
-            ManifestPartitionSummary partition_summary(partition_types);
-            for (const auto & member : data_files_with_partitions)
-            {
-                data_files_vec.push_back(member.data_file->patched_path);
-                file_row_counts.push_back(member.data_file->new_records_count);
-                file_byte_counts.push_back(member.data_file->new_bytes_count);
-                file_statistics.push_back(&member.data_file->statistics);
-                const auto & partition_value = plan.partition_encoder.getPartitionValue(member.partition_index);
-                file_partition_values.push_back(partition_value);
-                if (!partition_types.empty())
-                    partition_summary.add(partition_value);
-            }
             if (!partition_types.empty())
+            {
+                ManifestPartitionSummary partition_summary(partition_types);
+                for (const auto & member : data_files_with_partitions)
+                    partition_summary.add(plan.partition_encoder.getPartitionValue(member.partition_index));
                 manifest_file_partition_summaries.emplace(manifest_entry->patched_path, std::move(partition_summary));
+            }
 
             /// The manifest's original lineage, taken from the source manifest-list entry: the
             /// snapshot that actually added the manifest may already be expired from table
@@ -1336,61 +1324,54 @@ static bool writeMetadataFiles(
             const Int64 remapped_sequence_number = remap_sequence_number(manifest_lineage.added_snapshot_id);
 
             /// An entry that an `INSERT` merged into this manifest was added by an earlier snapshot, so it stays `EXISTING` with that snapshot's lineage.
-            std::vector<DataFileEntryLineage> file_lineage;
+            std::vector<ManifestFileEntry> entries;
             ManifestListEntryCounts counts;
             counts.min_sequence_number = remapped_sequence_number;
             counts.added_snapshot_id = manifest_lineage.added_snapshot_id;
             counts.added_sequence_number = remapped_sequence_number;
             for (const auto & member : data_files_with_partitions)
             {
-                const auto rows = static_cast<Int64>(member.data_file->new_records_count);
-                DataFileEntryLineage lineage;
-                lineage.added_snapshot_id = member.added_snapshot_id;
+                auto & entry = entries.emplace_back(ManifestFileEntry{
+                    .path = member.data_file->patched_path,
+                    .record_count = member.data_file->new_records_count,
+                    .file_size_in_bytes = member.data_file->new_bytes_count,
+                    .partition_value = plan.partition_encoder.getPartitionValue(member.partition_index),
+                    .statistics = &member.data_file->statistics});
+                const auto rows = static_cast<Int64>(entry.record_count);
                 if (member.added_snapshot_id == manifest_lineage.added_snapshot_id)
                 {
-                    lineage.added_by_new_snapshot = true;
                     counts.files_count += 1;
                     counts.rows_count += rows;
+                    continue;
                 }
-                else
-                {
-                    lineage.sequence_number = remap_sequence_number(member.added_snapshot_id);
-                    lineage.file_sequence_number = lineage.sequence_number;
-                    counts.min_sequence_number = std::min(counts.min_sequence_number, *lineage.sequence_number);
-                    counts.existing_files_count += 1;
-                    counts.existing_rows_count += rows;
-                }
-                file_lineage.push_back(std::move(lineage));
+                const Int64 sequence_number = remap_sequence_number(member.added_snapshot_id);
+                entry.existing_lineage = DataFileEntryLineage{
+                    .added_snapshot_id = member.added_snapshot_id,
+                    .sequence_number = sequence_number,
+                    .file_sequence_number = sequence_number};
+                counts.min_sequence_number = std::min(counts.min_sequence_number, sequence_number);
+                counts.existing_files_count += 1;
+                counts.existing_rows_count += rows;
             }
             manifest_file_counts[manifest_entry->patched_path] = counts;
 
             generateManifestFile(
                 metadata_object,
+                partititon_spec,
+                partition_spec_id,
                 partition_columns,
-                file_partition_values,
                 partition_types,
-                data_files_vec,
-                file_row_counts,
-                file_byte_counts,
-                /* data_file_statistics */ std::nullopt,
+                entries,
                 sample_block_,
                 snapshot,
                 write_format,
-                partititon_spec,
-                partition_spec_id,
-                *buffer_manifest_entry,
                 Iceberg::FileContentType::DATA,
+                *buffer_manifest_entry,
                 /// Stamp the rewritten entries with the manifest's original adding snapshot and
                 /// the remapped sequence number, keeping the manifest file consistent with the
                 /// manifest-list entries written above and with the renumbered history.
                 /* user_defined_sequence_number */ remapped_sequence_number,
-                /* user_defined_snapshot_id */ manifest_lineage.added_snapshot_id,
-                /* data_file_formats */ {},
-                /* per_file_statistics */ {},
-                /* data_file_sort_order_ids */ {},
-                file_lineage,
-                /* schema_to_serialize */ nullptr,
-                &file_statistics);
+                /* user_defined_snapshot_id */ manifest_lineage.added_snapshot_id);
 
             buffer_manifest_entry->finalize();
             auto manifest_bytes = buffer_manifest_entry->count();
