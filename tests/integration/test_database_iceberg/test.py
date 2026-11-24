@@ -3024,7 +3024,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
         )
         assert result == 1, f"constraint optimization must read the database table, got {result}"
 
-        # a `TTL` reads `X.T` as the database table; its analysis uses the server settings, so the subquery carries the setting itself
+        # a `TTL` reads `X.T` as the database table on `INSERT`, `ALTER` and merge; its analysis uses
+        # the server settings, so the subquery carries the setting itself
         node.query(
             f"USE {CATALOG_NAME}; CREATE TABLE default.{TT} (id UInt64, d DateTime) ENGINE = MergeTree ORDER BY id "
             f"TTL d + INTERVAL 1 DAY WHERE id IN (SELECT id FROM {X}.{T} SETTINGS allow_experimental_table_namespaces = 1)",
