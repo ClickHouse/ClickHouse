@@ -612,6 +612,16 @@ static bool isLossyStream(const ISerialization::SubstreamPath & substream_path, 
     return codec && CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
 }
 
+/// A textual signature of the `Quantized(...)` codec of a column, or an empty string if the column has no such codec.
+/// Two columns with the same signature write the same companion codes stream.
+static String getQuantizedCodecSignature(const ASTPtr & codec)
+{
+    const auto params = tryExtractQuantizedCodecParams(codec);
+    if (!params)
+        return {};
+    return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
+}
+
 /// The dictionary stream of `LowCardinality` also stores its version and sizes, which a lossy codec would corrupt.
 void MergeTreeData::checkLossyCodecOnLowCardinality(const ColumnsDescription & columns)
 {
@@ -6789,21 +6799,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// parts stay compact) while the metadata claims `Quantize`. Set the codec at CREATE TABLE; to change the codec or
     /// the type on existing data, create a new table with the codec and `INSERT ... SELECT` into it, then swap.
     {
-        auto quantize_signature = [](const ASTPtr & codec) -> String
-        {
-            const auto params = tryExtractQuantizedCodecParams(codec);
-            if (!params)
-                return {};
-            return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
-        };
         for (const auto & command : commands)
         {
             if (command.type != AlterCommand::ADD_COLUMN && command.type != AlterCommand::MODIFY_COLUMN)
                 continue;
             const bool old_has = old_metadata.getColumns().has(command.column_name);
             const bool new_has = new_metadata.getColumns().has(command.column_name);
-            const String old_sig = old_has ? quantize_signature(old_metadata.getColumns().get(command.column_name).codec) : String{};
-            const String new_sig = new_has ? quantize_signature(new_metadata.getColumns().get(command.column_name).codec) : String{};
+            const String old_sig = old_has ? getQuantizedCodecSignature(old_metadata.getColumns().get(command.column_name).codec) : String{};
+            const String new_sig = new_has ? getQuantizedCodecSignature(new_metadata.getColumns().get(command.column_name).codec) : String{};
 
             /// The codec was added, removed, or changed.
             bool forbidden = old_sig != new_sig;
@@ -14166,6 +14169,24 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
+
+    /// The `Quantized(...)` codec changes the physical layout of a column: its serialization writes and expects a companion
+    /// codes stream. The serialization is attached according to the table metadata, so a part taken from a table with a
+    /// different (or no) `Quantized` codec on a column would be read incorrectly (e.g. the vectors would be read as zeros).
+    {
+        const auto & src_columns = src_snapshot->getColumns();
+        for (const auto & column : my_snapshot->getColumns().getAllPhysical())
+        {
+            const auto * src_column = src_columns.tryGet(column.name);
+            const String my_signature = getQuantizedCodecSignature(my_snapshot->getColumns().get(column.name).codec);
+            const String src_signature = src_column ? getQuantizedCodecSignature(src_column->codec) : String{};
+            if (my_signature != src_signature)
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                    "Tables have different structure: column {} has a different Quantized(...) codec in the source and "
+                    "destination tables. To move the data between such tables, use INSERT ... SELECT",
+                    backQuoteIfNeed(column.name));
+        }
+    }
 
     /// The definitions are compared as text, so the text must not depend on whether the user has
     /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.

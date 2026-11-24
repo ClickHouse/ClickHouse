@@ -1,0 +1,13 @@
+destination_empty	0
+source_kept	1	[1,2,3,4,5,6,7,8]
+source_kept	2	[8,7,6,5,4,3,2,1]
+source_kept	3	[3,3,3,3,3,3,3,3]
+attached	1	[1,2,3,4,5,6,7,8]
+attached	2	[8,7,6,5,4,3,2,1]
+attached	3	[3,3,3,3,3,3,3,3]
+merged	1	[1,2,3,4,5,6,7,8]
+merged	2	[8,7,6,5,4,3,2,1]
+merged	3	[3,3,3,3,3,3,3,3]
+inserted	1	[1,2,3,4,5,6,7,8]
+inserted	2	[8,7,6,5,4,3,2,1]
+inserted	3	[3,3,3,3,3,3,3,3]
