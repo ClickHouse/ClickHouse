@@ -8,6 +8,7 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 
 using namespace DB;
 
@@ -20,6 +21,7 @@ ASTPtr parse(const String & query)
     /// through the factories, which the client populates on startup.
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
+    static struct RegisterWindowFunctions { RegisterWindowFunctions() { registerWindowFunctions(); } } window_functions_registered;
 
     const char * begin = query.data();
     const char * end = begin + query.size();

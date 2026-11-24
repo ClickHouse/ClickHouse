@@ -41,6 +41,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Poco/String.h>
 
 #include <algorithm>
@@ -488,7 +489,8 @@ bool isKnownBuiltinFunction(const String & name)
         return true;
 
     return FunctionFactory::instance().hasNameOrAlias(name)
-        || AggregateFunctionFactory::instance().isAggregateFunctionName(name);
+        || AggregateFunctionFactory::instance().isAggregateFunctionName(name)
+        || WindowFunctionFactory::instance().isWindowFunctionName(name);
 }
 
 /// Rejects the external access that is written in the query text: the table functions and the
