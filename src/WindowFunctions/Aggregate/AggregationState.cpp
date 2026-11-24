@@ -1,4 +1,4 @@
-#include <WindowFunctions/Aggregate/AggregateState.h>
+#include <WindowFunctions/Aggregate/AggregationState.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -29,7 +29,7 @@ void throwIfNot(bool condition)
 
 }
 
-AggregateState::AggregateState(AggregateFunctionPtr function_)
+AggregationState::AggregationState(AggregateFunctionPtr function_)
     : function(std::move(function_))
     , is_state(function->isState())
     , place(function->sizeOfData(), function->alignOfData())
@@ -43,13 +43,13 @@ AggregateState::AggregateState(AggregateFunctionPtr function_)
     created = true;
 }
 
-AggregateState::~AggregateState()
+AggregationState::~AggregationState()
 {
     if (created)
         function->destroy(place.data());
 }
 
-void AggregateState::recreate()
+void AggregationState::recreate()
 {
     if (created)
     {
@@ -64,7 +64,7 @@ void AggregateState::recreate()
     created = true;
 }
 
-void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 end)
+void AggregationState::add(const WindowArguments & arguments, Int64 begin, Int64 end)
 {
     throwIfNot(created);
     while (begin < end)
@@ -76,13 +76,13 @@ void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 e
     }
 }
 
-void AggregateState::merge(ConstAggregateDataPtr rhs)
+void AggregationState::merge(ConstAggregateDataPtr rhs)
 {
     throwIfNot(created);
     function->merge(place.data(), rhs, arena.get());
 }
 
-void AggregateState::insertResultInto(IColumn & result)
+void AggregationState::insertResultInto(IColumn & result)
 {
     throwIfNot(created);
     if (is_state)
@@ -91,7 +91,7 @@ void AggregateState::insertResultInto(IColumn & result)
         function->insertResultInto(place.data(), result, arena.get());
 }
 
-ConstAggregateDataPtr AggregateState::getData() const
+ConstAggregateDataPtr AggregationState::getData() const
 {
     throwIfNot(created);
     return place.data();

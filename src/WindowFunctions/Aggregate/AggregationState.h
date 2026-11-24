@@ -20,11 +20,11 @@ namespace DB
 class Arena;
 class WindowArguments;
 
-class AggregateState
+class AggregationState
 {
 public:
-    explicit AggregateState(AggregateFunctionPtr function_);
-    ~AggregateState();
+    explicit AggregationState(AggregateFunctionPtr function_);
+    ~AggregationState();
 
     void recreate();
     void add(const WindowArguments & arguments, Int64 begin, Int64 end);

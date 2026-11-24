@@ -1,5 +1,5 @@
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionSliding.h>
-#include <WindowFunctions/Aggregate/AggregateState.h>
+#include <WindowFunctions/Aggregate/AggregationState.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 
@@ -146,7 +146,7 @@ public:
         }
     }
 
-    void mergeTotalStateInto(AggregateState & state) const
+    void mergeTotalStateInto(AggregationState & state) const
     {
         if (begin < midpoint)
             state.merge(left_stack.getTotalState());
@@ -157,7 +157,7 @@ public:
 private:
     const Int64 rows_in_chunk;
     AggregationStack left_stack;
-    AggregateState right_state;
+    AggregationState right_state;
     Int64 begin = 0;
     Int64 midpoint = 0;
     Int64 end = 0;
@@ -220,7 +220,7 @@ public:
 
 private:
     const Int64 min_frame_rows;
-    AggregateState state;
+    AggregationState state;
     SlidingAggregation aggregation;
     Int64 covered_start = 0;
     Int64 covered_end = 0;
