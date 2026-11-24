@@ -242,7 +242,7 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
     if (step.statistics)
         map->add("Statistics", stepStatisticsToJSON(*step.statistics));
 
-    if (auto indexes = indexStatsToJSON(step.indexes))
+    if (auto indexes = indexStatsToJSON(step.indexes, /*with_addresses=*/ false))
         map->add("Indexes", std::move(indexes));
     if (auto projections = projectionStatsToJSON(step.projections))
         map->add("Projections", std::move(projections));

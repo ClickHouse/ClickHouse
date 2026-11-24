@@ -60,10 +60,12 @@ const String & FormRowInputFormat::columnName(size_t i) const
 
 void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
-    if (seen_columns[index])
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing Form format: {}", columnName(index));
+    if (seen_columns[index] && !format_settings.skip_duplicated_fields)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Duplicate field found while parsing Form format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+            columnName(index));
 
-    seen_columns[index] = true;
     const auto & serialization = serializations[index];
 
     String encoded_str;
@@ -73,6 +75,10 @@ void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
     if (!in->eof())
         assertChar('&', *in);
 
+    if (seen_columns[index])
+        return;
+
+    seen_columns[index] = true;
     decodeFormValue(encoded_str, decoded_str);
     ReadBufferFromString buf(decoded_str);
     serialization->deserializeWholeText(*columns[index], buf, format_settings);
@@ -151,6 +157,7 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
+    NameSet row_field_names;
     do
     {
         /// Declared inside the loop: `readStringUntilAmpersand` appends to its argument, so a buffer
@@ -160,6 +167,8 @@ static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & i
         String decoded_value;
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
+        if (settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+            continue;
         decodeFormValue(value, decoded_value);
         DataTypePtr type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
         /// The value is read verbatim with `deserializeWholeText`, while the type inference follows a
