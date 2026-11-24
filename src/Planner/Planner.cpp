@@ -773,14 +773,24 @@ static void addStreamInQueryResultCacheStepIfNeeded(
 /// and PromQL storages). So the setting of the query-level context is consulted as well: it is the
 /// one the outer interpreter optimizes the top-level plan under, and no SETTINGS clause of a subquery
 /// or of a generated query can change it.
-static bool shouldReadFromQueryCacheForSubquery(
+///
+/// The same rule disables the cap on the groups of a trivial `GROUP BY ... LIMIT` (see `buildPlanForQueryNode`).
+static bool mayBeInDistributedPlan(
     const Settings & settings,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & query_context)
 {
     if (settings[Setting::make_distributed_plan] || select_query_options.building_distributed_plan)
-        return false;
-    return !query_context->hasQueryContext() || !query_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan];
+        return true;
+    return query_context->hasQueryContext() && query_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan];
+}
+
+static bool shouldReadFromQueryCacheForSubquery(
+    const Settings & settings,
+    const SelectQueryOptions & select_query_options,
+    const ContextPtr & query_context)
+{
+    return !mayBeInDistributedPlan(settings, select_query_options, query_context);
 }
 
 void Planner::buildPlanForUnionNode()
@@ -1317,25 +1327,39 @@ void Planner::buildPlanForQueryNode()
                     useful_sets);
 
             /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET`
-            /// keys. Unlike the settings-based rewrite of `OptimizeTrivialGroupByLimitPass`
-            /// (which is restricted to aggregate-free projections), the shared kept-keys cutoff
-            /// keeps the aggregate values of the kept keys exact, so it also fires with aggregate
-            /// functions in the projection. It is only sound when this node performs the complete
+            /// keys. The cap goes only into the parameters of this aggregation. It is not set with
+            /// `max_rows_to_group_by`: the views that the query reads, and the shards with all the
+            /// subqueries that they execute, inherit the settings, so that would cap their aggregations too.
+            ///
+            /// Without aggregate functions in the projection, any `LIMIT + OFFSET` keys are a correct
+            /// result, so every thread and every node can keep other keys, and the cap is sound at any
+            /// stage. The shards see the full query, so they find the same cap themselves.
+            ///
+            /// With aggregate functions, the shared kept-keys cutoff keeps the aggregate values of the
+            /// kept keys exact. It is only sound when this node performs the complete
             /// aggregation itself (both stages): partial states sent to a remote initiator would
             /// be merged with other nodes' states, whose kept keys differ, and the values of the
             /// kept keys would be undercounted again — one level up, across nodes instead of
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
+            ///
+            /// `make_distributed_plan` cannot split an aggregation with a cap, so the cap is not used in a plan
+            /// that it may split. That is the case also when only an enclosing query enables the setting, and this
+            /// query disables it in its SETTINGS clause (see `mayBeInDistributedPlan`).
+            ///
             /// `settings` holds this node's SETTINGS clause as constrained and clamped. A nested change equal to the inherited
             /// value is not applied there, so an explicit `group_by_overflow_mode` is not marked as changed.
             Settings query_settings = settings;
             if (query_node.getSettingsChanges().tryGet("group_by_overflow_mode"))
                 query_settings[Setting::group_by_overflow_mode].setChanged(true);
 
+            const bool has_aggregates = !aggregation_analysis_result.aggregate_descriptions.empty();
+            const bool can_cap_aggregation
+                = !mayBeInDistributedPlan(query_settings, select_query_options, query_context)
+                && (!has_aggregates || query_processing_info.isSecondStage());
+
             std::optional<UInt64> trivial_group_by_limit;
-            if (!query_settings[Setting::make_distributed_plan]
-                && query_processing_info.isFirstStage() && query_processing_info.isSecondStage()
-                && hasAggregateFunctionNodes(query_node.getProjectionNode()))
+            if (can_cap_aggregation)
             {
                 trivial_group_by_limit = getTrivialGroupByLimit(query_node, query_settings);
 
@@ -1349,7 +1373,7 @@ void Planner::buildPlanForQueryNode()
                     trivial_group_by_limit.reset();
 
                 /// Leave the `GROUP BY` top-K heap in charge wherever it applies: it is faster.
-                if (trivial_group_by_limit && preferGroupByTopKOverKeptKeysCutoff(query_settings, *trivial_group_by_limit))
+                if (trivial_group_by_limit && has_aggregates && preferGroupByTopKOverKeptKeysCutoff(query_settings, *trivial_group_by_limit))
                     trivial_group_by_limit.reset();
             }
 

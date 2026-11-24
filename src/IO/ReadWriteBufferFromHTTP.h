@@ -139,6 +139,9 @@ public:
 
     const Poco::URI & getCurrentURI() const { return current_uri; }
 
+    /// Whether a response was received from another resource than the initial URI (by following a redirect).
+    bool wasRedirected() const { return redirects > 0; }
+
 private:
     /// Byte range, including right bound [begin, end].
     struct HTTPRange
@@ -190,6 +193,12 @@ private:
 
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;
+
+    /// If not empty, every response must come from the initial URI without a redirect and carry exactly this `ETag`,
+    /// otherwise the read fails with `FILE_CHANGED_DURING_READ`: the bytes are of another generation of the resource
+    /// than the one that the caller has seen (and e.g. keys a cache on). An `ETag` identifies a generation only of
+    /// one resource, so it cannot validate the bytes of another resource that a redirect leads to.
+    String expected_etag;
 
     size_t offset_from_begin_pos = 0;
     HTTPRange read_range;
@@ -276,7 +285,8 @@ private:
         HTTPHeaderEntries http_header_entries_,
         RedirectCallback redirect_callback_,
         bool delay_initialization,
-        std::optional<HTTPFileInfo> file_info_);
+        std::optional<HTTPFileInfo> file_info_,
+        String expected_etag_);
 
 public:
     bool nextImpl() override;
@@ -340,6 +350,7 @@ class BuilderRWBufferFromHTTP
     HTTPHeaderEntries http_header_entries{};
     ReadWriteBufferFromHTTP::CancellationPtr cancellation;
     bool delay_initialization = true;
+    String expected_etag;
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -371,6 +382,7 @@ public:
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
+    setterMember(withExpectedETag, expected_etag)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 

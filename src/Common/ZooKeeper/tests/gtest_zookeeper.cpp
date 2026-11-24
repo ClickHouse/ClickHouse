@@ -330,6 +330,20 @@ TEST(ZooKeeperTest, MultiRequestRejectsCloseSubrequest)
     EXPECT_THROW(request->readImpl(in), Coordination::Exception);
 }
 
+TEST(ZooKeeperTest, SetWatchesRequestWithoutDataWatchesGetPath)
+{
+    ZooKeeperSetWatchesRequest set_watches;
+    set_watches.child_watches = {"/child"};
+    EXPECT_EQ(set_watches.getPath(), "");
+
+    ZooKeeperSetWatches2Request set_watches2;
+    set_watches2.persistent_watches = {"/persistent"};
+    EXPECT_EQ(set_watches2.getPath(), "");
+
+    set_watches2.data_watches = {"/data"};
+    EXPECT_EQ(set_watches2.getPath(), "/data");
+}
+
 TEST(ZooKeeperTest, WaitForDisappearWithLateGetResponses)
 {
     /// `waitForDisappear` issues a new `get` with the same callback in every iteration, so responses of earlier

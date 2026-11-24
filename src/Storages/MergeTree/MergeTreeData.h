@@ -238,7 +238,7 @@ class MergeTreeData : public WithMutableContext, public IStorage, public IBackgr
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
-    using BrokenPartCallback = std::function<void (const String &)>;
+    using BrokenPartCallback = std::function<void (const String & part_name, bool after_read_error)>;
     using DataPart = IMergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
@@ -556,7 +556,7 @@ public:
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   LoadingStrictnessLevel mode,
-                  BrokenPartCallback broken_part_callback_ = [](const String &){});
+                  BrokenPartCallback broken_part_callback_ = [](const String &, bool){});
 
     /// Out-of-line so the forward-declared `UniqueKeyDenseIndexOps`
     /// doesn't force a full-type include in callers that destroy
@@ -613,6 +613,10 @@ public:
         const std::function<void(size_t)> & load_part,
         const std::function<void(size_t)> & consume_part);
 
+    /// Adds the getColumnAndSubcolumnSizes of every part to `result`; the parts that read files are sized on up to `max_threads` threads.
+    static void addColumnSizesOfParts(
+        const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result);
+
     bool supportsFinal() const override;
 
     bool supportsParallelInsert() const override { return true; }
@@ -621,6 +625,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsSubcolumnCodecs() const override { return true; }
 
+    bool supportsSubcolumnOptimizationWithFinal() const override;
     bool hasBucketedMapSerialization() const override;
 
     bool supportsTTL() const override { return true; }
@@ -929,6 +934,9 @@ public:
     virtual std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
     virtual size_t getMaxOutdatedPartsCountForPartition() const;
 
+    /// Whether background merges are still delayed after the startup, see `delay_merges_after_startup_seconds`.
+    bool areMergesDelayedAfterStartup() const;
+
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
@@ -1226,6 +1234,12 @@ public:
 
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
+
+    /// Throws if an element of the sorting, primary or sampling key, of a skip index or of the sorting key of a projection that
+    /// stores the column is not the column itself but has the name of a stored column: writes and key analysis address columns
+    /// by name, so one would be used for the other.
+    /// With `old_metadata`, only an element that it does not have already is refused.
+    static void checkKeyExpressionNamesForCollision(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata);
 
     /// The expressions stored in the metadata (keys, TTL, skip indices, projections) are built with the global context,
     /// which has full access, and are executed in the background. Builds them again with a copy of the query context,
@@ -1596,8 +1610,6 @@ public:
     /// (via `getMetadataSnapshotForEmptyPart`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
-    /// With `precommit_storage = false` the returned part's storage transaction is still open, so
-    /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
     /// Metadata for an empty part that covers or replaces `source_part`. For a patch part it is the
     /// synthetic patch-part metadata stamped with the metadata version of `source_part`: the synthetic
     /// metadata alone carries version 0, and an empty patch at version 0 would drag the version of every
@@ -1609,8 +1621,7 @@ public:
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<PatchPartIndex> patch_part_index,
-        bool precommit_storage = true) const;
+        std::optional<PatchPartIndex> patch_part_index) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -2259,7 +2270,7 @@ protected:
     template <typename AddedParts, typename RemovedParts>
     void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
 
-    SerializationInfoByName getSerializationHints() const override;
+    SerializationInfoByName getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override;
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
@@ -2412,6 +2423,14 @@ protected:
 
     StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
     void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
+
+    void delayMergesAfterStartup();
+    void stopDelayingMergesAfterStartup();
+
+    /// Only a table the server loads from its metadata at startup delays its merges.
+    bool merges_can_be_delayed_after_startup = false;
+    /// `CLOCK_MONOTONIC` time of the startup in nanoseconds, 0 if the delay is not armed.
+    std::atomic<UInt64> startup_time_ns = 0;
 
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;

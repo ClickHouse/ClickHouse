@@ -252,9 +252,8 @@ std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCrea
     return data_lake_read_estimate;
 }
 
-/// Zero means "always preliminary-merge", so it must never reach the group-count division.
-/// The cap and the grouping have to read the same value or the cap admits a file count the
-/// grouping cannot divide.
+/// Zero means "always preliminary-merge". The cap and the in-order pipe read the same value,
+/// so no merge group holds more than this many files.
 static size_t effectiveTwoLevelMergeThreshold(const Settings & settings)
 {
     return std::max<size_t>(1, settings[Setting::read_in_order_two_level_merge_threshold]);
@@ -329,7 +328,8 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
 
     /// Never collapse to one port: the sorting step installs no merge above a single port, so a
     /// single group would leave the concatenation unmerged.
-    const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
+    /// One group per stream, so the preliminary merges run in parallel.
+    const size_t num_groups = std::max<size_t>(2, std::min(num_streams, num_files));
     VectorWithMemoryTracking<Pipes> grouped(num_groups);
     for (size_t i = 0; i < num_files; ++i)
         grouped[i % num_groups].emplace_back(std::move(pipes[i]));
@@ -506,10 +506,9 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
-void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
-    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
-    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+    join_runtime_filters_for_file_pruning.push_back(descriptor);
 }
 
 void ReadFromObjectStorageStep::createIterator()
