@@ -4,6 +4,7 @@
 -- Each case uses its own partition, so background merges cannot combine parts of different cases.
 -- Every row holds about 2000 bytes of shared data, so 8 rows are below the minimal size of 21000 bytes and 12 rows are above it
 -- under any randomized settings.
+-- Compact parts with a single bucket keep the number of files small: on object storage every file is a separate object.
 
 DROP TABLE IF EXISTS test;
 
@@ -12,8 +13,9 @@ ENGINE = MergeTree
 PARTITION BY p
 ORDER BY id
 SETTINGS
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0,
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000,
+    object_shared_data_buckets_for_compact_part = 1,
     object_serialization_version = 'v3',
     object_shared_data_serialization_version = 'advanced',
     object_shared_data_serialization_version_for_small_parts = 'map_with_buckets',
@@ -75,8 +77,9 @@ CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths = 0), PROJECTION pr (S
 ENGINE = ReplacingMergeTree
 ORDER BY id
 SETTINGS
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0,
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000,
+    object_shared_data_buckets_for_compact_part = 1,
     deduplicate_merge_projection_mode = 'rebuild',
     object_serialization_version = 'v3',
     object_shared_data_serialization_version = 'advanced',
@@ -107,8 +110,9 @@ CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths = 0))
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS
-    min_bytes_for_wide_part = 0,
-    min_rows_for_wide_part = 0,
+    min_bytes_for_wide_part = '10G',
+    min_rows_for_wide_part = 1000000000,
+    object_shared_data_buckets_for_compact_part = 1,
     object_serialization_version = 'v3',
     object_shared_data_serialization_version = 'map_with_buckets',
     object_shared_data_serialization_version_for_zero_level_parts = 'advanced',
