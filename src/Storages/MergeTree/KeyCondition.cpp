@@ -7704,8 +7704,10 @@ bool KeyCondition::matchesExactContinuousRange() const
 
     for (const auto & element : expandAtomGroups(rpn))
     {
+        /// A comparison folded to `ALWAYS_TRUE` from the key type keeps its key column, see `atomIsNullForNullArgument`:
+        /// it is still NULL for a NULL value of a `Nullable` key, so it does not match the whole key range.
         if (element.function == RPNElement::Function::FUNCTION_AND || element.function == RPNElement::Function::FUNCTION_UNKNOWN
-            || element.function == RPNElement::Function::ALWAYS_TRUE)
+            || (element.function == RPNElement::Function::ALWAYS_TRUE && element.key_columns.empty()))
         {
             continue;
         }
@@ -8141,9 +8143,9 @@ void pushAtomGroupMask(const KeyCondition::RPNElement & group, const ApplyElemen
 
 /// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
 /// answering true or false as `IS NULL` and `IS NOT NULL` do.
-bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
+bool atomIsNullForNullArgument(const KeyCondition::RPNElement & element)
 {
-    switch (function)
+    switch (element.function)
     {
         case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
         case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
@@ -8159,9 +8161,13 @@ bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
         case KeyCondition::RPNElement::FUNCTION_NOT:
         case KeyCondition::RPNElement::FUNCTION_AND:
         case KeyCondition::RPNElement::FUNCTION_OR:
+            return false;
         case KeyCondition::RPNElement::ALWAYS_FALSE:
         case KeyCondition::RPNElement::ALWAYS_TRUE:
-            return false;
+            /// A comparison folded to a constant from the key type, such as `b != 2.5` for an integer key,
+            /// keeps its key column: the fold holds for every non-NULL value only, and the comparison is
+            /// still NULL for a NULL key value.
+            return !element.key_columns.empty();
     }
 }
 
@@ -8181,7 +8187,7 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
 {
     for (const auto & element : expandAtomGroups(rpn))
     {
-        if (!atomIsNullForNullArgument(element.function))
+        if (!atomIsNullForNullArgument(element))
             continue;
 
         for (size_t key_column : element.key_columns)
@@ -8200,7 +8206,7 @@ bool KeyCondition::mayReadNullKeyValue(
 {
     for (const auto & element : expandAtomGroups(rpn))
     {
-        if (!atomIsNullForNullArgument(element.function))
+        if (!atomIsNullForNullArgument(element))
             continue;
 
         for (size_t key_column : element.key_columns)
