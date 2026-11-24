@@ -29,3 +29,8 @@ CREATE TABLE t_alias_key (x UInt8, k Bool ALIAS x > 0) ENGINE = Memory;
 INSERT INTO t_alias_key VALUES (1);
 SELECT toTypeName(k), k FROM t_alias_key FULL JOIN (SELECT toUInt8(2) AS k) b USING k ORDER BY k;
 DROP TABLE t_alias_key;
+SELECT toTypeName(s), finalizeAggregation(s) AS v, v = true FROM (SELECT anyState(true) AS s UNION ALL SELECT anyState(toUInt8(2))) ORDER BY v;
+SELECT toTypeName(s), finalizeAggregation(s) AS v, v = true FROM (SELECT anyState(toUInt8(2)) AS s UNION ALL SELECT anyState(true)) ORDER BY v;
+SELECT toTypeName(s) FROM (SELECT anyState(true) AS s UNION ALL SELECT anyState(false));
+SELECT toTypeName([anyState(true), anyState(toUInt8(2))]), toTypeName([anyState(toUInt8(2)), anyState(true)]);
+SELECT toTypeName([argMaxState(true, 1), argMaxState(toUInt8(2), 2)]), toTypeName([argMaxState(toUInt8(2), 2), argMaxState(true, 1)]);

@@ -41,3 +41,11 @@ SimpleAggregateFunction(any, Bool)
 1	UInt8
 UInt8	1
 UInt8	2
+AggregateFunction(any, UInt8)	1	1
+AggregateFunction(any, UInt8)	2	0
+AggregateFunction(any, UInt8)	1	1
+AggregateFunction(any, UInt8)	2	0
+AggregateFunction(any, Bool)
+AggregateFunction(any, Bool)
+Array(AggregateFunction(any, UInt8))	Array(AggregateFunction(any, UInt8))
+Array(AggregateFunction(argMax, UInt8, UInt8))	Array(AggregateFunction(argMax, UInt8, UInt8))
