@@ -25,6 +25,7 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -102,6 +103,7 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerProjectionAnalysis.h>
 #include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -7376,8 +7378,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// so `GROUP BY f(j.a)` is invisible above; analyze the GROUP BY to catch it (defensive,
                 /// unreachable until subcolumn group keys can be ingested).
                 if (!uses_changed && projection.type == ProjectionDescription::Type::Aggregate && projection.query_ast)
-                    if (const auto * select = projection.query_ast->as<ASTSelectQuery>())
-                        uses_changed = ast_uses_changed_subcolumn(select->groupBy());
+                {
+                    /// a key can be an alias of the projection query, so the keys come from the resolved query
+                    auto query_tree = buildProjectionQueryTree(projection.query_ast, projection.createQuerySource(old_metadata), local_context);
+                    ConvertToASTOptions ast_options;
+                    ast_options.fully_qualified_identifiers = false;
+                    uses_changed = ast_uses_changed_subcolumn(query_tree->as<QueryNode &>().getGroupByNode()->toAST(ast_options));
+                }
 
                 /// A filtered projection's WHERE fixes the stored row set; a change that flips it leaves stale rows.
                 if (!uses_changed)

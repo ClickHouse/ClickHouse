@@ -1,0 +1,3 @@
+a	UInt8
+j	JSON(x UInt64)
+t	Tuple(x UInt8, y UInt8)
