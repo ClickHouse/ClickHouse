@@ -118,11 +118,13 @@ concept HasPrefetchMemberFunc = requires
 /// True when software prefetch in the JOIN probe loop is feasible for the given key
 /// getter / map combination: the key getter must compute keys cheaply and the map
 /// must expose a `prefetch` member that takes the key holder produced by the getter.
+/// Of the fixed tables only a range table prefetches: a key8/key16 table covers its whole key type.
 template <typename KeyGetter, typename Map>
 constexpr bool join_prefetch_supported = KeyGetter::has_cheap_key_calculation
     && HasPrefetchMemberFunc<
         std::remove_const_t<Map>,
-        decltype(std::declval<KeyGetter &>().getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()))>;
+        decltype(std::declval<KeyGetter &>().getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()))>
+    && (!is_partitioned_fixed_table<std::remove_const_t<Map>> || ColumnsHashing::IsHashMethodInRange<KeyGetter>::value);
 
 /// Decide at runtime whether prefetching should actually fire for a given map: the user
 /// must have it enabled and the map must be large enough that we expect non-trivial
@@ -141,6 +143,64 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
         return selector.getData()[k];
     else
         return selector.first + k;
+}
+
+/// Like `shouldUseJoinPrefetch` above, for a probe of `selector` with `key_getter`. A range table holds key `min_key + i` in cell `i`, so its lookups
+/// touch only the cells of the key range, which can be far fewer than the 2^size_bits cells of its buffer. It prefetches
+/// when a hash table with one cell per value of the range would: such a table keeps at least twice as many cells as keys.
+/// A key outside the range never reads the table, so it also needs at least half of a sample of the keys in the range.
+template <typename KeyGetter, typename Map, typename Selector>
+ALWAYS_INLINE bool shouldUseJoinPrefetch(bool enable_prefetch, const Map * map, KeyGetter & key_getter, const Selector & selector, Arena & pool)
+{
+    if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
+    {
+        if (!enable_prefetch || map == nullptr
+            || 2 * static_cast<size_t>(key_getter.range_size) * sizeof(typename std::remove_const_t<Map>::cell_type)
+                <= getMinBytesForPrefetchInJoin())
+            return false;
+
+        static constexpr size_t max_samples = 64;
+        const size_t rows = ScatteredBlock::Selector::size(selector);
+        const size_t samples = std::min(rows, max_samples);
+        size_t in_range = 0;
+        for (size_t sample = 0; sample < samples; ++sample)
+            in_range += key_getter.getKeyHolderInRange(selectorIndexAt(selector, sample * rows / samples), pool).second;
+        return samples > 0 && 2 * in_range >= samples;
+    }
+    else
+        return shouldUseJoinPrefetch(enable_prefetch, map);
+}
+
+/// Prefetches the cell that the lookup of `row` will read.
+template <typename KeyGetter, typename Map>
+ALWAYS_INLINE void prefetchJoinKey(const Map & map, KeyGetter & key_getter, size_t row, Arena & pool)
+{
+    if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
+    {
+        /// A range table has no cell for a key outside its range, and the lookup rejects such a key without reading the table.
+        /// Such a key prefetches the first cell, which stays in the cache, because a branch would be mispredicted when few
+        /// keys match.
+        const auto [key, in_range] = key_getter.getKeyHolderInRange(row, pool);
+        map.prefetch(in_range ? key : decltype(key){});
+    }
+    else
+        map.prefetch(key_getter.getKeyHolder(row, pool));
+}
+
+/// Calls `loop(std::bool_constant<prefetch>{})`. A range table usually fits in the cache, and its probe then runs a loop
+/// without the prefetch: a loop that only checks the flag on every row is slower. Other tables keep one loop.
+template <typename KeyGetter, bool can_prefetch, typename Loop>
+ALWAYS_INLINE void runJoinProbeLoop(bool use_prefetch, Loop && loop)
+{
+    if constexpr (can_prefetch && ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
+    {
+        if (use_prefetch)
+            loop(std::true_type{});
+        else
+            loop(std::false_type{});
+    }
+    else
+        loop(std::bool_constant<can_prefetch>{});
 }
 
 /// Drives the adaptive software prefetch logic in the hash join probe loop.
@@ -367,7 +427,7 @@ NO_INLINE size_t probeAllRows(
     size_t max_prefetched_maps = 1;
     if constexpr (can_prefetch)
     {
-        use_prefetch = shouldUseJoinPrefetch(enable_prefetch, mapv[0]);
+        use_prefetch = shouldUseJoinPrefetch(enable_prefetch, mapv[0], key_getters[0], selector, pool);
         /// A later map of a two-level layout counts only when it does not fit in the cache.
         if constexpr (prefetch_later_maps && Map::NUM_BUCKETS > 1)
             while (use_prefetch && max_prefetched_maps < mapv.size()
@@ -397,7 +457,7 @@ NO_INLINE size_t probeAllRows(
                 const size_t row = selectorIndexAt(selector, k);
                 constexpr bool check_skip = prepared && !fast_path;
                 if (!check_skip || !skip_data[0][row])
-                    maps[0]->prefetch(key_getters[0].getKeyHolder(row, pool));
+                    prefetchJoinKey(*maps[0], key_getters[0], row, pool);
                 if constexpr (Map::NUM_BUCKETS > 1)
                     for (size_t map_idx = 1; map_idx < num_prefetched_maps; ++map_idx)
                         if (!check_skip || !skip_data[map_idx][row])
@@ -407,72 +467,75 @@ NO_INLINE size_t probeAllRows(
 
     IColumn::Offset current_offset = offset;
     size_t i = 0;
-    for (; i < rows && current_offset < max_offset; ++i)
+    runJoinProbeLoop<KeyGetter, can_prefetch>(use_prefetch, [&](auto with_prefetch) __attribute__((always_inline))
     {
-        if constexpr (can_prefetch)
-            prefetcher.prefetchAt(i);
-
-        const size_t ind = selectorIndexAt(selector, i);
-
-        bool right_row_found = false;
-        RowState row_state;
-        size_t onexpr_idx = 0;
-        for (; onexpr_idx < num_clauses; ++onexpr_idx)
+        for (; i < rows && current_offset < max_offset; ++i)
         {
-            bool skip_row = false;
-            if constexpr (lazy_row_filter)
-                skip_row = (keys[onexpr_idx].null_map && (*keys[onexpr_idx].null_map)[ind]) || keys[onexpr_idx].isRowFiltered(ind);
-            else if constexpr (!fast_path)
-                skip_row = (prepared || skip_data[onexpr_idx]) && skip_data[onexpr_idx][ind];
+            if constexpr (decltype(with_prefetch)::value)
+                prefetcher.prefetchAt(i);
 
-            if (!skip_row)
+            const size_t ind = selectorIndexAt(selector, i);
+
+            bool right_row_found = false;
+            RowState row_state;
+            size_t onexpr_idx = 0;
+            for (; onexpr_idx < num_clauses; ++onexpr_idx)
             {
-                auto find_result = key_getters[onexpr_idx].findKey(*maps[onexpr_idx], ind, pool);
+                bool skip_row = false;
+                if constexpr (lazy_row_filter)
+                    skip_row = (keys[onexpr_idx].null_map && (*keys[onexpr_idx].null_map)[ind]) || keys[onexpr_idx].isRowFiltered(ind);
+                else if constexpr (!fast_path)
+                    skip_row = (prepared || skip_data[onexpr_idx]) && skip_data[onexpr_idx][ind];
 
-                if (find_result.isFound())
+                if (!skip_row)
                 {
-                    right_row_found = true;
-                    on_match(i, ind, find_result, onexpr_idx + 1 == num_clauses, row_state, current_offset);
+                    auto find_result = key_getters[onexpr_idx].findKey(*maps[onexpr_idx], ind, pool);
 
-                    if constexpr (stops_at_first_match)
-                        break;
-                }
-            }
-        }
-
-        if constexpr (stops_at_first_match && Map::NUM_BUCKETS > 1)
-        {
-            if (i == next_sampled_row) [[unlikely]]
-            {
-                /// The row looked up every map up to the one it stopped at, except where its key is skipped.
-                const size_t reached_maps = std::min(onexpr_idx + 1, num_clauses);
-                for (size_t map_idx = 0; map_idx < reached_maps; ++map_idx)
-                {
-                    if constexpr (!fast_path)
-                        if (skip_data[map_idx] && skip_data[map_idx][ind])
-                            continue;
-                    sampler.countLookup(map_idx);
-                }
-                if (sampler.sampleDone())
-                {
-                    const size_t limit = sampler.takeLimit(max_prefetched_maps);
-                    /// The prefetch reads the keys of the maps that it prefetches, so the keys of an added map are prepared
-                    /// from the next row on. A dropped map builds each key where it is read again, because few rows read it.
-                    if constexpr (prepared)
+                    if (find_result.isFound())
                     {
-                        for (size_t map_idx = num_prefetched_maps; map_idx < limit; ++map_idx)
-                            key_getters[map_idx].prepareRange({ind + 1, selector.second}, skip_data[map_idx]);
-                        for (size_t map_idx = limit; map_idx < num_prefetched_maps; ++map_idx)
-                            key_getters[map_idx].prepareRange({}, nullptr);
-                    }
-                    num_prefetched_maps = limit;
-                }
-                next_sampled_row = MultiMapLookupSampler::nextSampledRow(i);
-            }
-        }
+                        right_row_found = true;
+                        on_match(i, ind, find_result, onexpr_idx + 1 == num_clauses, row_state, current_offset);
 
-        on_row_end(i, right_row_found, current_offset);
-    }
+                        if constexpr (stops_at_first_match)
+                            break;
+                    }
+                }
+            }
+
+            if constexpr (stops_at_first_match && Map::NUM_BUCKETS > 1)
+            {
+                if (i == next_sampled_row) [[unlikely]]
+                {
+                    /// The row looked up every map up to the one it stopped at, except where its key is skipped.
+                    const size_t reached_maps = std::min(onexpr_idx + 1, num_clauses);
+                    for (size_t map_idx = 0; map_idx < reached_maps; ++map_idx)
+                    {
+                        if constexpr (!fast_path)
+                            if (skip_data[map_idx] && skip_data[map_idx][ind])
+                                continue;
+                        sampler.countLookup(map_idx);
+                    }
+                    if (sampler.sampleDone())
+                    {
+                        const size_t limit = sampler.takeLimit(max_prefetched_maps);
+                        /// The prefetch reads the keys of the maps that it prefetches, so the keys of an added map are prepared
+                        /// from the next row on. A dropped map builds each key where it is read again, because few rows read it.
+                        if constexpr (prepared)
+                        {
+                            for (size_t map_idx = num_prefetched_maps; map_idx < limit; ++map_idx)
+                                key_getters[map_idx].prepareRange({ind + 1, selector.second}, skip_data[map_idx]);
+                            for (size_t map_idx = limit; map_idx < num_prefetched_maps; ++map_idx)
+                                key_getters[map_idx].prepareRange({}, nullptr);
+                        }
+                        num_prefetched_maps = limit;
+                    }
+                    next_sampled_row = MultiMapLookupSampler::nextSampledRow(i);
+                }
+            }
+
+            on_row_end(i, right_row_found, current_offset);
+        }
+    });
 
     offset = current_offset;
     return i;
@@ -664,7 +727,7 @@ public:
 
         bool use_prefetch = false;
         if constexpr (can_prefetch)
-            use_prefetch = shouldUseJoinPrefetch(enable_prefetch, &map);
+            use_prefetch = shouldUseJoinPrefetch(enable_prefetch, &map, key_getter, selector, pool);
 
         constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
         /// Before the prefetcher is created, see `PreparedJoinKeys::prepareRows`.
@@ -682,23 +745,26 @@ public:
                     const size_t row = selectorIndexAt(selector, k);
                     if (prepared && !fast_path && skip_data[row])
                         return;
-                    map.prefetch(key_getter.getKeyHolder(row, pool));
+                    prefetchJoinKey(map, key_getter, row, pool);
                 }
             });
 
-        for (size_t i = 0; i < rows; ++i)
+        runJoinProbeLoop<KeyGetter, can_prefetch>(use_prefetch, [&](auto with_prefetch) __attribute__((always_inline))
         {
-            if constexpr (can_prefetch)
-                prefetcher.prefetchAt(i);
+            for (size_t i = 0; i < rows; ++i)
+            {
+                if constexpr (decltype(with_prefetch)::value)
+                    prefetcher.prefetchAt(i);
 
-            const size_t ind = selectorIndexAt(selector, i);
+                const size_t ind = selectorIndexAt(selector, i);
 
-            bool skip_row = false;
-            if constexpr (!fast_path)
-                skip_row = (prepared || skip_data) && skip_data[ind];
+                bool skip_row = false;
+                if constexpr (!fast_path)
+                    skip_row = (prepared || skip_data) && skip_data[ind];
 
-            on_row(i, ind, skip_row ? FindResult() : key_getter.findKey(map, ind, pool), offset);
-        }
+                on_row(i, ind, skip_row ? FindResult() : key_getter.findKey(map, ind, pool), offset);
+            }
+        });
     }
 
     /// Looks up the key of every row of `selector` in `tables`, in order. For each table that has the key, calls
@@ -915,8 +981,8 @@ private:
         size_t new_keys = 0;
         SCOPE_EXIT({ num_keys.fetch_add(new_keys, std::memory_order_relaxed); });
 
-        /// Software prefetch during the build phase.
-        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
+        /// Software prefetch during the build phase. A range table is filled only by `tryConvertToFixedHashMap`, after the build.
+        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap> && !ColumnsHashing::IsHashMethodInRange<KeyGetter>::value;
 
         /// A two-level map always prefetches here: summing its buckets would race with the resizes other threads do under
         /// their own slot locks.
