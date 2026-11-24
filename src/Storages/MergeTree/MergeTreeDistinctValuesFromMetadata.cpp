@@ -258,7 +258,7 @@ UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromMetadat
     /// per row. Columns of the sorting key get no estimate.
     const Names sorting_key_columns = metadata->getColumnsRequiredForSortingKey();
 
-    std::unordered_map<String, CompressedSize> sizes;
+    UnorderedMapWithMemoryTracking<String, CompressedSize> sizes;
     for (const auto & column_name : column_names)
     {
         if (result.contains(column_name))
