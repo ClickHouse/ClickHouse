@@ -422,7 +422,7 @@ public:
     /// Wrappers propagate it down.
     virtual void setBatchPriorityIncreaseSettings(const BatchPriorityIncreaseSettings & settings)
     {
-        batch_priority_increase_enabled.store(settings.enabled, std::memory_order_relaxed);
+        batch_priority_increase_enabled.store(settings.enabled, std::memory_order_release);
         batch_priority_increase_max_batch_size.store(settings.max_batch_size, std::memory_order_relaxed);
     }
 
@@ -558,6 +558,7 @@ protected:
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
 
+    /// Set with release after the buffers are allocated, so that a hit which loads it with acquire and sees it true sees them.
     std::atomic<bool> batch_priority_increase_enabled = false;
     std::atomic<size_t> batch_priority_increase_max_batch_size = BatchPriorityIncreaseSettings{}.max_batch_size;
     std::function<void()> apply_priority_increases_notifier;

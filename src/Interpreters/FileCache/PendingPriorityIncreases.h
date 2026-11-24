@@ -24,34 +24,34 @@ using PriorityIncreases = boost::container::static_vector<
     PendingPriorityIncrease,
     std::max(FILECACHE_MAX_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE, FILECACHE_MAX_BATCH_PRIORITY_INCREASE_BUFFER_SIZE) + 1>;
 
-/// Priority increases recorded by cache hits and not yet applied to the priority queue: lock-free ring buffers,
-/// as many as CPU cores, each thread always adding to the same one.
+/// Priority increases recorded by cache hits and not yet applied to the priority queue
 class PendingPriorityIncreases
 {
 public:
     PendingPriorityIncreases();
     ~PendingPriorityIncreases();
 
-    /// Allocates the buffers, of `buffer_size` increases each, unless they are allocated already. Must not run concurrently
-    /// with itself, but may run concurrently with the other methods.
+    /// Current number of pending priority increases taken lock-free, e.g. does not account concurrent changes.
+    [[nodiscard]] size_t getSizeApprox() const;
+
+    /// Allocates the buffers, of `buffer_size` increases each, unless they are allocated already.
+    /// Must be called before other methods of this class.
     void allocateBuffers(size_t buffer_size);
 
-    /// Returns false, without moving from `increase`, if the buffers are not allocated or the buffer of the calling thread
-    /// is full. Calls `on_half_full` if it is set and this increase filled the buffer to half.
+    /// Returns false, without moving from `increase`, if the buffer of the calling thread is full.
+    /// Calls `on_half_full` if it is set and this increase filled the buffer to half.
     [[nodiscard]] bool tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full);
 
     /// Moves up to `max_increases` increases to the end of `increases`. Increases of one thread keep their order.
-    /// Takes at most one buffer size from each buffer, so a call ends while hits keep adding.
     void pop(PriorityIncreases & increases, size_t max_increases);
 
     /// Same, for all the increases in the buffer which the calling thread adds to.
     void popBufferOfCurrentThread(PriorityIncreases & increases);
 
-    /// The number of increases, without synchronization with concurrent hits.
-    [[nodiscard]] size_t getSizeApprox() const;
-
 private:
     class Buffers;
+
+    Buffers & getAllocatedBuffers();
 
     /// Owns what `buffers` points to. Set once, by `allocateBuffers`.
     std::unique_ptr<Buffers> allocated_buffers;

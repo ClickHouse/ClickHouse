@@ -842,7 +842,7 @@ bool LRUFileCachePriority::tryIncreasePriority(
     const auto & lru_iterator = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator);
     chassert(lru_iterator.cache_priority == this);
 
-    if (!batch_priority_increase_enabled.load(std::memory_order_relaxed))
+    if (!batch_priority_increase_enabled.load(std::memory_order_acquire))
     {
         /// Best-effort: lose this increase rather than block if the guard is contended.
         auto lock = getPriorityGuard().tryWriteLock();

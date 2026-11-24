@@ -192,10 +192,17 @@ void PendingPriorityIncreases::allocateBuffers(size_t buffer_size)
     buffers.store(allocated_buffers.get(), std::memory_order_release);
 }
 
-bool PendingPriorityIncreases::tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full)
+PendingPriorityIncreases::Buffers & PendingPriorityIncreases::getAllocatedBuffers()
 {
     auto * current_buffers = buffers.load(std::memory_order_acquire);
-    return current_buffers && current_buffers->tryAdd(increase, on_half_full);
+    if (!current_buffers)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffers of priority increases are not allocated");
+    return *current_buffers;
+}
+
+bool PendingPriorityIncreases::tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full)
+{
+    return getAllocatedBuffers().tryAdd(increase, on_half_full);
 }
 
 void PendingPriorityIncreases::pop(PriorityIncreases & increases, size_t max_increases)
@@ -206,8 +213,7 @@ void PendingPriorityIncreases::pop(PriorityIncreases & increases, size_t max_inc
 
 void PendingPriorityIncreases::popBufferOfCurrentThread(PriorityIncreases & increases)
 {
-    if (auto * current_buffers = buffers.load(std::memory_order_acquire))
-        current_buffers->popBufferOfCurrentThread(increases);
+    getAllocatedBuffers().popBufferOfCurrentThread(increases);
 }
 
 size_t PendingPriorityIncreases::getSizeApprox() const
