@@ -11,6 +11,7 @@
 #include <Common/levenshteinDistance.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -524,10 +525,30 @@ ASTPtr tryParseQuery(
     IParser::Pos set_lookahead(token_iterator);
     const bool committed_to_set = parser.consumesRawText() && isCommittedToSetQuery(set_lookahead);
     const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
+    /// The walk below also matches the brackets. If they match up to the first `;` or the end, and the parse stops
+    /// before it, `checkUnmatchedParentheses` would walk the same tokens and find nothing, so it is skipped.
+    const char * brackets_match_until = nullptr;
     if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
+        /// A closing bracket that matches nothing stays on the stack, so the stack never gets empty again.
+        VectorWithMemoryTracking<TokenType> open_brackets;
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
+            const TokenType type = lookahead->type;
+            if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+            {
+                open_brackets.push_back(type);
+            }
+            else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+            {
+                const TokenType opening
+                    = type == TokenType::ClosingRoundBracket ? TokenType::OpeningRoundBracket : TokenType::OpeningSquareBracket;
+                if (!open_brackets.empty() && open_brackets.back() == opening)
+                    open_brackets.pop_back();
+                else
+                    open_brackets.push_back(type);
+            }
+
             if (lookahead->isError() && (!consumes_raw_text || lookahead->type == TokenType::ErrorMaxQuerySizeExceeded))
             {
                 // Advance the position for further processing of possible test hint.
@@ -559,6 +580,9 @@ ASTPtr tryParseQuery(
 
             ++lookahead;
         }
+
+        if (open_brackets.empty())
+            brackets_match_until = lookahead->begin;
 
         /// We should not spoil the info about maximum parsed position in the original iterator.
         tokens.reset();
@@ -597,8 +621,9 @@ ASTPtr tryParseQuery(
     /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
     /// Only the parens inside the current statement are reported, so the walk stops after it once every
     /// bracket is closed: walking the rest of a multi-statement input for each statement is quadratic.
-    UnmatchedParentheses unmatched_parens
-        = consumes_raw_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens), last_token.end);
+    UnmatchedParentheses unmatched_parens;
+    if (!consumes_raw_text && !(brackets_match_until && last_token.end <= brackets_match_until))
+        unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token.end);
     if (!unmatched_parens.empty())
     {
         /// `checkUnmatchedParentheses` can walk past the current statement, so it can
