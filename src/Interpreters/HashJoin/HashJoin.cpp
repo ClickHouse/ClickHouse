@@ -462,9 +462,11 @@ HashJoin::HashJoin(
     const UInt64 fingerprint_mode = table_join->getFingerprintMode();
     if (fingerprint_mode > 4 || fingerprint_mode == 3)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `experimental_join_fingerprint_mode` must be 0, 1, 2 or 4");
-    if (fingerprint_mode == 4 && query_context && query_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
-        && !build_layout.two_level && table_join->oneDisjunct()
-        && *selected_join_method == Type::key64 && table_join->getMixedJoinExpression() == nullptr
+    /// A wrapping join owns spill decisions and may finish a bucket above its spill threshold.
+    const bool fingerprint_eligible = fingerprint_mode && !build_layout.two_level && table_join->oneDisjunct()
+        && *selected_join_method == Type::key64 && !isUsedByAnotherAlgorithm();
+    if (fingerprint_eligible && fingerprint_mode == 4 && query_context && query_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+        && table_join->getMixedJoinExpression() == nullptr
         && ((kind == JoinKind::Inner && strictness == JoinStrictness::All)
             || (kind == JoinKind::Left && strictness == JoinStrictness::Semi)))
     {
@@ -472,8 +474,7 @@ HashJoin::HashJoin(
         estimated_probe_rows = estimated_probe_rows_;
         ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintCandidates);
     }
-    if (fingerprint_mode && fingerprint_mode < 4 && !build_layout.two_level && table_join->oneDisjunct()
-        && strictness != JoinStrictness::Asof && *selected_join_method == Type::key64)
+    if (fingerprint_eligible && fingerprint_mode < 4 && strictness != JoinStrictness::Asof)
         *selected_join_method = fingerprint_mode == 2 ? Type::fingerprint_key64 : Type::scalar_fingerprint_key64;
 
     const auto maps_kind = getMapsKind();
