@@ -277,7 +277,7 @@ public:
     {}
 
     virtual void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode) = 0;
-    virtual bool isFileSet() const = 0;
+    [[nodiscard]] virtual bool isFileSet() const = 0;
 
     virtual bool appendRecord(ChangelogRecord && record) = 0;
     virtual void flush() = 0;
@@ -287,7 +287,7 @@ public:
     /// starts a new segment at `new_start_log_index` without publishing the records that were not flushed yet.
     virtual void discardAndRotate(uint64_t new_start_log_index) { rotate(new_start_log_index); }
 
-    virtual uint64_t getStartIndex() const = 0;
+    [[nodiscard]] virtual uint64_t getStartIndex() const = 0;
 
     virtual void finalize() = 0;
 
@@ -296,7 +296,7 @@ public:
     /// `index` is the first log index that is rewritten.
     virtual void prepareRewrite(uint64_t /* index */) {}
 
-    ChangelogFileDescriptionPtr getCurrentFileDescription() const { return current_file_description; }
+    [[nodiscard]] ChangelogFileDescriptionPtr getCurrentFileDescription() const { return current_file_description; }
 
     virtual ~IChangelogWriter() = default;
 
