@@ -488,15 +488,13 @@ auto StatementGenerator::getQueryTableLambda()
 std::vector<const SQLTable *> StatementGenerator::shapeTables()
 {
     std::vector<const SQLTable *> res;
-    const auto mergetree_lambda = getQueryTableLambda<TableRequirement::RequireMergeTree>();
+    /// No oracle compares the results of these queries, so the tables need not be deterministic. The replicas do not
+    /// see the temporary tables of the session
+    const auto shape_lambda = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && !t.is_temp; };
 
-    /// The replicas do not see the temporary tables of the session
-    for (const auto & entry : filterCollection<SQLTable>(mergetree_lambda))
+    for (const auto & entry : filterCollection<SQLTable>(shape_lambda))
     {
-        if (!entry.get().is_temp)
-        {
-            res.emplace_back(&entry.get());
-        }
+        res.emplace_back(&entry.get());
     }
     return res;
 }
