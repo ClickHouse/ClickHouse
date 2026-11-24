@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the list of distinct data types stored in Dynamic column.'
-slug: /sql-reference/aggregate-functions/reference/distinctdynamictypes
 title: 'distinctDynamicTypes'
 doc_type: 'reference'
 ---

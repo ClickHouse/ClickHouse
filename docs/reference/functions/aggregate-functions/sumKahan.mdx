@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the sum of the numbers with Kahan compensated summation algorithm'
-slug: /sql-reference/aggregate-functions/reference/sumkahan
 title: 'sumKahan'
 doc_type: 'reference'
 ---

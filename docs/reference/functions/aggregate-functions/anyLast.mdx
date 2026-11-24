@@ -1,6 +1,5 @@
 ---
 description: 'Selects the last encountered value of a column.'
-slug: /sql-reference/aggregate-functions/reference/anylast
 title: 'anyLast'
 doc_type: 'reference'
 ---

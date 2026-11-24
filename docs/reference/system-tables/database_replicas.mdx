@@ -1,7 +1,6 @@
 ---
 description: 'System table containing information about and status of replicated database.'
 keywords: ['system table', 'database_replicas']
-slug: /operations/system-tables/database_replicas
 title: 'system.database_replicas'
 doc_type: 'reference'
 ---

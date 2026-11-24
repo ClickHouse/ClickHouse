@@ -1,6 +1,5 @@
 ---
 description: 'Computes an approximate quantile of a sample with relative-error guarantees.'
-slug: /sql-reference/aggregate-functions/reference/quantileddsketch
 title: 'quantileDD'
 doc_type: 'reference'
 ---

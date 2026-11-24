@@ -1,6 +1,5 @@
 ---
 description: 'Computes the sample skewness of a sequence.'
-slug: /sql-reference/aggregate-functions/reference/skewsamp
 title: 'skewSamp'
 doc_type: 'reference'
 ---

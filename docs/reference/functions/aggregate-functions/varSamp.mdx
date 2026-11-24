@@ -1,6 +1,5 @@
 ---
 description: 'Calculate the sample variance of a data set.'
-slug: /sql-reference/aggregate-functions/reference/varSamp
 title: 'varSamp'
 doc_type: 'reference'
 ---

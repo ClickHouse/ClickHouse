@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the list of distinct paths and their types stored in JSON'
-slug: /sql-reference/aggregate-functions/reference/distinctJSONPathsAndTypes
 title: 'distinctJSONPathsAndTypes'
 doc_type: 'reference'
 ---

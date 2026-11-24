@@ -326,7 +326,6 @@ def create_doc_file(filepath, table_name, table_comment, documentation_md):
 description: '{escaped_comment}'
 keywords: ['system table', '{table_name}']
 sidebarTitle: 'system.{table_name}'
-slug: /operations/system-tables/{table_name}
 title: 'system.{table_name}'
 doc_type: 'reference'
 ---

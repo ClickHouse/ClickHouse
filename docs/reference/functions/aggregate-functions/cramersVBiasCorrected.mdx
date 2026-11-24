@@ -1,6 +1,5 @@
 ---
 description: 'Calculates Cramer''s V, but uses a bias correction.'
-slug: /sql-reference/aggregate-functions/reference/cramersvbiascorrected
 title: 'cramersVBiasCorrected'
 doc_type: 'reference'
 ---

@@ -2,7 +2,6 @@
 title: 'Does ClickHouse support federated queries?'
 toc_hidden: true
 toc_priority: 10
-slug: /faq/general/federated
 description: 'ClickHouse supports a wide range for federated and hybrid queries'
 doc_type: 'reference'
 keywords: ['federated', 'hybrid', 'postgres', 'mysql', 'sqlite', 'odbc', 'jdbc']

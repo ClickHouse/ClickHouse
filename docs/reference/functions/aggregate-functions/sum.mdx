@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the sum. Only works for numbers.'
-slug: /sql-reference/aggregate-functions/reference/sum
 title: 'sum'
 doc_type: 'reference'
 ---

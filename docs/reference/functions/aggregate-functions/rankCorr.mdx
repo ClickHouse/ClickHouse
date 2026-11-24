@@ -1,6 +1,5 @@
 ---
 description: 'Computes a rank correlation coefficient.'
-slug: /sql-reference/aggregate-functions/reference/rankCorr
 title: 'rankCorr'
 doc_type: 'reference'
 ---

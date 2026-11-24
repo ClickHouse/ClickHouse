@@ -1,6 +1,5 @@
 ---
 description: 'Computes the correlation matrix over N variables.'
-slug: /sql-reference/aggregate-functions/reference/corrmatrix
 title: 'corrMatrix'
 doc_type: 'reference'
 ---

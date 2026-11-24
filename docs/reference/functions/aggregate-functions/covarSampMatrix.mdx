@@ -1,6 +1,5 @@
 ---
 description: 'Returns the sample covariance matrix over N variables.'
-slug: /sql-reference/aggregate-functions/reference/covarsampmatrix
 title: 'covarSampMatrix'
 doc_type: 'reference'
 ---

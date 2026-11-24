@@ -1,5 +1,4 @@
 ---
-slug: /faq/general/ne-tormozit
 title: 'What does “не тормозит” mean?'
 toc_hidden: true
 toc_priority: 11
