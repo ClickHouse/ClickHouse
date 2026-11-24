@@ -177,6 +177,11 @@ public:
         Aws::String token_file;
         Aws::String session_name;
         Aws::String region;
+        /// A provider keeps the filter of the S3 client which it was created for: it checks the STS endpoint against it,
+        /// and so does its HTTP client with redirects. S3 clients with different filters do not share a provider,
+        /// otherwise the one with a restricted list of hosts could get a provider which checks an unrestricted one,
+        /// such as the filter of the S3 client for Keeper snapshots. Only the address is used, as the identity of the filter.
+        const RemoteHostFilter * remote_host_filter = nullptr;
 
         bool operator==(const CacheKey & rhs) const = default;
 

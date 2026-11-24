@@ -717,6 +717,7 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey::updateHash(Si
     hash.update(std::string_view(token_file));
     hash.update(std::string_view(session_name));
     hash.update(std::string_view(region));
+    hash.update(reinterpret_cast<std::uintptr_t>(remote_host_filter));
 }
 
 Aws::String AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::resolveStsRegion(std::string_view configured_region, std::string_view client_region)
@@ -795,7 +796,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
 
     return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey{
-            role_arn, token_file, cache_on_session_name ? session_name : "", tmp_region},
+            role_arn, token_file, cache_on_session_name ? session_name : "", tmp_region, &aws_client_configuration.remote_host_filter},
         [&]
         {
             return Aws::MakeShared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>("S3Credentials",

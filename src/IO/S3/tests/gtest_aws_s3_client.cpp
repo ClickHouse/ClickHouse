@@ -1578,11 +1578,9 @@ TEST(IOTestAwsS3Client, WebIdentityStsRegionFollowsS3RegionThroughCredentialsCha
     EXPECT_EQ(web_identity_provider_for("example.org/eu-west-1"), web_identity_provider_for("us-east-1"));
 }
 
-/// The providers are cached per process and keep a pointer to the filter, so the filter lives as long as the process.
-static DB::RemoteHostFilter & remoteHostFilterForWebIdentityStsTests(const std::string & allowed_hosts)
+/// Everything is allowed if the list is empty.
+static void setAllowedHostsForWebIdentityStsTests(DB::RemoteHostFilter & remote_host_filter, const std::string & allowed_hosts)
 {
-    static DB::RemoteHostFilter remote_host_filter;
-
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(
         allowed_hosts.empty()
@@ -1590,7 +1588,13 @@ static DB::RemoteHostFilter & remoteHostFilterForWebIdentityStsTests(const std::
             : "<clickhouse><remote_url_allow_hosts>" + allowed_hosts + "</remote_url_allow_hosts></clickhouse>");
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
     remote_host_filter.setValuesFromConfig(*config);
+}
 
+/// The providers are cached per process and keep a pointer to the filter, so the filter lives as long as the process.
+static DB::RemoteHostFilter & remoteHostFilterForWebIdentityStsTests(const std::string & allowed_hosts)
+{
+    static DB::RemoteHostFilter remote_host_filter;
+    setAllowedHostsForWebIdentityStsTests(remote_host_filter, allowed_hosts);
     return remote_host_filter;
 }
 
@@ -1660,6 +1664,49 @@ TEST(IOTestAwsS3Client, WebIdentityStsConfiguredRegionDoesNotDependOnAllowedHost
         Provider::create(client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
     ASSERT_TRUE(provider);
     EXPECT_EQ(provider->getStsEndpoint(), "https://sts.eu-central-1.amazonaws.com");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsProvidersAreNotSharedBetweenRemoteHostFilters)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    /// The provider is cached per process, so use a new role each time to make the constructor run.
+    static int run = 0;
+    ScopedEnvVarForAwsS3ClientTests role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_two_filters_" + std::to_string(++run));
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_two_filters");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+
+    /// The providers are cached per process and keep a pointer to the filter, so the filters live as long as the process.
+    /// The first one allows everything, like the filter of the S3 client for Keeper snapshots, which is not the filter of the server.
+    static DB::RemoteHostFilter unrestricted_filter;
+    static DB::RemoteHostFilter restricted_filter;
+    setAllowedHostsForWebIdentityStsTests(restricted_filter, "<host>s3.eu-west-1.amazonaws.com</host><host>sts.us-east-1.amazonaws.com</host>");
+
+    const auto provider_for = [](const DB::RemoteHostFilter & remote_host_filter)
+    {
+        /// The same role, token file and region (`eu-west-1`) for every filter.
+        auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+        return std::dynamic_pointer_cast<Provider>(
+            Provider::create(client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
+    };
+
+    /// The provider for the unrestricted filter gets to the cache first.
+    const auto unrestricted_provider = provider_for(unrestricted_filter);
+    ASSERT_TRUE(unrestricted_provider);
+    EXPECT_EQ(unrestricted_provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+
+    /// An S3 client with the restricted filter does not get it, and its provider checks the restricted filter.
+    const auto restricted_provider = provider_for(restricted_filter);
+    ASSERT_TRUE(restricted_provider);
+    EXPECT_NE(restricted_provider, unrestricted_provider);
+    EXPECT_EQ(restricted_provider->getStsEndpoint(), "https://sts.us-east-1.amazonaws.com");
+    EXPECT_EQ(unrestricted_provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+
+    /// S3 clients with the same filter share a provider, as before.
+    EXPECT_EQ(provider_for(restricted_filter), restricted_provider);
+    EXPECT_EQ(provider_for(unrestricted_filter), unrestricted_provider);
 }
 
 TEST(IOTestAwsS3Client, HttpResponseCodeToString)
