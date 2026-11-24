@@ -184,12 +184,13 @@ INSERT INTO tp SELECT 1, j_x, j_x::String FROM tp_0;
     for p in "" "'dt'" "'dec'" "'t'" "'m'" "'f'" "'u'"; do printf 'JSONExtract|%s|String\nJSONExtract|%s|Dynamic\n' "${p:+, $p}" "${p:+, $p}"; done
 } | build_queries tp "SETTINGS $PRESENTATION" j_x | $CLICKHOUSE_CLIENT
 
-# Whole-number, negative-zero, large and narrow floats keep their type and value; non-finite values are strings.
+# Whole-number, negative-zero, large, narrow and non-dyadic floats keep their type and value; non-finite values are strings.
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE tf_0 (id UInt32, s String) ENGINE = Memory;
 INSERT INTO tf_0 VALUES (1, '{\"f\":1.0,\"f32\":0.0,\"fx\":0.0}'), (2, '{\"f\":-0.0,\"f32\":1.5,\"fx\":2.0}'),
-    (3, '{\"f\":1e20,\"f32\":-0.0,\"fx\":-0.0}'), (4, '{\"f\":0.1,\"f32\":1234567808.0,\"fx\":1e300}'),
-    (5, '{\"f\":[1.0,-2.5],\"f32\":0.5,\"fx\":\"inf\"}'), (6, '{\"f32\":16777216.0,\"fx\":\"-inf\"}'), (7, '{\"f32\":0.25,\"fx\":\"nan\"}');
+    (3, '{\"f\":1e20,\"f32\":-0.0,\"fx\":-0.0}'), (4, '{\"f\":0.1,\"f32\":1234567800.0,\"fx\":1e300}'),
+    (5, '{\"f\":[1.0,-2.5],\"f32\":0.5,\"fx\":\"inf\"}'), (6, '{\"f32\":16777216.0,\"fx\":\"-inf\"}'), (7, '{\"f32\":0.25,\"fx\":\"nan\"}'),
+    (8, '{\"f32\":0.1,\"fx\":0.1}'), (9, '{\"f32\":19.99,\"fx\":-19.99}'), (10, '{\"f32\":1e-7,\"fx\":3.4e38}');
 CREATE TABLE tf (id UInt32, j_x JSON(f32 Float32, fx Float64), o_x String) ENGINE = Memory;
 INSERT INTO tf SELECT id, s, s FROM tf_0;
 "

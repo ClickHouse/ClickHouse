@@ -5,7 +5,7 @@ te	19	632	1796
 -- comparisons, calls, distinct String results, mismatches
 t	224124	2949	907	0
 te	156940	2065	582	0
-tf	189	27	57	0
+tf	270	27	71	0
 tp	131	131	48	0
 -- mismatches
 -- constant JSON argument

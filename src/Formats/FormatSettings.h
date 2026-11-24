@@ -57,8 +57,8 @@ struct JSONFormatSettings
     bool quote_denormals = true;
     bool quote_decimals = false;
     bool escape_forward_slashes = true;
-    /// Not bound to a user setting: write a finite float so that reading the text back gives a float of the same
-    /// value (`1.0` instead of `1`, `-0.0` instead of `0`). Set by the JSON functions for the text of a `JSON` column.
+    /// Not bound to a user setting: write a finite float so that the text reads back as a float (`1.0` instead of `1`, `-0.0`
+    /// instead of `0`). Set by the JSON functions for the text of a `JSON` column.
     bool write_float_type_markers = false;
     bool read_named_tuples_as_objects = false;
     /// Set from `json_extract_named_tuples_as_objects` by the JSON functions only, not by

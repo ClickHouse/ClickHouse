@@ -188,9 +188,7 @@ void SerializationNumber<T>::serializeTextJSON(const IColumn & column, size_t ro
             const bool need_quote = sizeof(T) >= 8 && settings.json.quote_64bit_floats;
             /// Room for the shortest representation, and the `.0` suffix.
             char buffer[DoubleConverter<false>::MAX_REPRESENTATION_LENGTH + 2];
-            /// The text is parsed back as `Float64`, and the shortest text of a narrower value may round-trip only to the
-            /// narrower type (`Float32` `1234567808` is shortest as `1234567800`), so the promoted value is written.
-            size_t size = writeFloatTextFastPath(static_cast<Float64>(x), buffer, /* force_decimal_point= */ true);
+            size_t size = writeFloatTextFastPath(x, buffer, /* force_decimal_point= */ true);
             if (buffer[size - 1] == '.')
                 buffer[size++] = '0';
 
