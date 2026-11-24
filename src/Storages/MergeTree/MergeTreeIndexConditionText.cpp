@@ -1618,9 +1618,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// Without positions, the index answers "all tokens exist" and the row-level `hasPhrase` checks adjacency.
         /// A phrase of exactly one token has no adjacency to check, so it is the same as `hasAllTokens`, which is exact.
         /// The count is taken before dedup: 'a a' is two tokens and still needs the row-level check.
+        /// Not for a nullable column: the `UInt8` virtual column cannot carry the NULL the predicate returns, which NOT flips to true.
+        const bool column_is_nullable = !index_column_type || isNullableOrLowCardinalityNullable(index_column_type);
         auto exact_if_single_token = [&](const VectorWithMemoryTracking<String> & phrase_tokens)
         {
-            if (!use_positions && candidate_for_exact_mode && phrase_tokens.size() == 1)
+            if (!use_positions && candidate_for_exact_mode && !column_is_nullable && phrase_tokens.size() == 1)
                 direct_read_mode = TextIndexDirectReadMode::Exact;
         };
 

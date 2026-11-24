@@ -86,3 +86,35 @@ SELECT 'C++ LEAD', countIf(explain LIKE '%__text_index_idx_hasPhrase%') > 0, cou
 FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasPhrase(w, 'C++ LEAD'));
 
 DROP TABLE tab;
+
+SELECT '-- a nullable column keeps the row-level check: the virtual column cannot carry NULL, which NOT flips to true';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    w Nullable(String),
+    lc LowCardinality(Nullable(String)),
+    INDEX idx w TYPE text(tokenizer = splitByString([' '])),
+    INDEX idx_lc lc TYPE text(tokenizer = splitByString([' ']))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab VALUES (1, 'foo', 'foo'), (2, NULL, NULL), (3, 'bar', 'bar');
+
+SELECT 'not foo', arraySort(groupArray(id)) FROM tab WHERE NOT hasPhrase(w, 'foo');
+SELECT 'not foo', arraySort(groupArray(id)) FROM tab WHERE NOT hasPhrase(w, 'foo') SETTINGS use_skip_indexes = 0;
+SELECT 'not [foo]', arraySort(groupArray(id)) FROM tab WHERE NOT hasPhrase(w, ['foo']);
+SELECT 'not [foo]', arraySort(groupArray(id)) FROM tab WHERE NOT hasPhrase(w, ['foo']) SETTINGS use_skip_indexes = 0;
+SELECT 'lc not foo', arraySort(groupArray(id)) FROM tab WHERE NOT hasPhrase(lc, 'foo');
+SELECT 'lc not foo', arraySort(groupArray(id)) FROM tab WHERE NOT hasPhrase(lc, 'foo') SETTINGS use_skip_indexes = 0;
+SELECT 'lc not [foo]', arraySort(groupArray(id)) FROM tab WHERE NOT hasPhrase(lc, ['foo']);
+SELECT 'lc not [foo]', arraySort(groupArray(id)) FROM tab WHERE NOT hasPhrase(lc, ['foo']) SETTINGS use_skip_indexes = 0;
+
+SELECT 'foo', countIf(explain LIKE '%FUNCTION hasPhrase(%') > 0
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasPhrase(w, 'foo'));
+SELECT 'lc foo', countIf(explain LIKE '%FUNCTION hasPhrase(%') > 0
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasPhrase(lc, 'foo'));
+
+DROP TABLE tab;

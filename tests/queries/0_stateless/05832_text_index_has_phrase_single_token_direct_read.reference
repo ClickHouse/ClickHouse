@@ -28,3 +28,14 @@ C++ LEAD	[1]
 C++ LEAD	[1]
 C++	1	0
 C++ LEAD	1	1
+-- a nullable column keeps the row-level check: the virtual column cannot carry NULL, which NOT flips to true
+not foo	[3]
+not foo	[3]
+not [foo]	[3]
+not [foo]	[3]
+lc not foo	[3]
+lc not foo	[3]
+lc not [foo]	[3]
+lc not [foo]	[3]
+foo	1
+lc foo	1
