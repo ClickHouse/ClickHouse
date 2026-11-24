@@ -17,16 +17,25 @@ Heredoc: OK
 Typographic quotes: OK
 PostgreSQL backslash: OK
 ODBC square brackets: OK
+FORMAT: OK
+SETTINGS: OK
+ODBC alias without AS: OK
+ODBC table alias without AS: OK
+ODBC alias without AS and a quoted identifier of the same name: OK
+ODBC alias with AS and the same alias without AS: OK
 --- Every way to create a dictionary from a definition is checked
 ON CLUSTER: OK
 ON CLUSTER, old DDL entry format: OK
 CREATE OR REPLACE: OK
 --- The source is evaluated once, so the stored query is the checked one
 1	0
+--- A source replaced by Null is not checked
+1	0
 --- SELECT is accepted
 MySQL: OK
 MySQL with expressions: OK
 PostgreSQL: OK
+ODBC aliases with AS: OK
 --- A named collection requires the privilege NAMED COLLECTION
 Without the grant: denied, not created
 1
@@ -56,6 +65,12 @@ Without the grant, RESTORE ON CLUSTER: denied, not restored
 With the grant, ON CLUSTER: created
 0
 1
+A collection that does not exist on this host, without the grant, ON CLUSTER: denied, not created
+1
+0
+A collection that does not exist on this host, without the grant, locally: not denied for the grant, created
+0
+1
 With the grant, the name is an expression: created
 0
 1
@@ -68,6 +83,18 @@ Without the grant: denied, not created
 Without the grant, RESTORE: denied, not restored
 1
 0
+Without the grant, RESTORE replacing the source by Null: restored
+0
+1
+1
+Without the grant, RESTORE replacing the source by Null with the setting of the session: restored
+0
+1
+1
+Without the grant, RESTORE ON CLUSTER replacing the source by Null: restored
+0
+1
+1
 With the grant: created
 0
 1

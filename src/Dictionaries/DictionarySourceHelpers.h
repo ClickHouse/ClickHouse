@@ -39,8 +39,9 @@ bool isExternalDatabaseDictionarySource(const String & source_type);
 
 /// Checks the queries that a source of an external database (MySQL, PostgreSQL, ODBC) sends to it: the load query
 /// (`query`, or `table` with `where` and the attribute expressions), the update query (`update_field`) and `invalidate_query`.
-/// They must be `SELECT` without `INTO OUTFILE` in the ClickHouse syntax, without comments, heredocs, typographic quotes and backslashes,
-/// which the database may read differently, and for ODBC, whose dialect is unknown, without square brackets.
+/// They must be `SELECT` without `INTO OUTFILE`, `FORMAT` and `SETTINGS` in the ClickHouse syntax, without comments, heredocs,
+/// typographic quotes and backslashes, which the database may read differently, and for ODBC, whose dialect is unknown,
+/// without square brackets and with every alias written with `AS`.
 /// Only the queries of the definition are checked, not the ones held by a named collection that the source refers to.
 /// `config_prefix` is the dictionary configuration ("dictionary"). Does nothing for other sources.
 /// It is used for a `CREATE DICTIONARY` query of a user and for `RESTORE`, whose definitions come from a backup: the configuration files

@@ -9,12 +9,17 @@
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/quoteString.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -41,6 +46,17 @@ ASTPtr checkDictionaryQueryIsSelect(const String & query, const String & descrip
 namespace
 {
 
+/// The number of aliases of each name in the query, and whether it has `SETTINGS`.
+void countAliasesAndFindSettings(const IAST & ast, UnorderedMapWithMemoryTracking<String, size_t> & aliases, bool & has_settings)
+{
+    if (const String alias = ast.tryGetAlias(); !alias.empty())
+        ++aliases[alias];
+    if (ast.as<ASTSetQuery>())
+        has_settings = true;
+    for (const auto & child : ast.children)
+        countAliasesAndFindSettings(*child, aliases, has_settings);
+}
+
 /// The query is checked with the ClickHouse parser, so everything that the external database reads differently
 /// is rejected: MySQL executes the text of `/*! ... */`, does not take `--` without a following space for a comment,
 /// reads `$$...$$` and the typographic quotes that ClickHouse accepts (`‘...’`) as identifiers;
@@ -48,10 +64,17 @@ namespace
 /// are rejected for it too: SQL Server reads `['] = 1` as an identifier in brackets, while ClickHouse reads an array of a string.
 void checkExternalDatabaseQueryIsSelect(const String & query, const String & source_type, const String & description, const char * error_message)
 {
+    const bool is_odbc = source_type == "odbc";
+
+    /// For ODBC, how many times each name is written after `AS`, see below.
+    UnorderedMapWithMemoryTracking<String, size_t> names_allowed_as_alias;
+    std::string_view previous_bare_word;
+
     Lexer lexer(query.data(), query.data() + query.size());
     for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
     {
         const std::string_view text(token.begin, token.size());
+
         const bool is_quoted = token.type == TokenType::StringLiteral || token.type == TokenType::QuotedIdentifier;
         const bool is_ascii_quoted = is_quoted && (text.starts_with('\'') || text.starts_with('"') || text.starts_with('`'));
         if (token.type == TokenType::Comment || token.type == TokenType::HereDoc || (is_quoted && (!is_ascii_quoted || text.contains('\\'))))
@@ -61,18 +84,53 @@ void checkExternalDatabaseQueryIsSelect(const String & query, const String & sou
                 description,
                 text);
 
-        if (source_type == "odbc" && (token.type == TokenType::OpeningSquareBracket || token.type == TokenType::ClosingSquareBracket))
+        if (is_odbc && (token.type == TokenType::OpeningSquareBracket || token.type == TokenType::ClosingSquareBracket))
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
                 "{} cannot contain square brackets, because the database may read them as quoted identifiers",
                 description);
+
+        if (is_odbc && token.isSignificant())
+        {
+            if (boost::iequals(previous_bare_word, "AS"))
+            {
+                if (token.type == TokenType::BareWord)
+                    ++names_allowed_as_alias[String(text)];
+                else if (token.type == TokenType::QuotedIdentifier && text.size() >= 2)
+                    ++names_allowed_as_alias[String(text.substr(1, text.size() - 2))];
+            }
+
+            previous_bare_word = token.type == TokenType::BareWord ? text : std::string_view{};
+        }
     }
 
     ASTPtr ast = checkDictionaryQueryIsSelect(query, description, error_message);
 
     /// `INTO OUTFILE` is a part of a `SELECT` for ClickHouse, but an external database (MySQL) writes the file on its host.
-    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()); query_with_output && query_with_output->out_file)
+    /// `FORMAT` and `SETTINGS` after the query are read by ClickHouse only: the database can read the words after them as another statement.
+    UnorderedMapWithMemoryTracking<String, size_t> aliases;
+    bool has_settings = false;
+    countAliasesAndFindSettings(*ast, aliases, has_settings);
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+        has_settings || (query_with_output && (query_with_output->out_file || query_with_output->format_ast)))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+
+    /// ClickHouse reads a word after an expression as its alias. A database can read it as another statement instead:
+    /// SQL Server reads `SELECT 1 SHUTDOWN` as `SELECT 1` and `SHUTDOWN`. So for ODBC, whose dialect is unknown,
+    /// every alias must be written with `AS`. This is a best effort: the dialect cannot be checked with the ClickHouse parser.
+    if (is_odbc)
+    {
+        for (const auto & [alias, count] : aliases)
+        {
+            const auto it = names_allowed_as_alias.find(alias);
+            if (it == names_allowed_as_alias.end() || it->second < count)
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "{} must write the alias {} with AS, because the database may read it as another statement",
+                    description,
+                    backQuote(alias));
+        }
+    }
 }
 
 }

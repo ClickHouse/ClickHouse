@@ -4178,6 +4178,13 @@ BlockIO InterpreterCreateQuery::execute()
     {
         evaluateConstantsInDictionarySource(create, getContext());
 
+        /// Replaced here, not only in `setEngine`, so that the checks below, the privileges and the hosts of `ON CLUSTER`
+        /// see the source that is created: a source replaced by `Null` sends nothing. A `clickhouse` source is replaced
+        /// only if it is not local, which depends on the host, so it is left to `setEngine`.
+        if (getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null] && create.dictionary
+            && create.dictionary->source && Poco::toLower(create.dictionary->source->name) != "clickhouse")
+            setNullDictionarySourceIfExternal(create, getContext());
+
         /// The queries of a source of an external database are sent to it with the credentials of the source, so only `SELECT`
         /// is allowed. Checked for the query of the user and for `RESTORE`, whose definitions come from a backup that the user
         /// can write, also when it runs on the hosts of `ON CLUSTER`. The definitions of existing dictionaries (`ATTACH` at startup,
@@ -4216,7 +4223,7 @@ BlockIO InterpreterCreateQuery::execute()
 }
 
 
-AccessRightsElements InterpreterCreateQuery::getRequiredAccessForDictionarySource(const ASTCreateQuery & create)
+AccessRightsElements InterpreterCreateQuery::getRequiredAccessForDictionarySource(const ASTCreateQuery & create, bool sent_to_other_hosts)
 {
     AccessRightsElements required_access;
 
@@ -4228,18 +4235,20 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccessForDictionarySourc
 
         /// Replacing a stored key of the collection requires `SHOW NAMED COLLECTIONS SECRETS`. `StorageDictionary` checks it too,
         /// but where the dictionary is created, which is with full access for `ON CLUSTER`, a `Replicated` database
-        /// and the hosts of `RESTORE ON CLUSTER`. A missing collection is reported when the dictionary is created.
+        /// and the hosts of `RESTORE ON CLUSTER`. If the query is sent to other hosts and the collection does not exist on this host,
+        /// the keys it stores on the hosts that create the dictionary are unknown, so every key is taken as replacing a stored one.
+        /// Otherwise a missing collection is reported when the dictionary is created.
         NamedCollectionFactory::instance().loadIfNot();
-        if (auto collection = NamedCollectionFactory::instance().tryGet(*collection_name))
+        const auto collection = NamedCollectionFactory::instance().tryGet(*collection_name);
+        for (const auto & child : create.dictionary->source->elements->children)
         {
-            for (const auto & child : create.dictionary->source->elements->children)
+            const auto * pair = child->as<ASTPair>();
+            if (!pair || Poco::toLower(pair->first) == "name")
+                continue;
+            if (collection ? namedCollectionOverrideRequiresSecrets(*collection, pair->first) : sent_to_other_hosts)
             {
-                const auto * pair = child->as<ASTPair>();
-                if (pair && pair->first != "name" && namedCollectionOverrideRequiresSecrets(*collection, pair->first))
-                {
-                    required_access.emplace_back(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, *collection_name);
-                    break;
-                }
+                required_access.emplace_back(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, *collection_name);
+                break;
             }
         }
     }
@@ -4268,7 +4277,10 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     else if (create.is_dictionary)
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.getDatabase(), create.getTable());
-        required_access.append_range(getRequiredAccessForDictionarySource(create));
+        /// `ON CLUSTER` and a `Replicated` database send the query to other hosts.
+        const auto database = DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
+        const bool sent_to_other_hosts = !create.cluster.empty() || (database && database->getEngineName() == "Replicated");
+        required_access.append_range(getRequiredAccessForDictionarySource(create, sent_to_other_hosts));
     }
     else if (create.isView())
     {

@@ -23,6 +23,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDictionary.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -35,6 +37,8 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+
+#include <Poco/String.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -61,6 +65,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
     extern const SettingsBool restore_replace_external_engines_to_null;
+    extern const SettingsBool restore_replace_external_dictionary_source_to_null;
 }
 
 namespace FailPoints
@@ -485,7 +490,18 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 {
                     flags |= AccessType::CREATE_DICTIONARY;
                     /// The restored `CREATE` runs as internal, so `getRequiredAccess` imposes nothing; the source is authorized here.
-                    required_access.append_range(InterpreterCreateQuery::getRequiredAccessForDictionarySource(create));
+                    /// A source replaced by `Null` sends nothing. Under `CHECK_ACCESS_ONLY` the dictionary is created on other hosts,
+                    /// and only a value in the query reaches every host. A `clickhouse` source is replaced only if it is not local,
+                    /// so it is authorized anyway.
+                    const bool sent_to_other_hosts = (mode == Mode::CHECK_ACCESS_ONLY);
+                    const bool replace_dictionary_source_to_null
+                        = context->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null]
+                        && (!sent_to_other_hosts
+                            || restore_settings.core_settings.tryGet("restore_replace_external_dictionary_source_to_null") != nullptr);
+                    const bool source_replaced_to_null = replace_dictionary_source_to_null && create.dictionary
+                        && create.dictionary->source && Poco::toLower(create.dictionary->source->name) != "clickhouse";
+                    if (!source_replaced_to_null)
+                        required_access.append_range(InterpreterCreateQuery::getRequiredAccessForDictionarySource(create, sent_to_other_hosts));
                 }
                 else if (create.is_ordinary_view || create.is_materialized_view)
                     flags |= AccessType::CREATE_VIEW;

@@ -39,8 +39,9 @@ public:
     /// List of columns and their types in AST.
     /// The privileges that the source of a dictionary requires in addition to `CREATE DICTIONARY`: `NAMED COLLECTION` on
     /// the collection it refers to and `READ ON ODBC` for an ODBC source. Also required by `RESTORE`, which creates the dictionary
-    /// with an internal query. The source must be already evaluated, as it is stored.
-    static AccessRightsElements getRequiredAccessForDictionarySource(const ASTCreateQuery & create);
+    /// with an internal query. The source must be already evaluated, as it is stored. `sent_to_other_hosts`: the dictionary is created
+    /// on other hosts (`ON CLUSTER`, a `Replicated` database), with a named collection that may not exist on this host.
+    static AccessRightsElements getRequiredAccessForDictionarySource(const ASTCreateQuery & create, bool sent_to_other_hosts);
 
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
