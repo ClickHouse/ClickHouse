@@ -1,0 +1,4 @@
+-- replace mode without DROP FUNCTION: denied, and it names the missing grant
+1
+-- replace mode with DROP FUNCTION: allowed
+allowed

@@ -398,7 +398,11 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 {
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
                     if (table_info.has_data && restore_settings.shouldRestoreFunctions())
+                    {
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
+                        if (restore_settings.create_function == RestoreUDFCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_FUNCTION);
+                    }
                 }
                 else if (isSystemNamedCollectionsTableName(table_name))
                 {
