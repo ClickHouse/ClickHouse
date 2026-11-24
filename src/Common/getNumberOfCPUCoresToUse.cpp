@@ -13,7 +13,41 @@
 #include <filesystem>
 #include <thread>
 #include <set>
+#include <charconv>
+#include <optional>
 #include <vector>
+
+#if defined(OS_LINUX)
+std::optional<uint32_t> countCPUsInList(const std::string & cpu_list)
+{
+    if (cpu_list.empty())
+        return std::nullopt;
+
+    auto parse = [](const std::string & text, int & value)
+    {
+        return std::from_chars(text.data(), text.data() + text.size(), value).ec == std::errc{};
+    };
+
+    std::vector<std::string> cpu_ranges;
+    boost::split(cpu_ranges, cpu_list, boost::is_any_of(","));
+    uint32_t cpus_count = 0;
+    for (const std::string & cpu_number_or_range : cpu_ranges)
+    {
+        std::vector<std::string> cpu_range;
+        boost::split(cpu_range, cpu_number_or_range, boost::is_any_of("-"));
+
+        int start = 0;
+        int end = 0;
+        if (cpu_range.size() == 1 && parse(cpu_range[0], start))
+            end = start;
+        else if (cpu_range.size() != 2 || !parse(cpu_range[0], start) || !parse(cpu_range[1], end) || end < start)
+            return std::nullopt;
+
+        cpus_count += static_cast<uint32_t>(end - start) + 1;
+    }
+    return cpus_count;
+}
+#endif
 
 namespace
 {
