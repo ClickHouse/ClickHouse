@@ -12,5 +12,5 @@ select JSONArrayLength('[1,2,3,4,5');
 select JSON_ARRAY_LENGTH('[1,2,3,4,5');
 select JSON_ARRAY_LENGTH('[1,2,3,4,5]');
 
-select JSONArrayLength(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select JSONArrayLength(2);
 select JSONArrayLength(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

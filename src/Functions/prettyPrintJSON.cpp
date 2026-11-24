@@ -2,9 +2,13 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteBufferFromVector.h>
+#include <Interpreters/Context.h>
 #include "config.h"
 
 #if USE_RAPIDJSON
@@ -39,13 +43,39 @@ using TrackedPrettyWriter
     = rapidjson::PrettyWriter<TrackedStringBuffer, rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
 using TrackedReader = rapidjson::GenericReader<rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
 
+/// The JSON text of each row, as `toJSONString` writes it.
+ColumnPtr serializeToJSONText(const ColumnWithTypeAndName & argument, const FormatSettings & format_settings, size_t input_rows_count)
+{
+    auto res = ColumnString::create();
+    ColumnString::Chars & data_to = res->getChars();
+    ColumnString::Offsets & offsets_to = res->getOffsets();
+    offsets_to.resize(input_rows_count);
+
+    auto serialization = argument.type->getDefaultSerialization();
+    WriteBufferFromVector<ColumnString::Chars> json(data_to);
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        serialization->serializeTextJSON(*argument.column, i, json, format_settings);
+        offsets_to[i] = json.count();
+    }
+    json.finalize();
+    return res;
+}
+
 class FunctionPrettyPrintJSON : public IFunction
 {
 public:
     static constexpr auto name = "prettyPrintJSON";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPrettyPrintJSON>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionPrettyPrintJSON>(context); }
+
+    explicit FunctionPrettyPrintJSON(ContextPtr context)
+        : format_settings(getFormatSettings(context))
+        , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
+    {
+    }
 
     [[nodiscard]] String getName() const override { return name; }
+    void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
@@ -55,10 +85,15 @@ public:
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"json", &isString, nullptr, "String"}
+            {"json", nullptr, nullptr, "Any"}
         };
         FunctionArgumentDescriptors optional_args{
             {"indent", &isNativeUInt, isColumnConst, "const UInt*"}
@@ -70,7 +105,11 @@ public:
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+        ColumnPtr json_text = arguments[0].column;
+        if (!isString(arguments[0].type))
+            json_text = serializeToJSONText(arguments[0], format_settings, input_rows_count);
+
+        const auto * col = checkAndGetColumn<ColumnString>(json_text.get());
         if (!col)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a String column", getName());
 
@@ -127,6 +166,10 @@ public:
 
         return result;
     }
+
+private:
+    const FormatSettings format_settings;
+    const UInt64 format_settings_hash;
 };
 
 }
@@ -135,10 +178,12 @@ REGISTER_FUNCTION(PrettyPrintJSON)
 {
     FunctionDocumentation::Description description = R"(
 Returns a pretty-printed version of a JSON string with newlines and indentation with spaces.
+The argument can also be of another type, such as `JSON`, `Dynamic` or `Array`.
+Such a value is converted to JSON first, as `toJSONString` does, so `prettyPrintJSON(j)` returns the same as `prettyPrintJSON(j::String)` for a `JSON` value `j`.
     )";
     FunctionDocumentation::Syntax syntax = "prettyPrintJSON(json [, indent])";
     FunctionDocumentation::Arguments arguments = {
-        {"json", "A valid JSON string to format.", {"String"}},
+        {"json", "A valid JSON string to format.", {"String", "JSON", "Dynamic", "Any"}},
         {"indent", "Number of spaces per indentation level. Default: 4. Max: 32", {"UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"A pretty-printed JSON string.", {"String"}};
@@ -155,6 +200,13 @@ Returns a pretty-printed version of a JSON string with newlines and indentation 
             R"(SELECT prettyPrintJSON('{"a":1}', 8);)",
             R"(
 {\n        "a": 1\n}
+            )"
+        },
+        {
+            "JSON value",
+            R"(SELECT prettyPrintJSON('{"a":{"b":"x"},"d":[1,2]}'::JSON);)",
+            R"(
+{\n    "a": {\n        "b": "x"\n    },\n    "d": [\n        1,\n        2\n    ]\n}
             )"
         }
     };

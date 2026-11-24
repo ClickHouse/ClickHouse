@@ -1,0 +1,181 @@
+issue example
+{
+    "a": {
+        "b": "x"
+    },
+    "d": [
+        1,
+        2
+    ]
+}
+{
+    "b": "x"
+}
+[
+    1,
+    2
+]
+fixture: dynamic paths, shared data, d in the shared variant
+1	['a.b','d']	[]	false
+2	['d']	['e','f','h','i']	true
+3	['d']	['s']	true
+4	[]	[]	false
+5	['d']	['e']	true
+6	['d']	[]	true
+7	['d']	[]	true
+8	['d']	[]	true
+9	['d']	[]	true
+10	[]	['d.k']	false
+11	['d']	[]	true
+JSON vs String
+1	1	1	1
+2	1	1	1
+3	1	1	1
+4	1	1	1
+5	1	1	1
+6	1	1	1
+7	1	1	1
+8	1	1	1
+9	1	1	1
+10	1	1	1
+11	1	1	1
+1	{
+    "a": {
+        "b": "x"
+    },
+    "d": [
+        1,
+        2
+    ],
+    "t": {
+        "n": 0
+    }
+}
+2	{
+    "d": [
+        [
+            1,
+            2
+        ],
+        [
+            3
+        ]
+    ],
+    "e": [
+        {
+            "x": 1
+        },
+        {
+            "y": "z"
+        }
+    ],
+    "f": 0.1,
+    "h": 18446744073709551615,
+    "i": true,
+    "t": {
+        "n": 0
+    }
+}
+sub-object vs String
+1	1
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+10	1
+11	1
+Dynamic subcolumn vs String
+1	Array(Nullable(Int64))	1
+2	Array(Array(Nullable(Int64)))	1
+3	Int64	1
+5	String	1
+6	Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))	1
+7	Date	1
+8	Bool	1
+9	Float64	1
+11	Array(Nullable(String))	1
+2	[
+    [
+        1,
+        2
+    ],
+    [
+        3
+    ]
+]
+6	[
+    {
+        "x": 1
+    },
+    {
+        "x": 2,
+        "y": [
+            1
+        ]
+    }
+]
+8	true
+11	[
+    "a",
+    "b"
+]
+typed paths
+1	1
+2	1
+{
+    "dec": 1.5,
+    "dt64": "2020-01-01 00:00:00.123",
+    "lc": "s",
+    "m": {
+        "k": [
+            1,
+            2
+        ]
+    },
+    "nn": null,
+    "other": 0,
+    "tup": {
+        "x": 1,
+        "y": "a"
+    },
+    "u": "00000000-0000-0000-0000-000000000001"
+}
+a String value is JSON text, as for the String argument
+"bob"
+format settings
+{
+    "h": 18446744073709551615
+}	1
+{
+    "h": "18446744073709551615"
+}	1
+-- { echoOn }
+SELECT prettyPrintJSON([1, 2]), prettyPrintJSON(toJSONString([1, 2]));
+[\n    1,\n    2\n]	[\n    1,\n    2\n]
+SELECT prettyPrintJSON(map('k', [1, 2])), prettyPrintJSON(toJSONString(map('k', [1, 2])));
+{\n    "k": [\n        1,\n        2\n    ]\n}	{\n    "k": [\n        1,\n        2\n    ]\n}
+SELECT prettyPrintJSON(42), prettyPrintJSON(toJSONString(42));
+42	42
+SELECT prettyPrintJSON(tuple(1, 'a')), prettyPrintJSON(toJSONString(tuple(1, 'a')));
+[\n    1,\n    "a"\n]	[\n    1,\n    "a"\n]
+SELECT prettyPrintJSON(['a', 'b']), prettyPrintJSON(toJSONString(['a', 'b']));
+[\n    "a",\n    "b"\n]	[\n    "a",\n    "b"\n]
+SELECT prettyPrintJSON('[1,2]'::Variant(String, UInt64)), prettyPrintJSON(5::Variant(String, UInt64));
+[\n    1,\n    2\n]	5
+SELECT toTypeName(x), prettyPrintJSON(x) FROM (SELECT arrayJoin([NULL, '{"a":1}'])::Nullable(JSON) AS x);
+Nullable(JSON)	\N
+Nullable(JSON)	{\n    "a": 1\n}
+SELECT prettyPrintJSON('{"a":1}'::JSON, 33); -- { serverError BAD_ARGUMENTS }
+SELECT toTypeName(prettyPrintJSON('{}'::JSON)), toTypeName(prettyPrintJSON(('{"d":[1]}'::JSON).d));
+String	Nullable(String)
+SELECT toTypeName(prettyPrintJSON('{"a":1}'::Dynamic)), prettyPrintJSON('{"a":1}'::Dynamic);
+Nullable(String)	{\n    "a": 1\n}
+query condition cache keeps the format settings apart for Dynamic and Variant arguments
+0
+20000
+0
+20000
