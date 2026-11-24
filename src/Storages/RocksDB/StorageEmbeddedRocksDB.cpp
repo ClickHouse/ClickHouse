@@ -1486,6 +1486,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// no local path to resolve against at all, so refuse it before probing the filesystem.
         checkUserFilesPolicyDiskIsPlainLocal(local_context);
 
+        /// The baseline grant comes first: the existence probe below must not run for a user without any
+        /// `FILE` grant, or the difference between the two access-denied messages (`READ` versus
+        /// `READ, WRITE`) would tell that user whether the directory exists.
+        local_context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
         bool may_create_directory = !read_only;
         if (!may_create_directory)
         {
@@ -1498,9 +1503,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             may_create_directory = !isRocksDBDirInsideUserFiles(local_context, resolved) || !fs::exists(resolved);
         }
 
-        const AccessFlags required
-            = may_create_directory ? (AccessType::READ | AccessType::WRITE) : AccessFlags(AccessType::READ);
-        local_context->checkAccess(required, toStringSource(AccessTypeObjects::Source::FILE));
+        if (may_create_directory)
+            local_context->checkAccess(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
     }
 
     StorageInMemoryMetadata metadata;
