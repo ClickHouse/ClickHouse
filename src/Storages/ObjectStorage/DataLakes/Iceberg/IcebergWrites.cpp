@@ -1426,9 +1426,13 @@ void generateManifestList(
     ContextPtr context,
     Poco::JSON::Object::Ptr new_snapshot,
     const std::vector<WrittenManifest> & manifests,
-    const std::unordered_set<String> & replaced_manifest_paths,
     WriteBuffer & buf)
 {
+    std::unordered_set<String> replaced_manifest_paths;
+    for (const auto & manifest : manifests)
+        for (const auto & replaced : manifest.replaced_manifests)
+            replaced_manifest_paths.insert(replaced.serialize());
+
     /// Carried-over files need the manifest rewrite form of the entries, which reports the existing counts.
     const bool has_existing_files = std::ranges::any_of(manifests, [](const auto & manifest) { return manifest.existing_files_count > 0; });
     const Int64 new_sequence_number = has_existing_files ? new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number) : 0;
@@ -1931,12 +1935,12 @@ void IcebergStorageSink::removeManifests()
     }
     written_manifests.clear();
     manifests_depend_on_parent = false;
-    replaced_manifest_paths.clear();
 }
 
 void IcebergStorageSink::writeManifest(
     const std::vector<ManifestFileEntry> & entries,
     std::optional<ManifestPartitionSummary> partition_summary,
+    std::vector<Iceberg::IcebergPathFromMetadata> replaced_manifests,
     Poco::JSON::Object::Ptr new_snapshot)
 {
     const auto & resolver = persistent_table_components.path_resolver;
@@ -1946,6 +1950,7 @@ void IcebergStorageSink::writeManifest(
     manifest.path = filename_generator.generateManifestEntryName();
     manifest.partition_spec_id = partition_spec_id;
     manifest.partition_summary = std::move(partition_summary);
+    manifest.replaced_manifests = std::move(replaced_manifests);
     for (const auto & entry : entries)
     {
         const auto rows = static_cast<Int64>(entry.record_count);
@@ -2092,6 +2097,7 @@ bool IcebergStorageSink::initializeMetadata()
                 if (single_manifest)
                     continue;
 
+                std::vector<IcebergPathFromMetadata> replaced_manifests;
                 if (merge_settings)
                 {
                     auto merged = Iceberg::selectManifestsToMerge(
@@ -2103,17 +2109,16 @@ bool IcebergStorageSink::initializeMetadata()
                         persistent_table_components,
                         object_storage,
                         context);
-                    for (const auto & path : merged.manifest_paths)
-                        replaced_manifest_paths.insert(path.serialize());
+                    replaced_manifests = std::move(merged.manifest_paths);
                     for (auto & entry : merged.entries)
                         entries.push_back(std::move(entry));
                 }
-                writeManifest(entries, std::move(partition_summary), new_snapshot);
+                writeManifest(entries, std::move(partition_summary), std::move(replaced_manifests), new_snapshot);
                 entries.clear();
                 partition_summary.reset();
             }
             if (single_manifest)
-                writeManifest(entries, std::move(partition_summary), new_snapshot);
+                writeManifest(entries, std::move(partition_summary), /* replaced_manifests */ {}, new_snapshot);
         }
         {
             auto buffer_manifest_list = object_storage->writeObject(
@@ -2128,7 +2133,6 @@ bool IcebergStorageSink::initializeMetadata()
                     context,
                     new_snapshot,
                     written_manifests,
-                    replaced_manifest_paths,
                     *buffer_manifest_list);
                 buffer_manifest_list->finalize();
             }
