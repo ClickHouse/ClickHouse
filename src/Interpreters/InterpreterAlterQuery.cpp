@@ -637,16 +637,12 @@ struct ReadColumnsState
 
 void addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, NameSet & result);
 
-/// An EPHEMERAL column cannot be read: what it carries is what its expression reads.
+/// An EPHEMERAL column also carries what its expression reads, and the same ALTER can make it a stored column.
 void addColumnRead(const ColumnDescription & column, ReadColumnsState & state, NameSet & result)
 {
-    if (column.default_desc.kind != ColumnDefaultKind::Ephemeral)
-    {
-        result.insert(column.name);
-        return;
-    }
-
-    if (!column.default_desc.expression || !state.expanded_ephemerals.insert(column.name).second)
+    result.insert(column.name);
+    if (column.default_desc.kind != ColumnDefaultKind::Ephemeral || !column.default_desc.expression
+        || !state.expanded_ephemerals.insert(column.name).second)
         return;
 
     SetWithMemoryTracking<IdentifierParts> identifiers;

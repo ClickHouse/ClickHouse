@@ -19,9 +19,10 @@ U_ALIAS="u_alias_${DB}"
 U_ALIAS_COL="u_alias_col_${DB}"
 U_SHADOW="u_shadow_${DB}"
 U_SHADOW_FULL="u_shadow_full_${DB}"
+U_EPH="u_eph_${DB}"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER IF EXISTS ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW}, ${U_SHADOW_FULL};
+    DROP USER IF EXISTS ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW}, ${U_SHADOW_FULL}, ${U_EPH};
 
     CREATE TABLE t
     (
@@ -72,6 +73,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
     REVOKE SELECT(p) ON ${DB}.t_shadow FROM ${U_SHADOW};
     CREATE USER ${U_SHADOW_FULL};
     GRANT SELECT, ALTER ADD COLUMN, ALTER RENAME COLUMN ON ${DB}.t_shadow TO ${U_SHADOW_FULL};
+    CREATE USER ${U_EPH};
+    GRANT SELECT, ALTER ADD COLUMN, ALTER MODIFY COLUMN ON ${DB}.t TO ${U_EPH};
+    REVOKE SELECT(eph) ON ${DB}.t FROM ${U_EPH};
 "
 
 # check <user|default> <label> <query> [<column>]
@@ -116,6 +120,7 @@ check "${U_PARTIAL}" "multiple commands" "ALTER TABLE t ADD COLUMN m_ok UInt8 DE
 check "${U_PARTIAL}" "nested prefix" "ALTER TABLE t ADD COLUMN a_nested String ALIAS toString(n)" n.secret
 check "${U_PARTIAL}" "subcolumn of an alias column" "ALTER TABLE t ADD COLUMN a_alias_sub String ALIAS pub_tup.s" pub_tup
 check "${U_PARTIAL}" "ephemeral column" "ALTER TABLE t ADD COLUMN a_eph String DEFAULT eph" restricted
+check "${U_EPH}" "ephemeral column made stored" "ALTER TABLE t MODIFY COLUMN eph String DEFAULT 'x', ADD COLUMN e_eph String DEFAULT eph" eph
 check default "alias table, expression" "ALTER TABLE t_alias ADD COLUMN via_alias String DEFAULT upper(other)"
 check default "alias table, rename" "ALTER TABLE t_alias RENAME COLUMN other TO other2"
 check default "alias table, modify" "ALTER TABLE t_alias MODIFY COLUMN other String DEFAULT upper(restricted)"
@@ -174,7 +179,7 @@ echo "-- schema"
 ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY position"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW}, ${U_SHADOW_FULL};
+    DROP USER ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW}, ${U_SHADOW_FULL}, ${U_EPH};
     DROP TABLE t_shadow;
     DROP TABLE t_alias;
     DROP TABLE t_alias_gone;

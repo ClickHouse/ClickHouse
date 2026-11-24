@@ -24,6 +24,8 @@ ACCESS_DENIED SELECT(n.secret)
 ACCESS_DENIED SELECT(pub_tup)
 -- ephemeral column
 ACCESS_DENIED SELECT(restricted)
+-- ephemeral column made stored
+ACCESS_DENIED SELECT(eph)
 -- alias table, expression
 NOT_IMPLEMENTED
 -- alias table, rename
