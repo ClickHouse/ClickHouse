@@ -117,6 +117,10 @@ bool hasAggregateFunctionType(const DataTypePtr & type);
 /// `IDataType::equals` ignores the state version, so two equal types may still disagree here.
 bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs);
 
+/// `equals` ignores state versions and parameters that only affect finalization (the level of `quantile`);
+/// a column converted to a declared type must carry that type's states. For two `equals`-equal types.
+bool needsAggregateStateRelabel(const IDataType & from, const IDataType & to);
+
 /// Rebuilds `column` as a column of `type`, which must be equal to the column's own type except
 /// for the state versions of the nested `AggregateFunction` types. The states in memory do not depend
 /// on the version, but a column keeps the version it was created with and uses it when its states pass

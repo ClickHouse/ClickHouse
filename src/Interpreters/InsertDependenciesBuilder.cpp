@@ -682,7 +682,13 @@ private:
                 input.getColumnsWithTypeAndName(),
                 to_convert,
                 ActionsDAG::MatchColumnsMode::Name,
-                local_context);
+                local_context,
+                /*ignore_constant_values=*/ false,
+                /*add_cast_columns=*/ false,
+                /*new_names=*/ nullptr,
+                /*columns_contain_compiled_function=*/ nullptr,
+                /*materialize_constants=*/ true,
+                /*relabel_aggregate_states=*/ true);
 
             bool inner_share_nested_offsets = true;
             if (auto * merge_tree = castStorage<MergeTreeData>(inner_storage, DeferredTable::Load).get())

@@ -573,11 +573,60 @@ std::vector<size_t> getAggregateStateVersions(const IDataType & type)
     return versions;
 }
 
+struct AggregateStateNode
+{
+    const DataTypeAggregateFunction * type;
+    bool in_arguments;
+};
+
+/// All `AggregateFunction` types in `type`, including the states in the arguments of another state, in a fixed order.
+void collectAggregateStates(const IDataType & type, bool in_arguments, std::vector<AggregateStateNode> & nodes)
+{
+    forEachInTypeTree(type, [&](const IDataType & child)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+        {
+            nodes.push_back({aggregate_type, in_arguments});
+            for (const auto & argument_type : aggregate_type->getArgumentsDataTypes())
+                collectAggregateStates(*argument_type, /*in_arguments=*/ true, nodes);
+        }
+    });
+}
+
 }
 
 bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs)
 {
     return getAggregateStateVersions(lhs) == getAggregateStateVersions(rhs);
+}
+
+bool needsAggregateStateRelabel(const IDataType & from, const IDataType & to)
+{
+    std::vector<AggregateStateNode> from_states;
+    collectAggregateStates(from, /*in_arguments=*/ false, from_states);
+    if (from_states.empty())
+        return false;
+
+    std::vector<AggregateStateNode> to_states;
+    collectAggregateStates(to, /*in_arguments=*/ false, to_states);
+    if (from_states.size() != to_states.size())
+        return false;
+
+    bool differs = false;
+    for (size_t i = 0; i < from_states.size(); ++i)
+    {
+        const auto & from_state = *from_states[i].type;
+        const auto & to_state = *to_states[i].type;
+
+        /// A state in the arguments of another state is stored serialized with its own version.
+        if ((from_states[i].in_arguments || to_states[i].in_arguments) && from_state.getVersion() != to_state.getVersion())
+            return false;
+
+        if (!DataTypeAggregateFunction::strictEquals(from_state.getPtr(), to_state.getPtr()))
+            differs = true;
+    }
+
+    return differs;
 }
 
 ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataTypePtr & type)

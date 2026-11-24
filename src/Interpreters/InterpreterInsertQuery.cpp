@@ -458,7 +458,13 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position,
-            context_);
+            context_,
+            /*ignore_constant_values=*/ false,
+            /*add_cast_columns=*/ false,
+            /*new_names=*/ nullptr,
+            /*columns_contain_compiled_function=*/ nullptr,
+            /*materialize_constants=*/ true,
+            /*relabel_aggregate_states=*/ true);
     auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context_, CompileExpressions::yes));
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr

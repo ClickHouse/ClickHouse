@@ -1,0 +1,20 @@
+insert	2.5
+insert tuple	2.5
+insert array	2.5
+insert map	2.5
+insert array of tuple	2.5
+insert quantiles state	2.5
+insert state of states	[2.5]
+insert merge tree	2.5
+merge with the source level	70.90000000000002
+cast	2.5
+cast tuple	2.5
+cast named tuple	2.5
+cast array	2.5
+cast map	2.5
+cast array of tuple	2.5
+cast state of states	[2.5]
+nested state of another version	100315
+materialized view	2.5
+refreshable materialized view	2.5
+refreshable view into the source of a materialized view	2.5
