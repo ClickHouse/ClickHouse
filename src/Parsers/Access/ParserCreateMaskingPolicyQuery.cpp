@@ -160,8 +160,7 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ASTPtr update_assignments;
     ASTPtr where_condition;
     boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
-    Int64 priority = 0;
-    bool has_priority = false;
+    std::optional<Int64> priority;
     String storage_name;
 
     while (true)
@@ -178,13 +177,12 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         if (!roles && parseToRoles(pos, expected, attach_mode, roles))
             continue;
 
-        if (!has_priority)
+        if (!priority)
         {
             Int64 new_priority = 0;
             if (parsePriority(pos, expected, new_priority))
             {
                 priority = new_priority;
-                has_priority = true;
                 continue;
             }
         }

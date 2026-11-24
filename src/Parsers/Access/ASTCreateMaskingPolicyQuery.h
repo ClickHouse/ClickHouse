@@ -4,6 +4,8 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/IAST.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -42,7 +44,8 @@ public:
     ASTPtr update_assignments;  // ASTExpressionList of ASTAssignment objects
     ASTPtr where_condition;
 
-    Int64 priority{};
+    /// Not set if the `PRIORITY` clause is omitted (so `ALTER` can tell "keep the current priority" from an explicit `PRIORITY 0`).
+    std::optional<Int64> priority;
 
     String getID(char) const override;
     ASTPtr clone() const override;

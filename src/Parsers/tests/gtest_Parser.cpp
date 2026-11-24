@@ -874,6 +874,27 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateMaskingPolicyQuery, ParserTest,
         {
             "ATTACH MASKING POLICY p ON db.t UPDATE email = '***' TO ALL",
             nullptr  // only the loader of the access entities parses ATTACH
+        },
+        {
+            "CREATE MASKING POLICY p ON db.t UPDATE email = '***' TO ALL PRIORITY 5",
+            "CREATE MASKING POLICY p ON db.t UPDATE email = '***' TO ALL PRIORITY 5"
+        },
+        {
+            "CREATE MASKING POLICY p ON db.t UPDATE email = '***' TO ALL PRIORITY 0",
+            "CREATE MASKING POLICY p ON db.t UPDATE email = '***' TO ALL PRIORITY 0"
+        },
+        {
+            /// An explicit `PRIORITY 0` must be kept, so it can be told apart from omitting the clause.
+            "ALTER MASKING POLICY p ON db.t PRIORITY 0",
+            "ALTER MASKING POLICY p ON db.t PRIORITY 0"
+        },
+        {
+            "ALTER MASKING POLICY p ON db.t PRIORITY 5",
+            "ALTER MASKING POLICY p ON db.t PRIORITY 5"
+        },
+        {
+            "ALTER MASKING POLICY p ON db.t",
+            "ALTER MASKING POLICY p ON db.t"
         }
 })));
 
