@@ -1,0 +1,51 @@
+-- split_part
+1	['b','q','b','c']	x
+2	['','q','','']	\N
+3	['','','no delimiter','no delimiter']	z
+4	['lead','q','','lead']	
+1
+p	3
+r	1
+-- string_to_array
+1	['a','b','c']	['x','y']	['p','q']	['a',NULL,'c']
+2	[]	[]	['p','q']	[]
+3	['no delimiter']	['z','']	['r']	['no delimiter']
+4	['','lead']	['','']	['p','q']	['','lead']
+1	a
+1	b
+1	c
+3	no delimiter
+4	
+4	lead
+1	1
+2	0
+3	2
+4	1
+-- array_length
+1	3	2	3	\N
+2	\N	\N	\N	\N
+3	1	1	\N	\N
+4	2	2	2	\N
+2
+6
+-- regexp_split_to_array and regexp_split_to_table
+1	['a','b','c']
+2	['']
+3	['no','delimiter']
+4	['','lead']
+1	a
+1	b
+1	c
+2	
+3	no delimiter
+4	
+4	lead
+7
+-- to_timestamp
+1	2023-11-14 22:13:20.000000	1970-01-01 00:00:01.500000
+2	1970-01-01 00:00:00.000000	1970-01-01 00:00:00.250000
+3	1969-12-31 23:59:59.000000	2023-11-14 22:13:20.125000
+4	1970-01-02 00:00:00.000000	1970-01-02 00:00:00.000000
+1
+-- random
+4	4
