@@ -15,6 +15,10 @@
 #include <string>
 #include <vector>
 
+#if defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+#include <arm_neon.h>
+#endif
+
 #include <fmt/format.h>
 
 namespace DB
@@ -283,8 +287,8 @@ float raBitQNumeratorFromCounts(const RaBitQQuery & q, UInt64 pc, const UInt64 *
     return 2.0f * sum_set - q.q_total; /// sum_i s_i * q_i
 }
 
-/// Scalar bit-sliced dot: AND+popcount the +-1 sign code against each query bit-plane, 8 bytes at a time, and return
-/// `sum_i s_i * q_i`. `code` points at `q.code_bytes` packed sign bits (no trailing factor is read here).
+/// Bit-sliced dot: AND+popcount the +-1 sign code against each query bit-plane and return `sum_i s_i * q_i`. `code`
+/// points at `q.code_bytes` packed sign bits (no trailing factor is read here).
 float raBitQNumerator(const RaBitQQuery & q, const char * code)
 {
     const size_t code_bytes = q.code_bytes;
@@ -292,6 +296,33 @@ float raBitQNumerator(const RaBitQQuery & q, const char * code)
     UInt64 pc = 0;
     UInt64 plane_pc[RABITQ_QUERY_BITS] = {};
     size_t b = 0;
+#if defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
+    /// AArch64 has no scalar popcount instruction: a 64-bit `std::popcount` moves the word to a vector register and back.
+    /// Count 16 bytes at a time instead (CNT gives the popcount of every byte) and add the byte counts into 32-bit lanes
+    /// (UDOT with ones), with independent lanes for the code and for each query bit-plane. The counts are the same as
+    /// those of the scalar loops below, which handle the remaining bytes.
+    if (code_bytes >= 16)
+    {
+        const uint8x16_t ones = vdupq_n_u8(1);
+        uint32x4_t pc_lanes = vdupq_n_u32(0);
+        uint32x4_t plane_lanes[RABITQ_QUERY_BITS];
+        for (auto & lanes : plane_lanes)
+            lanes = vdupq_n_u32(0);
+        for (; b + 16 <= code_bytes; b += 16)
+        {
+            const uint8x16_t code_bits = vld1q_u8(reinterpret_cast<const uint8_t *>(code) + b);
+            pc_lanes = vdotq_u32(pc_lanes, vcntq_u8(code_bits), ones);
+            for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+            {
+                const uint8x16_t plane_bits = vld1q_u8(planes + static_cast<size_t>(j) * code_bytes + b);
+                plane_lanes[j] = vdotq_u32(plane_lanes[j], vcntq_u8(vandq_u8(code_bits, plane_bits)), ones);
+            }
+        }
+        pc = vaddvq_u32(pc_lanes);
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+            plane_pc[j] = vaddvq_u32(plane_lanes[j]);
+    }
+#endif
     for (; b + 8 <= code_bytes; b += 8)
     {
         UInt64 cw = 0;
