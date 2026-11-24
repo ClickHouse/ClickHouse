@@ -4,10 +4,12 @@
 
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+
+#include <sstream>
 
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
@@ -122,7 +124,12 @@ String CredentialVendor::buildSessionPolicy(const String & bucket, const String 
     Poco::JSON::Object policy;
     policy.set("Version", "2012-10-17");
     policy.set("Statement", statements);
-    return toJSONString(policy);
+
+    /// STS accepts only characters up to U+00FF in a policy. IAM decodes `\uXXXX` back to original characters.
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(policy, oss, 0, -1, Poco::JSON_WRAP_STRINGS | Poco::JSON_ESCAPE_UNICODE);
+    return oss.str();
 }
 
 S3::AssumeRoleResult CredentialVendor::assumeRole(const String & location, VendedAccessLevel access) const
