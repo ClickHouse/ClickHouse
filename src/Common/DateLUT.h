@@ -30,6 +30,8 @@ public:
         ServerTimezoneScope();
         ~ServerTimezoneScope();
 
+        static bool isActive();
+
     private:
         bool previous;
     };

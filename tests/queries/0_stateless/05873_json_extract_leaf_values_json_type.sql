@@ -95,20 +95,48 @@ FROM numbers(10) SETTINGS session_timezone = 'America/New_York';
 WITH toString(toDateTime(1577836805, 'UTC'), serverTimezone()) AS v
 SELECT JSONExtractLeafValues(j) = [v, v] FROM t_leaf_tz WHERE id = 5 SETTINGS session_timezone = 'Asia/Kathmandu';
 SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), serverTimezone()))
-SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, use_query_condition_cache = 0;
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, force_data_skipping_indices = 'idx', use_query_condition_cache = 0;
 SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), serverTimezone()))
 SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 0, use_query_condition_cache = 0;
-SELECT trimLeft(explain) FROM (
-    EXPLAIN indexes = 1
-    SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), serverTimezone()))
-    SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, use_query_condition_cache = 0, enable_parallel_replicas = 0
-) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
-SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu'))
-SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, use_query_condition_cache = 0;
-SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu'))
+-- The text in the session time zone is a leaf only if it is the same as in the server time zone.
+WITH toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu') AS k
+SELECT count() = (k = toString(toDateTime(1577836805, 'UTC'), serverTimezone())) FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), k)
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, force_data_skipping_indices = 'idx', use_query_condition_cache = 0;
+WITH toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu') AS k
+SELECT count() = (k = toString(toDateTime(1577836805, 'UTC'), serverTimezone())) FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), k)
 SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 0, use_query_condition_cache = 0;
+
+SELECT 'session_timezone, composite values';
+DROP TABLE IF EXISTS t_leaf_tz_composite;
+CREATE TABLE t_leaf_tz_composite (id UInt32, j JSON(a Array(Dynamic), t Tuple(x Dynamic)),
+    INDEX idx JSONExtractLeafValues(j, '', 'string') TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_leaf_tz_composite SELECT number, CAST(map('a', [toDateTime(1577836800 + number)::Dynamic], 't', tuple(toDateTime(1577836800 + number)::Dynamic)),
+    'JSON(a Array(Dynamic), t Tuple(x Dynamic))')
+FROM numbers(10) SETTINGS session_timezone = 'America/New_York';
+-- The same DateTime in Dynamic is also written in the session time zone in the same query, before and after the leaves.
+WITH toString(toDateTime(1577836805, 'UTC'), serverTimezone()) AS v
+SELECT (JSONExtractLeafValues(j, '', 'string'), JSONExtractLeafValues(j)) = (['["' || v || '"]', v], [v, v])
+FROM t_leaf_tz_composite WHERE id = 5 AND toString(j.a) != '' SETTINGS session_timezone = 'Asia/Kathmandu', max_threads = 1;
+SELECT toString(j.a) = '[\'' || toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu') || '\']'
+FROM t_leaf_tz_composite WHERE id = 5 AND length(JSONExtractLeafValues(j, '', 'string')) = 2 SETTINGS session_timezone = 'Asia/Kathmandu', max_threads = 1;
+SELECT count() FROM t_leaf_tz_composite PREWHERE toString(j.a) != ''
+WHERE has(JSONExtractLeafValues(j, '', 'string'), '["' || toString(toDateTime(1577836805, 'UTC'), serverTimezone()) || '"]')
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, force_data_skipping_indices = 'idx', use_query_condition_cache = 0, max_threads = 1, enable_parallel_replicas = 0;
+SELECT count() FROM t_leaf_tz_composite PREWHERE toString(j.a) != ''
+WHERE has(JSONExtractLeafValues(j, '', 'string'), '["' || toString(toDateTime(1577836805, 'UTC'), serverTimezone()) || '"]')
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 0, use_query_condition_cache = 0, max_threads = 1, enable_parallel_replicas = 0;
+WITH '["' || toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu') || '"]' AS k
+SELECT count() = (k = '["' || toString(toDateTime(1577836805, 'UTC'), serverTimezone()) || '"]') FROM t_leaf_tz_composite PREWHERE toString(j.a) != ''
+WHERE has(JSONExtractLeafValues(j, '', 'string'), k)
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, force_data_skipping_indices = 'idx', use_query_condition_cache = 0, max_threads = 1, enable_parallel_replicas = 0;
+WITH '["' || toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu') || '"]' AS k
+SELECT count() = (k = '["' || toString(toDateTime(1577836805, 'UTC'), serverTimezone()) || '"]') FROM t_leaf_tz_composite PREWHERE toString(j.a) != ''
+WHERE has(JSONExtractLeafValues(j, '', 'string'), k)
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 0, use_query_condition_cache = 0, max_threads = 1, enable_parallel_replicas = 0;
 
 DROP TABLE t_leaf;
 DROP TABLE t_leaf_types;
 DROP TABLE t_leaf_variant;
 DROP TABLE t_leaf_tz;
+DROP TABLE t_leaf_tz_composite;

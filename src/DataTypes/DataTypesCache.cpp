@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
 
 namespace DB
 {
@@ -154,8 +155,10 @@ void DataTypesCache::clearIfQueryContextChanged()
     /// (attached to the client thread by a single query scope) for the whole session and
     /// mutates `session_timezone` in place between queries (see `ClientBase::onTimezoneUpdate`),
     /// so also track the value of the setting the cached types may have captured.
-    const String * current_session_timezone
-        = current_query_context ? &current_query_context->getSettingsRef()[Setting::session_timezone].value : nullptr;
+    /// Inside `DateLUT::ServerTimezoneScope` the types are built in the server time zone, as without `session_timezone`.
+    const String * current_session_timezone = current_query_context && !DateLUT::ServerTimezoneScope::isActive()
+        ? &current_query_context->getSettingsRef()[Setting::session_timezone].value
+        : nullptr;
     bool same_session_timezone
         = current_session_timezone ? *current_session_timezone == session_timezone : session_timezone.empty();
 

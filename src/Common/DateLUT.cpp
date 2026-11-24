@@ -210,6 +210,11 @@ DateLUT::ServerTimezoneScope::~ServerTimezoneScope()
     use_server_timezone = previous;
 }
 
+bool DateLUT::ServerTimezoneScope::isActive()
+{
+    return use_server_timezone;
+}
+
 const DateLUTImpl & DateLUT::instance()
 {
     if (use_server_timezone)
