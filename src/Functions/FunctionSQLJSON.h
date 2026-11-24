@@ -127,6 +127,22 @@ private:
 class FunctionSQLJSONHelpers
 {
 public:
+    template <class JSONParser>
+    static bool parseJSON(
+        JSONParser & parser, std::string_view json, const ColumnString * strings, size_t row, typename JSONParser::Element & document)
+    {
+        if constexpr (requires { parser.parse(json, size_t{}, document); })
+        {
+            if (strings)
+            {
+                /// Only initialized bytes after this row count; allocated capacity and column padding do not.
+                const size_t readable_bytes_after = strings->getChars().size() - strings->getOffsets()[row];
+                return parser.parse(json, readable_bytes_after, document);
+            }
+        }
+        return parser.parse(json, document);
+    }
+
     /// Single-path executor: parses one JSONPath, applies Impl per row.
     template <typename Name, typename Impl, class JSONParser>
     class Executor
@@ -193,10 +209,11 @@ public:
             /// Parse JSON for every row
             Impl impl;
             GeneratorJSONPath<JSONParser> generator_json_path(res);
+            const auto * json_strings = checkAndGetColumn<ColumnString>(json_column.column.get());
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view json = json_column.column->getDataAt(i);
-                document_ok = json_parser.parse(json, document);
+                document_ok = parseJSON(json_parser, json, json_strings, i, document);
 
                 bool added_to_column = false;
                 if (document_ok)
@@ -261,11 +278,12 @@ public:
             JSONParser json_parser;
             Element document;
             Impl impl;
+            const auto * json_strings = checkAndGetColumn<ColumnString>(json_column.column.get());
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view json = json_column.column->getDataAt(i);
-                bool document_ok = json_parser.parse(json, document);
+                bool document_ok = parseJSON(json_parser, json, json_strings, i, document);
 
                 size_t gen_idx = 0;
                 executePlan(plan, document, generators, gen_idx, document_ok, impl, function_json_value_return_type_allow_complex);

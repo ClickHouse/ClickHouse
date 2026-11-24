@@ -1,0 +1,24 @@
+<test>
+    <settings>
+        <allow_simdjson>1</allow_simdjson>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE sql_json_initialized_tail (short_json String, long_json String) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO sql_json_initialized_tail
+        SELECT
+            concat('{{"sparam":"test_string","nparam":', toString(number % 1000), '}}'),
+            concat('{{"sparam":"test_string","nparam":', toString(number % 1000), ',"pad":"', repeat('x', 4053 - length(toString(number % 1000))), '"}}')
+        FROM numbers(32768)
+    </fill_query>
+
+    <query>SELECT count() FROM sql_json_initialized_tail WHERE NOT ignore(JSON_VALUE(short_json, '$.nparam'))</query>
+    <query>SELECT count() FROM sql_json_initialized_tail WHERE JSON_EXISTS(short_json, '$.nparam')</query>
+    <query>SELECT sum(length(JSON_QUERY(short_json, '$.sparam'))) FROM sql_json_initialized_tail</query>
+    <query>SELECT count() FROM sql_json_initialized_tail WHERE NOT ignore(JSON_VALUE(long_json, '$.nparam'))</query>
+    <query>SELECT count() FROM sql_json_initialized_tail WHERE JSON_EXISTS(long_json, '$.nparam')</query>
+    <query>SELECT sum(length(JSON_QUERY(long_json, '$.sparam'))) FROM sql_json_initialized_tail</query>
+
+    <drop_query>DROP TABLE sql_json_initialized_tail</drop_query>
+</test>
