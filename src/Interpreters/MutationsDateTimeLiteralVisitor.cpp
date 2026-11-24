@@ -85,7 +85,7 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
     return makeASTFunction("toDateTime", literal_ast, std::move(tz_literal));
 }
 
-const std::unordered_set<String> comparison_functions = {
+[[clang::no_destroy]] const std::unordered_set<String> comparison_functions = {
     "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
 };
 
