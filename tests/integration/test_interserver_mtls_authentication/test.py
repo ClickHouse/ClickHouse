@@ -213,3 +213,35 @@ def test_interserver_mtls_part_fetch():
 
     basic_only.query("INSERT INTO basic_parts VALUES (20)")
     assert_eq_with_retry(mixed, "SELECT id FROM basic_parts ORDER BY id", "10\n20")
+
+
+def test_interserver_client_certificate_rotation():
+    for replica in (certificate_only, mixed):
+        replica.query(
+            f"CREATE TABLE rotation_parts (id UInt64) "
+            f"ENGINE = ReplicatedMergeTree('/clickhouse/tables/interserver_mtls/rotation_parts', '{replica.name}') "
+            "ORDER BY id SETTINGS max_postpone_time_for_failed_replicated_fetches_ms = 0"
+        )
+
+    config_path = "/etc/clickhouse-server/config.d/certificate_only.xml"
+    original = (Path(__file__).parent / "configs/certificate_only.xml").read_text()
+    rotated = original.replace("valid-a-cert.pem", "wrong-san-cert.pem").replace(
+        "valid-a-key.pem", "wrong-san-key.pem"
+    )
+
+    certificate_only.replace_config(config_path, rotated)
+    try:
+        certificate_only.query("SYSTEM RELOAD CONFIG")
+        mixed.query("INSERT INTO rotation_parts VALUES (1)")
+        assert_eq_with_retry(
+            certificate_only,
+            "SELECT count() > 0 FROM system.replication_queue "
+            "WHERE database = currentDatabase() AND table = 'rotation_parts' "
+            "AND position(last_exception, 'HTTP status code: 401') > 0",
+            "1",
+        )
+    finally:
+        certificate_only.replace_config(config_path, original)
+        certificate_only.query("SYSTEM RELOAD CONFIG")
+
+    assert_eq_with_retry(certificate_only, "SELECT id FROM rotation_parts", "1")
