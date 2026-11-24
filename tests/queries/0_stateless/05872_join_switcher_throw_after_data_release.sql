@@ -7,6 +7,8 @@ SET join_algorithm = 'auto';
 SET max_rows_in_join = 10;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET query_plan_join_swap_table = 0;
+-- `~HashJoin` checks its byte count only while formatting a `test`-level message: format them, send none.
+SET send_logs_level = 'test', send_logs_source_regexp = '^no-such-logger$';
 
 SYSTEM ENABLE FAILPOINT hash_join_throw_after_data_release;
 SELECT n, j FROM (SELECT number AS n FROM numbers(4)) AS nums
