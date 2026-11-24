@@ -1604,7 +1604,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
-                    res = &inverted_dag.addFunction(function_builder, children, "");
+                    auto result_name = ActionsDAG::nameForRebuiltFunction(
+                        func_name, children, need_inversion ? "not(" + node.result_name + ")" : node.result_name);
+                    res = &inverted_dag.addFunction(function_builder, children, std::move(result_name));
                     /// `res` is a non-inverted condition over wrapper-free arguments; rewrite it so a later pass keeps the same RPN layout.
                     if (boolean_context)
                         if (const auto * rewritten_inverse

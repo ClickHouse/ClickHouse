@@ -6,14 +6,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# chain LEVELS STEPS SEED PASS FROM: LEVELS nested subqueries over FROM; each one doubles the previous level's
-# last column STEPS times (a<level>_<step>) and passes the PASS columns through.
+# chain LEVELS STEPS SEED PASS FROM [OP]: LEVELS nested subqueries over FROM; each one combines (OP, default +) the
+# previous level's last column with itself STEPS times (a<level>_<step>) and passes the PASS columns through.
 chain() {
-    local levels=$1 steps=$2 prev=$3 pass=$4 query=$5 projection
+    local levels=$1 steps=$2 prev=$3 pass=$4 query=$5 op=${6:-+} projection
     for i in $(seq 1 "$levels"); do
-        projection="$prev + $prev AS a${i}_1"
+        projection="$prev $op $prev AS a${i}_1"
         for j in $(seq 2 "$steps"); do
-            projection="$projection, a${i}_$((j - 1)) + a${i}_$((j - 1)) AS a${i}_$j"
+            projection="$projection, a${i}_$((j - 1)) $op a${i}_$((j - 1)) AS a${i}_$j"
         done
         query="(SELECT $projection$pass FROM $query)"
         prev="a${i}_$steps"
@@ -30,6 +30,7 @@ numbers_chain=$(chain 4 6 val '' '(SELECT number - 1 AS val FROM numbers(1, 1))'
 run "SELECT count() FROM $numbers_chain WHERE a4_6 <= 0"
 run "SELECT count() FROM $numbers_chain WHERE a4_6 <= 0" ', query_plan_merge_expressions = 0'
 run "SELECT count() FROM $numbers_chain WHERE a4_6 <= 0" ', compile_expressions = 1, min_count_to_compile_expression = 0'
+run "SELECT count() FROM $(chain 4 6 val '' '(SELECT number - 1 AS val FROM numbers(1, 1))' '=') WHERE a4_6"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_pad (val UInt64, pad String) ENGINE = MergeTree ORDER BY tuple()"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_pad VALUES (0, 'x')"
