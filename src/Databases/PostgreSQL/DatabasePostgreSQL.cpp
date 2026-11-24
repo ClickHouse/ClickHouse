@@ -109,7 +109,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     : DatabaseWithAltersOnDiskBase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
-    , database_engine_define(database_engine_define_->clone())
+    , database_engine_define(database_engine_define_->formatWithSecretsOneLine<SecretString>())
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
@@ -601,7 +601,7 @@ ASTPtr DatabasePostgreSQL::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_define);
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_define));
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
@@ -627,7 +627,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
 
     auto create_table_query = make_intrusive<ASTCreateQuery>();
-    auto table_storage_define = database_engine_define->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
     table_storage_define->as<ASTStorage>()->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     create_table_query->set(create_table_query->storage, table_storage_define);
 
@@ -731,7 +731,9 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(
+                *named_collection, &postgresql_settings, args.context,
+                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
@@ -754,7 +756,8 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             const auto & host_port = safeGetLiteralValue<String>(positional_arguments[0], engine_name);
             size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
-            configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+            configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+                host_port, max_addresses, 5432, globCaller(fmt::format("Database engine '{}'", engine_name)));
             configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);

@@ -121,10 +121,7 @@ set(LIB_SOVERSION ${VERSION_MAJOR})
 enable_language(ASM)
 
 add_definitions(-Wno-unused-command-line-argument)
-# Note that s390x build uses mold linker
-if(NOT ARCH_S390X)
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
-endif()
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
 
 set(CRYPTO_SRC
     common/providers/der_digests_gen.c
@@ -1472,6 +1469,17 @@ target_include_directories(ssl
     PRIVATE ${OPENSSL_SOURCE_DIR})
 
 target_link_libraries(ssl crypto)
+
+# OpenSSL calls many functions through pointers whose types differ only in pointer types, e.g. `d2i_X509` through
+# `d2i_of_void` or `RSA_free` through `void (*)(void *)`, which strict CFI (`cfi-icall`) rejects. Upstream is fixing
+# them (stacks, sparse arrays and `decode_der2key` free callbacks in 4.0, the first two backported here), but not all
+# yet. Until then, OpenSSL's indirect calls are checked with all pointer types treated alike: return type, arity and
+# non-pointer arguments are still checked. TODO: backport or fix the rest and drop this.
+if (ENABLE_CFI)
+    foreach (target crypto ssl)
+        target_compile_options (${target} PRIVATE $<$<COMPILE_LANGUAGE:C>:-fsanitize-cfi-icall-generalize-pointers>)
+    endforeach ()
+endif ()
 
 add_library(OpenSSL::Crypto ALIAS crypto)
 add_library(OpenSSL::SSL ALIAS ssl)
