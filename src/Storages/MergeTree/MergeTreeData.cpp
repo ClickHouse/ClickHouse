@@ -6262,7 +6262,7 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
 
 }
 
-void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
+void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context, bool analyze_ttl_defaults)
 {
     auto context = Context::createCopy(local_context);
     context->setAnalyzingBackgroundExpressions(true);
@@ -6293,7 +6293,7 @@ void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metad
     {
         TTLDescription::getTTLFromAST(ttl_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
         const auto & default_desc = columns.get(name).default_desc;
-        if (default_desc.expression && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
+        if (analyze_ttl_defaults && default_desc.expression && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
             ttl_default_expr_list->children.emplace_back(setAlias(default_desc.expression->clone(), name + "_tmp_ttl_default"));
     }
     if (!ttl_default_expr_list->children.empty())

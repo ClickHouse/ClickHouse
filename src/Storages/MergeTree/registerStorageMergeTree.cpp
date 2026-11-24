@@ -1207,7 +1207,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         MergeTreeData::checkKeyExpressionNamesForCollision(metadata, nullptr);
 
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
-        MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
+        MergeTreeData::checkStoredExpressions(
+            metadata, args.getLocalContext(), /*analyze_ttl_defaults=*/args.mode != LoadingStrictnessLevel::RESTORE);
 
     DataTypes data_types = metadata.partition_key.data_types;
     if (is_fresh_definition && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
