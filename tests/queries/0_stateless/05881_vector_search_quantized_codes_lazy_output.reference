@@ -12,6 +12,11 @@ Compact parts
 Lazily read columns: id, text, vec
 Name of the row index taken
 Lazily read columns: id, __vector_search_row_index, text, vec
+Wide subcolumn
+Lazily read columns: vec
+Lazily read columns: id, t.s
+Narrow subcolumn
+Lazily read columns: id, t.n, vec
 Rows
 123	row-123-	0
 3160	row-3160	4.824
@@ -36,6 +41,9 @@ Rows
 123	123	row-123-
 3160	3160	row-3160
 2587	2587	row-2587
+123	row-123-
+3160	row-3160
+2587	row-2587
 Rows, setting disabled
 123	row-123-	0
 3160	row-3160	4.824
@@ -60,3 +68,6 @@ Rows, setting disabled
 123	123	row-123-
 3160	3160	row-3160
 2587	2587	row-2587
+123	row-123-
+3160	row-3160
+2587	row-2587

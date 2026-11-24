@@ -357,15 +357,17 @@ bool rewriteToShortlist(
     {
         static constexpr size_t min_uncompressed_bytes_per_row = 64;
 
-        /// The average size of a row of the columns in the parts that know the sizes of their columns (a Compact part
-        /// does not).
+        /// Average row size of the columns and subcolumns in the parts that know their sizes from memory (not Compact).
         size_t rows = 0;
         size_t bytes = 0;
         for (const auto & part : read_step->getParts())
         {
+            const auto sizes = part.data_part->getColumnAndSubcolumnSizes(columns, /*with_columns=*/ true, /*only_from_memory=*/ true);
+            if (!sizes)
+                continue;
             size_t part_bytes = 0;
-            for (const auto & column : columns)
-                part_bytes += part.data_part->getColumnSize(column).data_uncompressed;
+            for (const auto & [name, size] : *sizes)
+                part_bytes += size.data_uncompressed;
             if (part_bytes == 0)
                 continue;
             rows += part.data_part->rows_count;
