@@ -17,6 +17,8 @@ cast state of states	[2.5]
 nested state of another version	100315
 insert variant merge tree	2.5
 cast tuple of variant	AggregateFunction(quantile(0.5), UInt8)
+insert state of another version	10
 materialized view	2.5
 refreshable materialized view	2.5
 refreshable view into the source of a materialized view	2.5
+insert into a materialized view	2.5

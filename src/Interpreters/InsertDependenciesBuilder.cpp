@@ -20,6 +20,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -1865,11 +1866,25 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     /// are absent from the input, never retypes present ones.
     auto to_convert = mapWidenedEnumColumnsToTargetTypes(*input_headers.at(view_id), *output_header);
 
+    /// A state goes to the sink relabelled to the target's declared function.
+    for (auto & column : to_convert)
+    {
+        const auto * target = output_header->findByName(column.name);
+        if (target && target->type->equals(*column.type) && needsAggregateStateRelabel(*column.type, *target->type))
+            column.type = target->type;
+    }
+
     auto converting_types_dag = ActionsDAG::makeConvertingActions(
         input_headers.at(view_id)->getColumnsWithTypeAndName(),
         to_convert,
         ActionsDAG::MatchColumnsMode::Name,
-        insert_context);
+        insert_context,
+        /*ignore_constant_values=*/ false,
+        /*add_cast_columns=*/ false,
+        /*new_names=*/ nullptr,
+        /*columns_contain_compiled_function=*/ nullptr,
+        /*materialize_constants=*/ true,
+        /*relabel_aggregate_states=*/ true);
 
     auto adding_missing_defaults_dag = addMissingDefaults(
         Block(to_convert),

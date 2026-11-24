@@ -72,6 +72,11 @@ INSERT INTO t_variant SELECT v FROM t_variant_src;
 SELECT 'insert variant merge tree', finalizeAggregation(variantElement(v, 'AggregateFunction(quantile(0.5), UInt8)')) FROM t_variant;
 SELECT 'cast tuple of variant', variantType(tupleElement(CAST(tuple(v), 'Tuple(Variant(AggregateFunction(quantile(0.5), UInt8), String))'), 1)) FROM t_variant_src;
 
+DROP TABLE IF EXISTS t_version;
+CREATE TABLE t_version (s AggregateFunction(1, uniq, UInt64)) ENGINE = Memory;
+INSERT INTO t_version SELECT uniqState(number)::AggregateFunction(0, uniq, UInt64) FROM numbers(10);
+SELECT 'insert state of another version', uniqMerge(y) FROM (SELECT arrayJoin(groupArray(s)) AS y FROM t_version);
+
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS rmv;
 DROP TABLE IF EXISTS mv_push;
@@ -82,6 +87,8 @@ DROP TABLE IF EXISTS t_mv;
 DROP TABLE IF EXISTS t_rmv;
 DROP TABLE IF EXISTS t_push_src;
 DROP TABLE IF EXISTS t_push_dst;
+DROP TABLE IF EXISTS mv_direct;
+DROP TABLE IF EXISTS t_mv_direct;
 
 CREATE TABLE t_null (x UInt8) ENGINE = Null;
 CREATE TABLE t_values (x UInt8) ENGINE = Memory;
@@ -89,6 +96,7 @@ CREATE TABLE t_mv (s AggregateFunction(quantile(0.5), UInt8)) ENGINE = Memory;
 CREATE TABLE t_rmv (s AggregateFunction(quantile(0.5), UInt8)) ENGINE = Memory;
 CREATE TABLE t_push_src (x UInt8) ENGINE = Null;
 CREATE TABLE t_push_dst (s AggregateFunction(quantile(0.5), UInt8)) ENGINE = Memory;
+CREATE TABLE t_mv_direct (s AggregateFunction(quantile(0.5), UInt8)) ENGINE = Memory;
 
 CREATE MATERIALIZED VIEW mv TO t_mv AS SELECT quantileState(0.9)(x) AS s FROM t_null;
 CREATE MATERIALIZED VIEW rmv REFRESH EVERY 1 YEAR APPEND TO t_rmv EMPTY AS SELECT quantileState(0.9)(x) AS s FROM t_values;
@@ -102,20 +110,27 @@ SYSTEM WAIT VIEW rmv;
 SYSTEM REFRESH VIEW rmv_push;
 SYSTEM WAIT VIEW rmv_push;
 
+CREATE MATERIALIZED VIEW mv_direct TO t_mv_direct AS SELECT quantileState(0.9)(x) AS s FROM t_null;
+INSERT INTO mv_direct SELECT arrayReduce('quantileState(0.9)', [1, 2, 3, 100]);
+
 SELECT 'materialized view', finalizeAggregation(s) FROM t_mv;
 SELECT 'refreshable materialized view', finalizeAggregation(s) FROM t_rmv;
 SELECT 'refreshable view into the source of a materialized view', finalizeAggregation(s) FROM t_push_dst;
+SELECT 'insert into a materialized view', finalizeAggregation(s) FROM t_mv_direct;
 
+DROP TABLE mv_direct;
 DROP TABLE rmv_push;
 DROP TABLE mv_push;
 DROP TABLE rmv;
 DROP TABLE mv;
+DROP TABLE t_mv_direct;
 DROP TABLE t_push_dst;
 DROP TABLE t_push_src;
 DROP TABLE t_rmv;
 DROP TABLE t_mv;
 DROP TABLE t_values;
 DROP TABLE t_null;
+DROP TABLE t_version;
 DROP TABLE t_variant;
 DROP TABLE t_variant_src;
 DROP TABLE t_merge_tree;
