@@ -1245,7 +1245,7 @@ into the same compressed block, improving compression ratio but requiring more d
 when reading a subcolumn. Has an effect only when `write_marks_for_substreams_in_compact_parts` and
 `compress_per_column_in_compact_parts` are enabled.
 )", 0, \
-        {"26.11", false, true, "New setting: start a new compressed block at column substream boundaries in Compact parts for faster subcolumn reads"}) \
+        {"26.12", false, true, "New setting: start a new compressed block at column substream boundaries in Compact parts for faster subcolumn reads"}) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
 If the number of active parts in a single partition exceeds the
