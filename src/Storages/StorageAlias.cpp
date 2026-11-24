@@ -5,6 +5,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -405,6 +406,7 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
 {
     /// `InterpreterAlterQuery` checks the export grants (`SELECT` on the table and its row policy) on the name in the query,
     /// which is the alias, not the target. The refusal does not need the user, so it also holds on the hosts of `ON CLUSTER`.
+    const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
     for (const auto & command : commands)
     {
         if (command.type == AlterCommand::MODIFY_SETTING && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes).empty())
@@ -417,7 +419,8 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
                 backQuoteIfNeed(target_table));
         }
 
-        if (command.ignore)
+        /// A replica replaying a committed entry applies what its initiator, possibly of an older version, accepted.
+        if (command.ignore || is_secondary_replay)
             continue;
 
         bool reads_target_columns = false;
