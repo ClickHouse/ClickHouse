@@ -1558,10 +1558,11 @@ static std::optional<const ORC::Type *> resolveORCFieldByIcebergId(
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
+    if (metadata_cache && object_with_metadata && object_with_metadata->path_for_content_cache
+        && object_with_metadata->metadata && object_with_metadata->metadata->isEtagUsableAsCacheKey())
     {
-        const String file_name = object_with_metadata->getPath();
-        const String etag = object_with_metadata->metadata->etag;
+        const String & file_name = *object_with_metadata->path_for_content_cache;
+        const String & etag = object_with_metadata->metadata->etag;
         const ORCMetadataCacheKey cache_key = ORCMetadataCache::createKey(file_name, etag);
 
         /// On a cache miss the loader builds the real `file_reader` (reading the footer

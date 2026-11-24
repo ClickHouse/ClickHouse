@@ -2345,9 +2345,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 object_with_metadata->relative_path = getArchiveEntryKey(object_info->getPath(), object_info->archive_entry_index);
             /// The relative path alone does not identify the object: another bucket, container or
             /// endpoint can have an object with the same key and version token.
+            object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
             if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage_id))
             {
-                object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
                 object_with_metadata->storage_type_for_content_cache = configuration->getType();
                 object_with_metadata->table_uuid_for_content_cache = *table_uuid;
             }

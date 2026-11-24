@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-random-settings
+# no-fasttest: requires an `ORC`-enabled build and a local HTTP server.
+# no-random-settings: the cache and count settings are part of the regression.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+set -e
+
+mkdir -p tmp
+work_dir=$(mktemp -d "tmp/05872_${CLICKHOUSE_TEST_UNIQUE_NAME}.XXXXXX")
+trap 'kill "$http_pid" 2>/dev/null || true; wait "$http_pid" 2>/dev/null || true; rm -rf "$work_dir"' EXIT
+
+${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(10) FORMAT ORC" > "${work_dir}/small.orc"
+${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(20) FORMAT ORC" > "${work_dir}/large.orc"
+cp "${work_dir}/small.orc" "${work_dir}/weak.orc"
+
+python3 -u - "${work_dir}" <<'PY' &
+import pathlib
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+work_dir = pathlib.Path(sys.argv[1])
+
+class Handler(BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
+
+    def respond(self, include_body):
+        if self.path == '/data/':
+            data = b'<a href="f.orc">f.orc</a>'
+            etag = None
+        elif self.path == '/data/f.orc':
+            name = 'small.orc' if self.server.origin == 0 else 'large.orc'
+            data = (work_dir / name).read_bytes()
+            etag = '"same-etag"'
+        elif self.path == '/weak/':
+            data = b'<a href="f.orc">f.orc</a>'
+            etag = None
+        elif self.path == '/weak/f.orc':
+            data = (work_dir / 'weak.orc').read_bytes()
+            etag = 'W/"same-etag"'
+        else:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header('Content-Length', str(len(data)))
+        if etag:
+            self.send_header('ETag', etag)
+        self.end_headers()
+        if include_body:
+            self.wfile.write(data)
+
+    def do_HEAD(self):
+        self.respond(False)
+
+    def do_GET(self):
+        self.respond(True)
+
+    def log_message(self, *args):
+        pass
+
+servers = []
+for origin in range(2):
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    server.origin = origin
+    servers.append(server)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+(work_dir / 'ports').write_text(' '.join(str(server.server_port) for server in servers))
+threading.Event().wait()
+PY
+http_pid=$!
+
+for _ in $(seq 1 100); do
+    if [[ -s "${work_dir}/ports" ]]; then break; fi
+    sleep 0.1
+done
+read -r first_port second_port < "${work_dir}/ports"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ORC METADATA CACHE"
+for port in "$first_port" "$second_port"; do
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0"
+done
+
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0"
+cp "${work_dir}/large.orc" "${work_dir}/weak.orc"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0"

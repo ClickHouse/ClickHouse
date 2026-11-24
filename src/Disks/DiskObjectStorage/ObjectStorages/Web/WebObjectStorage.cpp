@@ -423,7 +423,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
                 metadata.etag = header_value;
                 /// A weak validator (`W/"..."`) allows different bytes of the same representation
                 /// (RFC 9110, section 8.8.1), so it must not identify the content in the caches.
-                metadata.etag_is_strong = !header_value.starts_with("W/");
+                metadata.etag_is_strong = !metadata.etag.starts_with("W/");
             }
         }
         /// After a redirect, the `ETag` is of the resource that the redirect leads to, and the redirect can change
