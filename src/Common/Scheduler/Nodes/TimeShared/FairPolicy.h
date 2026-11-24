@@ -192,7 +192,7 @@ public:
                     max_vruntime = 0;
                 }
                 system_vruntime = max_vruntime;
-                busy_periods++;
+                incrementCounter(busy_periods);
             }
 
             if (request)
