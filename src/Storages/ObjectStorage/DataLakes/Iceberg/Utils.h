@@ -59,7 +59,8 @@ void writeMessageToFile(
 /// Whether a conditional write failed because another writer created or changed the object first.
 bool isConditionalWriteConflict(const DB::Exception & e);
 
-/// Writes the metadata file with If-None-Match; false means the write was not confirmed or the path already exists.
+/// Writes the metadata file with If-None-Match; false means a file already holds this version (or the check after a
+/// failed write could not tell), any other failure propagates.
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
