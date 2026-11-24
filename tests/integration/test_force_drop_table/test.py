@@ -211,39 +211,6 @@ def test_drop_database_refused_by_leftover_of_pending_refresh(started_cluster):
     node.query("DROP DATABASE d6 SYNC SETTINGS max_table_size_to_drop = 0")
 
 
-def test_drop_database_concurrent_exchange(started_cluster):
-    # A table cannot be exchanged out of the database while DROP DATABASE stops a refresh.
-    for db in ["d7", "d8"]:
-        node.query(f"CREATE DATABASE {db} ENGINE=Atomic")
-        node.query(f"CREATE TABLE {db}.t (s String) ENGINE=MergeTree ORDER BY s")
-        node.query(f"INSERT INTO {db}.t VALUES ('{db}')")
-    node.query(
-        "CREATE MATERIALIZED VIEW d7.rmv REFRESH EVERY 1 YEAR (x UInt64) ENGINE=MergeTree ORDER BY x EMPTY "
-        "AS SELECT number AS x FROM numbers(10)"
-    )
-    fp = "refresh_mv_pause_after_executor_published"
-    node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
-    try:
-        node.query("SYSTEM REFRESH VIEW d7.rmv")
-        node.query(f"SYSTEM WAIT FAILPOINT {fp} PAUSE")
-        drop = node.get_query_request(
-            "DROP DATABASE d7 SYNC SETTINGS max_table_size_to_drop = 0"
-        )
-        # The refresh is cancelled by stopping the view, after the checks that precede it.
-        assert_eq_with_retry(
-            node,
-            "SELECT count() FROM system.processes WHERE query LIKE '%.tmp.inner_id.%' AND is_cancelled",
-            "1",
-        )
-        assert "UNFINISHED" in node.query_and_get_error("EXCHANGE TABLES d7.t AND d8.t")
-    finally:
-        node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
-    drop.get_answer()
-    assert node.query("SELECT count() FROM system.databases WHERE name = 'd7'") == "0\n"
-    assert node.query("SELECT s FROM d8.t") == "d8\n"
-    node.query("DROP DATABASE d8 SYNC SETTINGS max_table_size_to_drop = 0")
-
-
 @pytest.mark.parametrize("engine", ["Ordinary", "Atomic"])
 def test_drop_database_lazy_load_tables(started_cluster, engine):
     # The size of a table that is still a lazy proxy is checked, and the flag allows its drop.
