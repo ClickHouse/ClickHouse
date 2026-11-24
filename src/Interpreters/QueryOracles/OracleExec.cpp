@@ -204,7 +204,13 @@ bool OracleExec::executeStatement(
 
         ReadBufferFromString istr(sql);
         WriteBufferFromOwnString ostr;
-        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+        /// `user_initiated = true` keeps the statement subject to the caller's access rights even
+        /// though it runs as `internal`: `QueryFlags::internal` alone makes `InterpreterCreateQuery`
+        /// skip privilege checks (empty required-access list), which would let a caller that can only
+        /// enable the fuzzer settings create persistent scratch tables without a `CREATE TABLE` grant.
+        /// With this flag the fixture DDL is checked against the caller's privileges; a missing grant
+        /// makes the statement throw and this fail-close path skips the oracle (no table created).
+        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true, .user_initiated = true});
         return true;
     }
     catch (...)
