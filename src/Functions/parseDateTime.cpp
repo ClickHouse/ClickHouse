@@ -24,6 +24,8 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 
+#include <base/sanitizer_defs.h>
+
 #include <expected>
 #include <limits>
 
@@ -580,6 +582,7 @@ namespace
         }
 
         [[nodiscard]]
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         Int64OrError buildDateTime(const DateLUTImpl & time_zone)
         {
             /// The hour of a half-day clock is stored in [0, 11], and PM adds 12 hours to it. They are added to a copy: for a
