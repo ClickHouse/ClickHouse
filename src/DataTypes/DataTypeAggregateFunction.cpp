@@ -607,6 +607,10 @@ bool needsAggregateStateRelabel(const IDataType & from, const IDataType & to)
     if (from_states.empty())
         return false;
 
+    /// `CAST` matches the alternatives of a `Variant` by name, so it cannot relabel the states in them.
+    if (anyInTypeTree(from, [](const IDataType & type) { return WhichDataType(type).isVariant(); }))
+        return false;
+
     std::vector<AggregateStateNode> to_states;
     collectAggregateStates(to, /*in_arguments=*/ false, to_states);
     if (from_states.size() != to_states.size())

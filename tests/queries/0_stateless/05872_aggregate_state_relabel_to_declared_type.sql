@@ -62,6 +62,16 @@ SELECT 'nested state of another version', uniqMerge(y) FROM (
     SELECT arrayJoin(finalizeAggregation(CAST(g, 'AggregateFunction(groupArray, AggregateFunction(1, uniq, UInt64))'))) AS y
     FROM (SELECT groupArrayState(u) AS g FROM (SELECT uniqState(number)::AggregateFunction(0, uniq, UInt64) AS u FROM numbers(100000) GROUP BY number % 3)));
 
+DROP TABLE IF EXISTS t_variant_src;
+DROP TABLE IF EXISTS t_variant;
+CREATE TABLE t_variant_src (v Variant(AggregateFunction(quantile(0.9), UInt8), String)) ENGINE = Memory;
+CREATE TABLE t_variant (v Variant(AggregateFunction(quantile(0.5), UInt8), String)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_variant_src SELECT arrayReduce('quantileState(0.9)', [1, 2, 3, 100])::Variant(AggregateFunction(quantile(0.9), UInt8), String);
+-- A `Variant` holding such a state is kept as it is: `CAST` matches its alternatives by name.
+INSERT INTO t_variant SELECT v FROM t_variant_src;
+SELECT 'insert variant merge tree', finalizeAggregation(variantElement(v, 'AggregateFunction(quantile(0.5), UInt8)')) FROM t_variant;
+SELECT 'cast tuple of variant', variantType(tupleElement(CAST(tuple(v), 'Tuple(Variant(AggregateFunction(quantile(0.5), UInt8), String))'), 1)) FROM t_variant_src;
+
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS rmv;
 DROP TABLE IF EXISTS mv_push;
@@ -106,6 +116,8 @@ DROP TABLE t_rmv;
 DROP TABLE t_mv;
 DROP TABLE t_values;
 DROP TABLE t_null;
+DROP TABLE t_variant;
+DROP TABLE t_variant_src;
 DROP TABLE t_merge_tree;
 DROP TABLE t_states;
 DROP TABLE t_quantiles;
