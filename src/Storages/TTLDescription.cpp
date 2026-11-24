@@ -1194,15 +1194,18 @@ NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
 
 /// Every analysis of a stored TTL expression uses the server settings, as CREATE and table loading do,
 /// on a copy of the caller's context, so the caller's user and current database still apply.
+/// A TTL is stored SQL: table names in it are read as written.
 ContextPtr getTTLExpressionContext(const ContextPtr & context)
 {
-    const auto global_context = context->getGlobalContext();
-    const auto & global_settings = global_context->getSettingsRef();
-    if (context->getSettingsRef() == global_settings)
+    const auto & global_settings = context->getGlobalContext()->getSettingsRef();
+    const bool same_settings = context->getSettingsRef() == global_settings;
+    if (same_settings && !context->isCompoundTableIdentifierQualificationAllowed())
         return context;
 
     auto ttl_context = Context::createCopy(context);
-    ttl_context->setSettings(global_settings);
+    if (!same_settings)
+        ttl_context->setSettings(global_settings);
+    ttl_context->setAllowCompoundTableIdentifierQualification(false);
     return ttl_context;
 }
 
