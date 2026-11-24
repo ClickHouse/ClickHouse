@@ -255,6 +255,11 @@ bool QueryDAG::build(QueryPlan::Node & node)
     if (!buildImpl(node, filter_nodes))
         return false;
 
+    /// A runtime filter whose key can throw is not merged with the filters below it, which remove rows.
+    for (size_t i = 1; i < filter_nodes.size(); ++i)
+        if (ActionsDAG::hasRuntimeFilterWithThrowingKey(filter_nodes[i]))
+            return false;
+
     if (!filter_nodes.empty())
     {
         filter_node = filter_nodes.back();
