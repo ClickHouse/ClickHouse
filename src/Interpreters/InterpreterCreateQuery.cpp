@@ -4178,9 +4178,10 @@ BlockIO InterpreterCreateQuery::execute()
         evaluateConstantsInDictionarySource(create, getContext());
 
         /// The queries of a source of an external database are sent to it with the credentials of the source, so only `SELECT`
-        /// is allowed. Checked only for the query of the user: the definitions of existing dictionaries (`ATTACH` at startup,
-        /// `RESTORE`, the replay on other hosts and replicas) are not checked, so that they keep loading.
-        if (!internal && !getContext()->isDDLOrOnClusterInternal() && !is_restore_from_backup)
+        /// is allowed. Checked for the query of the user and for `RESTORE`, whose definitions come from a backup that the user
+        /// can write, also when it runs on the hosts of `ON CLUSTER`. The definitions of existing dictionaries (`ATTACH` at startup,
+        /// the replay on other hosts and replicas) are not checked, so that they keep loading.
+        if (is_restore_from_backup || (!internal && !getContext()->isDDLOrOnClusterInternal()))
             checkQueriesOfExternalDictionarySource(create, getContext());
     }
 

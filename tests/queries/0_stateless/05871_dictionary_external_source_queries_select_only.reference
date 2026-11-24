@@ -31,6 +31,10 @@ MySQL: OK
 MySQL with expressions: OK
 PostgreSQL: OK
 MySQL query of the definition replaces the query of the named collection: OK
+--- A query of the named collection is checked at each load and at RESTORE, because the collection can change
+Before the change, the load fails only to connect: OK
+After the change, the load is rejected: OK
+RESTORE is rejected, and the dictionary is not restored: OK
 --- A named collection requires the privilege NAMED COLLECTION
 Without the grant: denied, not created
 1

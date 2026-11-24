@@ -85,6 +85,50 @@ bool isExternalDatabaseDictionarySource(const String & source_type)
     return source_type == "mysql" || source_type == "postgresql" || source_type == "odbc";
 }
 
+void checkExternalDictionarySourceQueries(
+    const DictionaryStructure & dict_struct,
+    const String & source_type,
+    const String & query,
+    const String & where,
+    const String & update_field,
+    const String & invalidate_query)
+{
+    /// The source composes its queries from `query` or `where`, the attribute expressions and `update_field`, which are inserted verbatim,
+    /// and from identifiers, which it quotes in the style of the database. The identifiers do not change the kind of the query,
+    /// so they are replaced here by a placeholder table and quoted in the ClickHouse style, which the ClickHouse parser reads correctly.
+    /// The table, the database and the schema can also come from a named collection, so they are not used.
+    const ExternalQueryBuilder query_builder(
+        dict_struct, /* db_ */ "", /* schema_ */ "", /* table_ */ query.empty() ? "table" : "", query, where, IdentifierQuotingStyle::Backticks);
+
+    static constexpr auto source_error = "Only SELECT query can be used as a dictionary source";
+    checkExternalDatabaseQueryIsSelect(query_builder.composeLoadAllQuery(), source_type, "Query for " + source_type + " dictionary", source_error);
+
+    if (!update_field.empty())
+        checkExternalDatabaseQueryIsSelect(
+            query_builder.composeUpdateQuery(update_field, "1970-01-01 00:00:00"),
+            source_type,
+            "Update query for " + source_type + " dictionary",
+            source_error);
+
+    if (!invalidate_query.empty())
+        checkExternalDatabaseQueryIsSelect(
+            invalidate_query,
+            source_type,
+            "Invalidate query for " + source_type + " dictionary",
+            "Only SELECT query can be used as a dictionary invalidate query");
+}
+
+bool hasExternalDictionarySourceQueryFromNamedCollection(
+    const Poco::Util::AbstractConfiguration & config, const String & source_config_prefix, const NamedCollection & collection)
+{
+    for (const auto * key : {"query", "where", "update_field", "invalidate_query"})
+    {
+        if (collection.has(key) && !config.has(source_config_prefix + "." + key))
+            return true;
+    }
+    return false;
+}
+
 void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     Poco::Util::AbstractConfiguration::Keys source_keys;
@@ -124,30 +168,7 @@ void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguratio
     const String update_field = get_query_key("update_field");
     const String invalidate_query = get_query_key("invalidate_query");
 
-    /// The source composes its queries from `query` or `where`, the attribute expressions and `update_field`, which are inserted verbatim,
-    /// and from identifiers, which it quotes in the style of the database. The identifiers do not change the kind of the query,
-    /// so they are replaced here by a placeholder table and quoted in the ClickHouse style, which the ClickHouse parser reads correctly.
-    /// The table, the database and the schema can also come from a named collection, so they are not used.
-    const DictionaryStructure dict_struct(config, config_prefix);
-    const ExternalQueryBuilder query_builder(
-        dict_struct, /* db_ */ "", /* schema_ */ "", /* table_ */ query.empty() ? "table" : "", query, where, IdentifierQuotingStyle::Backticks);
-
-    static constexpr auto source_error = "Only SELECT query can be used as a dictionary source";
-    checkExternalDatabaseQueryIsSelect(query_builder.composeLoadAllQuery(), source_type, "Query for " + source_type + " dictionary", source_error);
-
-    if (!update_field.empty())
-        checkExternalDatabaseQueryIsSelect(
-            query_builder.composeUpdateQuery(update_field, "1970-01-01 00:00:00"),
-            source_type,
-            "Update query for " + source_type + " dictionary",
-            source_error);
-
-    if (!invalidate_query.empty())
-        checkExternalDatabaseQueryIsSelect(
-            invalidate_query,
-            source_type,
-            "Invalidate query for " + source_type + " dictionary",
-            "Only SELECT query can be used as a dictionary invalidate query");
+    checkExternalDictionarySourceQueries(DictionaryStructure(config, config_prefix), source_type, query, where, update_field, invalidate_query);
 }
 
 /// For simple key

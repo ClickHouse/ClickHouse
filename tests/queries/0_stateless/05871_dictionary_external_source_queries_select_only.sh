@@ -34,6 +34,7 @@ function cleanup()
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_secret"
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_query"
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_invalidate"
+    $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_altered"
     $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${replicated_db} SYNC"
 }
 trap cleanup EXIT
@@ -144,6 +145,25 @@ check_accepted "MySQL" "$MYSQL QUERY 'SELECT id, value FROM t WHERE {condition}'
 check_accepted "MySQL with expressions" "MYSQL(HOST concat('127.0.0.1', '') PORT 1 USER 'u' PASSWORD 'p' DB 'd' TABLE 't' INVALIDATE_QUERY concat('SELECT ', '1'))"
 check_accepted "PostgreSQL" "$POSTGRESQL TABLE 't' WHERE 'id > 0' UPDATE_FIELD 'updated' INVALIDATE_QUERY 'SELECT max(updated) FROM t')"
 check_accepted "MySQL query of the definition replaces the query of the named collection" "MYSQL(NAME ${nc}_query QUERY 'SELECT id, value FROM t')"
+
+echo '--- A query of the named collection is checked at each load and at RESTORE, because the collection can change'
+$CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION ${nc}_altered AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd', query = 'SELECT id, value FROM t'"
+$CLICKHOUSE_CLIENT --query "
+    CREATE DICTIONARY dict_select_only (id UInt64, value String) PRIMARY KEY id
+        SOURCE(MYSQL(NAME ${nc}_altered)) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)"
+echo -n 'Before the change, the load fails only to connect: '
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY dict_select_only" 2>&1 | grep -q "$CONNECTION_FAILED" && echo OK || echo FAIL
+$CLICKHOUSE_CLIENT --query "ALTER NAMED COLLECTION ${nc}_altered SET query = 'DROP TABLE t'"
+echo -n 'After the change, the load is rejected: '
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY dict_select_only" 2>&1 | grep -q "$NOT_SELECT source" && echo OK || echo FAIL
+# The backup keeps the definition, which refers to the changed collection.
+echo -n 'RESTORE is rejected, and the dictionary is not restored: '
+$CLICKHOUSE_CLIENT --multiquery --query "
+    BACKUP DICTIONARY dict_select_only TO Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;
+    DROP DICTIONARY dict_select_only;
+    RESTORE DICTIONARY dict_select_only FROM Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;" 2>&1 \
+    | grep -q "$NOT_SELECT source" && [ "$(dictionary_exists)" = "0" ] && echo OK || echo FAIL
+$CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
 
 echo '--- A named collection requires the privilege NAMED COLLECTION'
 $CLICKHOUSE_CLIENT --multiquery --query "
