@@ -24,6 +24,8 @@ public:
 
     void addTask(const String & unique_task_id) { task_ids.insert(unique_task_id); }
 
+    [[nodiscard]] const std::unordered_set<String> & getTaskIds() const { return task_ids; }
+
     /// Returns true when it was the query's last task on this worker.
     bool removeTask(const String & unique_task_id)
     {

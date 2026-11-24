@@ -414,18 +414,22 @@ bool makeTaskStatusReply(StatelessTaskExecutor::TaskStatus status, DistributedQu
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
     auto operation = params.get("operation");
-    if (operation == "get_statuses" || operation == "cancel_tasks" || operation == "forget_tasks")
+    if (operation == "cancel_tasks")
+    {
+        auto unique_query_id = params.get("query_id");
+        /// Read the rest of the body, otherwise the keep-alive connection is closed.
+        body->ignoreAll();
+        body.reset();
+        task_runner->cancelQuery(unique_query_id);
+        return;
+    }
+    if (operation == "get_statuses" || operation == "forget_tasks")
     {
         Strings task_ids = readTaskIds(*body);
         /// Read the rest of the body, otherwise the keep-alive connection is closed.
         body->ignoreAll();
         body.reset();
 
-        if (operation == "cancel_tasks")
-        {
-            task_runner->cancelTasks(task_ids);
-            return;
-        }
         if (operation == "forget_tasks")
         {
             task_runner->forgetTasks(task_ids);

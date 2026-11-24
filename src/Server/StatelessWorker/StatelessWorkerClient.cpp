@@ -135,7 +135,7 @@ namespace
 /// Sends `operation` with the task ids in the body. A teardown request is sent although the query can already be killed.
 std::unique_ptr<ReadWriteBufferFromHTTP> sendTaskIds(const String & endpoint_uri, const String & operation, const Strings & task_ids,
     std::optional<UInt32> wait_for_ms, const ConnectionTimeouts & timeouts, const ReadSettings & read_settings, bool for_teardown,
-    const ContextPtr & context)
+    const ContextPtr & context, const String & unique_query_id = {})
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -150,6 +150,8 @@ std::unique_ptr<ReadWriteBufferFromHTTP> sendTaskIds(const String & endpoint_uri
     uri.addQueryParameter("compress", "false");
     if (wait_for_ms)
         uri.addQueryParameter("wait_for_ms", std::to_string(*wait_for_ms));
+    if (!unique_query_id.empty())
+        uri.addQueryParameter("query_id", unique_query_id);
 
     auto builder = BuilderRWBufferFromHTTP(uri);
     builder.withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -196,7 +198,7 @@ std::vector<DistributedQueryTaskStatusEntry> getTaskStatuses(const String & endp
     return entries;
 }
 
-void cancelTasks(const String & endpoint_uri, const Strings & task_ids, const ContextPtr & context)
+void cancelQueryTasks(const String & endpoint_uri, const String & unique_query_id, const ContextPtr & context)
 {
     ConnectionTimeouts timeouts;
     timeouts.connection_timeout = Poco::Timespan(100 * 1000);
@@ -208,7 +210,7 @@ void cancelTasks(const String & endpoint_uri, const Strings & task_ids, const Co
     read_settings.http_settings.retry_initial_backoff_ms = 200;
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
-    auto in = sendTaskIds(endpoint_uri, "cancel_tasks", task_ids, {}, timeouts, read_settings, /*for_teardown=*/ true, context);
+    auto in = sendTaskIds(endpoint_uri, "cancel_tasks", /*task_ids=*/ {}, {}, timeouts, read_settings, /*for_teardown=*/ true, context, unique_query_id);
     in->ignoreAll();
 }
 

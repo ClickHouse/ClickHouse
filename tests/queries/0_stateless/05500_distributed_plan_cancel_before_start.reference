@@ -1,6 +1,6 @@
--- The query is killed while the worker holds its first batches: the worker remembers every queued task as cancelled while
--- unknown, ignores every task of the batches that arrive after the kill (one or two of them, so only that some arrived is
--- shown), and runs none. initial_query_logged shows that the lookup of the tasks finds the query.
-┌─queued─┬─all_remembered─┬─batches_arrived─┬─all_arrived_ignored─┬─initial_query_logged─┬─ran─┐
-│     10 │              1 │               1 │                   1 │                    1 │   0 │
-└────────┴────────────────┴─────────────────┴─────────────────────┴──────────────────────┴─────┘
+-- The query is killed while the worker holds its first batches (one or two of them, so only that some arrived is shown):
+-- each worker that got one gets one cancel for the query and ignores every task of its batch, no task id is remembered, and
+-- no task runs. initial_query_logged shows that the lookup of the tasks finds the query.
+┌─batches_arrived─┬─one_cancel_per_worker─┬─all_arrived_ignored─┬─remembered─┬─initial_query_logged─┬─ran─┐
+│               1 │                     1 │                   1 │          0 │                    1 │   0 │
+└─────────────────┴───────────────────────┴─────────────────────┴────────────┴──────────────────────┴─────┘

@@ -251,6 +251,11 @@ bool StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
 
             {
                 std::lock_guard lock(tasks_mutex);
+                if (cancelled_queries.contains(unique_query_id))
+                {
+                    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Ignoring task {}: its query was cancelled", unique_task_id);
+                    continue;
+                }
                 auto controller = query_controllers.find(unique_query_id);
                 /// A query without a controller has no task here, so refusing it leaves nothing behind.
                 if (controller == query_controllers.end() && query_controllers.size() >= max_queries)
@@ -536,10 +541,28 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
     return Result::Ok;
 }
 
-void StatelessTaskExecutor::cancelTasks(const Strings & task_ids)
+void StatelessTaskExecutor::cancelQuery(const String & unique_query_id)
 {
-    for (const auto & task_id : task_ids)
-        cancelTask(task_id);
+    std::vector<std::shared_ptr<TaskCancellation>> cancellations;
+    {
+        std::lock_guard lock(tasks_mutex);
+        if (cancelled_queries.insert(unique_query_id).second)
+        {
+            cancelled_queries_order.push_back(unique_query_id);
+            if (cancelled_queries_order.size() > MAX_CANCELLED_QUERIES)
+            {
+                cancelled_queries.erase(cancelled_queries_order.front());
+                cancelled_queries_order.pop_front();
+            }
+        }
+        if (auto controller = query_controllers.find(unique_query_id); controller != query_controllers.end())
+            for (const auto & unique_task_id : controller->second->getTaskIds())
+                cancellations.push_back(tasks.at(unique_task_id)->cancellation);
+    }
+    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Cancelling the {} tasks of {}", cancellations.size(), unique_query_id);
+    /// Outside the lock, as in `cancelTask`.
+    for (const auto & cancellation : cancellations)
+        cancellation->cancel();
 }
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTask(const String & task_id)

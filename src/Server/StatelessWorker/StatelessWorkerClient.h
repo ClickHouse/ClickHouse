@@ -20,7 +20,8 @@ String sendTaskBatch(const String & endpoint_uri, const String & unique_query_id
 std::vector<DistributedQueryTaskStatusEntry> getTaskStatuses(const String & endpoint_uri, const Strings & task_ids, UInt32 wait_for_ms,
     const ContextPtr & context, bool for_cleanup = false);
 
-void cancelTasks(const String & endpoint_uri, const Strings & task_ids, const ContextPtr & context);
+/// Cancels every task of the query on this worker; the worker then ignores the query's later batches.
+void cancelQueryTasks(const String & endpoint_uri, const String & unique_query_id, const ContextPtr & context);
 
 void forgetTasks(const String & endpoint_uri, const Strings & task_ids, const ContextPtr & context);
 

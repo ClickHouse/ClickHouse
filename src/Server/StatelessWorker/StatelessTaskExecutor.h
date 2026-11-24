@@ -84,7 +84,8 @@ public:
     std::vector<TaskStatus> getStatuses(const Strings & task_ids, UInt64 wait_milliseconds);
     /// Remembers an unknown id, so its start, still on the wire, is ignored when it arrives.
     Result cancelTask(const String & task_id);
-    void cancelTasks(const Strings & task_ids);
+    /// Cancels every task of the query `unique_query_id` and ignores its tasks that arrive later.
+    void cancelQuery(const String & unique_query_id);
     /// Drops a task that has ended; a running one is dropped when it ends.
     Result forgetTask(const String & task_id);
     void forgetTasks(const Strings & task_ids);
@@ -197,6 +198,10 @@ private:
     std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
     std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
     std::unordered_map<String, WorkerQueryControllerPtr> query_controllers TSA_GUARDED_BY(tasks_mutex);
+    /// Queries cancelled by `cancelQuery`. Bounded: past the cap the oldest is dropped.
+    static constexpr size_t MAX_CANCELLED_QUERIES = 1000;
+    std::unordered_set<String> cancelled_queries TSA_GUARDED_BY(tasks_mutex);
+    std::deque<String> cancelled_queries_order TSA_GUARDED_BY(tasks_mutex);
     std::shared_ptr<StatusChanges> status_changes = std::make_shared<StatusChanges>();
     std::mutex tasks_mutex;
 };
