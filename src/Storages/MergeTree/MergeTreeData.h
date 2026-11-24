@@ -912,8 +912,9 @@ public:
 
 protected:
     /// Filters the parts of the query's storage snapshot to consult when aggregating whole-table column statistics.
-    /// The base returns them as is; `StorageReplicatedMergeTree` overrides this
-    /// to honor `select_sequential_consistency` the same way `totalRows` does.
+    /// The base keeps the parts up to the block numbers allocated by a lightweight update, if the query is a part
+    /// of one (`Context::getPartitionIdToMaxBlock`); `StorageReplicatedMergeTree` overrides this
+    /// to also honor `select_sequential_consistency` the same way `totalRows` does.
     virtual DataPartsVector filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr query_context) const;
 public:
 

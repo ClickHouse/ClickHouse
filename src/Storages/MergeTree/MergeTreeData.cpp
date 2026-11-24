@@ -9270,8 +9270,20 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, const Stora
 }
 
 MergeTreeData::DataPartsVector
-MergeTreeData::filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr /*query_context*/) const
+MergeTreeData::filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr query_context) const
 {
+    /// The storage snapshot of the query is taken before the parts are filtered for reading.
+    /// A query that is a part of a lightweight update reads only the parts up to the block numbers allocated
+    /// by the update (see `MergeTreeDataSelectExecutor::selectPartsToRead`), so the stats must not
+    /// include the parts inserted after that, the same as the row scan of the query does not read them.
+    if (auto max_block_numbers_to_read = query_context->getPartitionIdToMaxBlock(getStorageID().uuid))
+    {
+        std::erase_if(parts, [&](const DataPartPtr & part)
+        {
+            auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
+            return blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second;
+        });
+    }
     return parts;
 }
 

@@ -6599,6 +6599,10 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(
 MergeTreeData::DataPartsVector
 StorageReplicatedMergeTree::filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr query_context) const
 {
+    /// The block numbers allocated by a lightweight update are a cutoff independent of the quorum,
+    /// so both filters are applied, the same as in `readLocalSequentialConsistencyImpl`.
+    parts = MergeTreeData::filterPartsForColumnDefaultnessStats(std::move(parts), query_context);
+
     if (!query_context->getSettingsRef()[Setting::select_sequential_consistency])
         return parts;
 
