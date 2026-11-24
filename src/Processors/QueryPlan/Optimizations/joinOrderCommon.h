@@ -38,7 +38,7 @@ struct ColumnDistinctValues
     std::optional<UInt64> ndv;
     /// `ndv` if known, otherwise the row count of the column's relation; 0 when neither is known.
     UInt64 upper_bound = 0;
-    /// `ndv` is estimated from the metadata of the data, see `ColumnStats::num_distinct_values_from_metadata`.
+    /// `ndv` is estimated from the metadata of the data, see `ColumnStatsOrigin::EstimatedFromMetadata`.
     bool from_metadata = false;
 };
 
@@ -63,7 +63,7 @@ inline ColumnDistinctValues getColumnStats(
         {
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
-                return {col_it->second.num_distinct_values, col_it->second.num_distinct_values, col_it->second.num_distinct_values_from_metadata};
+                return {col_it->second.num_distinct_values, col_it->second.num_distinct_values, col_it->second.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata};
             return {{}, it->second->estimated_rows.value_or(0)};
         }
         return {};
@@ -71,7 +71,7 @@ inline ColumnDistinctValues getColumnStats(
 
     const auto & relation_stat = relation_stats.at(rel_id.value());
     if (auto it = relation_stat.column_stats.find(column_name); it != relation_stat.column_stats.end())
-        return {it->second.num_distinct_values, it->second.num_distinct_values, it->second.num_distinct_values_from_metadata};
+        return {it->second.num_distinct_values, it->second.num_distinct_values, it->second.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata};
     return {{}, relation_stat.estimated_rows.value_or(0)};
 }
 

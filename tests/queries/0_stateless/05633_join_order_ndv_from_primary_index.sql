@@ -62,8 +62,18 @@ INSERT INTO u_zstd SELECT number, intHash64(number) FROM numbers(100000);
 SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) >= 50000
 FROM (EXPLAIN SELECT count() FROM u_zstd AS a JOIN u_zstd AS b ON a.id = b.id);
 
+SELECT 'A small table whose only part has a single granule: no estimate, one mark tells nothing about the values';
+DROP TABLE IF EXISTS small;
+CREATE TABLE small (id UInt64, x UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO small SELECT number, intHash64(number) FROM numbers(1000);
+SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) >= 500
+FROM (EXPLAIN SELECT count() FROM small AS a JOIN small AS b ON a.id = b.id);
+
 DROP TABLE t;
 DROP TABLE u;
 DROP TABLE s;
 DROP TABLE u_last;
 DROP TABLE u_zstd;
+DROP TABLE small;

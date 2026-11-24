@@ -9994,7 +9994,7 @@ The first column of the primary key of a MergeTree table is estimated from the m
 
 The estimate drives join reordering only and never changes query results. As it can be much below the actual number of distinct values, the selectivity of an equality between join keys also takes the row count of a key without a known number of distinct values.
 )", 0, \
-        {"26.11", true, true, "New setting to estimate the number of distinct values of columns without `uniq` statistics from the compressed size of the column for join reordering."}) \
+        {"26.12", true, true, "New setting to estimate the number of distinct values of columns without `uniq` statistics from the metadata of the data (the compressed size of the column, the primary key index) for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 

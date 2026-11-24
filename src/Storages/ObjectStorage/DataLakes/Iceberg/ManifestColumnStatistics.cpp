@@ -258,6 +258,7 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
         /// from them give a guarantee.
         if (!metrics.nulls && metrics.min_value.isNull())
             continue;
+        distinct_values_inputs[i].has_statistics = true;
         statistics_builder.addStatistics(
             targets[i].name,
             ColumnStatistics::createBasicFromSummary(targets[i].storage_type, rows, metrics.min_value, metrics.max_value, metrics.nulls));
@@ -310,6 +311,25 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
     /// checked against all rows of the files: a file without metrics leaves it partial, whatever the deletes.
     statistics_builder.incrementRowCount(total_rows);
     statistics_builder.subtractDeletedRows(deleted_rows);
+
+    /// The NULL counts and the bounds are optional in a manifest independently of the sizes of the columns. A column
+    /// whose files have none of them has no statistics to keep a number of distinct values, although its sizes give
+    /// one (see `estimate_distinct_values_from_metadata`). It gets a summary without the NULL count and the bounds
+    /// of the rows whose sizes are known, and the rule of the sizes below sets its number of distinct values. Only
+    /// with an estimate, so that a column without one stays without statistics.
+    if (estimate_distinct_values_from_compressed_size)
+    {
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            const auto & inputs = distinct_values_inputs[i];
+            if (inputs.has_statistics || !estimateDistinctValuesFromCompressedSize(inputs.rows_with_compressed_size, inputs.compressed_bytes))
+                continue;
+            statistics_builder.addStatistics(
+                targets[i].name,
+                ColumnStatistics::createBasicFromSummary(targets[i].storage_type, inputs.rows_with_compressed_size, Field(), Field(), std::nullopt));
+        }
+    }
+
     const auto estimator = statistics_builder.getEstimator();
     if (!estimator)
         return;
