@@ -84,7 +84,7 @@ struct SchedulerNodeInfo
 ///      dev       prod     | WorkloadNode<BaseNode> (workload root)
 ///       |         |       |__________________________________________________
 ///       |         |       |                       |
-///     queue     queue     | RequestQueue          | AllocationQueue
+///     fifo       fifo     | FifoQueue             | AllocationQueue
 /// ________________________|_______________________|__________________________
 ///                         |                       |
 ///             RESOURCE:   | CPU, IO, QuerySlot    | MemoryReservation
@@ -98,7 +98,7 @@ public:
 
     virtual ~ISchedulerNode();
 
-    [[nodiscard]] virtual std::string_view getTypeName() const = 0;
+    virtual std::string_view getTypeName() const = 0;
 
     /// Attach new child
     virtual void attachChild(const std::shared_ptr<ISchedulerNode> & child) = 0;
@@ -113,19 +113,19 @@ public:
     /// Returns full path string using names of every parent.
     /// WARNING: Not thread-safe - only call from scheduler thread.
     /// For logging outside scheduler thread, use `basename` instead.
-    [[nodiscard]] String getPath() const;
+    String getPath() const;
 
     /// Attach to a parent (used by attachChild)
     void setParentNode(ISchedulerNode * parent_);
 
     /// Return workload name this node belongs to (if any)
-    [[nodiscard]] const String & getWorkloadName() const;
+    const String & getWorkloadName() const;
 
     /// Return resource name this node belongs to (if any)
-    [[nodiscard]] const String & getResourceName() const;
+    const String & getResourceName() const;
 
     /// Return readable string for a cost value
-    [[nodiscard]] String formatReadableCost(ResourceCost cost) const;
+    String formatReadableCost(ResourceCost cost) const;
 
     EventQueue & event_queue;
     String basename;

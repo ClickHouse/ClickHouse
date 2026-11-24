@@ -1,5 +1,5 @@
 #include <Formats/verbosePrintString.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <IO/Operators.h>
 
 

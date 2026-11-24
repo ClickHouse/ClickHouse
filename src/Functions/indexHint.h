@@ -30,58 +30,49 @@ public:
         return std::make_shared<FunctionIndexHint>();
     }
 
-    static FunctionOverloadResolverPtr createImplied();
-    static FunctionIndexHint * tryGet(const FunctionBasePtr & function_base);
-
-    [[nodiscard]] bool isVariadic() const override
+    bool isVariadic() const override
     {
         return true;
     }
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     /// Arguments are never evaluated and the result is always UInt8, so a Nothing-typed
     /// argument must not force the declared return type to Nothing (which would mismatch
     /// the UInt8 column produced by executeImpl).
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
-
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> UInt8 OR (Any, ...) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
     }
 
     void setActions(ActionsDAG actions_) { actions = std::move(actions_); }
-    [[nodiscard]] const ActionsDAG & getActions() const { return actions; }
-
-    void setImplied(bool implied_) { implied = implied_; }
-    [[nodiscard]] bool isImplied() const { return implied; }
+    const ActionsDAG & getActions() const { return actions; }
 
 private:
     ActionsDAG actions;
-    /// The condition follows from the other conjuncts of the `and` that holds the hint.
-    bool implied = false;
 };
 
 }

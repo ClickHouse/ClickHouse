@@ -19,11 +19,11 @@ CREATE TABLE mrg_all_05059 (x UInt64) ENGINE = Merge(currentDatabase(), '^mrg_(l
 CREATE TABLE mrg_one_05059 (x UInt64) ENGINE = Merge(currentDatabase(), '^mrg_dist_05059$');
 
 -- { echo }
-SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
-SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0;
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, enable_analyzer = 1;
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0, enable_analyzer = 1;
 
-SELECT sum(x) FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
-SELECT sum(x) FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0;
+SELECT sum(x) FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, enable_analyzer = 1;
+SELECT sum(x) FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0, enable_analyzer = 1;
 
-SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_one_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
-SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_one_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0;
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_one_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, enable_analyzer = 1;
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_one_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0, enable_analyzer = 1;

@@ -18,17 +18,6 @@ test_recover_staled_replica_run = 1
 
 cluster = ClickHouseCluster(__file__)
 
-# `bad_settings_node` runs with implicit_transaction=1, so every query on it starts a
-# transaction, and TransactionManager refuses to start unless Keeper advertises the three
-# transaction flags. The harness randomizes flags that a test does not pin.
-KEEPER_FEATURE_FLAGS = [
-    "multi_read",
-    "create_if_not_exists",
-    "list_with_stat_and_data",
-    "check_stat",
-    "filtered_list",
-]
-
 main_node = cluster.add_instance(
     "main_node",
     main_configs=["configs/config.xml"],
@@ -38,7 +27,7 @@ main_node = cluster.add_instance(
     macros={"shard": 1, "replica": 1},
     # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
     with_remote_database_disk=False,
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -47,7 +36,7 @@ dummy_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 competing_node = cluster.add_instance(
     "competing_node",
@@ -56,7 +45,7 @@ competing_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 3},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 snapshotting_node = cluster.add_instance(
     "snapshotting_node",
@@ -64,14 +53,14 @@ snapshotting_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     macros={"shard": 2, "replica": 1},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
 all_nodes = [
@@ -88,7 +77,7 @@ bad_settings_node = cluster.add_instance(
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -1915,11 +1904,6 @@ def test_system_database_replicas_with_ro(started_cluster):
             f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%'") == expected
     )
 
-    zookeeper_exception = main_node.query(
-        f"SELECT zookeeper_exception FROM system.database_replicas WHERE database = '{database_1}'"
-    )
-    assert zookeeper_exception.strip()
-
     database_2 = f"{prefix}_test_system_database_replicas_2"
     main_node.query(
         f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
@@ -2075,11 +2059,11 @@ def test_timeseries(started_cluster):
     main_node.query(
         """
         CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
-        CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_time_ranges = false
-        SAMPLES ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)
-        RECENT SAMPLES ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)
-        TAGS ENGINE = ReplicatedReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
-        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family;
+        CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
+        SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
         """,
         settings={"allow_experimental_time_series_table": 1}
     )
@@ -2586,117 +2570,3 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
-
-
-def test_rename_with_different_local_database_names(started_cluster):
-    zk_path = "/clickhouse/databases/rename_local_names"
-    mounts = [(main_node, "rename_local_a"), (dummy_node, "rename_local_b")]
-    for node, db in mounts:
-        node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
-    main_node.query(
-        f"CREATE DATABASE rename_local_a ENGINE = Replicated('{zk_path}', 'shard1', 'replica1')"
-    )
-    dummy_node.query(
-        f"CREATE DATABASE rename_local_b ENGINE = Replicated('{zk_path}', 'shard1', 'replica2')"
-    )
-
-    main_node.query(
-        "CREATE TABLE rename_local_a.t (x UInt8) ENGINE = MergeTree ORDER BY ()"
-    )
-    main_node.query(
-        "CREATE TABLE rename_local_a.a (a UInt8) ENGINE = MergeTree ORDER BY ()"
-    )
-    main_node.query(
-        "CREATE TABLE rename_local_a.b (b UInt8) ENGINE = MergeTree ORDER BY ()"
-    )
-    main_node.query(
-        "CREATE DICTIONARY rename_local_a.d (k UInt64, v String) PRIMARY KEY k "
-        "SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)"
-    )
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA rename_local_b")
-    # Not replicated: it is kept only if the replica applies the rename itself.
-    dummy_node.query("INSERT INTO rename_local_b.t VALUES (42)")
-
-    # The session database is `default`, so every name below is qualified with the initiator's mount.
-    query_id = f"rename_local_names_{generate_random_string(10)}"
-    main_node.query(
-        "RENAME TABLE rename_local_a.t TO rename_local_a.u", query_id=query_id
-    )
-    main_node.query("EXCHANGE TABLES rename_local_a.a AND rename_local_a.b")
-    main_node.query("RENAME DICTIONARY rename_local_a.d TO rename_local_a.d2")
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA rename_local_b")
-
-    for node, db in mounts:
-        assert (
-            node.query(
-                f"SELECT name FROM system.tables WHERE database = '{db}' ORDER BY name"
-            )
-            == "a\nb\nd2\nu\n"
-        )
-        assert (
-            node.query(
-                f"SELECT table, name FROM system.columns WHERE database = '{db}' "
-                "AND table IN ('a', 'b', 'u') ORDER BY table"
-            )
-            == "a\tb\nb\ta\nu\tx\n"
-        )
-    assert dummy_node.query("SELECT x FROM rename_local_b.u") == "42\n"
-
-    assert (
-        main_node.query(
-            "SELECT extract(value, 'query: ([^\\n]*)') FROM system.zookeeper "
-            f"WHERE path = '{zk_path}/log' AND (value LIKE '%RENAME %' OR value LIKE '%EXCHANGE %') "
-            "ORDER BY name"
-        )
-        == "RENAME TABLE t TO u\nEXCHANGE TABLES a AND b\nRENAME DICTIONARY d TO d2\n"
-    )
-
-    main_node.query("SYSTEM FLUSH LOGS query_log")
-    assert (
-        main_node.query(
-            f"SELECT tables FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-        == "['rename_local_a.t','rename_local_a.u']\n"
-    )
-
-    # An unqualified target means the session database, so both are moves out of the database.
-    for target in ["default.u2", "u3"]:
-        assert (
-            "Moving tables between databases is not supported for Replicated engine"
-            in main_node.query_and_get_error(
-                f"RENAME TABLE rename_local_a.u TO {target}"
-            )
-        )
-    assert (
-        main_node.query(
-            "SELECT database, name FROM system.tables WHERE name IN ('u', 'u2', 'u3') "
-            "AND database IN ('default', 'rename_local_a')"
-        )
-        == "rename_local_a\tu\n"
-    )
-
-    # A refresh's EXCHANGE is stored without a database too.
-    main_node.query(
-        "CREATE MATERIALIZED VIEW rename_local_a.mv REFRESH EVERY 1 YEAR (x UInt8) "
-        "ENGINE = ReplicatedMergeTree ORDER BY () EMPTY AS SELECT 1 AS x"
-    )
-    main_node.query("SYSTEM REFRESH VIEW rename_local_a.mv")
-    main_node.query("SYSTEM WAIT VIEW rename_local_a.mv")
-    for node, db in mounts:
-        node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
-    exchange = main_node.query(
-        "SELECT extract(value, 'query: ([^\\n]*)') FROM system.zookeeper "
-        f"WHERE path = '{zk_path}/log' AND value LIKE '%EXCHANGE TABLES%inner_id%'"
-    )
-    assert exchange.startswith("EXCHANGE TABLES `.tmp.inner_id.") and (
-        "rename_local" not in exchange
-    ), exchange
-    inner_uuid = "SELECT uuid FROM system.tables WHERE database = '{}' AND name LIKE '.inner_id.%'"
-    assert main_node.query(inner_uuid.format("rename_local_a")) == dummy_node.query(
-        inner_uuid.format("rename_local_b")
-    )
-    for node, db in mounts:
-        assert not node.contains_in_log(f"DDLWorker({db}): Unexpected error")
-
-    for node, db in mounts:
-        node.query(f"DROP DATABASE {db} SYNC")

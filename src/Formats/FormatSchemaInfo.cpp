@@ -10,7 +10,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ParserSelectQuery.h>
@@ -23,7 +23,6 @@
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
-#include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -73,11 +72,10 @@ FormatSchemaInfo::FormatSchemaInfo(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "format_schema_message_name is specified {} when not required", message_name);
     }
 
-    /// Not cached in a static variable: it would keep the path of the first call for the lifetime of the process,
-    /// while `format_schema_path` is an argument and can differ between calls (e.g. between contexts).
     auto default_schema_directory = [&format_schema_path]()
     {
-        return String(fs::canonical(format_schema_path) / "");
+        static const String str = fs::canonical(format_schema_path) / "";
+        return str;
     };
 
     if (format_schema_source == FormatSettings::FORMAT_SCHEMA_SOURCE_FILE)
@@ -228,7 +226,7 @@ String FormatSchemaInfo::querySchema(const String & query, const ContextPtr & cu
     ASTPtr select_ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     auto query_context = Context::createCopy(current_query_context);
-    InterpreterSelectQueryAnalyzer interpreter(select_ast, query_context, SelectQueryOptions().setInternal());
+    InterpreterSelectQuery interpreter(select_ast, query_context, SelectQueryOptions().setInternal());
     BlockIO io = interpreter.execute();
 
     PullingPipelineExecutor executor(io.pipeline);
@@ -302,12 +300,8 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         out.sync();
         out.close();
 
-        if (fs::exists(file_path))
-            DB::renameExchange(temp_path, file_path);
-        else
-            DB::renameNoReplace(temp_path, file_path);
-
-        fs::remove(temp_path);
+        /// `rename` replaces the target atomically, so a concurrent writer of the same schema cannot make it fail.
+        fs::rename(temp_path, file_path);
     }
     catch (...)
     {

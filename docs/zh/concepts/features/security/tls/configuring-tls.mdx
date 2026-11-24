@@ -9,6 +9,8 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <SelfManaged />
 
 本指南介绍如何以简单、最少的配置，让 ClickHouse 使用 OpenSSL 证书验证连接。为便于演示，这里会创建自签名的证书颁发机构 (CA) 证书和密钥，以及节点证书，并使用适当的配置建立连接。
@@ -459,15 +461,7 @@ import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
 
     5. 使用 `https` 接口登录位于 `https://chnode1.marsnet.local:8443/play` 的 Play UI。
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![配置 TLS](/images/guides/sre/configuring-ssl_01.webp)
-
-       </Frame>
-
-       </div>
+       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="配置 TLS" size="md" border />
 
     <Note>
       浏览器会显示证书不受信任，因为这是从工作站访问的，而这些证书并不在客户端机器的根 CA 存储中。
@@ -672,12 +666,6 @@ import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
     </client>
 </openSSL>
 ```
-
-## 无需重启即可轮换证书和 CA 证书 {#rotating-certificates-without-restart}
-
-ClickHouse server 和 ClickHouse Keeper 会监视 `openSSL.server` 和 `openSSL.client` 配置段 (以及可组合协议的 `protocols.*` 配置段) 中由 `certificateFile`、`privateKeyFile` 和 `caConfig` 引用的文件；如果 `caConfig` 指向的是一个目录，则监视该目录下的文件。当其中任一文件发生变化，或执行 `SYSTEM RELOAD CONFIG` 时，证书会被重新加载，并用于所有新建立的 TLS 连接，包括 HTTPS、安全的原生协议、服务器间连接、到 Keeper 的连接，以及 Keeper 节点之间的 Raft 连接。已建立的连接仍会继续使用其建立时所用的证书。
-
-若要在不停机的情况下轮换 CA，请先将 `caConfig` 文件替换为同时包含旧 CA 证书和新 CA 证书的证书包，然后将节点证书和客户端证书切换为由新 CA 签发的证书，最后再将该证书包替换为仅包含新 CA 证书的文件。
 
 <div id="summary">
   ## 总结
