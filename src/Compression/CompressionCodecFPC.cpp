@@ -11,6 +11,7 @@
 #include <bit>
 #include <concepts>
 #include <cstring>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -25,8 +26,8 @@ class CompressionCodecFPC : public ICompressionCodec
 public:
     CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -38,12 +39,12 @@ protected:
 
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    String getDescription() const override { return "High Throughput Compression of Double-Precision Floating-Point Data."; }
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    [[nodiscard]] String getDescription() const override { return "High Throughput Compression of Double-Precision Floating-Point Data."; }
 
 private:
     static constexpr UInt32 HEADER_SIZE = 2;
@@ -85,7 +86,10 @@ ASTPtr CompressionCodecFPC::getCodecDescription() const
     return makeCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
-UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
+/// The reserve size wraps `UInt32` for a long codec chain, and that wrap is load-bearing:
+/// `getCheckedReserveSize` in `CompressionCodecMultiple` rejects the chain precisely by noticing
+/// that a codec reserved less than its own input. `04812_codec_chain_reserve_overflow` pins it.
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     auto float_count = (uncompressed_size + float_width - 1) / float_width;
     if (float_count % 2 != 0)
@@ -171,11 +175,13 @@ public:
     }
 
     [[nodiscard]]
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     TUInt predict() const noexcept
     {
         return table[hash] + prev_value;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void add(TUInt value) noexcept
     {
         table[hash] = value - prev_value;

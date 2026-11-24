@@ -426,7 +426,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromStorageKafka2"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStorageKafka2"; }
 
 private:
     Pipe makePipe() final
@@ -560,7 +560,7 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     auto payload_split = StorageKafkaUtils::splitPayloadColumns(header, map_virtual_columns_on_write);
 
     auto producer = std::make_unique<KafkaProducer>(
-        std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header, map_virtual_columns_on_write);
+        std::move(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header, map_virtual_columns_on_write);
 
     LOG_TRACE(log, "Kafka producer created");
 
@@ -1031,14 +1031,18 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        modified_context,
-        poll_max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(modified_context->getSettingsRef()));
+    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(modified_context->getSettingsRef());
+    auto create_format = [&]
+    {
+        return FormatFactory::instance().getInput(
+            getFormatName(),
+            empty_buf,
+            non_virtual_header,
+            modified_context,
+            poll_max_block_size,
+            std::nullopt,
+            parser_shared_resources);
+    };
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -1094,7 +1098,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         }
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
+    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), std::move(on_error));
 
     const auto storage_id = getStorageID();
     const Field table_name = storage_id.getTableName();

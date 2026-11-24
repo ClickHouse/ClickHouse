@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
@@ -16,11 +15,27 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 읽기 레플리카를 관리하려면 warehouse에서 편집 아이콘을 클릭하세요:
 
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="편집 아이콘이 있는 warehouse 화면" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![편집 아이콘이 있는 warehouse 화면](/images/managed-postgres/warehouse-view.webp)
+
+</Frame>
+
+</div>
 
 그러면 기존 서비스를 확인하고 새 읽기 레플리카를 만들 수 있는 warehouse 대화상자가 열립니다:
 
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="읽기 레플리카 관리 대화상자" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![읽기 레플리카 관리 대화상자](/images/managed-postgres/read-replica-dialog.webp)
+
+</Frame>
+
+</div>
 
 ## 읽기 레플리카 관리 {#managing-read-replicas}
 
@@ -28,11 +43,27 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 **Flow** 보기에는 복제 토폴로지가 표시됩니다. 맨 위의 프라이머리 인스턴스에서 각 레플리카로 화살표가 아래로 이어지며, 티어, 리전, 상태를 한눈에 확인할 수 있습니다:
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="프라이머리 및 레플리카 토폴로지를 보여주는 읽기 레플리카 흐름 보기" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![프라이머리 및 레플리카 토폴로지를 보여주는 읽기 레플리카 흐름 보기](/images/managed-postgres/read-replicas-flow.webp)
+
+</Frame>
+
+</div>
 
 **Table** 보기에는 각 레플리카의 서비스 이름, 클라우드 제공업체와 리전, 서비스 상태, 생성 시간, 그리고 **Detach service** 작업이 나열됩니다:
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="읽기 레플리카 테이블 보기" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![읽기 레플리카 테이블 보기](/images/managed-postgres/read-replicas-table.webp)
+
+</Frame>
+
+</div>
 
 새 레플리카를 생성하려면 두 보기 중 어느 쪽에서든 오른쪽 상단의 **Create read replica**를 클릭하세요.
 

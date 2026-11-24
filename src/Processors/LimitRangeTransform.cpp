@@ -1,4 +1,5 @@
 #include <Processors/LimitRangeTransform.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -50,7 +51,7 @@ struct BoundaryColumnView
         mask.emplace(*column);
     }
 
-    bool isTrueAt(size_t row_num) const
+    [[nodiscard]] bool isTrueAt(size_t row_num) const
     {
         if (always_false)
             return false;
@@ -60,7 +61,7 @@ struct BoundaryColumnView
     }
 
     /// The first row in `[begin, end)` where the condition is true, or `end`.
-    size_t findTrue(size_t begin, size_t end) const
+    [[nodiscard]] size_t findTrue(size_t begin, size_t end) const
     {
         if (always_false)
             return end;
@@ -174,7 +175,7 @@ LimitRangeTransform::LimitRangeTransform(
         /// Carry the raw inputs through the start stage so `UNTIL` can read its own inputs as well as
         /// reuse shared subexpressions. Only the starting chunk needs to execute both stages.
         const auto * start_node = &conditions.findInOutputs(*start_column_name);
-        std::unordered_set<const ActionsDAG::Node *> split_nodes(conditions.getInputs().begin(), conditions.getInputs().end());
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> split_nodes(conditions.getInputs().begin(), conditions.getInputs().end());
         auto split = conditions.splitActionsForFilter(*start_column_name, std::move(split_nodes));
         const auto split_start_name = split.split_nodes_mapping.at(start_node)->result_name;
         start_only_evaluation.emplace(header, std::move(split.first), split_start_name, std::nullopt, actions_settings);
