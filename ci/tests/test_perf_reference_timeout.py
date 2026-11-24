@@ -5,7 +5,8 @@ Tests for a performance test query that runs out of its time limit on one of the
 A pull request can add a test of a query that only its own change makes fast enough: on the reference server (the
 build without the change) the query runs out of the time limit. That is not an error of the test: the query is
 measured on the tested server only, as a `partial` query, and the report gets a warning. A time limit exceeded on
-the tested server is an error, and so is any other error on the reference server.
+the tested server is an error, and so is any other error on the reference server. A query that writes is an error
+as well: cut by the time limit on one server, it leaves the servers with different data for the queries after it.
 
 `perf.py` runs as it does in the job, as a separate process, against a stand-in for `clickhouse_driver` whose
 "servers" answer every query at once, except the ones a test tells to fail.
@@ -42,6 +43,22 @@ TEST_XML = """
 </test>
 """
 
+# A query that writes, and a query that reads what it wrote.
+WRITE_TEST_XML = """
+<test>
+    <create_query>CREATE TABLE written (x String) ENGINE = MergeTree ORDER BY x</create_query>
+    <query>{write}</query>
+    <query>SELECT count() FROM written</query>
+    <drop_query>DROP TABLE IF EXISTS written</drop_query>
+</test>
+"""
+
+WRITES = [
+    "INSERT INTO written SELECT 'slow'",
+    "WITH 'slow' AS x INSERT INTO written SELECT x",
+    "ALTER TABLE written DELETE WHERE x = 'slow'",
+]
+
 SHELL_TEST_XML = """
 <test>
     <query type="shell"><![CDATA[if [ "$CLICKHOUSE_PORT_TCP" = 9001 ] && [ -e "$SLOW_MARKER" ]; then sleep 5; fi; touch "$SLOW_MARKER"]]></query>
@@ -49,11 +66,13 @@ SHELL_TEST_XML = """
 </test>
 """
 
-# `clickhouse_driver`: a query fails with the error code of the first matching rule of `PERF_STUB_FAILURES`
-# (server port, substring of the query, substring of the query id).
+# `clickhouse_driver`: a query follows the first matching rule of `PERF_STUB_FAILURES` (server port, substring of
+# the query, substring of the query id): it takes `seconds` of real time, if given, and then fails with the error
+# `code`, if given.
 DRIVER_STUB = '''
 import json
 import os
+import time
 
 from . import errors
 
@@ -73,7 +92,10 @@ class Client:
     def execute(self, query, params=None, query_id=None, settings=None, **kwargs):
         for failure in FAILURES:
             if failure["port"] == self.port and failure["query"] in query and failure["query_id"] in (query_id or ""):
-                raise errors.ServerException("DB::Exception: stub failure", failure["code"])
+                time.sleep(failure.get("seconds", 0))
+                if failure.get("code") is not None:
+                    raise errors.ServerException("DB::Exception: stub failure", failure["code"])
+                break
         return []
 '''
 
@@ -108,8 +130,8 @@ def _write(path, text):
     path.write_text(textwrap.dedent(text), encoding="utf-8")
 
 
-def _failure(port, query_id, code=TIMEOUT_EXCEEDED):
-    return {"port": port, "query": "slow", "query_id": query_id, "code": code}
+def _failure(port, query_id, code=TIMEOUT_EXCEEDED, seconds=0):
+    return {"port": port, "query": "slow", "query_id": query_id, "code": code, "seconds": seconds}
 
 
 def _run_perf(tmp_path, failures, xml=TEST_XML, extra_args=()):
@@ -203,7 +225,28 @@ def test_runs_the_reference_completed_before_its_timeout_are_dropped(tmp_path):
     # The time of the reference is not in the time of the query: all its runs here take 0.01 s.
     client_time = next(row for row in _rows(result.stdout, "client-time") if row[0] == "1")
     assert float(client_time[2]) == pytest.approx(0.01 * len(run_ids))
-    assert float(client_time[1]) < 1
+    assert 0 <= float(client_time[1]) < 1
+
+
+def test_client_time_leaves_out_the_real_time_of_the_reference(tmp_path):
+    # The reference is cut after 2 s, not after the limit of 15 s: a server reports the timeout when it notices
+    # it. Each run of the tested server takes 0.05 s.
+    tested_seconds = 0.05
+    result = _run_perf(
+        tmp_path,
+        [
+            _failure(REFERENCE_PORT, ".run1", seconds=2),
+            _failure(TESTED_PORT, ".run", code=None, seconds=tested_seconds),
+        ],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _rows(result.stdout, "partial") == [["1", "[1]"]]
+    runs = len([row for row in _rows(result.stdout, "query") if row[0] == "1"])
+    client_time = next(row for row in _rows(result.stdout, "client-time") if row[0] == "1")
+    # The time of the runs of the tested server, without the 2 s of the reference and not below zero, as it
+    # would be with the limit subtracted.
+    assert tested_seconds * runs <= float(client_time[1]) < tested_seconds * runs + 1
 
 
 def test_reference_timeout_in_the_prewarm_run_is_accepted(tmp_path):
@@ -264,6 +307,30 @@ def test_other_reference_error_in_a_measured_run_fails_the_test(tmp_path):
     # The runs made before the error are still written, for both servers.
     assert _servers_of_query(result.stdout, 1) == {0, 1}
     assert not _servers_of_query(result.stdout, 2)
+
+
+@pytest.mark.parametrize("write", WRITES)
+def test_reference_timeout_of_a_write_in_a_measured_run_fails_the_test(tmp_path, write):
+    result = _run_perf(tmp_path, [_failure(REFERENCE_PORT, ".run0")], xml=WRITE_TEST_XML.format(write=write))
+
+    assert result.returncode != 0
+    assert "reference_timeout.query0.run0" in result.stderr
+    assert f"Code: {TIMEOUT_EXCEEDED}" in result.stderr
+    assert not _rows(result.stdout, "reference-timeout")
+    assert not _rows(result.stdout, "partial")
+    # The query that reads the table is not run: the servers do not hold the same rows.
+    assert not _servers_of_query(result.stdout, 1)
+    assert _job_warnings(tmp_path, result.stdout) == []
+
+
+def test_reference_timeout_of_a_write_in_the_prewarm_run_is_an_error(tmp_path):
+    result = _run_perf(tmp_path, [_failure(REFERENCE_PORT, ".prewarm0")], xml=WRITE_TEST_XML.format(write=WRITES[0]))
+
+    # As any other error of the reference in the prewarm run: the job turns it into a Run Errors row.
+    assert "reference_timeout.query0.prewarm0" in result.stderr
+    assert f"Code: {TIMEOUT_EXCEEDED}" in result.stderr
+    assert not _rows(result.stdout, "reference-timeout")
+    assert _job_warnings(tmp_path, result.stdout) == []
 
 
 def test_reference_timeout_of_a_shell_query_fails_the_test(tmp_path):

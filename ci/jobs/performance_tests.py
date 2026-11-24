@@ -1715,7 +1715,7 @@ def write_thread_stack_alignment(servers, path):
 
 
 def reference_timeout_warnings(workdir):
-    """A warning for each SQL query that ran out of its time limit on the reference server only.
+    """A warning for each SQL query that only reads and ran out of its time limit on the reference server only.
 
     `perf.py` measures such a query on the tested server, as a `partial` query that the report does not compare,
     and writes a `reference-timeout` line (query index, `prewarm` or `run`, limit in seconds) to the raw output of
