@@ -816,7 +816,6 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     /// But hudi writes arrays differently, without the inner group:
     ///   required/optional group `name` (List):
     ///     repeated <recurse> "array"
-    /// With one field, such a group is told apart from the inner group by its annotation or name, see below.
 
     if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
         return false;
