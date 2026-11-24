@@ -1939,29 +1939,11 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     };
 
     data->spliceBuildStreamLists();
-    StoredBlocksList right_columns = std::move(data->build_streams.front().columns);
-    if (!restructure)
-    {
-        auto sample_block = std::move(data->sample_block);
-        data.reset();
-        /// `extract_source_blocks` allocates, so it can throw here with `data` already gone.
-        fiu_do_on(FailPoints::hash_join_throw_after_data_release,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the join data was released");
-        });
-        return extract_source_blocks(std::move(right_columns), sample_block);
-    }
-
-    for (auto & table : data->tables)
-        table->releaseMaps();
-    data->build_streams.front().nullmaps.clear();
-
-    BlocksList restored_blocks;
 
     /// names to positions optimization
     std::vector<size_t> positions;
     std::vector<bool> is_nullable;
-    if (!right_columns.empty())
+    if (restructure && !data->build_streams.front().columns.empty())
     {
         positions.reserve(right_sample_block.columns());
         for (const auto & sample_column : right_sample_block)
@@ -1971,21 +1953,32 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         }
     }
 
+    StoredBlocksList right_columns = std::move(data->build_streams.front().columns);
+    auto sample_block = std::move(data->sample_block);
+    data.reset();
+    /// Materializing the blocks below allocates, so it can throw here with `data` already gone.
+    fiu_do_on(FailPoints::hash_join_throw_after_data_release,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the join data was released");
+    });
+
+    if (!restructure)
+        return extract_source_blocks(std::move(right_columns), sample_block);
+
+    BlocksList restored_blocks;
     for (auto & saved_columns : right_columns)
     {
         Columns all_columns = materializeStoredBlock(saved_columns, column_access_indexes);
         Block restored_block;
         for (size_t i = 0; i < positions.size(); ++i)
         {
-            auto column = data->sample_block.getByPosition(positions[i]);
+            auto column = sample_block.getByPosition(positions[i]);
             column.column = all_columns[positions[i]];
             correctNullabilityInplace(column, is_nullable[i]);
             restored_block.insert(column);
         }
         restored_blocks.emplace_back(std::move(restored_block));
     }
-
-    data.reset();
     return restored_blocks;
 }
 
