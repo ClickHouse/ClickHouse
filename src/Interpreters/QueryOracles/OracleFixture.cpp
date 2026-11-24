@@ -22,6 +22,28 @@ namespace
 /// Process-global sequence for collision-free fixture names (no Date/rand available here).
 std::atomic<UInt64> fixture_sequence{0};
 
+bool isIdentifierChar(char c)
+{
+    return c == '_' || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+}
+
+/// True if `name` occurs in `sql` as a whole identifier token, not merely as a substring. Needed
+/// because fixture names share a prefix and differ only by a trailing sequence number, so a plain
+/// `sql.contains("__oracle_fx_x_1")` would also match `__oracle_fx_x_10` and wrongly arm a DROP of
+/// a table this instance never created (e.g. a preserved repro after a restart).
+bool sqlNamesIdentifier(const std::string & sql, const std::string & name)
+{
+    for (size_t pos = sql.find(name); pos != std::string::npos; pos = sql.find(name, pos + 1))
+    {
+        const bool left_boundary = pos == 0 || !isIdentifierChar(sql[pos - 1]);
+        const size_t end = pos + name.size();
+        const bool right_boundary = end >= sql.size() || !isIdentifierChar(sql[end]);
+        if (left_boundary && right_boundary)
+            return true;
+    }
+    return false;
+}
+
 bool environmentAllowsFixtures(const ContextMutablePtr & context)
 {
     /// Read-only sessions (CLI `--readonly`, idempotent HTTP methods, a leaked `SET readonly`) and
@@ -101,7 +123,7 @@ void OracleFixture::armDropsForCreate(const std::string & sql)
         return;
     for (const auto & name : allocated)
     {
-        if (armed.contains(name) || !sql.contains(name))
+        if (armed.contains(name) || !sqlNamesIdentifier(sql, name))
             continue;
         armed.insert(name);
         created.push_back(name);
