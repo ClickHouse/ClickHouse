@@ -23,6 +23,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --table_engine_read_through_distributed_cache 0"
+
 RUN_ID="${CLICKHOUSE_DATABASE}_03988_$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")"
 FILE="${RUN_ID}.parquet"
 ROWS=50000
