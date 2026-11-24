@@ -81,7 +81,7 @@ public:
         // Deactivate if necessary
         child_active = child_now_active;
         if (!active())
-            incrementCounter(busy_periods);
+            busy_periods++;
 
         if (request)
         {

@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -32,7 +31,7 @@ TranslatedName classifyOutputName(const ActionsDAG & dag, const String & output_
     return TranslatedName::Computed;
 }
 
-bool translateDistributionColumns(const ActionsDAG & dag, VectorWithMemoryTracking<NameSet> & columns)
+bool translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> & columns)
 {
     for (auto & column_set : columns)
     {

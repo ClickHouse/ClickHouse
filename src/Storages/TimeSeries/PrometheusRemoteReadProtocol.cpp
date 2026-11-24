@@ -23,7 +23,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <optional>
 
 
@@ -85,12 +84,11 @@ namespace
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
-    /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'samples')
+    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
+    /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
     /// GROUP BY timeSeriesIdToGroup(id) AS group
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
-        bool table_has_bucketed_samples,
         const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers,
         Int64 min_time_ms,
         Int64 max_time_ms)
@@ -98,7 +96,7 @@ namespace
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         {
-            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
+            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
             auto select_list_exp = make_intrusive<ASTExpressionList>();
 
             select_list_exp->children.push_back(
@@ -106,17 +104,10 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
 
-            if (table_has_bucketed_samples)
-            {
-                select_list_exp->children.push_back(makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)));
-            }
-            else
-            {
-                select_list_exp->children.push_back(makeASTFunction(
-                    "timeSeriesGroupArray",
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
-            }
+            select_list_exp->children.push_back(makeASTFunction(
+                "timeSeriesGroupArray",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
 
@@ -124,7 +115,7 @@ namespace
         }
 
         {
-            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, return_columns)
+            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
             auto table_exp = make_intrusive<ASTTableExpression>();
             table_exp->table_function = makeASTFunction(
                 "timeSeriesSelector",
@@ -132,8 +123,7 @@ namespace
                 make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()),
                 make_intrusive<ASTLiteral>(labelMatchersToPromQL(label_matchers).toString()),
                 make_intrusive<ASTLiteral>(DecimalField<Decimal64>{min_time_ms, 3}),
-                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}),
-                make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
+                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}));
 
             table_exp->children.emplace_back(table_exp->table_function);
 
@@ -200,7 +190,7 @@ namespace
         {
             auto & new_time_series = *out_time_series.Add();
 
-            size_t tags_start_offset = tags_offsets[static_cast<ssize_t>(i) - 1];
+            size_t tags_start_offset = tags_offsets[i - 1];
             size_t tags_end_offset = tags_offsets[i];
 
             for (size_t j = tags_start_offset; j != tags_end_offset; ++j)
@@ -210,7 +200,7 @@ namespace
                 new_label.set_value(tags_values.getDataAt(j));
             }
 
-            size_t time_series_start_offset = time_series_offsets[static_cast<ssize_t>(i) - 1];
+            size_t time_series_start_offset = time_series_offsets[i - 1];
             size_t time_series_end_offset = time_series_offsets[i];
 
             for (size_t j = time_series_start_offset; j != time_series_end_offset; ++j)
@@ -247,7 +237,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     auto time_series_storage_id = time_series_storage->getStorageID();
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        time_series_storage_id, time_series_storage->getStorageSettings()->hasBucketedSamples(), label_matcher, start_timestamp_ms, end_timestamp_ms);
+        time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());

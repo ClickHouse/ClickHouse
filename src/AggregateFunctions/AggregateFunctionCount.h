@@ -1,7 +1,6 @@
 #pragma once
 
 #include "config.h"
-#include <base/arithmeticOverflow.h>
 
 #include <IO/VarInt.h>
 
@@ -109,9 +108,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        /// The merged count is the modular `UInt64` sum of the partial counts (see `getMergedValueBound`), e.g. for a
-        /// state multiplied by a large number with repeated merges.
-        data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
+        data(place).count += data(rhs).count;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -138,10 +135,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
-
-    /// The merged count is the modular `UInt64` sum of the partial counts, which never exceeds
-    /// their saturating sum - see `MergedValueBound::Subadditive`.
-    MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
     /// Reset the state to specified value. This function is not the part of common interface.
     static void set(AggregateDataPtr __restrict place, UInt64 new_count)

@@ -145,8 +145,7 @@ StoragePtr TableFunctionFile::getStorage(
     ContextPtr global_context,
     const std::string & table_name,
     const std::string & compression_method_,
-    bool /*is_insert_query*/,
-    bool /*is_table_definition*/) const
+    bool /*is_insert_query*/) const
 {
     // For `file` table function, we are going to use format settings from the
     // query context.
@@ -202,6 +201,9 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFile>({.description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/reference/functions/table-functions/s3) table function. Use `file` when working with local files, and `s3` when working with buckets in object storage such as S3, GCS, or MinIO.
 
 The `file` function can be used in `SELECT` and `INSERT` queries to read from or write to files.

@@ -69,10 +69,6 @@ using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
 TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache);
 
-/// The size to reserve for a temporary file of `data_size` bytes that keeps `min_free_disk_space` bytes free.
-/// Throws `NOT_ENOUGH_SPACE` if the sum is not representable (`min_free_disk_space` comes from an unrestricted setting).
-size_t getTemporaryFileReserveSize(size_t data_size, size_t min_free_disk_space);
-
 #if ENABLE_DISTRIBUTED_CACHE
 struct DistributedCacheTag
 {};
@@ -162,7 +158,7 @@ public:
     operator bool() const { return impl != nullptr; } /// NOLINT
 
     Holder * getHolder() { return holder.get(); }
-    [[nodiscard]] const Holder * getHolder() const { return holder.get(); }
+    const Holder * getHolder() const { return holder.get(); }
     std::unique_ptr<Holder> releaseHolder()
     {
         impl.reset();
@@ -189,17 +185,13 @@ public:
     explicit TemporaryFileHolder(const TemporaryDataMetrics &);
 
     virtual std::unique_ptr<WriteBuffer> write() = 0;
-    [[nodiscard]] virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
+    virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
 
     virtual void releaseWriteBuffer(std::unique_ptr<WriteBuffer> /*write_buffer*/)
     {}
 
     /// Get location for logging
-    [[nodiscard]] virtual String describeFilePath() const = 0;
-
-    /// The disk of the file, or null for a file in a cache. Returned by reference, because a copy for
-    /// every append would contend on the reference count, which all the files on the disk share.
-    [[nodiscard]] virtual const DiskPtr & getDisk() const;
+    virtual String describeFilePath() const = 0;
 
     virtual ~TemporaryFileHolder() = default;
 
@@ -241,12 +233,6 @@ public:
     std::unique_ptr<ReadBuffer> read();
     std::unique_ptr<SeekableReadBuffer> readRaw(size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    /// Puts the data written so far into separate compressed blocks and returns the position
-    /// in the file from which the data written after this call can be read with `readFromPosition`.
-    size_t startNewBlock();
-    /// Reads the data from `position` returned by `startNewBlock`, finishes writing if needed.
-    std::unique_ptr<ReadBuffer> readFromPosition(size_t position);
-
     CompressedWriteBuffer & getCompressedWriteBuffer();
 
     Stat finishWriting();
@@ -254,9 +240,6 @@ public:
     Stat getStat() const;
 
     String describeFilePath() const;
-
-    /// See `TemporaryFileHolder::getDisk`.
-    const DiskPtr & getDisk() const;
 
 private:
     void updateAllocAndCheck();
@@ -273,24 +256,6 @@ private:
     bool reported_spilled_to_disk = false;
 };
 
-/// Checks free space for the appends to existing temporary files, as the creation of a file checks its
-/// reserve size. A writer that keeps appending to its files uses one object for each batch of appends,
-/// and passes with every append the room that the rest of the batch needs: each disk is checked only at
-/// the first append of the batch to a file on it, because a check costs a `statfs`. A file in a cache is
-/// not checked, because the cache makes room for every write.
-class TemporaryAppendSpaceCheck
-{
-public:
-    /// Throws `NOT_ENOUGH_SPACE` unless the disk of `buffer` has room for `reserve_size` bytes, if the
-    /// batch has not checked that disk yet. The space is reserved only for the duration of the check, as
-    /// at the creation of a file.
-    void beforeAppend(const TemporaryDataBuffer & buffer, size_t reserve_size);
-
-private:
-    /// The few disks of a temporary volume.
-    std::vector<DiskPtr> checked_disks;
-};
-
 
 /// High level interfaces for reading and writing temporary data by blocks.
 class TemporaryBlockStreamReaderHolder : public WrapperGuard<NativeReader, ReadBuffer>
@@ -305,10 +270,10 @@ class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDa
 public:
     TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size = 0);
 
-    [[nodiscard]] TemporaryBlockStreamReaderHolder getReadStream() const;
+    TemporaryBlockStreamReaderHolder getReadStream() const;
 
-    TemporaryDataBuffer::Stat finishWriting() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
-    [[nodiscard]] const Block & getHeader() const { return header; }
+    TemporaryDataBuffer::Stat finishWriting() const;
+    const Block & getHeader() const { return header; }
 
 private:
     Block header;

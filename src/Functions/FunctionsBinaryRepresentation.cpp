@@ -19,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
 }
@@ -231,38 +232,44 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBinaryRepresentation>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// Mirrors the set of types the legacy `getReturnTypeImpl` accepted on
-        /// master. Date / DateTime / DateTime64 are not handled explicitly in
-        /// `executeImpl`, but their columns are dispatched through
-        /// `tryExecuteUIntOrInt` (Date = `ColumnVector<UInt16>`, DateTime =
-        /// `ColumnVector<UInt32>`) and `tryExecuteDecimal` (DateTime64).
-        return "(Number) -> String"
-               " OR (StringOrFixedString) -> String"
-               " OR (DateOrDateTime) -> String"
-               " OR (UUID) -> String"
-               " OR (IPv4) -> String"
-               " OR (IPv6) -> String"
-               " OR (AggregateFunction) -> String";
+        WhichDataType which(arguments[0]);
+
+        if (!which.isStringOrFixedString() &&
+            !which.isDate() &&
+            !which.isDateTime() &&
+            !which.isDateTime64() &&
+            !which.isUInt() &&
+            !which.isInt() &&
+            !which.isFloat() &&
+            !which.isDecimal() &&
+            !which.isUUID() &&
+            !which.isIPv4() &&
+            !which.isIPv6() &&
+            !which.isAggregateFunction())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * column = arguments[0].column.get();
         ColumnPtr res_column;
@@ -634,25 +641,33 @@ public:
     static constexpr size_t word_size = Impl::word_size;
     static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBinaryRepresentation>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
     /// Not injective: decoding is deliberately tolerant. It is case-insensitive, and an incomplete leading
     /// group is padded, so `unhex('0a')`, `unhex('0A')` and `unhex('a')` all decode to the same byte.
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override { return "(StringOrFixedString) -> String"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        WhichDataType which(arguments[0]);
+        if (!which.isStringOrFixedString())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -671,7 +686,7 @@ public:
             size_t max_out_len = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const size_t len = in_offsets[i] - in_offsets[static_cast<ssize_t>(i) - 1];
+                const size_t len = in_offsets[i] - in_offsets[i - 1];
                 max_out_len += (len + word_size - 1) / word_size;
             }
             out_vec.resize(max_out_len);

@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -18,7 +17,6 @@
 #include <type_traits>
 #include <limits>
 #include <memory>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -87,7 +85,6 @@ constexpr std::string_view regrKindName(RegrKind kind)
 /// the whole of their range - UInt64 spans up to 2^64 - and wrapping it would not merely lose
 /// precision, it would flip the sign of the slope.
 template <typename T>
-NO_SANITIZE_UNSIGNED_OVERFLOW
 Float64 exactDelta(T value, T shift)
 {
     if constexpr (is_integer<T>)
@@ -274,7 +271,7 @@ struct RegrMoments
         sxy += rhs.sxy + dx * rhs.sy + dy * rhs.sx + rhs_count * dx * dy;
         sx += rhs.sx + rhs_count * dx;
         sy += rhs.sy + rhs_count * dy;
-        count = common::addIgnoreOverflow(count, rhs.count);
+        count += rhs.count;
     }
 
     void write(WriteBuffer & buf) const
@@ -342,7 +339,7 @@ struct RegrResult
     {
     }
 
-    [[nodiscard]] Float64 get(RegrKind kind) const
+    Float64 get(RegrKind kind) const
     {
         static constexpr auto nan = std::numeric_limits<Float64>::quiet_NaN();
 
@@ -408,9 +405,9 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return String(regrKindName(kind)); }
+    String getName() const override { return String(regrKindName(kind)); }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -573,8 +570,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        /// The count is a modular `UInt64` sum, e.g. for a state multiplied by a large number with repeated merges.
-        data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
+        data(place).count += data(rhs).count;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -677,8 +673,7 @@ void registerAggregateFunctionsRegr(AggregateFunctionFactory & factory)
 
     /// Like count, regr_count answers with a number even when every row was NULL, rather than
     /// being wrapped by the generic Null combinator and answering NULL.
-    const AggregateFunctionProperties count_properties = {.returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
-    const AggregateFunctionProperties properties = {.variant_arguments_conversion = VariantArgumentsConversion::All};
+    const AggregateFunctionProperties count_properties = {.returns_default_when_only_null = true};
 
     factory.registerFunction(
         "regr_count",
@@ -710,8 +705,7 @@ which divides a `Float64` sum.
              "Float64",
              R"(┌─regr_avgx(y, x)─┐
 │             2.5 │
-└─────────────────┘)"),
-         properties},
+└─────────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -730,8 +724,7 @@ which divides a `Float64` sum.
              "Float64",
              R"(┌─regr_avgy(y, x)─┐
 │               5 │
-└─────────────────┘)"),
-         properties},
+└─────────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -750,8 +743,7 @@ $$
              "Float64",
              R"(┌─regr_sxx(y, x)─┐
 │              5 │
-└────────────────┘)"),
-         properties},
+└────────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -770,8 +762,7 @@ $$
              "Float64",
              R"(┌─regr_syy(y, x)─┐
 │             20 │
-└────────────────┘)"),
-         properties},
+└────────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -790,8 +781,7 @@ $$
              "Float64",
              R"(┌─regr_sxy(y, x)─┐
 │             10 │
-└────────────────┘)"),
-         properties},
+└────────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -812,8 +802,7 @@ Returns `nan` when `x` is constant, because the fitted line is vertical.
              "Float64",
              R"(┌─regr_slope(y, x)─┐
 │                2 │
-└──────────────────┘)"),
-         properties},
+└──────────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -834,8 +823,7 @@ Returns `nan` when `x` is constant, because the fitted line is vertical.
              "Float64",
              R"(┌─regr_intercept(y, x)─┐
 │                    0 │
-└──────────────────────┘)"),
-         properties},
+└──────────────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -851,8 +839,7 @@ correlation coefficient. Returns `nan` when `x` is constant, and `1` when `y` is
              "Float64",
              R"(┌─regr_r2(y, x)─┐
 │             1 │
-└───────────────┘)"),
-         properties},
+└───────────────┘)")},
         AggregateFunctionFactory::Case::Insensitive);
 
     /// The SQL standard spelling is the name; these are the same functions under the naming the rest

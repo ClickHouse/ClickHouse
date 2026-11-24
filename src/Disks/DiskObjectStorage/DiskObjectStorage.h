@@ -8,7 +8,6 @@
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 
 #include <base/scope_guard.h>
 
@@ -202,8 +201,6 @@ public:
 
     ObjectStoragePtr getObjectStorage() override;
 
-    std::unordered_map<Location, ObjectStoragePtr> getObjectStorages() const { return object_storages->getRegistry(); }
-
     bool supportsCache() const override;
 
     /// Is object storage read only?
@@ -220,8 +217,6 @@ public:
     bool isWriteOnce() const override;
 
     bool prefersRecursiveRemoval() const override;
-
-    bool supportsAtomicFileCreation() const override;
 
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
@@ -253,6 +248,9 @@ public:
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
+
+    bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
+    void chmod(const String & path, mode_t mode) override;
 
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> getS3StorageClient() const override;
@@ -318,13 +316,13 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    [[nodiscard]] UInt64 getSize() const override { return size; }
+    UInt64 getSize() const override { return size; }
 
-    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    [[nodiscard]] DiskPtr getDisk(size_t i) const override;
+    DiskPtr getDisk(size_t i) const override;
 
-    [[nodiscard]] Disks getDisks() const override { return {disk}; }
+    Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 

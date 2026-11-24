@@ -17,8 +17,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <WindowFunctions/WindowFunctionFactory.h>
-
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
@@ -74,7 +72,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Columns/ColumnString.h>
 
 
 namespace DB
@@ -282,17 +279,19 @@ bool isTupleFunction(const ASTPtr & ast)
     return function && function->name == "tuple";
 }
 
-/// The number of key columns that `IN` compares separately for the left operand, see `getInKeyColumnTypes`.
-/// Without a resolved type, a `tuple(...)` call has one key column per argument.
-size_t getInKeyColumnCount(const DataTypePtr & type, const ASTPtr & ast)
+size_t getTupleElementCount(const DataTypePtr & type, const ASTPtr & ast)
 {
     if (type)
-        return getInKeyColumnTypes(type).size();
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+        if (tuple_type)
+            return tuple_type->getElements().size();
+    }
 
     if (const auto * function = ast->as<ASTFunction>(); function && function->name == "tuple")
         return function->arguments->children.size();
 
-    return 1;
+    return 0;
 }
 
 ASTPtr makeTupleHasNoNullElementsPredicate(const ASTPtr & tuple_value, size_t tuple_size)
@@ -410,7 +409,7 @@ ASTPtr makeNonConstantInReplacement(
     bool include_right_operand_tuple_value,
     const DataTypePtr & right_operand_type,
     bool left_operand_is_tuple,
-    size_t left_operand_key_column_count,
+    size_t left_operand_tuple_size,
     bool left_operand_is_always_null,
     const DataTypePtr & cast_elements_to)
 {
@@ -492,14 +491,13 @@ ASTPtr makeNonConstantInReplacement(
         left_operand->clone());
 
     ASTPtr result = has_function;
-    /// `IN` compares the columns of a multi-column key separately, and with `transform_null_in = 0` a NULL
-    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match.
-    /// Guard the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are
-    /// values.
-    if (!inFunctionComparesNulls(node.name) && left_operand_key_column_count > 1)
+    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
+    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
+    /// elements to preserve `IN` semantics in the row-wise rewrite.
+    if (!inFunctionComparesNulls(node.name) && left_operand_tuple_size != 0)
         result = makeASTFunction(
             "and",
-            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_key_column_count),
+            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_tuple_size),
             std::move(result));
 
     if (!inFunctionComparesNulls(node.name))
@@ -587,7 +585,7 @@ public:
         index.push_back(node);
     }
 
-    [[nodiscard]] const ActionsDAG::Node * tryGetNode(const std::string & name) const
+    const ActionsDAG::Node * tryGetNode(const std::string & name) const
     {
         auto it = map.find(name);
         if (it == map.end())
@@ -596,7 +594,7 @@ public:
         return it->second;
     }
 
-    [[nodiscard]] const ActionsDAG::Node & getNode(const std::string & name) const
+    const ActionsDAG::Node & getNode(const std::string & name) const
     {
         const auto * node = tryGetNode(name);
         if (!node)
@@ -605,9 +603,9 @@ public:
         return *node;
     }
 
-    [[nodiscard]] bool contains(const std::string & name) const { return map.contains(name); }
+    bool contains(const std::string & name) const { return map.contains(name); }
 
-    [[nodiscard]] std::vector<std::string_view> getAllNames() const
+    std::vector<std::string_view> getAllNames() const
     {
         std::vector<std::string_view> result;
         result.reserve(map.size());
@@ -1161,11 +1159,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         if (nullable_left_tuple_type && rhs_tuple_all_null)
                         {
                             right_argument_tuple_function_is_set = true;
-                            /// An explicit all-`NULL` RHS tuple, such as `(NULL, NULL)`, is read as in the
-                            /// constant `Set` path: as top-level `NULL` set elements and, when the key can
-                            /// hold it, as the tuple value too (see `nullableTupleKeyCanHoldAllNullTuple`).
-                            include_right_argument_tuple_value = nullableTupleKeyCanHoldAllNullTuple(
-                                *nullable_left_tuple_type, right_argument_function->arguments->children.size());
+                            /// Match the constant `Set` path: an explicit all-`NULL` tuple contributes
+                            /// top-level `NULL` set elements and, when representable, the tuple value too.
+                            include_right_argument_tuple_value = inFunctionComparesNulls(node.name)
+                                && right_argument_function->arguments->children.size() == nullable_left_tuple_type->getElements().size()
+                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
+                                    [](const auto & type) { return type->isNullable(); });
                         }
                     }
                 }
@@ -1294,7 +1293,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         include_right_argument_tuple_value,
                         right_argument_type,
                         left_argument_is_tuple,
-                        getInKeyColumnCount(left_argument_type, node.arguments->children.at(0)),
+                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
                         left_argument_type && left_argument_type->onlyNull(),
                         cast_elements_to);
                 }
@@ -1448,9 +1447,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     // checked for it above, so no need to do anything more.
     if (AggregateUtils::isAggregateFunction(node))
         return;
-
-    if (WindowFunctionFactory::instance().isWindowFunctionName(node.name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} is a window function and requires an OVER clause", node.name);
 
     FunctionOverloadResolverPtr function_builder;
 

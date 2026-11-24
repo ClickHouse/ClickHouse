@@ -3,6 +3,7 @@
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
@@ -18,8 +19,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -216,7 +215,7 @@ bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadat
     return getTableSnapshot()->getVersion() == delta_lake_metadata.getTableSnapshot()->getVersion();
 }
 
-std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context, const std::optional<DataLakeTableStateSnapshot> &) const
+std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context) const
 {
     const auto & settings = context->getSettingsRef();
     if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
@@ -229,7 +228,6 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context
     auto snapshot_version = getSnapshotVersion(settings);
     try
     {
-        checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
         return getTableSnapshot(snapshot_version)->getTotalRows();
     }
     catch (...)
@@ -253,7 +251,6 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
     auto snapshot_version = getSnapshotVersion(settings);
     try
     {
-        checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
         return getTableSnapshot(snapshot_version)->getTotalBytes();
     }
     catch (...)
@@ -266,9 +263,6 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
 
 void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 {
-    /// The kernel takes the server's identity from the shared connection parameters, whose restriction flag concurrent
-    /// sessions overwrite, so every entrypoint checks the session itself.
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     if (!snapshot_version.has_value())
     {
@@ -296,13 +290,11 @@ DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context) const
 {
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper, header, format_settings, format_name, context);
 }
 
 std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTableStateSnapshot(ContextPtr context) const
 {
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     auto snapshot = getTableSnapshot(snapshot_version);
 
@@ -312,9 +304,8 @@ std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTable
 }
 
 std::unique_ptr<StorageInMemoryMetadata> DeltaLakeMetadataDeltaKernel::buildStorageMetadataFromState(
-    const DataLakeTableStateSnapshot & state, ContextPtr context) const
+    const DataLakeTableStateSnapshot & state, ContextPtr) const
 {
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     chassert(std::holds_alternative<DeltaLake::TableStateSnapshot>(state));
     const auto & delta_state = std::get<DeltaLake::TableStateSnapshot>(state);
     auto snapshot = getTableSnapshot(static_cast<SnapshotVersion>(delta_state.version));
@@ -337,7 +328,6 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     StorageMetadataPtr storage_metadata_snapshot,
     ContextPtr context) const
 {
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     logMetadataFiles(context);
 
     FailPointInjection::pauseFailPoint(FailPoints::delta_lake_metadata_iterate_pause);
@@ -361,7 +351,6 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const
 {
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, local_context);
     const auto & settings = local_context->getSettingsRef();
     if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
         start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
@@ -415,24 +404,6 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
 {
     if (physical_names_map.empty())
         return type;
-
-    /// The fields of a struct inside an array or a map have physical names of their own. The schema visitor
-    /// stores them under the special names the kernel gives to an array element and to a map key and value,
-    /// and, as the element, key and value have no physical names, without a physical parent prefix.
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-    {
-        return std::make_shared<DataTypeArray>(replaceTypeNamesToPhysicalRecursively(
-            array_type->getNestedType(), DeltaLake::appendToLogicalPath(parent_logical_name, "array_element"), "", physical_names_map));
-    }
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
-    {
-        return std::make_shared<DataTypeMap>(
-            replaceTypeNamesToPhysicalRecursively(
-                map_type->getKeyType(), DeltaLake::appendToLogicalPath(parent_logical_name, "map_key"), "", physical_names_map),
-            replaceTypeNamesToPhysicalRecursively(
-                map_type->getValueType(), DeltaLake::appendToLogicalPath(parent_logical_name, "map_value"), "", physical_names_map));
-    }
 
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
     if (!tuple_type || !tuple_type->hasExplicitNames())
@@ -598,38 +569,17 @@ static String getPhysicalSubcolumnName(const DataTypePtr & type, const DataTypeP
         ErrorCodes::LOGICAL_ERROR, "Cannot find subcolumn {} of type {} in type {}", subcolumn_name, type->getName(), physical_type->getName());
 }
 
-/// A requested subcolumn can come as an ordinary column named by its full name. If the name is not a struct field with
-/// a logical path in `physical_names_map`, e.g. a field of a struct inside an array or a map (`array_of_structs.field`),
-/// returns it as a subcolumn of its table column, so that its physical name is derived from the physical type.
-static NameAndTypePair resolveSubcolumn(
-    const NameAndTypePair & column,
-    const ColumnsDescription & table_columns,
-    const NamesAndTypesList & delta_schema,
-    const NameToNameMap & physical_names_map)
-{
-    if (column.isSubcolumn() || physical_names_map.empty()
-        || physical_names_map.contains(getLogicalPath(column.name, table_columns, delta_schema, physical_names_map)))
-        return column;
-
-    auto found = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name);
-    if (!found || !found->isSubcolumn())
-        return column;
-
-    return NameAndTypePair(found->getNameInStorage(), found->getSubcolumnName(), found->getTypeInStorage(), column.type);
-}
-
 /// Returns physical column and whether it is readable from data file.
 /// We do not change given column actual type,
 /// but can only change names inside the type (in case of Tuple).
 static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
-    const NameAndTypePair & requested_column,
+    const NameAndTypePair & column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
     const ColumnsDescription & table_columns,
     const NamesAndTypesList & delta_schema,
     LoggerPtr log)
 {
-    const auto column = resolveSubcolumn(requested_column, table_columns, delta_schema, physical_names_map);
     const auto logical_path = getLogicalPath(column.getNameInStorage(), table_columns, delta_schema, physical_names_map);
     auto physical_name_in_storage = DeltaLake::getPhysicalName(logical_path, physical_names_map);
     auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), logical_path, physical_name_in_storage, physical_names_map);
@@ -663,10 +613,6 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
         result_column = NameAndTypePair(physical_name_in_storage, physical_type_in_storage);
     }
 
-    /// Keep the form of the requested column: a subcolumn requested by its full name is read by its full physical name.
-    if (!requested_column.isSubcolumn() && result_column.isSubcolumn())
-        result_column = NameAndTypePair(result_column.name, result_column.type);
-
     return {result_column, /* readable */read_schema_column.has_value()};
 }
 
@@ -677,8 +623,6 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     bool supports_subset_of_columns,
     bool /*supports_tuple_elements*/)
 {
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
-
     /// The below code is similar to what can be found in `prepareReadingFromFormat.cpp`,
     /// but is adjusted for delta-lake.
     ReadFromFormatInfo info;
@@ -764,14 +708,12 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         /// Because format header cannot be empty.
         if (columns_to_read.empty())
         {
-            auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All));
+            auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
             NamesAndTypesList non_partition_columns;
             for (const auto & name_and_type : table_columns)
                 if (!partition_columns.contains(name_and_type.name))
                     non_partition_columns.push_back(name_and_type);
-            /// Partition columns are not read from the data files, so with only partition columns the format header stays empty.
-            columns_to_read.push_back(
-                ExpressionActions::getSmallestColumn(non_partition_columns.empty() ? table_columns : non_partition_columns).name);
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(non_partition_columns).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
@@ -807,9 +749,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     for (const auto & column : info.columns_description)
     {
         ColumnDescription physical_column = column;
-        physical_column.name = getPhysicalNameAndType(
-            NameAndTypePair(column.name, column.type), readable_columns_with_subcolumns, physical_names_map, storage_columns, delta_schema, log)
-            .first.name;
+        physical_column.name
+            = DeltaLake::getPhysicalName(getLogicalPath(column.name, storage_columns, delta_schema, physical_names_map), physical_names_map);
         physical_columns_description.add(std::move(physical_column));
     }
     info.columns_description = std::move(physical_columns_description);
@@ -823,7 +764,6 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
-    StorageMetadataPtr /*metadata_snapshot*/,
     const StorageID & table_id,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
@@ -831,7 +771,6 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage_, context);
     if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
     {
         throw Exception(
@@ -1019,8 +958,6 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
-
-    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, local_context);
 
     /// Columnless CREATE is allowed only to register/attach an existing table (schema read from the
     /// `_delta_log`); a new table needs an explicit schema.

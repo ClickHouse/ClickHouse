@@ -68,32 +68,31 @@ public:
     }
 
     /// Throws an exception if not found.
-    /// `is_replayed_definition` is passed on to `ITableFunction::setReplayedDefinition`.
-    [[nodiscard]] TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context, bool is_replayed_definition = false) const;
+    TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context) const;
 
     /// Returns nullptr if not found.
-    [[nodiscard]] TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;
+    TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;
 
-    [[nodiscard]] std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
-    [[nodiscard]] std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
-    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const;
-    [[nodiscard]] bool hasArgumentSecretsIgnoringCase(const String & name) const;
+    std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
+    std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
+    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const;
+    bool hasArgumentSecretsIgnoringCase(const String & name) const;
 
-    [[nodiscard]] bool isTableFunctionName(const std::string & name) const;
+    bool isTableFunctionName(const std::string & name) const;
 
     using TableFunctions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    [[nodiscard]] const TableFunctions & getAllTableFunctions() const { return table_functions; }
+    const TableFunctions & getAllTableFunctions() const { return table_functions; }
 
 private:
 
-    [[nodiscard]] const TableFunctions & getMap() const override { return table_functions; }
+    const TableFunctions & getMap() const override { return table_functions; }
 
-    [[nodiscard]] const TableFunctions & getCaseInsensitiveMap() const override { return case_insensitive_table_functions; }
+    const TableFunctions & getCaseInsensitiveMap() const override { return case_insensitive_table_functions; }
 
-    [[nodiscard]] String getFactoryName() const override { return "TableFunctionFactory"; }
+    String getFactoryName() const override { return "TableFunctionFactory"; }
 
-    [[nodiscard]] std::optional<FunctionDocumentation> tryGetDocumentationImpl(const String & name) const;
-    [[nodiscard]] std::optional<TableFunctionProperties> tryGetPropertiesImpl(const String & name) const;
+    std::optional<FunctionDocumentation> tryGetDocumentationImpl(const String & name) const;
+    std::optional<TableFunctionProperties> tryGetPropertiesImpl(const String & name) const;
 
     TableFunctions table_functions;
     TableFunctions case_insensitive_table_functions;

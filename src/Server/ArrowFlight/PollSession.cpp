@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 
 namespace DB
@@ -36,10 +37,19 @@ PollSession::PollSession(
     try
     {
         executor.emplace(block_io.pipeline);
-        auto schema_res = flightSchema(executor->getHeader(), query_context, schema_modifier);
-        if (!schema_res.ok())
-            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema: {}", schema_res.status().ToString());
-        schema = std::move(schema_res).ValueUnsafe();
+        schema = CHColumnToArrowColumn::calculateArrowSchema(
+            executor->getHeader().getColumnsWithTypeAndName(),
+            "Arrow",
+            nullptr,
+            arrowConversionSettings(query_context));
+
+        if (schema_modifier)
+        {
+            auto result = schema_modifier(schema);
+            if (!result.ok())
+                throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema: {} (schema: {})", result.status().ToString(), schema->ToString());
+            schema = result.ValueUnsafe();
+        }
     }
     catch (...)
     {
@@ -55,7 +65,7 @@ ContextPtr PollSession::queryContext() { return query_context; }
 
 ThreadGroupPtr PollSession::getThreadGroup() const { return thread_group; }
 
-const String & PollSession::getSchema() const { return schema; }
+std::shared_ptr<arrow::Schema> PollSession::getSchema() const { return schema; }
 
 bool PollSession::getNextBlock(Block & block)
 {

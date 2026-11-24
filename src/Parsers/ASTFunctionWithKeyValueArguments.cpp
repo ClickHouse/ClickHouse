@@ -3,7 +3,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -71,8 +70,7 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
 
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// The parser reads the key as one identifier and accepts any bare word, also a keyword (`TABLE`, `WHERE`).
-    ostr << backQuoteIfNotBareWord(Poco::toUpper(first)) << " ";
+    ostr << Poco::toUpper(first) << " ";
 
     if (second_with_brackets)
         ostr << "(";
@@ -175,8 +173,7 @@ void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
 
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// The parser reads the name as one identifier and accepts any bare word, also a keyword (`NULL`).
-    ostr << backQuoteIfNotBareWord(Poco::toUpper(name)) << (has_brackets ? "(" : "");
+    ostr << Poco::toUpper(name) << (has_brackets ? "(" : "");
     elements->format(ostr, settings, state, frame);
     ostr << (has_brackets ? ")" : "");
 }

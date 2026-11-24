@@ -41,17 +41,23 @@ namespace
 using URLFailoverOptions = std::vector<String>;
 using URLShardsWithFailover = std::vector<URLFailoverOptions>;
 
-URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const RemoteDescriptionCaller & caller)
+URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const String & func_name = "url")
 {
-    /// The limit is on the whole first argument: the failover options of all the comma-separated URLs
-    /// are summed up, and the number reported when it is exceeded is the cardinality of the whole
-    /// pattern, not of the URLs disclosed so far.
-    auto url_shards = parseRemoteDescriptionWithFailover(uri, max_addresses, caller);
+    auto disclosed_urls = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, func_name);
 
     URLShardsWithFailover result;
-    result.reserve(url_shards.size());
-    for (auto & url_shard : url_shards)
-        result.push_back(std::move(url_shard.replicas));
+    result.reserve(disclosed_urls.size());
+    size_t url_options_count = 0;
+
+    for (const auto & disclosed_url : disclosed_urls)
+    {
+        auto failover_options = parseRemoteDescription(disclosed_url, 0, disclosed_url.size(), '|', max_addresses, func_name);
+        if (url_options_count + failover_options.size() > max_addresses)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
+
+        url_options_count += failover_options.size();
+        result.push_back(std::move(failover_options));
+    }
 
     return result;
 }
@@ -103,16 +109,6 @@ void WebStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wi
     }
 }
 
-StorageWebConfiguration::StorageWebConfiguration()
-    : StorageWebConfiguration(tableFunctionURLCaller())
-{
-}
-
-StorageWebConfiguration::StorageWebConfiguration(RemoteDescriptionCaller glob_caller_)
-    : glob_caller(std::move(glob_caller_))
-{
-}
-
 StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
@@ -124,8 +120,7 @@ StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(cons
         .skip_empty_files = settings[Setting::engine_url_skip_empty_files],
         .list_object_keys_size = settings[Setting::glob_expansion_max_elements],
         .throw_on_zero_files_match = false,
-        .ignore_non_existent_file = false,
-        .skip_hidden_files = false};
+        .ignore_non_existent_file = false};
 }
 
 std::string StorageWebConfiguration::getPathInArchive() const
@@ -239,7 +234,7 @@ void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArgu
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 
     setNamespaceFromURL(context);
-    setPaths({path});
+    paths = {path};
     setPathForRead(path);
 }
 
@@ -283,8 +278,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
     const auto url_root_for_expansion = has_path ? url.substr(0, path_start + 1) : url.substr(0, path_end) + "/";
     const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : url.substr(query_or_fragment_pos);
-    const auto url_shards_with_failover = parseURLShardsWithFailover(
-        url_root_for_expansion + query_fragment_part, max_addresses, glob_caller);
+    const auto url_shards_with_failover = parseURLShardsWithFailover(url_root_for_expansion + query_fragment_part, max_addresses, "url");
 
     path.path = has_path ? url.substr(path_start, path_end - path_start) : String{};
     while (path.path.starts_with('/'))
@@ -321,7 +315,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
             String query_fragment;
             if (!uri.getRawQuery().empty())
-                query_fragment.append("?").append(uri.getRawQuery());
+                query_fragment = "?" + uri.getRawQuery();
             if (!uri.getFragment().empty())
                 query_fragment += "#" + uri.getFragment();
 

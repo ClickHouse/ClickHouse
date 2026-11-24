@@ -1,7 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <limits>
+#include <optional>
 #include <utility>
 
 #include <Common/Exception.h>
@@ -81,6 +84,40 @@ struct AggregateFunctionTimeseriesSortedValues
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove values from the sorted values of a time series window: they were not added");
 
         values.resize(kept);
+    }
+
+    /// R-7 (quantileExactInclusive) quantile of the values, with the Prometheus edge cases of the level: NaN gives NaN,
+    /// a level below 0 gives -Inf and a level above 1 gives +Inf. There is no result if there are no values.
+    std::optional<Float64> quantile(Float64 phi) const
+    {
+        if (values.empty())
+            return std::nullopt;
+
+        if (std::isnan(phi))
+            return std::numeric_limits<Float64>::quiet_NaN();
+        if (phi < 0.0)
+            return -std::numeric_limits<Float64>::infinity();
+        if (phi > 1.0)
+            return std::numeric_limits<Float64>::infinity();
+
+        const size_t n = values.size();
+        if (n == 1)
+            return static_cast<Float64>(values[0]);
+
+        /// rank = phi * (n - 1), interpolated between the neighbouring values.
+        const Float64 rank = phi * static_cast<Float64>(n - 1);
+        const size_t lower = static_cast<size_t>(std::floor(rank));
+        const size_t upper = static_cast<size_t>(std::ceil(rank));
+
+        /// An exact rank gives the sample itself. Prometheus has no such shortcut and computes `lower * 1 + upper * 0`,
+        /// which is NaN when either sample is infinite.
+        if (lower == upper)
+            return static_cast<Float64>(values[lower]);
+
+        /// The weighted form of Prometheus (`lower * (1 - weight) + upper * weight`) rather than `lower + weight * (upper - lower)`,
+        /// so that infinite samples give the infinity instead of `Inf - Inf = NaN`.
+        const Float64 weight = rank - static_cast<Float64>(lower);
+        return static_cast<Float64>(values[lower]) * (1.0 - weight) + static_cast<Float64>(values[upper]) * weight;
     }
 };
 

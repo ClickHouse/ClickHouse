@@ -60,15 +60,13 @@ public:
 
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
 
-    /// A single queue has no sub-queues to choose between, so `reservee_queue_type` is ignored.
-    EvictionInfoPtr collectEvictionInfo( /// NOLINT
+    EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin,
-        const CacheStateGuard::Lock &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
+        const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
         size_t size,
@@ -101,7 +99,7 @@ public:
 
     void sealStructure() { structure_sealed = true; }
 
-    bool collectCandidatesForEviction( /// NOLINT
+    bool collectCandidatesForEviction(
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -110,17 +108,7 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
-
-    /// `collectCandidatesForEviction` which gives up instead of waiting for the priority
-    /// read lock: returns false when a writer holds it or waits for it.
-    bool tryCollectCandidatesForEviction(
-        EvictionInfo & eviction_info,
-        FileCacheReserveStat & stat,
-        EvictionCandidates & res,
-        EvictionCursor eviction_cursor,
-        size_t max_candidates_size);
+        CacheStateGuard &) override;
 
     bool tryIncreasePriority(
         Iterator & iterator,
@@ -202,17 +190,6 @@ private:
 
     size_t removeInvalidatedEntries(size_t max_batch) override;
 
-    /// The walk itself; the callers release the lock before logging a failure.
-    bool collectCandidatesForEvictionImpl(
-        EvictionInfo & eviction_info,
-        FileCacheReserveStat & stat,
-        EvictionCandidates & res,
-        EvictionCursor eviction_cursor,
-        size_t max_candidates_size,
-        const CachePriorityGuard::ReadLock & lock);
-
-    void logFailedToCollectCandidates(const EvictionInfo & eviction_info, const FileCacheReserveStat & stat) const;
-
     /// Throws if `sealStructure` was called. Called from every operation which mutates or reads
     /// `queue`, so a wrapper missing an override throws instead of silently using the sealed, unused base queue.
     void assertNotSealed(std::string_view method) const;
@@ -226,7 +203,6 @@ private:
     /// rescanning from the head
     LRUQueue::iterator reserve_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     LRUQueue::iterator background_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
-    LRUQueue::iterator promotion_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
 
     /// Select the cursor member for `cursor`. `FromHead` has no cursor and must not be passed.
@@ -314,9 +290,9 @@ public:
     LRUIterator & operator =(const LRUIterator & other);
     bool operator ==(const LRUIterator & other) const;
 
-    [[nodiscard]] EntryPtr getEntry() const override;
+    EntryPtr getEntry() const override;
 
-    [[nodiscard]] bool isValid(const CachePriorityGuard::WriteLock &) const override;
+    bool isValid(const CachePriorityGuard::WriteLock &) const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
@@ -330,14 +306,14 @@ public:
 
     void decrementSize(size_t size) override;
 
-    [[nodiscard]] QueueEntryType getType() const override { return QueueEntryType::LRU; }
+    QueueEntryType getType() const override { return QueueEntryType::LRU; }
 
-    [[nodiscard]] CachePriorityGuard & getPriorityGuard() const override { return cache_priority->getPriorityGuard(); }
+    CachePriorityGuard & getPriorityGuard() const override { return cache_priority->getPriorityGuard(); }
 
-    [[nodiscard]] LRUQueue::iterator get() const { return iterator; }
+    LRUQueue::iterator get() const { return iterator; }
 
 private:
-    bool assertValid() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    bool assertValid() const;
 
     void invalidateImpl() noexcept;
 

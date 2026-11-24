@@ -37,7 +37,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregationCall())
+        if (!function_node || !function_node->isAggregateFunction())
             return;
 
         if (!assert_no_aggregates_place_message.empty())
@@ -53,7 +53,7 @@ public:
         has_aggregate_functions = true;
     }
 
-    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (only_check && has_aggregate_functions)
             return false;
@@ -62,7 +62,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    [[nodiscard]] bool hasAggregateFunctions() const
+    bool hasAggregateFunctions() const
     {
         return has_aggregate_functions;
     }
