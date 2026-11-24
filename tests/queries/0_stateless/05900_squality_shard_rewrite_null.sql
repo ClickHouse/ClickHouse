@@ -45,6 +45,17 @@ SETTINGS optimize_skip_unused_shards = 0, optimize_skip_unused_shards_rewrite_in
 SELECT count() FROM squality_shard_signed_zero_dist WHERE x IN (toFloat64(-0.))
 SETTINGS optimize_skip_unused_shards = 1, optimize_skip_unused_shards_rewrite_in = 0;
 
+SELECT count() FROM
+    (SELECT x FROM squality_shard_signed_zero_dist SETTINGS in_null_as_unknown = 0)
+WHERE x IN (toFloat64(-0.))
+SETTINGS in_null_as_unknown = 1, optimize_skip_unused_shards = 0,
+    optimize_skip_unused_shards_rewrite_in = 0;
+SELECT count() FROM
+    (SELECT x FROM squality_shard_signed_zero_dist SETTINGS in_null_as_unknown = 0)
+WHERE x IN (toFloat64(-0.))
+SETTINGS in_null_as_unknown = 1, optimize_skip_unused_shards = 1,
+    optimize_skip_unused_shards_rewrite_in = 0;
+
 DROP TABLE squality_shard_signed_zero_dist;
 DROP TABLE shard_0.squality_shard_signed_zero;
 DROP TABLE shard_1.squality_shard_signed_zero;

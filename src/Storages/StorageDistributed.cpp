@@ -34,6 +34,9 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Functions/IFunction.h>
+
+#include <algorithm>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
@@ -2241,12 +2244,16 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-    /// The opt-in comparison mode can match equivalent values with distinct
-    /// sharding representations, such as positive and negative floating zero.
-    if (local_context->getSettingsRef()[Setting::in_null_as_unknown])
+    if (!query_info.filter_actions_dag)
         return nullptr;
 
-    if (!query_info.filter_actions_dag)
+    /// The opt-in comparison mode can match equivalent values with distinct
+    /// sharding representations, such as positive and negative floating zero.
+    if (local_context->getSettingsRef()[Setting::in_null_as_unknown]
+        || std::ranges::any_of(query_info.filter_actions_dag->getNodes(), [](const auto & node)
+        {
+            return node.function_base && node.function_base->useNullAsUnknownSemanticsForIn();
+        }))
         return nullptr;
 
     size_t limit = local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit];

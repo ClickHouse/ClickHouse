@@ -77,7 +77,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    BlockIO createStreamForQuery(const String & query);
+    BlockIO createStreamForQuery(const String & query, bool generated_tuple_membership = false);
 
     std::string doInvalidateQuery(const std::string & request) const;
 

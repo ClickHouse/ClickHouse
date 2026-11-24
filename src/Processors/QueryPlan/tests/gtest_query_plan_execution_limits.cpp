@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
@@ -12,6 +13,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -32,6 +34,7 @@ void registerExpressionStep(QueryPlanStepRegistry & registry);
 namespace DB::ErrorCodes
 {
 extern const int SUPPORT_IS_DISABLED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -77,7 +80,7 @@ QueryPlan makeSourcePlan()
     return plan;
 }
 
-QueryPlan makeSetPlan(bool source_has_null)
+QueryPlan makeSetPlan(bool source_has_null, bool captured_in_mode = false)
 {
     tryRegisterExpressionStep();
 
@@ -91,6 +94,17 @@ QueryPlan makeSetPlan(bool source_has_null)
     auto set_column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
     const auto & set_node = actions.addColumn(std::move(set_column), std::make_shared<DataTypeSet>(), "set");
     actions.getOutputs().push_back(&set_node);
+    if (captured_in_mode)
+    {
+        tryRegisterFunctions();
+        auto context = Context::createCopy(getContext().context);
+        context->setSetting("in_null_as_unknown", Field(UInt64{1}));
+        const auto & nullable_probe = actions.addFunction(
+            FunctionFactory::instance().get("toNullable", context), {actions.getInputs().front()}, {});
+        const auto & membership = actions.addFunction(
+            FunctionFactory::instance().get("in", context), {&nullable_probe, &set_node}, {});
+        actions.getOutputs().push_back(&membership);
+    }
 
     auto plan = makeSourcePlan();
     plan.addStep(std::make_unique<ExpressionStep>(makeHeader(), std::move(actions)));
@@ -179,6 +193,24 @@ TEST(QueryPlanExecutionLimits, SetSourceStateRequiresVersion22)
     auto new_plan_and_sets = QueryPlan::deserialize(new_input, getContext().context, 0);
     EXPECT_EQ(new_plan_and_sets.sets_from_tuple.size(), 1);
     ASSERT_NO_THROW(QueryPlan::makeSets(std::move(new_plan_and_sets), getContext().context));
+}
+
+TEST(QueryPlanExecutionLimits, CapturedMembershipModeRequiresVersion22)
+{
+    auto plan = makeSetPlan(false, true);
+    WriteBufferFromOwnString old_format;
+    try
+    {
+        plan.serialize(old_format, 21);
+        FAIL() << "Version 21 accepted a captured membership mode that its reader ignores";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    WriteBufferFromOwnString new_format;
+    ASSERT_NO_THROW(plan.serialize(new_format, 22));
 }
 
 TEST(QueryPlanExecutionLimits, ReplaceNodeWithPlanMergesConcurrencyControl)

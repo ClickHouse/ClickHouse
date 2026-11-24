@@ -143,7 +143,7 @@ BlockIO ClickHouseDictionarySource::loadIds(const VectorWithMemoryTracking<UInt6
 BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
-    return createStreamForQuery(query);
+    return createStreamForQuery(query, true);
 }
 
 bool ClickHouseDictionarySource::isModified() const
@@ -201,7 +201,7 @@ ContextMutablePtr ClickHouseDictionarySource::createQueryContext() const
     return context_copy;
 }
 
-BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
+BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query, bool generated_tuple_membership)
 {
     BlockIO io;
 
@@ -209,6 +209,10 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
     auto empty_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
 
     auto context_copy = createQueryContext();
+    /// Generated compound-key membership is an internal lookup with its
+    /// established comparison mode, independent of dictionary user settings.
+    if (generated_tuple_membership)
+        context_copy->setSetting("in_null_as_unknown", Field(0));
 
     checkQueryIsSelect(query, "Query for ClickHouse dictionary", "Only SELECT query can be used as a dictionary source");
 

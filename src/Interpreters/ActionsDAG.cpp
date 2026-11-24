@@ -74,6 +74,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -5444,7 +5445,13 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         {
             column_flags |= 8;
             if (node.function_base->useNullAsUnknownSemanticsForIn())
+            {
+                if (registry.query_plan_version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot serialize captured `IN` semantics for query plan version {}; version {} or newer is required",
+                        registry.query_plan_version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE);
                 column_flags |= 16;
+            }
         }
 
         writeIntBinary(column_flags, out);
