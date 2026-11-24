@@ -24,7 +24,9 @@
 #include <IO/S3/getAvailabilityZone.h>
 #include <chrdkafka_conf_sensitive.h>
 #include <algorithm>
+#include <charconv>
 #include <csignal>
+#include <limits>
 #include <unordered_set>
 
 namespace CurrentMetrics
@@ -238,6 +240,24 @@ String toKafkaPropertyName(const String & key)
     return name;
 }
 
+/// Rejects the values of the allowed properties that librdkafka accepts but cannot use.
+void checkSQLKafkaPropertyValue(const String & name, const String & value)
+{
+    if (name != "topic.metadata.propagation.max.ms")
+        return;
+
+    /// librdkafka accepts up to 3600000 but converts the value to microseconds in a 32-bit `int`: larger values overflow.
+    /// The format is stricter than the one of librdkafka (which reads a prefix of the value with `strtol`),
+    /// so the number that librdkafka reads is never greater than the number checked here.
+    static constexpr UInt64 max_value = std::numeric_limits<int>::max() / 1000;
+    UInt64 parsed = 0;
+    const char * end = value.data() + value.size();
+    const auto [pos, error] = std::from_chars(value.data(), end, parsed);
+    if (error != std::errc() || pos != end || parsed > max_value)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Kafka property `{}` must be an integer between 0 and {}, got `{}`", name, max_value, value);
+}
+
 /// Only properties reviewed for use without access to server-local resources may be set from SQL.
 /// Match the exact name passed to librdkafka, including any `topic.` prefix.
 void checkSQLKafkaProperty(const String & name, const String & value)
@@ -340,7 +360,10 @@ void checkSQLKafkaProperty(const String & name, const String & value)
     };
     static_assert(std::ranges::is_sorted(allowed_properties));
     if (std::ranges::binary_search(allowed_properties, std::string_view(name)))
+    {
+        checkSQLKafkaPropertyValue(name, value);
         return;
+    }
 
     /// `probe` is not a path: librdkafka searches a fixed list of the standard locations of CA certificates.
     if (value == "probe" && (name == "ssl.ca.location" || name == "https.ca.location"))
