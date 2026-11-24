@@ -25,7 +25,7 @@ do
         SELECT k % 10 AS g, count() FROM t GROUP BY g FORMAT Null
         SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1,
             max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0.5" 2>&1 \
-        | grep -c "Adjusting memory limit before external aggregation"
+        | grep -c "Adjusting spill threshold with .*max_bytes_ratio_before_external_group_by"
 done
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
