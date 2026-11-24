@@ -21,3 +21,6 @@ cached	0
 65536	16777216
 t.v	65536
 65536	16777216
+--- the blocks of the variant are not decoded ahead of a slow consumer
+65536	16777216
+65536	16777216

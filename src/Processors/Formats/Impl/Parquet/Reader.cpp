@@ -29,6 +29,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/TypeTree.h>
 #include <Common/FieldAccurateComparison.h>
@@ -1429,6 +1430,23 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
             for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
                 primitive_columns.at(i).enum_bytes_per_value
                     = std::max(primitive_columns.at(i).enum_bytes_per_value, static_cast<double>(enum_bytes_per_value));
+        /// A variant read as `Variant` (see `decodeVariantColumn`) takes as much as its requested members, which may be
+        /// much wider than the binary value they are converted from, e.g. a `FixedString(256)` for a string of one byte.
+        /// The widest fixed-size member is counted for every value, with a discriminator and an offset of
+        /// `ColumnVariant`: otherwise the read scheduler takes the blocks for small and decodes all of them ahead of
+        /// a slow consumer. The variable-size members are not counted: it would not be known what to count.
+        if (!info.is_missing_column && info.primitive_start != info.primitive_end)
+        {
+            if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(removeNullable(info.input_type).get()))
+            {
+                size_t max_member_bytes = 0;
+                for (const DataTypePtr & member : variant_type->getVariants())
+                    if (member->haveMaximumSizeOfValue())
+                        max_member_bytes = std::max(max_member_bytes, member->getMaximumSizeOfValueInMemory());
+                primitive_columns.at(info.primitive_start).cast_bytes_per_value
+                    += static_cast<double>(max_member_bytes + sizeof(ColumnVariant::Discriminator) + sizeof(ColumnVariant::Offset));
+            }
+        }
         if (!info.needs_cast || info.is_missing_column || info.primitive_start == info.primitive_end)
             continue;
         const DataTypePtr output_type = removeNullable(info.output_type);

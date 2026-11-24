@@ -10,7 +10,8 @@
 #   larger than the default value of the type. The block size that `input_format_parquet_prefer_block_bytes` asks for
 #   counts it as well;
 # - a variant read as a `Variant` type takes as much as its requested members, e.g. a `FixedString(256)` for a string of
-#   one byte, so its chunk is of unknown size, also when the variant is inside a tuple.
+#   one byte, so its chunk is of unknown size, also when the variant is inside a tuple. The read scheduler counts the
+#   widest member as well, so that the blocks are not all decoded ahead of a slow consumer.
 # Each case runs in one `clickhouse-local`, which has a columns cache of its own, empty at the start.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -105,3 +106,14 @@ run_query "SELECT count(), sum(length(variantElement(v, 'FixedString(256)')))
 echo "--- the same variant inside a tuple"
 run_query "SELECT count(), sum(length(variantElement(t.v, 'FixedString(256)')))
     FROM file('${FILE}', Parquet, 't Tuple(v Variant(FixedString(256), UInt8))')" 16Mi
+
+echo "--- the blocks of the variant are not decoded ahead of a slow consumer"
+# The read scheduler counts the widest member of the `Variant` in the size of a block. Otherwise it takes the blocks for
+# small and decodes all of them, 16 MiB, while the query processes the first ones. The delay is per block.
+local_query "
+    SELECT count(), sum(length(variantElement(v, 'FixedString(256)')))
+    FROM file('${FILE}', Parquet, 'v Variant(FixedString(256), UInt8)') WHERE NOT ignore(sleep(0.005))
+    SETTINGS ${BLOCKS}, max_memory_usage = '16Mi', use_columns_cache = 0;
+    SELECT count(), sum(length(variantElement(t.v, 'FixedString(256)')))
+    FROM file('${FILE}', Parquet, 't Tuple(v Variant(FixedString(256), UInt8))') WHERE NOT ignore(sleep(0.005))
+    SETTINGS ${BLOCKS}, max_memory_usage = '16Mi', use_columns_cache = 0"
