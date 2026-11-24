@@ -106,62 +106,41 @@ namespace
     return (isFloat(left) && isDecimal(right)) || (isDecimal(left) && isFloat(right));
 }
 
-[[nodiscard]] bool hasCompoundNumericTypeMismatch(const DataTypePtr & left_type, const DataTypePtr & right_type)
-{
-    const auto left = removeNullable(removeLowCardinality(left_type));
-    const auto right = removeNullable(removeLowCardinality(right_type));
-    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
-    {
-        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
-            return hasCompoundNumericTypeMismatch(left_array->getNestedType(), right_array->getNestedType());
-    }
-    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
-    {
-        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
-            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-        {
-            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
-                if (hasCompoundNumericTypeMismatch(left_tuple->getElements()[i], right_tuple->getElements()[i]))
-                    return true;
-        }
-    }
-    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
-    {
-        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
-            return hasCompoundNumericTypeMismatch(left_map->getKeyType(), right_map->getKeyType())
-                || hasCompoundNumericTypeMismatch(left_map->getValueType(), right_map->getValueType());
-    }
-    return isNumber(left) && isNumber(right) && !left->equals(*right);
-}
-
-[[nodiscard]] bool hasProbeCarrierAgainstScalarKey(const DataTypePtr & probe_type, const DataTypePtr & key_type)
+[[nodiscard]] bool hasUnverifiedPreparedKeyComparison(
+    const DataTypePtr & probe_type, const DataTypePtr & key_type, bool nested = false)
 {
     const auto probe = removeNullable(removeLowCardinality(probe_type));
     const auto key = removeNullable(removeLowCardinality(key_type));
-    if (isDynamic(probe) || isVariant(probe))
-        return isNumber(key) || isStringOrFixedString(key);
     if (const auto * probe_array = typeid_cast<const DataTypeArray *>(probe.get()))
     {
         if (const auto * key_array = typeid_cast<const DataTypeArray *>(key.get()))
-            return hasProbeCarrierAgainstScalarKey(probe_array->getNestedType(), key_array->getNestedType());
+            return hasUnverifiedPreparedKeyComparison(probe_array->getNestedType(), key_array->getNestedType(), true);
     }
     if (const auto * probe_tuple = typeid_cast<const DataTypeTuple *>(probe.get()))
     {
-        if (const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get());
-            key_tuple && probe_tuple->getElements().size() == key_tuple->getElements().size())
+        if (const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get()))
         {
+            if (probe_tuple->getElements().size() != key_tuple->getElements().size()
+                || (probe_tuple->hasExplicitNames() && key_tuple->hasExplicitNames()
+                    && probe_tuple->getElementNames() != key_tuple->getElementNames()))
+                return true;
             for (size_t i = 0; i < probe_tuple->getElements().size(); ++i)
-                if (hasProbeCarrierAgainstScalarKey(probe_tuple->getElements()[i], key_tuple->getElements()[i]))
+                if (hasUnverifiedPreparedKeyComparison(probe_tuple->getElements()[i], key_tuple->getElements()[i], true))
                     return true;
+            return false;
         }
     }
     if (const auto * probe_map = typeid_cast<const DataTypeMap *>(probe.get()))
     {
         if (const auto * key_map = typeid_cast<const DataTypeMap *>(key.get()))
-            return hasProbeCarrierAgainstScalarKey(probe_map->getKeyType(), key_map->getKeyType())
-                || hasProbeCarrierAgainstScalarKey(probe_map->getValueType(), key_map->getValueType());
+            return hasUnverifiedPreparedKeyComparison(probe_map->getKeyType(), key_map->getKeyType(), true)
+                || hasUnverifiedPreparedKeyComparison(probe_map->getValueType(), key_map->getValueType(), true);
     }
-    return false;
+
+    /// A prepared set hashes values after converting them to its key type. Only
+    /// identical types, and top-level numeric pairs checked below for exactness,
+    /// have a verified equality domain shared with row-wise membership.
+    return !probe->equals(*key) && (nested || !isNumber(probe) || !isNumber(key));
 }
 
 [[nodiscard]] bool hasCompoundStringConversionLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type)
@@ -242,69 +221,6 @@ namespace
     return false;
 }
 
-[[nodiscard]] bool hasMixedStringDomain(const DataTypePtr & left_type, const DataTypePtr & right_type)
-{
-    const auto left = removeNullable(removeLowCardinality(left_type));
-    const auto right = removeNullable(removeLowCardinality(right_type));
-    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
-    {
-        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
-            return hasMixedStringDomain(left_array->getNestedType(), right_array->getNestedType());
-    }
-    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
-    {
-        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
-            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-        {
-            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
-                if (hasMixedStringDomain(left_tuple->getElements()[i], right_tuple->getElements()[i]))
-                    return true;
-        }
-    }
-    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
-    {
-        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
-            return hasMixedStringDomain(left_map->getKeyType(), right_map->getKeyType())
-                || hasMixedStringDomain(left_map->getValueType(), right_map->getValueType());
-    }
-    const bool left_identifier = isUUID(left) || isIPv4(left) || isIPv6(left);
-    const bool right_identifier = isUUID(right) || isIPv4(right) || isIPv6(right);
-    return (isStringOrFixedString(left) && (isNumber(right) || isBool(right) || isEnum(right) || right_identifier))
-        || (isStringOrFixedString(right) && (isNumber(left) || isBool(left) || isEnum(left) || left_identifier))
-        || (isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right));
-}
-
-[[nodiscard]] bool hasNamedTupleLayoutMismatch(const DataTypePtr & left_type, const DataTypePtr & right_type)
-{
-    const auto left = removeNullable(removeLowCardinality(left_type));
-    const auto right = removeNullable(removeLowCardinality(right_type));
-    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
-    {
-        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
-            return hasNamedTupleLayoutMismatch(left_array->getNestedType(), right_array->getNestedType());
-    }
-    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
-    {
-        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get()))
-        {
-            if (left_tuple->hasExplicitNames() && right_tuple->hasExplicitNames()
-                && left_tuple->getElementNames() != right_tuple->getElementNames())
-                return true;
-            if (left_tuple->getElements().size() == right_tuple->getElements().size())
-                for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
-                    if (hasNamedTupleLayoutMismatch(left_tuple->getElements()[i], right_tuple->getElements()[i]))
-                        return true;
-        }
-    }
-    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
-    {
-        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
-            return hasNamedTupleLayoutMismatch(left_map->getKeyType(), right_map->getKeyType())
-                || hasNamedTupleLayoutMismatch(left_map->getValueType(), right_map->getValueType());
-    }
-    return false;
-}
-
 [[nodiscard]] bool hasNumericTemporalEnumOrIPPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -334,34 +250,6 @@ namespace
     const bool right_temporal = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right);
     return (isNumber(left) && (right_temporal || isEnum(right) || isIPv4(right) || isIPv6(right)))
         || ((left_temporal || isEnum(left) || isIPv4(left) || isIPv6(left)) && isNumber(right));
-}
-
-[[nodiscard]] bool hasMismatchedEnumPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
-{
-    const auto left = removeNullable(removeLowCardinality(left_type));
-    const auto right = removeNullable(removeLowCardinality(right_type));
-    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
-    {
-        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
-            return hasMismatchedEnumPair(left_array->getNestedType(), right_array->getNestedType());
-    }
-    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
-    {
-        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
-            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-        {
-            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
-                if (hasMismatchedEnumPair(left_tuple->getElements()[i], right_tuple->getElements()[i]))
-                    return true;
-        }
-    }
-    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
-    {
-        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
-            return hasMismatchedEnumPair(left_map->getKeyType(), right_map->getKeyType())
-                || hasMismatchedEnumPair(left_map->getValueType(), right_map->getValueType());
-    }
-    return isEnum(left) && isEnum(right) && !left->equals(*right);
 }
 
 [[nodiscard]] bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
@@ -1172,49 +1060,13 @@ public:
         {
             const auto left_type = removeNullable(removeLowCardinality(left_arg.type));
             const auto key_type = removeNullable(removeLowCardinality(set_types[0]));
-            const bool mixed_temporal_types = !left_type->equals(*key_type)
-                && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_type)
-                    || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
-            const bool mixed_nested_calendar_types = (isArray(left_type) || isMap(left_type) || isTuple(left_type))
-                && hasNestedCalendarDateInComparison(left_type, key_type);
-            const bool mixed_numeric_temporal_enum_or_ip_types = hasNumericTemporalEnumOrIPPair(left_type, key_type);
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !left_type->equals(*key_type);
             /// A set containing only `NULL` has no key whose type-sensitive hash
             /// could miss a match. Leave it to the ordinary unknown-result handling.
             const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
-            const bool mixed_string_domain = hasMixedStringDomain(left_type, key_type);
-            if (hasProbeCarrierAgainstScalarKey(left_type, key_type) && !only_null_key)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Setting 'in_null_as_unknown' does not yet support comparing a {} probe with a scalar prepared set of {} in function {}",
-                    left_arg.type->getName(), set_types[0]->getName(), getName());
-            if (!isDynamic(left_type) && !isVariant(left_type)
-                && (isDynamic(key_type) || isVariant(key_type) || hasCompoundCarrierForIn(left_type, key_type))
-                && !only_null_key)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
-                    left_arg.type->getName(), set_types[0]->getName(), getName());
-            if ((mixed_temporal_types || mixed_nested_calendar_types || mixed_numeric_temporal_enum_or_ip_types
-                    || hasMismatchedEnumPair(left_type, key_type))
-                && !only_null_key)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
-                    left_arg.type->getName(), set_types[0]->getName(), getName());
-            if (mixed_string_domain && !only_null_key)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
-                    left_arg.type->getName(), set_types[0]->getName(), getName());
-            if (hasNamedTupleLayoutMismatch(left_type, key_type) && !only_null_key)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
-                    left_arg.type->getName(), set_types[0]->getName(), getName());
-            if ((isArray(left_type) || isMap(left_type) || isTuple(left_type))
-                && hasCompoundNumericTypeMismatch(left_type, key_type) && !only_null_key)
+            if ((hasUnverifiedPreparedKeyComparison(left_type, key_type)
+                    || hasCompoundCarrierForIn(left_type, key_type)) && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
