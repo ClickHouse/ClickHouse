@@ -185,7 +185,8 @@ TEST(ActionsDAGDeserialization, NestedLambda)
 {
     auto restored = deserializeDag(lambdaStream(plusStream("x", false, {1})));
     ASSERT_EQ(restored.getOutputs().size(), 1);
-    EXPECT_EQ(restored.getOutputs()[0]->function_base->getName(), "lambda");
+    /// The stream gives the lambda the name `lambda`, but the name of a lambda is composed of its signature.
+    EXPECT_EQ(restored.getOutputs()[0]->function_base->getName(), "Capture[](UInt8) -> UInt16");
 
     expectRejected(lambdaStream(plusStream("x", true, {0})));
 }
