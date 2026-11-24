@@ -130,7 +130,6 @@ class WriteBuffer;
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
     M(CLASS_NAME, JoinOrderConflictDetector) \
-    M(CLASS_NAME, HashJoinLayout) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
@@ -208,7 +207,7 @@ struct Settings
     FlatStringMap changedToFlatMap(bool show_secrets) const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
-    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
+    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT, bool skip_invalid_values = false);
     /// Equivalent to Settings().write(out, <any format>) but faster.
     static void writeEmpty(WriteBuffer & out);
 

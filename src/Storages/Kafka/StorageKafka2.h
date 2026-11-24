@@ -228,7 +228,6 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
-    UInt64 getLocksRefreshPolls() const;
     size_t getSchemaRegistrySkipBytes() const;
 
     enum class StallKind : uint8_t

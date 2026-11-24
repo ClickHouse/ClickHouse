@@ -263,6 +263,11 @@ StorageMergeTree::StorageMergeTree(
 
     increment.set(getMaxBlockNumber());
 
+    /// Block numbers restart from the parts on disk, so new parts can get the names of removed ones,
+    /// which the query condition cache still holds verdicts for.
+    if (mode == LoadingStrictnessLevel::ATTACH && getStorageID().hasUUID())
+        getContext()->clearQueryConditionCache();
+
     loadMutations();
     loadDeduplicationLog();
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
@@ -455,16 +460,6 @@ std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) cons
 {
     chassert(local_context);
 
-    /// Each part's rows and its bitmap come from one read snapshot, so the count matches a `SELECT`'s.
-    if (hasUniqueKey())
-    {
-        const auto uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-        UInt64 res = 0;
-        for (const auto & part : getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID()))
-            res += uk_read_snapshot->liveRows(*part);
-        return res;
-    }
-
     UInt64 res = 0;
     if (local_context->getCurrentTransaction())
     {
@@ -485,15 +480,8 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 {
     chassert(local_context);
 
-    /// Guarded, so a plain count on a table without a unique key does not start a transaction
-    /// as a side effect.
-    DeleteBitmapSnapshotPtr uk_read_snapshot;
-    if (hasUniqueKey())
-        uk_read_snapshot = makeDeleteBitmapSnapshot(local_context);
-    auto parts = uk_read_snapshot
-        ? getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID())
-        : getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_read_snapshot.get());
+    auto parts = getVisibleDataPartsVector(local_context);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
@@ -1563,6 +1551,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     context_copy->setPartitionIdToMaxBlock(getStorageID().uuid, std::move(partition_id_to_max_block));
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
+
+    /// A snapshot cached by `enable_shared_storage_snapshot_in_query` before the wait for committing
+    /// inserts above (e.g. by the validation of `IN` operands in `InterpreterUpdateQuery`) would hide
+    /// the parts committed during the wait from the update. See `StorageReplicatedMergeTree::updateLightweight`.
+    discardSharedStorageSnapshot(context_copy);
 
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
@@ -3623,22 +3616,22 @@ void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVect
         if (!not_removed_parts.empty())
         {
             /// Put the warning into the error returned to the client as well, because only a manual detach fixes it.
-            auto warning = PreformattedMessage::create("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
+            String warning = fmt::format("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
                 " parts after a restart, which can make the table fail to load. Detach them manually.",
                 fmt::join(not_removed_parts, ", "));
-            LOG_ERROR(log, warning);
+            LOG_ERROR(log, "{}", warning);
             try
             {
                 throw;
             }
             catch (Exception & e)
             {
-                e.addMessage(warning.text);
+                e.addMessage(warning);
                 throw;
             }
             catch (...)
             {
-                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning.text);
+                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning);
             }
         }
     }
@@ -4200,7 +4193,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         {
             .txn = local_context->getCurrentTransaction(),
             .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
-            .temporary_data = local_context->getTempDataOnDisk(),
         };
         if (replace)
         {
@@ -4416,7 +4408,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
-            .temporary_data = local_context->getTempDataOnDisk(),
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(

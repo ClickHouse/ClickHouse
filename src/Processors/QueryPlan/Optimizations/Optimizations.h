@@ -12,6 +12,7 @@ class SipHash;
 namespace DB
 {
 
+class AggregatingStep;
 class JoinStepLogical;
 class ReadFromMergeTree;
 
@@ -57,7 +58,6 @@ struct Optimization
         bool use_skip_indexes_for_top_k{};
         bool use_top_k_dynamic_filtering{};
         bool use_top_k_dynamic_filtering_for_variable_length_types{};
-        bool use_top_k_dynamic_filtering_for_single_string_sort_column{};
         size_t max_limit_for_top_k_optimization{};
         bool use_skip_indexes_on_data_read{};
         bool read_in_order{};
@@ -73,6 +73,8 @@ struct Optimization
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
         bool top_k_optimization_shared_boundary{};
+        /// The heap refuses it, and `MergingAggregatedStep` does not carry it.
+        UInt64 max_rows_to_group_by{};
         bool enable_group_by_top_k_dynamic_filtering{};
         bool use_query_condition_cache_for_top_k{};
         bool is_explain{};
@@ -121,7 +123,7 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const
 
 /// When an aggregation feeds ORDER BY <its lone count() output> LIMIT n, let every two-level
 /// bucket of the aggregation output materialize only its n best groups by that count.
-size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings);
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
 size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
@@ -246,6 +248,19 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// On a parallel replicas follower, the heap of `distributed_group_by_top_k` on the partial aggregation.
+void applyGroupByTopKOfInitiator(
+    QueryPlan::Node & root, QueryPlan::Nodes & nodes, size_t limit, const Optimization::ExtraSettings & settings);
+
+/// When plan-based parallel replicas split the aggregation of `GROUP BY ... ORDER BY ... LIMIT n` below `limit_node`, gives
+/// the partial aggregation the heap `tryOptimizeGroupByTopK` would give the whole one, so that the shipped fragment runs it.
+void applyOrderedGroupByTopKToSplit(
+    QueryPlan::Node * limit_node,
+    QueryPlan::Node * aggregating_node,
+    AggregatingStep & partial_aggregating_step,
+    QueryPlan::Nodes & nodes,
+    const Optimization::ExtraSettings & settings);
+
 /// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
 size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
@@ -318,11 +333,12 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(
-    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
+    const Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool direct_read_from_text_index,
+    const FindSingleNodeRead & find_single_node_read,
+    const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-/// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
-/// reach it keeps its default stream count.
-void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -405,9 +421,6 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// A separate tree traverse that propagates the stream-disjointness property (no two output streams
 /// carry the same key value).
 void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
-
-/// Lets an offset based parallel replicas read use several replicas of a shard only if no consumer needs stream order.
-void allowReadingShardsFromSeveralReplicas(QueryPlan::Node & root);
 
 struct UseProjectionsResult
 {

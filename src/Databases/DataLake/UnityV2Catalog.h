@@ -52,8 +52,6 @@ public:
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
-
     void getTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
@@ -92,12 +90,15 @@ public:
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        Poco::JSON::Object::Ptr new_snapshot) const override;
+        const String & base_catalog_metadata_location,
+        Poco::JSON::Object::Ptr new_snapshot,
+        Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
@@ -140,11 +141,6 @@ private:
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(
         const std::string & route,
         std::function<void(DB::WriteBuffer &)> out_stream_callback) const;
-
-    void deleteRequest(const std::string & route) const;
-
-    /// The `table_type` field of the table, such as `MANAGED` or `EXTERNAL`.
-    String getTableType(const String & full_table_name) const;
 
     std::string getBearerToken(bool force_refresh = false) const;
 

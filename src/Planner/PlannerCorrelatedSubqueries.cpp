@@ -1579,9 +1579,9 @@ QueryPlan buildLogicalJoinForLateral(
         /// Remove algorithms that are not compatible with in-memory buffering
         /// of correlated subquery input: the input stream must be fully evaluated
         /// before the lateral subquery side is executed.
-        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH; });
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
         if (join_algorithms.empty())
-            join_algorithms = {JoinAlgorithm::HASH};
+            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
@@ -1692,12 +1692,12 @@ QueryPlan buildLogicalJoin(
         /// of correlated subquery input.
         /// We must be sure that the input stream is fully evaluated
         /// before the correlated subquery is executed.
-        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH; });
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
         /// This JOIN is an internal decorrelation detail, so the user-facing `join_algorithm` list must not
         /// decide whether it can run at all: with `auto` or a merge-only list nothing would survive the filter
         /// and `chooseJoinAlgorithm` would throw `NOT_IMPLEMENTED`. Force the compatible algorithms instead.
         if (join_algorithms.empty())
-            join_algorithms = {JoinAlgorithm::HASH};
+            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
@@ -1710,7 +1710,7 @@ QueryPlan buildLogicalJoin(
         /// that can execute the join the decorrelation just built.
         auto & join_settings = result_join->getJoinSettings();
         if (!JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_kind_to_use, JoinStrictness::Any))
-            join_settings.join_algorithms = {JoinAlgorithm::HASH};
+            join_settings.join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
     }
 
     QueryPlan result_plan;
@@ -1869,7 +1869,7 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It may also result in non-correlated subquery plan
             /// Example:
             /// SELECT * FROM numbers(1) WHERE EXISTS (SELECT a = number FROM table)
-            if (optimizePlanForExists(correlated_query_plan))
+            if (optimizePlanForExists(correlated_query_plan, /*is_correlated=*/true))
             {
                 /// Subquery always produces at least 1 row.
                 buildExistsResultExpression(query_plan, correlated_subquery, /*project_only_correlated_columns=*/false);

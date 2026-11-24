@@ -190,8 +190,6 @@ Chunk NATSSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
-    const Field table_name = storage.getStorageID().getTableName();
-
     while (true)
     {
         if (isCancelled() || storage.isConsumeCancelRequested(cancel_epoch))
@@ -265,7 +263,7 @@ Chunk NATSSource::generateImpl()
         {
             auto subject = consumer->getSubject();
             virtual_columns[0]->insertMany(subject, new_rows);
-            virtual_columns[1]->insertMany(table_name, new_rows);
+            virtual_columns[1]->insertMany(storage.getStorageID().getTableName(), new_rows);
             if (handle_error_mode == StreamingHandleErrorMode::STREAM)
             {
                 if (exception_message)
