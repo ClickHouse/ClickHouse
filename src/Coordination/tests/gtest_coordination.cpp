@@ -1748,6 +1748,25 @@ TEST_P(CoordinationTest, TestDurableState)
     assert_read_state();
 
     {
+        SCOPED_TRACE("Read from corrupted file with a valid backup");
+        state_manager.reset();
+        std::filesystem::copy_file("./state", "./state-OLD", std::filesystem::copy_options::overwrite_existing);
+        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
+        write_buf.seek(20, SEEK_SET);
+        DB::writeIntBinary(31, write_buf);
+        write_buf.sync();
+        write_buf.close();
+        reload_state_manager();
+        /// The backup must be used in every build type, including debug ones.
+        assert_read_state();
+        ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+
+        /// The backup was promoted to a valid state file.
+        reload_state_manager();
+        assert_read_state();
+    }
+
+    {
         SCOPED_TRACE("Read from corrupted file");
         state_manager.reset();
         DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);

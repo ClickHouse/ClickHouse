@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/copyData.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
@@ -422,6 +423,35 @@ enum ServerStateVersion : uint8_t
 
 constexpr auto current_server_state_version = ServerStateVersion::V1;
 
+constexpr auto invalid_checksum_error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
+
+/// Copies `from_path` to `to_path` on the same disk and makes the copy durable before returning:
+/// the file data is synced and, on local disks, so is the directory entry of `to_path`.
+/// `IDisk::copyFile` only finalizes the destination, which is not enough when the source is about
+/// to be overwritten or removed.
+void copyFileDurably(const DiskPtr & disk, const String & from_path, const String & to_path)
+{
+    auto dir_sync_guard = disk->getDirectorySyncGuard(fs::path(to_path).parent_path().string());
+    {
+        auto in = disk->readFile(from_path, getReadSettings());
+        auto out = disk->writeFile(to_path);
+        copyData(*in, *out);
+        out->sync();
+        out->finalize();
+    }
+    if (dir_sync_guard)
+        dir_sync_guard->sync();
+}
+
+/// Removes `path` and, on local disks, syncs its parent directory so the removal is durable.
+void removeFileDurably(const DiskPtr & disk, const String & path)
+{
+    auto dir_sync_guard = disk->getDirectorySyncGuard(fs::path(path).parent_path().string());
+    disk->removeFile(path);
+    if (dir_sync_guard)
+        dir_sync_guard->sync();
+}
+
 }
 
 void KeeperStateManager::save_state(const nuraft::srv_state & state)
@@ -435,26 +465,37 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
         /// Back up the current state so it survives the rewrite below. The backup is kept
         /// until the new state file is fully written and synced (removed at the end), so a
         /// crash during the rewrite can always recover the previous state via read_state.
+        /// Both the backup and the removal of the lock file must be durable before the live
+        /// state file is truncated, otherwise a power loss can leave neither a valid state file
+        /// nor a usable backup.
         auto buf = disk->writeFile(copy_lock_file);
         buf->finalize();
-        disk->copyFile(server_state_file_name, *disk, old_path, ReadSettings{});
-        disk->removeFile(copy_lock_file);
+        copyFileDurably(disk, server_state_file_name, old_path);
+        removeFileDurably(disk, copy_lock_file);
     }
 
-    auto server_state_file = disk->writeFile(server_state_file_name);
-    auto buf = state.serialize();
+    {
+        auto dir_sync_guard = disk->getDirectorySyncGuard(fs::path(server_state_file_name).parent_path().string());
 
-    // calculate checksum
-    SipHash hash;
-    hash.update(current_server_state_version);
-    hash.update(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
-    writeIntBinary(hash.get64(), *server_state_file);
+        auto server_state_file = disk->writeFile(server_state_file_name);
+        auto buf = state.serialize();
 
-    writeIntBinary(static_cast<uint8_t>(current_server_state_version), *server_state_file);
+        // calculate checksum
+        SipHash hash;
+        hash.update(current_server_state_version);
+        hash.update(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
+        writeIntBinary(hash.get64(), *server_state_file);
 
-    server_state_file->write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
-    server_state_file->sync();
-    server_state_file->finalize();
+        writeIntBinary(static_cast<uint8_t>(current_server_state_version), *server_state_file);
+
+        server_state_file->write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
+        server_state_file->sync();
+        server_state_file->finalize();
+
+        /// Make sure the directory entry of a newly created state file is durable as well.
+        if (dir_sync_guard)
+            dir_sync_guard->sync();
+    }
 
     disk->removeFileIfExists(old_path);
 }
@@ -466,6 +507,15 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     const auto & old_path = getOldServerStatePath();
 
     auto disk = getStateFileDisk();
+
+    /// The first file found with an invalid checksum: full path, computed and stored checksums.
+    struct CorruptedFile
+    {
+        String path;
+        uint64_t got;
+        uint64_t expected;
+    };
+    std::optional<CorruptedFile> corrupted_file;
 
     const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
     {
@@ -494,27 +544,19 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
             if (read_checksum != hash.get64())
             {
-                constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
-#ifdef NDEBUG
-                LOG_ERROR(logger, error_format, path, hash.get64(), read_checksum);
+                auto full_path = (fs::path(disk->getPath()) / path).string();
+                LOG_ERROR(logger, invalid_checksum_error_format, full_path, hash.get64(), read_checksum);
+                if (!corrupted_file)
+                    corrupted_file.emplace(CorruptedFile{full_path, hash.get64(), read_checksum});
                 return nullptr;
-#else
-                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, disk->getPath() + path, hash.get64(), read_checksum);
-#endif
             }
 
             auto state = nuraft::srv_state::deserialize(*state_buf);
             LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
             return state;
         }
-        catch (const std::exception & e)
+        catch (const std::exception &)
         {
-            if (const auto * exception = dynamic_cast<const Exception *>(&e);
-                exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
-            {
-                throw;
-            }
-
             LOG_ERROR(logger, "Failed to deserialize state from {}", disk->getPath() + path);
             return nullptr;
         }
@@ -529,37 +571,36 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             disk->removeFileIfExists(old_path);
             return state;
         }
-
-        disk->removeFile(server_state_file_name);
     }
 
-    if (disk->existsFile(old_path))
+    /// The lock file means the backup was not completely written, so it cannot be trusted.
+    /// In that case the live state file was never touched by the interrupted save_state.
+    if (disk->existsFile(old_path) && !disk->existsFile(copy_lock_file))
     {
-        if (disk->existsFile(copy_lock_file))
+        auto state = try_read_file(old_path);
+        if (state)
         {
-            disk->removeFile(old_path);
-            disk->removeFile(copy_lock_file);
-        }
-        else
-        {
-            auto state = try_read_file(old_path);
-            if (state)
-            {
-                /// Promote the backup to the live state file. Use copy + remove rather than
-                /// moveFile because moveFile is not implemented for plain (s3_plain) metadata,
-                /// which is a supported state disk; copyFile/removeFile are used by save_state
-                /// on the same disk and are supported everywhere.
-                disk->copyFile(old_path, *disk, server_state_file_name, ReadSettings{});
-                disk->removeFileIfExists(old_path);
-                return state;
-            }
-            disk->removeFile(old_path);
+            /// Promote the backup to the live state file. Use copy + remove rather than
+            /// moveFile because moveFile is not implemented for plain (s3_plain) metadata,
+            /// which is a supported state disk; copyFile/removeFile are used by save_state
+            /// on the same disk and are supported everywhere. The promoted copy must be durable
+            /// before the backup is removed.
+            copyFileDurably(disk, old_path, server_state_file_name);
+            disk->removeFileIfExists(old_path);
+            return state;
         }
     }
-    else if (disk->existsFile(copy_lock_file))
-    {
-        disk->removeFile(copy_lock_file);
-    }
+
+#ifndef NDEBUG
+    /// No usable backup exists, so a checksum mismatch is fatal in debug builds to catch bugs early.
+    if (corrupted_file)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, invalid_checksum_error_format, corrupted_file->path, corrupted_file->got, corrupted_file->expected);
+#endif
+
+    disk->removeFileIfExists(server_state_file_name);
+    disk->removeFileIfExists(old_path);
+    disk->removeFileIfExists(copy_lock_file);
 
     if (log_store->next_slot() != 1)
         LOG_ERROR(
