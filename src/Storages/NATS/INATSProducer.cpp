@@ -19,6 +19,7 @@ static constexpr auto PUBLISH_RETRY_INITIAL_WAIT = std::chrono::milliseconds(100
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_STATE;
     extern const int CANNOT_CONNECT_NATS;
@@ -39,7 +40,7 @@ void INATSProducer::finishImpl()
     {
         if (connection)
         {
-            if (connection->isConnected())
+            if (!shutdown_called && connection->isConnected())
                 natsConnection_Flush(connection->getConnection());
 
             connection->disconnect();
@@ -49,6 +50,9 @@ void INATSProducer::finishImpl()
     {
         tryLogCurrentException(log);
     }
+
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
     if (!publish_error.empty())
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot publish to NATS subject {}: {}", subject, publish_error);
@@ -71,7 +75,7 @@ void INATSProducer::produce(const String & message, size_t, const Columns &, siz
 {
     if (!payloads.push(message))
     {
-        /// The producing task has stopped on a publish error and closed the queue: `finish` throws it.
+        /// The producing task has stopped on a publish error or on table shutdown and closed the queue: `finish` throws the error.
         finish();
         throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
     }
@@ -126,7 +130,7 @@ void INATSProducer::startProducingTaskLoop()
 
     try
     {
-        while (publish_error.empty() && (pending_payload || !payloads.isFinishedAndEmpty()))
+        while (publish_error.empty() && !shutdown_called && (pending_payload || !payloads.isFinishedAndEmpty()))
         {
             if (!connection->isConnected())
                 std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
@@ -134,7 +138,7 @@ void INATSProducer::startProducingTaskLoop()
                 publish();
         }
 
-        if (!publish_error.empty())
+        if (!publish_error.empty() || shutdown_called)
         {
             /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
             payloads.finish();
