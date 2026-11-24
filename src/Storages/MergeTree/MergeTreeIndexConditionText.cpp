@@ -9,6 +9,7 @@
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/RegexpUtils.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
@@ -410,6 +411,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "match"
+        || function_name == "fullMatch"
         || function_name == "multiSearchAny"
         || function_name == "multiSearchAnyUTF8"
         || function_name == "multiSearchAnyCaseInsensitive"
@@ -1821,10 +1823,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
         return false;
     }
-    if (function_name == "match" && tokenizer->supportsStringLike())
+    if ((function_name == "match" || function_name == "fullMatch") && tokenizer->supportsStringLike())
     {
-        /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
-        const auto & pattern = value_field.safeGet<String>();
+        /// `fullMatch` is `match` with the pattern anchored at both ends, so its tokens come from the anchored form.
+        String pattern = value_field.safeGet<String>();
+        if (function_name == "fullMatch")
+            pattern = anchorRegexpToMatchWholeString(pattern);
+
+        /// Compile the pattern as the execution does, so an invalid regexp raises exception instead of being silently pruned.
         Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
 
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
