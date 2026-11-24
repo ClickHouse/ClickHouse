@@ -2551,6 +2551,41 @@ def test_rabbitmq_detach_after_failed_truncate_keeps_queue(rabbitmq_cluster, db,
     instance.query(f"DROP TABLE {table}")
 
 
+def test_rabbitmq_direct_select_after_detach(rabbitmq_cluster, db, unique):
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_format = 'JSONEachRow';
+        """
+    )
+    instance.wait_for_log_line(f"\\({db}\\.rabbitmq\\): Registered 1/1 conumers")
+
+    # The scalar subquery runs during analysis, after the table is resolved and before it is read,
+    # so the DETACH below shuts the table down before `read`.
+    query_id = uuid.uuid4().hex
+    query = instance.get_query_request(
+        f"SELECT * FROM {db}.rabbitmq WHERE (SELECT sum(sleepEachRow(0.5)) FROM numbers(12)) = 0 "
+        "SETTINGS stream_like_engine_allow_direct_select = 1, max_block_size = 1",
+        query_id=query_id,
+    )
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while instance.query(f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'") != "1\n":
+        if time.monotonic() > deadline:
+            pytest.fail("The SELECT did not start.")
+        time.sleep(0.1)
+    time.sleep(1)
+
+    instance.query(f"DETACH TABLE {db}.rabbitmq")
+
+    error = query.get_error()
+    assert "ABORTED" in error and "Table is detached" in error, error
+
+    instance.query(f"ATTACH TABLE {db}.rabbitmq")
+
+
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
     instance.query(
         f"""
