@@ -357,7 +357,7 @@ static size_t keyColumnBytes(const IColumn & column)
         return column.byteSize();
 
     const auto & indexes = low_cardinality->getIndexes();
-    std::vector<UInt64> referenced(indexes.size());
+    VectorWithMemoryTracking<UInt64> referenced(indexes.size());
     for (size_t row = 0; row < indexes.size(); ++row)
         referenced[row] = indexes.getUInt(row);
     std::ranges::sort(referenced);
