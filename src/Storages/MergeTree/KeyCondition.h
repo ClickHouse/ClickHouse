@@ -901,6 +901,7 @@ private:
         DataTypes & set_types,
         const SetAtomCandidate & candidate,
         bool membership_compares_carriers,
+        bool zero_signs_can_match,
         bool & out_is_exact);
 
     /// Checks that conversion preserves the raw element comparison used by `has`. A relaxed candidate

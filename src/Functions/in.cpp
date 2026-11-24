@@ -558,11 +558,6 @@ public:
                 values[row] = extracted && accurateEqualsCompoundFields((*maps)[row], (*extracted)[0], map_type, active_type);
                 continue;
             }
-            if (active_type && hasCompoundStringConversionLeaf(map_type, active_type))
-            {
-                values[row] = matchesSetFieldConversion(*maps, *sources, row, map_type);
-                continue;
-            }
             if (isMap(source_type) && hasCompoundStringConversionLeaf(map_type, source_type))
             {
                 values[row] = matchesSetFieldConversion(*maps, *sources, row, map_type);
@@ -690,8 +685,6 @@ public:
                 values[row] = extracted_source
                     && accurateEqualsCompoundFields((*left_row)[0], (*extracted_source)[0], left_type, active_type);
             }
-            else if (hasCompoundStringConversionLeaf(left_type, active_type))
-                values[row] = matchesSetFieldConversion(*left_values, *sources, row, left_type);
             else
             {
                 auto converted_source = tryConvertColumnToTypeOrNull(

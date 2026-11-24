@@ -3673,6 +3673,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
     DataTypes & set_types,
     const SetAtomCandidate & candidate,
     bool membership_compares_carriers,
+    bool zero_signs_can_match,
     bool & out_is_exact)
 {
     out_is_exact = true;
@@ -3794,7 +3795,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             /// A matching float zero may have the opposite sign from the retained
             /// set element. A key transform that distinguishes the signs cannot
             /// safely prune on just the transformed retained value.
-            if (membership_compares_carriers)
+            if (zero_signs_can_match)
             {
                 bool contains_float_zero = false;
                 for (size_t row = 0; row < transform_input_column->size(); ++row)
@@ -4217,7 +4218,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     /// `IN` asks the `Set`, which compares value carriers, while `has` compares values.
     const bool membership_compares_carriers = !has_element_type;
     bool set_is_exact = true;
-    if (!tryPrepareSetColumnsForIndex(atom_set_columns, atom_set_types, candidate, membership_compares_carriers, set_is_exact))
+    const bool zero_signs_can_match = membership_compares_carriers && source_set && source_set->transformNullIn();
+    if (!tryPrepareSetColumnsForIndex(
+            atom_set_columns, atom_set_types, candidate, membership_compares_carriers, zero_signs_can_match, set_is_exact))
         return std::nullopt;
 
     if (setElementsContainNaN(atom_set_columns, candidate))
