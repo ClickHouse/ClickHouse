@@ -10,7 +10,7 @@
 #include <Access/User.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/SetWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -631,7 +631,8 @@ struct ReadColumnsState
     bool supports_subcolumns;
     NameSet expanded_ephemerals;
     size_t max_column_name_size = 0;
-    UnorderedSetWithMemoryTracking<String> nested_prefixes{};
+    /// The columns `n.a`, `n.b` by `n`, removed once expanded.
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<const ColumnDescription *>> nested_prefixes{};
 };
 
 void addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, NameSet & result);
@@ -694,13 +695,12 @@ void addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, N
         }
 
         /// `n` over the columns `n.a`, `n.b` reads them as one Nested.
-        if (!is_subcolumn && !suffix.contains('.') && state.nested_prefixes.contains(suffix))
+        if (auto it = state.nested_prefixes.find(suffix); !is_subcolumn && !suffix.contains('.') && it != state.nested_prefixes.end())
         {
-            for (const auto & column : state.columns)
-            {
-                if (column.name.starts_with(suffix + "."))
-                    addColumnRead(column, state, result);
-            }
+            const auto members = std::move(it->second);
+            state.nested_prefixes.erase(it);
+            for (const auto * column : members)
+                addColumnRead(*column, state, result);
         }
     }
 }
@@ -798,7 +798,7 @@ NameSet InterpreterAlterQuery::getColumnsReadByColumnExpression(
     {
         state.max_column_name_size = std::max(state.max_column_name_size, column.name.size());
         if (const auto dot = column.name.find('.'); dot != String::npos)
-            state.nested_prefixes.insert(column.name.substr(0, dot));
+            state.nested_prefixes[column.name.substr(0, dot)].push_back(&column);
     }
     NameSet result;
     for (const auto & identifier : identifiers)
