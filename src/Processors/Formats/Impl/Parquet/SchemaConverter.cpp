@@ -2432,7 +2432,7 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (converted == CONV::INTERVAL)
     {
-        /// TODO [parquet]: Support. For now, fall through to reading as FixedString(12).
+        /// Deprecated converted type with no logical type: fall through to reading as `FixedString(12)`.
     }
     else if (element.__isset.logicalType || element.__isset.converted_type)
     {

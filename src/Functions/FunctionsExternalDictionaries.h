@@ -752,6 +752,24 @@ private:
         ColumnPtr mask_column,
         const DataTypePtr & result_type) const
     {
+        /// `if` creates its result from the type, which brings back the dynamic paths the dictionary column avoids.
+        if (result_type->hasDynamicSubcolumns())
+        {
+            const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+            auto merged = result_column->cloneEmpty();
+            merged->reserve(mask.size());
+            for (size_t start = 0; start < mask.size();)
+            {
+                size_t end = start + 1;
+                while (end < mask.size() && mask[end] == mask[start])
+                    ++end;
+                merged->insertRangeFrom(mask[start] ? *defaults_column : *result_column, start, end - start);
+                start = end;
+            }
+            result_column = std::move(merged);
+            return;
+        }
+
         auto if_func = FunctionFactory::instance().get("if", helper.context);
         ColumnsWithTypeAndName if_args =
         {

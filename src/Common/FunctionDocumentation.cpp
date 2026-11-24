@@ -280,7 +280,8 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Internal, "Internal"},
 
         {Category::AggregateFunction, "Aggregate Functions"},
-        {Category::TableFunction, "Table Functions"}
+        {Category::TableFunction, "Table Functions"},
+        {Category::WindowFunction, "Window Functions"}
     };
 
     if (auto it = category_to_string.find(category); it != category_to_string.end())

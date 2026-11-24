@@ -444,7 +444,7 @@ struct WhichDataType
     constexpr WhichDataType(const IDataType & data_type) : idx(data_type.getTypeId()) {} /// NOLINT
     constexpr WhichDataType(const IDataType * data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
-    // shared ptr -> is non-constexpr in gcc
+    // `shared_ptr::operator->` is not constexpr
     WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {} /// NOLINT
 
     [[nodiscard]] constexpr bool isUInt8() const { return idx == TypeIndex::UInt8; }

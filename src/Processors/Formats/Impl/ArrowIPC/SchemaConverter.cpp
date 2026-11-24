@@ -663,6 +663,13 @@ buildField(
         type_type = flatbuf::Type_Bool;
         type_offset = flatbuf::CreateBool(b).Union();
     }
+    else if (isNothing(t) && settings.arrow.output_nothing_as_null)
+    {
+        /// Every value of `Nothing` is null, so the field is nullable even when the type is not, as in `Array(Nothing)`.
+        type_type = flatbuf::Type_Null;
+        type_offset = flatbuf::CreateNull(b).Union();
+        nullable = true;
+    }
     else
     {
         const WhichDataType which(t);
@@ -676,7 +683,18 @@ buildField(
             case TypeIndex::Int16: case TypeIndex::Enum16: make_int(16, true); break;
             case TypeIndex::Int32: make_int(32, true); break;
             case TypeIndex::Int64: make_int(64, true); break;
-            case TypeIndex::DateTime: make_int(32, false); break;
+            case TypeIndex::DateTime:
+                if (settings.arrow.output_datetime_as_timestamp)
+                {
+                    auto tz_off = b.CreateString(assert_cast<const DataTypeDateTime &>(*t).getTimeZone().getTimeZone());
+                    type_type = flatbuf::Type_Timestamp;
+                    type_offset = flatbuf::CreateTimestamp(b, flatbuf::TimeUnit_SECOND, tz_off).Union();
+                }
+                else
+                {
+                    make_int(32, false);
+                }
+                break;
             case TypeIndex::Float32:
                 type_type = flatbuf::Type_FloatingPoint;
                 type_offset = flatbuf::CreateFloatingPoint(b, flatbuf::Precision_SINGLE).Union();
@@ -758,7 +776,7 @@ buildField(
                     type_offset = flatbuf::CreateFixedSizeBinary(
                         b, static_cast<Int32>(assert_cast<const DataTypeFixedString &>(*t).getN())).Union();
                 }
-                else if (settings.arrow.output_string_as_string)
+                else if (settings.arrow.output_string_as_string && settings.arrow.output_fixed_string_as_string)
                 {
                     type_type = flatbuf::Type_Utf8;
                     type_offset = flatbuf::CreateUtf8(b).Union();
