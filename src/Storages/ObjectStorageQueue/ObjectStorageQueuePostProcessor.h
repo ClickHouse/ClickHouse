@@ -7,6 +7,8 @@
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -57,11 +59,16 @@ private:
     void countFailedObjects(size_t count) const;
 
     /// Move processed objects to another prefix
-    void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
+    void moveWithinBucket(
+        const StoredObjects & objects,
+        const String & move_prefix,
+        bool preserve_path,
+        StoredObjects & successful_objects,
+        std::atomic<size_t> & counted_failed_objects) const;
     /// Move processed S3 objects, possibly to another S3 storage
-    void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
+    void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const;
     /// Move processed Azure blobs, possibly to another Azure storage
-    void moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const;
+    void moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const;
 
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;

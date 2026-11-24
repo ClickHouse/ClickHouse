@@ -69,3 +69,19 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'counter after drop', count() FROM system.dimensional_metrics
     WHERE metric = 'object_storage_queue_processed_files_total' AND ${TABLE_FILTER};
 "
+
+# A table without a materialized view does not poll: its last-poll gauge exists with the value 0.
+IDLE_FILTER="metric = 'object_storage_queue_last_poll_timestamp_seconds' AND labels['database'] = currentDatabase() AND labels['table'] = 'queue_idle'"
+
+$CLICKHOUSE_CLIENT --send_logs_level=error -q "
+    CREATE TABLE queue_idle (x UInt64)
+    ENGINE = S3Queue('http://localhost:11111/${S3_PATH}_idle/*.csv', 'CSV')
+    SETTINGS
+        keeper_path = '/clickhouse/${CLICKHOUSE_DATABASE}/05872_s3queue_idle',
+        mode = 'unordered',
+        after_processing = 'keep';
+
+    SELECT 'last poll of the idle table', value FROM system.dimensional_metrics WHERE ${IDLE_FILTER};
+    DROP TABLE queue_idle SYNC;
+    SELECT 'last poll of the idle table after drop', count() FROM system.dimensional_metrics WHERE ${IDLE_FILTER};
+"

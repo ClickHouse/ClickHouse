@@ -80,7 +80,7 @@ namespace DimensionalMetrics
 
     MetricFamily & ObjectStorageQueueLastPollTimestamp = Factory::instance().registerMetric(
         "object_storage_queue_last_poll_timestamp_seconds",
-        "Unix timestamp of the last time a background streaming thread of an ObjectStorageQueue (S3Queue/AzureQueue) table on this server started a cycle that looks for files to process, labelled by database and table. It is set after the table registered itself as active in Keeper and before it looks for files, so it advances also when the cycle finds no files or fails, and it does not advance when the registration fails. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.",
+        "Unix timestamp of the last time a background streaming thread of an ObjectStorageQueue (S3Queue/AzureQueue) table on this server started a cycle that looks for files to process or started a batch of that cycle, labelled by database and table. It is set when a cycle starts, after the table registered itself as active in Keeper, and again before each batch of the cycle, so it advances also when the cycle finds no files or fails, and during a long backlog. It does not advance when the registration fails. The value 0 means that the table has not polled since it was started. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.",
         {"database", "table"}
     );
 
@@ -102,8 +102,8 @@ namespace DimensionalMetrics
 
     MetricFamily & SystemLogDroppedRows = Factory::instance().registerMetric(
         "system_log_dropped_rows_total",
-        "Number of rows of a system log that were dropped because its in-memory buffer reached max_size_rows, labelled by the database and the table of the system log. It is updated when the buffer is taken for the next flush.",
-        {"database", "table"},
+        "Number of rows of a system log that were lost, labelled by the database and the table of the system log and by reason: queue_full for rows that were not accepted because the in-memory buffer reached max_size_rows (it is updated when the buffer is taken for the next flush), flush_failed for rows of a flush that failed.",
+        {"database", "table", "reason"},
         {},
         MetricType::Counter
     );

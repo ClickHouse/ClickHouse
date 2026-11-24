@@ -52,6 +52,8 @@
 
 namespace DimensionalMetrics
 {
+    extern MetricFamily & SystemLogFlushes;
+    extern MetricFamily & SystemLogFlushedRows;
     extern MetricFamily & SystemLogDroppedRows;
 }
 
@@ -89,6 +91,43 @@ namespace ErrorCodes
 
 ISystemLog::~ISystemLog() = default;
 
+namespace SystemLogMetrics
+{
+
+void createQueueCounters(const String & database, const String & table)
+{
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {database, table, "queue_full"}, 0);
+}
+
+void createFlushCounters(const String & database, const String & table)
+{
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "success"}, 0);
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "failure"}, 0);
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushedRows, {database, table}, 0);
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {database, table, "flush_failed"}, 0);
+}
+
+void onFlushSuccess(const String & database, const String & table, size_t rows)
+{
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "success"});
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushedRows, {database, table}, static_cast<DimensionalMetrics::Value>(rows));
+}
+
+void onFlushFailure(const String & database, const String & table, size_t rows)
+{
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogFlushes, {database, table, "failure"});
+    DimensionalMetrics::add(
+        DimensionalMetrics::SystemLogDroppedRows, {database, table, "flush_failed"}, static_cast<DimensionalMetrics::Value>(rows));
+}
+
+void onQueueFull(const String & database, const String & table, size_t rows)
+{
+    DimensionalMetrics::add(
+        DimensionalMetrics::SystemLogDroppedRows, {database, table, "queue_full"}, static_cast<DimensionalMetrics::Value>(rows));
+}
+
+}
+
 
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settings_)
@@ -101,9 +140,7 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
     if (settings.turn_off_logger)
         log->setLevel(0);
 
-    /// Create the counter with the value 0, with the same labels as in `pop`.
-    /// Otherwise a rate calculated from it misses the first dropped batch.
-    DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {settings.database, settings.table}, 0);
+    SystemLogMetrics::createQueueCounters(settings.database, settings.table);
 }
 
 static thread_local bool recursive_push_call = false;
@@ -298,10 +335,7 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
                     prev_ignored_logs);
 
         /// The whole batch is added here and not one row at a time in `push`, which is a hot path.
-        DimensionalMetrics::add(
-            DimensionalMetrics::SystemLogDroppedRows,
-            {settings.database, settings.table},
-            static_cast<DimensionalMetrics::Value>(prev_ignored_logs));
+        SystemLogMetrics::onQueueFull(settings.database, settings.table, prev_ignored_logs);
     }
 
     return result;

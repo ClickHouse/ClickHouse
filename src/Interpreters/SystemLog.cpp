@@ -1,6 +1,5 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/SystemLogSettingsFromConfig.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
@@ -97,12 +96,6 @@
 namespace ProfileEvents
 {
     extern const Event SystemLogErrorOnFlush;
-}
-
-namespace DimensionalMetrics
-{
-    extern MetricFamily & SystemLogFlushes;
-    extern MetricFamily & SystemLogFlushedRows;
 }
 
 namespace DB
@@ -868,14 +861,7 @@ SystemLog<LogElement>::SystemLog(
         union_create_query = getCreateUnionTableQuery()->formatWithSecretsOneLine();
     chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 
-    /// Create the counters with the value 0, with the same labels as in `flushImpl`.
-    /// Otherwise a rate calculated from them misses the first flush.
-    DimensionalMetrics::add(
-        DimensionalMetrics::SystemLogFlushes, {table_id.getDatabaseName(), table_id.getTableName(), "success"}, 0);
-    DimensionalMetrics::add(
-        DimensionalMetrics::SystemLogFlushes, {table_id.getDatabaseName(), table_id.getTableName(), "failure"}, 0);
-    DimensionalMetrics::add(
-        DimensionalMetrics::SystemLogFlushedRows, {table_id.getDatabaseName(), table_id.getTableName()}, 0);
+    SystemLogMetrics::createFlushCounters(table_id.getDatabaseName(), table_id.getTableName());
 }
 
 template <typename LogElement>
@@ -1036,22 +1022,16 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         execute_insert_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
 
-        /// These must stay the last statements of the `try` block: if a later statement throws,
+        /// This must stay the last statement of the `try` block: if a later statement throws,
         /// the same flush is counted both as a success and as a failure.
-        DimensionalMetrics::add(
-            DimensionalMetrics::SystemLogFlushes, {table_id.getDatabaseName(), table_id.getTableName(), "success"});
-        DimensionalMetrics::add(
-            DimensionalMetrics::SystemLogFlushedRows,
-            {table_id.getDatabaseName(), table_id.getTableName()},
-            static_cast<DimensionalMetrics::Value>(flush_size));
+        SystemLogMetrics::onFlushSuccess(table_id.getDatabaseName(), table_id.getTableName(), flush_size);
     }
     catch (...)
     {
         if (is_manual_flush)
             flush_policy->cancelManualFlush();
         ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
-        DimensionalMetrics::add(
-            DimensionalMetrics::SystemLogFlushes, {table_id.getDatabaseName(), table_id.getTableName(), "failure"});
+        SystemLogMetrics::onFlushFailure(table_id.getDatabaseName(), table_id.getTableName(), flush_size);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }

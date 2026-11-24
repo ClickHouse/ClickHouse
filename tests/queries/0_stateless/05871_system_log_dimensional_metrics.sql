@@ -12,8 +12,8 @@ WHERE metric IN ('system_log_flushes_total', 'system_log_flushed_rows_total')
 ORDER BY metric;
 
 -- The counters exist from the creation of the system log, also when nothing was counted yet.
-SELECT metric, labels['result'], value >= 0
+SELECT metric, labels['result'], labels['reason'], value >= 0
 FROM system.dimensional_metrics
 WHERE metric IN ('system_log_flushes_total', 'system_log_dropped_rows_total')
     AND labels['database'] = 'system' AND labels['table'] = 'query_log'
-ORDER BY metric, labels['result'];
+ORDER BY metric, labels['result'], labels['reason'];

@@ -116,7 +116,8 @@ def test_log_max_size(start_cluster):
         node,
         "SELECT sum(value) >= 34 FROM system.dimensional_metrics "
         "WHERE metric = 'system_log_dropped_rows_total' "
-        "AND labels['database'] = 'system' AND labels['table'] = 'query_log'",
+        "AND labels['database'] = 'system' AND labels['table'] = 'query_log' "
+        "AND labels['reason'] = 'queue_full'",
         "1",
     )
     assert node.query(
@@ -202,19 +203,19 @@ def test_system_warnings(start_cluster):
 
 
 def get_query_log_flush_counters():
-    def get(metric, result=None):
-        result_filter = f"AND labels['result'] = '{result}'" if result else ""
+    def get(metric, label_filter=""):
         return float(
             node.query(
                 f"SELECT sum(value) FROM system.dimensional_metrics WHERE metric = '{metric}' "
-                f"AND labels['database'] = 'system' AND labels['table'] = 'query_log' {result_filter}"
+                f"AND labels['database'] = 'system' AND labels['table'] = 'query_log' {label_filter}"
             )
         )
 
     return (
-        get("system_log_flushes_total", "success"),
-        get("system_log_flushes_total", "failure"),
+        get("system_log_flushes_total", "AND labels['result'] = 'success'"),
+        get("system_log_flushes_total", "AND labels['result'] = 'failure'"),
         get("system_log_flushed_rows_total"),
+        get("system_log_dropped_rows_total", "AND labels['reason'] = 'flush_failed'"),
     )
 
 
@@ -224,18 +225,24 @@ def test_flush_error_is_counted(start_cluster):
         # A flush that started before the failpoint was enabled ends before this one.
         node.query("SELECT 1")
         node.query_and_get_answer_with_error("SYSTEM FLUSH LOGS query_log")
-        success_before, failure_before, rows_before = get_query_log_flush_counters()
+        success_before, failure_before, rows_before, dropped_before = (
+            get_query_log_flush_counters()
+        )
 
         node.query("SELECT 1")
         # The failed flush is only logged by the server, but an error here is fine too.
         node.query_and_get_answer_with_error("SYSTEM FLUSH LOGS query_log")
-        success_after, failure_after, rows_after = get_query_log_flush_counters()
+        success_after, failure_after, rows_after, dropped_after = (
+            get_query_log_flush_counters()
+        )
     finally:
         node.query("SYSTEM DISABLE FAILPOINT system_log_flush_throw")
 
     assert failure_after >= failure_before + 1
     assert success_after == success_before
     assert rows_after == rows_before
+    # The rows of the failed flush are counted as dropped.
+    assert dropped_after >= dropped_before + 1
 
     # The flush works again without the failpoint.
     node.query("SELECT 1")

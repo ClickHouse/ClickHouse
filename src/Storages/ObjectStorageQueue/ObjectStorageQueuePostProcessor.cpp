@@ -160,19 +160,32 @@ void ObjectStorageQueuePostProcessor::process(
     }
     else if (after_processing_action == ObjectStorageQueueAction::MOVE)
     {
-        switch (type)
+        /// Objects whose failure was already counted one by one by the move functions.
+        std::atomic<size_t> counted_failed_objects = 0;
+        try
         {
-            case ObjectStorageType::Azure:
-                moveAzureBlobs(objects, successful_objects);
-                break;
-            case ObjectStorageType::S3:
-                moveS3Objects(objects, successful_objects);
-                break;
-            default:
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "After processing move not allowed for storage type {}, only Azure and S3 supported",
-                    type);
+            switch (type)
+            {
+                case ObjectStorageType::Azure:
+                    moveAzureBlobs(objects, successful_objects, counted_failed_objects);
+                    break;
+                case ObjectStorageType::S3:
+                    moveS3Objects(objects, successful_objects, counted_failed_objects);
+                    break;
+                default:
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "After processing move not allowed for storage type {}, only Azure and S3 supported",
+                        type);
+            }
+        }
+        catch (...)
+        {
+            /// The move stopped for the whole batch: count the objects that were not moved and not counted yet.
+            const size_t not_moved = countObjectsNotIn(objects, successful_objects);
+            const size_t already_counted = counted_failed_objects.load();
+            countFailedObjects(not_moved > already_counted ? not_moved - already_counted : 0);
+            throw;
         }
     }
     else if (after_processing_action == ObjectStorageQueueAction::TAG)
@@ -313,7 +326,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     const StoredObjects & objects,
     const String & move_prefix,
     bool preserve_path,
-    StoredObjects & successful_objects) const
+    StoredObjects & successful_objects,
+    std::atomic<size_t> & counted_failed_objects) const
 {
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
@@ -368,6 +382,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
                     countFailedObjects(1);
+                    ++counted_failed_objects;
                 }
             });
 
@@ -394,7 +409,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
 }
 
-void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const
+void ObjectStorageQueuePostProcessor::moveS3Objects(
+    const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const
 {
 #if USE_AWS_S3
     const String & move_uri = settings.after_processing_move_uri;
@@ -513,6 +529,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
                     countFailedObjects(1);
+                    ++counted_failed_objects;
                 }
             }
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
@@ -524,7 +541,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects, counted_failed_objects);
     }
     else
     {
@@ -533,10 +550,12 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 #else
     UNUSED(objects);
     UNUSED(successful_objects);
+    UNUSED(counted_failed_objects);
 #endif
 }
 
-void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const
+void ObjectStorageQueuePostProcessor::moveAzureBlobs(
+    const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const
 {
 #if USE_AZURE_BLOB_STORAGE
     const String & move_connection_string = settings.after_processing_move_connection_string;
@@ -619,6 +638,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
                     countFailedObjects(1);
+                    ++counted_failed_objects;
                 }
             }
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
@@ -630,7 +650,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects, counted_failed_objects);
     }
     else
     {
@@ -639,6 +659,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
 #else
     UNUSED(objects);
     UNUSED(successful_objects);
+    UNUSED(counted_failed_objects);
 #endif
 }
 

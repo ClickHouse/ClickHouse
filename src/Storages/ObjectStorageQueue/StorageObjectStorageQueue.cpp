@@ -601,6 +601,15 @@ void StorageObjectStorageQueue::startup()
 
     /// Start background tasks.
     metadata->startup();
+
+    /// The value 0 means "not polled yet". It is set before the tasks start, because they set the real time.
+    DimensionalMetrics::set(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp, {getStorageID().getDatabaseName(), getStorageID().getTableName()}, 0);
+    SCOPE_EXIT_SAFE({
+        if (!startup_finished)
+            removeGaugeMetrics(getStorageID(), nullptr);
+    });
+
     for (auto & task : streaming_tasks)
         task->activateAndSchedule();
 
@@ -681,6 +690,14 @@ void StorageObjectStorageQueue::removeGaugeMetrics(const StorageID & storage_id,
 
     DimensionalMetrics::remove(
         DimensionalMetrics::ObjectStorageQueueLastPollTimestamp, {storage_id.getDatabaseName(), storage_id.getTableName()});
+}
+
+void StorageObjectStorageQueue::setLastPollTimestamp(const StorageID & storage_id)
+{
+    DimensionalMetrics::set(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp,
+        {storage_id.getDatabaseName(), storage_id.getTableName()},
+        static_cast<DimensionalMetrics::Value>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())));
 }
 
 void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
@@ -991,12 +1008,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 metadata->registerActive(storage_id);
 
-                /// Set before the cycle and not after it, so that it advances also when the cycle finds no files or fails.
-                /// It is after `registerActive`, so it does not advance when the registration fails.
-                DimensionalMetrics::set(
-                    DimensionalMetrics::ObjectStorageQueueLastPollTimestamp,
-                    {storage_id.getDatabaseName(), storage_id.getTableName()},
-                    static_cast<DimensionalMetrics::Value>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())));
+                /// Set before the cycle, so that it advances also when the cycle finds no files or fails.
+                setLastPollTimestamp(storage_id);
 
                 if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
@@ -1119,6 +1132,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
+        /// Set for every batch, so that it advances during a long backlog.
+        setLastPollTimestamp(table_id);
+
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
         const auto batch_size_override = max_files_override.get();

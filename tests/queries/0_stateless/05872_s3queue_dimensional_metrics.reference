@@ -5,3 +5,5 @@ object_storage_queue_newest_committed_object_timestamp_seconds	1
 object_storage_queue_newest_seen_object_timestamp_seconds	1
 gauges after drop	0
 counter after drop	1
+last poll of the idle table	0
+last poll of the idle table after drop	0
