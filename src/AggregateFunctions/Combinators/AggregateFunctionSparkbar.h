@@ -10,9 +10,11 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Common/memory.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadHelpers.h>
@@ -193,6 +195,99 @@ private:
         return reinterpret_cast<const UInt8 *>(place + width * size_of_data);
     }
 
+    /// The key column without `Nullable` and its null map (nullptr if the key is not `Nullable`).
+    std::pair<const IColumn *, const UInt8 *> unwrapKeyColumn(const IColumn * key_column) const
+    {
+        if (!key_is_nullable)
+            return {key_column, nullptr};
+        /// A bare `NULL` key has the type `Nullable(Nothing)`, but the `Null` combinator passes its nested column:
+        /// every row of it is skipped by the null map of the batch.
+        const auto * nullable = typeid_cast<const ColumnNullable *>(key_column);
+        if (!nullable)
+            return {key_column, nullptr};
+        return {&nullable->getNestedColumn(), nullable->getNullMapData().data()};
+    }
+
+    /// Finds the bucket of the key in the row. Returns false if the key is outside of [begin_x, end_x].
+    bool findBucket(const IColumn & key_column, size_t row_num, size_t & pos) const
+    {
+        /// Always read via getInt: ColumnDecimal (DateTime64) implements getInt but not getUInt.
+        /// For unsigned Key types the static_cast is safe because valid x-axis values fit in
+        /// the chosen unsigned type (UInt64 for Date/DateTime/DateTime64/UInt*, Int32/Int64 for
+        /// the signed branches).
+        Key key = static_cast<Key>(key_column.getInt(row_num));
+
+        /// Rescale the key up to the working scale of begin_x/end_x (DateTime64 with a coarser
+        /// column scale). If the rescaled key overflows the Key type it cannot lie inside the
+        /// representable [begin_x, end_x] range, so it is safely skipped.
+        if (key_multiplier != 1)
+        {
+            Key scaled = 0;
+            if (common::mulOverflow(key, key_multiplier, scaled))
+                return false;
+            key = scaled;
+        }
+
+        if (key < begin_x || key > end_x)
+            return false;
+
+        /// Compute the bucket index with exact integer arithmetic. The bounds check above
+        /// guarantees begin_x <= key <= end_x and the constructor guarantees begin_x < end_x,
+        /// so both unsigned deltas are non-negative and range is positive. Using Float64 here
+        /// would lose precision once range or offset exceeds the 53-bit exact integer range,
+        /// silently mis-bucketing valid UInt64/Int64/DateTime64 keys near a bucket boundary.
+        const UInt64 range  = static_cast<UInt64>(end_x) - static_cast<UInt64>(begin_x);
+        const UInt64 offset = static_cast<UInt64>(key)   - static_cast<UInt64>(begin_x);
+        /// offset * width can exceed 64 bits (offset up to ~1.8e19, width up to MAX_WIDTH), so the
+        /// product is taken in 128 bits. Since offset <= range, the quotient is at most `width`
+        /// (reached only when key == end_x), and it is clamped to the last bucket.
+        pos = std::min<UInt64>(
+            static_cast<UInt64>(static_cast<__uint128_t>(offset) * width / range),
+            static_cast<UInt64>(width) - 1);
+        return true;
+    }
+
+    /// Adds the rows in [row_begin, row_end) to the buckets of the places returned by `get_place(row)` (nullptr to skip the row).
+    /// The rows are routed to the nested states of their buckets and passed to the nested function together,
+    /// because adding them one by one is slow for some nested functions: for example, the `Variant` arguments
+    /// under a nested `-Distinct` (`sumDistinctSparkbar`) would be cast as a one-row column for every row.
+    template <typename GetPlace>
+    void addBatchToBuckets(
+        size_t row_begin, size_t row_end, const IColumn ** columns, const UInt8 * null_map,
+        Arena * arena, ssize_t if_argument_pos, GetPlace && get_place) const
+    {
+        if (row_begin >= row_end)
+            return;
+
+        const UInt8 * flags = if_argument_pos >= 0 ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
+        const auto [key_column, key_null_map] = unwrapKeyColumn(columns[0]);
+
+        /// Indexed by the row number, as the nested function expects. The skipped rows have no place.
+        PaddedPODArray<AggregateDataPtr> bucket_places(row_end, nullptr);
+        bool has_rows = false;
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            if ((flags && !flags[row]) || (null_map && null_map[row]) || (key_null_map && key_null_map[row]))
+                continue;
+
+            size_t pos = 0;
+            if (!findBucket(*key_column, row, pos))
+                continue;
+
+            AggregateDataPtr place = get_place(row);
+            if (!place)
+                continue;
+
+            bucket_places[row] = place + pos * size_of_data;
+            occupancy(place)[pos] = 1;
+            has_rows = true;
+        }
+
+        /// First argument (columns[0]) is the x-axis key; the rest go to the nested function.
+        if (has_rows)
+            nested_function->addBatch(row_begin, row_end, bucket_places.data(), 0, columns + 1, arena);
+    }
+
 public:
     AggregateFunctionSparkbar(
         AggregateFunctionPtr nested_function_,
@@ -283,52 +378,60 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const IColumn * key_column = columns[0];
-        if (key_is_nullable)
-        {
-            const auto & nullable = assert_cast<const ColumnNullable &>(*key_column);
-            if (nullable.isNullAt(row_num))
-                return;
-            key_column = &nullable.getNestedColumn();
-        }
-
-        /// Always read via getInt: ColumnDecimal (DateTime64) implements getInt but not getUInt.
-        /// For unsigned Key types the static_cast is safe because valid x-axis values fit in
-        /// the chosen unsigned type (UInt64 for Date/DateTime/DateTime64/UInt*, Int32/Int64 for
-        /// the signed branches).
-        Key key = static_cast<Key>(key_column->getInt(row_num));
-
-        /// Rescale the key up to the working scale of begin_x/end_x (DateTime64 with a coarser
-        /// column scale). If the rescaled key overflows the Key type it cannot lie inside the
-        /// representable [begin_x, end_x] range, so it is safely skipped.
-        if (key_multiplier != 1)
-        {
-            Key scaled = 0;
-            if (common::mulOverflow(key, key_multiplier, scaled))
-                return;
-            key = scaled;
-        }
-
-        if (key < begin_x || key > end_x)
+        const auto [key_column, key_null_map] = unwrapKeyColumn(columns[0]);
+        if (key_null_map && key_null_map[row_num])
             return;
 
-        /// Compute the bucket index with exact integer arithmetic. The bounds check above
-        /// guarantees begin_x <= key <= end_x and the constructor guarantees begin_x < end_x,
-        /// so both unsigned deltas are non-negative and range is positive. Using Float64 here
-        /// would lose precision once range or offset exceeds the 53-bit exact integer range,
-        /// silently mis-bucketing valid UInt64/Int64/DateTime64 keys near a bucket boundary.
-        const UInt64 range  = static_cast<UInt64>(end_x) - static_cast<UInt64>(begin_x);
-        const UInt64 offset = static_cast<UInt64>(key)   - static_cast<UInt64>(begin_x);
-        /// offset * width can exceed 64 bits (offset up to ~1.8e19, width up to MAX_WIDTH), so the
-        /// product is taken in 128 bits. Since offset <= range, the quotient is at most `width`
-        /// (reached only when key == end_x), and it is clamped to the last bucket.
-        const size_t pos = std::min<UInt64>(
-            static_cast<UInt64>(static_cast<__uint128_t>(offset) * width / range),
-            static_cast<UInt64>(width) - 1);
+        size_t pos = 0;
+        if (!findBucket(*key_column, row_num, pos))
+            return;
 
         /// First argument (columns[0]) is the x-axis key; the rest go to the nested function.
         nested_function->add(place + pos * size_of_data, columns + 1, row_num, arena);
         occupancy(place)[pos] = 1;
+    }
+
+    void addBatch(
+        size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+    {
+        addBatchToBuckets(row_begin, row_end, columns, nullptr, arena, if_argument_pos,
+            [&](size_t row) -> AggregateDataPtr { return places[row] ? places[row] + place_offset : nullptr; });
+    }
+
+    void addBatchWithNonNullPlaces(
+        size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+    {
+        addBatchToBuckets(row_begin, row_end, columns, nullptr, arena, if_argument_pos,
+            [&](size_t row) -> AggregateDataPtr { return places[row] + place_offset; });
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place,
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+    {
+        addBatchToBuckets(row_begin, row_end, columns, nullptr, arena, if_argument_pos, [&](size_t) -> AggregateDataPtr { return place; });
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place,
+        const IColumn ** columns, const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos) const override
+    {
+        addBatchToBuckets(row_begin, row_end, columns, null_map, arena, if_argument_pos, [&](size_t) -> AggregateDataPtr { return place; });
+    }
+
+    void addBatchLookupTable8(
+        size_t row_begin, size_t row_end, AggregateDataPtr * map, size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init, const UInt8 * key, const IColumn ** columns, Arena * arena) const override
+    {
+        addBatchToBuckets(row_begin, row_end, columns, nullptr, arena, -1, [&](size_t row) -> AggregateDataPtr
+        {
+            AggregateDataPtr & place = map[key[row]];
+            if (unlikely(!place))
+                init(place);
+            return place + place_offset;
+        });
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override

@@ -1,0 +1,32 @@
+Distinct around Sparkbar, NULL key, Variant value
+String	[]
+String	[]
+Distinct around Sparkbar, NULL key, Variant value, state
+String	[]
+Distinct around Sparkbar, Variant value
+String	[▃▅█]
+Distinct inside Sparkbar, Variant value
+1	▁▂█▆▇
+Distinct inside Sparkbar, repeated values
+▁█	▂█
+Distinct inside Sparkbar, different alternatives
+▄█
+GROUP BY
+0	1	 ▃ ▅█	 ▃ ▅█
+1	1	▂  █ 	▂ ▅█ 
+2	1	 ▃█  	 ▂▅ █
+GROUP BY, UInt8 key
+0	 ▃ ▅█	█  █ 
+1	▂ ▅█ 	  █  
+2	 ▂▅ █	 █  █
+outer If and Nullable key
+ ▄█▆ 	 ▄█▆ 	 ▃▄▃█
+keys out of the range
+▃▄▅▆█	▃▄▅▆█
+window
+0	█  
+1	█  
+2	██ 
+3	▃█ 
+4	 █▆
+5	 ▃█
