@@ -1,6 +1,7 @@
 #include <Databases/DatabaseOverlay.h>
 
 #include <Common/quoteString.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
 #include <Access/ContextAccess.h>
@@ -381,6 +382,16 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
+VectorWithMemoryTracking<String> DatabaseOverlay::getAllTableNames(ContextPtr context_) const
+{
+    /// Names only, from each member's own getAllTableNames: the default implementation waits for every table to load.
+    SetWithMemoryTracking<String> names;
+    for (const auto & db : databases)
+        for (auto & name : db->getAllTableNames(context_))
+            names.insert(std::move(name));
+    return {names.begin(), names.end()};
+}
+
 bool DatabaseOverlay::isExternal() const
 {
     for (const auto & db : databases)
@@ -750,6 +761,22 @@ std::vector<LightWeightTableDetails> DatabaseOverlayReadOnly::getLightweightTabl
     }
     std::sort(result.begin(), result.end(), [](const auto & lhs, const auto & rhs) { return lhs.name < rhs.name; });
     return result;
+}
+
+VectorWithMemoryTracking<String> DatabaseOverlayReadOnly::getAllTableNames(ContextPtr context_) const
+{
+    /// Names only, from each source's own getAllTableNames: the default implementation waits for every table to load.
+    SetWithMemoryTracking<String> names;
+    for (const auto & source : source_databases)
+    {
+        auto database = tryGetOverlaySource(source);
+        if (!database)
+            continue;
+        for (auto & name : database->getAllTableNames(context_))
+            if (isSourceTableVisible(source, name, context_))
+                names.insert(std::move(name));
+    }
+    return {names.begin(), names.end()};
 }
 
 ASTPtr DatabaseOverlayReadOnly::getCreateTableQueryImpl(const String & table_name, ContextPtr context_, bool throw_on_error) const
