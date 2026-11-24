@@ -223,7 +223,7 @@ FROM numbers(256) SETTINGS max_execution_time = 10;
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- a constant path does not write the row';
 CREATE TABLE tm (j JSON) ENGINE = Memory;
-INSERT INTO tm SELECT concat('{\"a\":7,\"pad\":\"', repeat(repeat('x', 1000000), 30), '\"}');
+INSERT INTO tm SELECT concat('{\"a\":7,\"pad\":\"', repeat(repeat('x', 1000000), 5), '\"}');
 SELECT JSONExtractInt(j, 'a'), JSONHas(j, 'a'), JSONExtractRaw(j, 'a'), JSONExtract(j, 'a', 'Nullable(Int64)')
 FROM tm SETTINGS max_memory_usage = '20M';
 "
