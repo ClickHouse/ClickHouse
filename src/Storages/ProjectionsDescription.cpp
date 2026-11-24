@@ -698,23 +698,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
 StoragePtr ProjectionDescription::createQuerySource(const StorageInMemoryMetadata & table_metadata) const
 {
-    const auto & columns = table_metadata.getColumns();
-
-    ColumnsDescription query_columns;
-    for (const auto & column_name : required_columns)
-    {
-        if (!columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
-            continue;
-
-        const auto & name_in_storage = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_name).getNameInStorage();
-        if (!query_columns.has(name_in_storage))
-            query_columns.add(columns.get(name_in_storage));
-    }
-    for (const auto & column : columns)
-        if (column.default_desc.kind == ColumnDefaultKind::Alias)
-            query_columns.add(column);
-
-    return createProjectionQuerySource(query_columns, MergeTreeData::createVirtuals(&table_metadata.partition_key));
+    return createProjectionQuerySource(table_metadata.getColumns(), MergeTreeData::createVirtuals(&table_metadata.partition_key));
 }
 
 Block ProjectionDescription::calculate(

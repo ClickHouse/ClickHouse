@@ -172,7 +172,7 @@ struct ProjectionDescription
         ContextPtr context,
         const IColumnPermutation * perm_ptr = nullptr) const;
 
-    /// the table that `query_ast` is resolved against after the description: the columns that the query reads and the `ALIAS` columns
+    /// the table that `query_ast` is resolved against after the description: all the columns of the table, because a matcher can name any of them
     /// it is not kept in the description, because each table has at least one projection
     [[nodiscard]] StoragePtr createQuerySource(const StorageInMemoryMetadata & table_metadata) const;
 
