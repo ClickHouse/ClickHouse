@@ -13,6 +13,8 @@ struct SetKeyColumns
     Columns materialized_columns;
     ColumnPtr null_map_holder;
     ColumnUInt8::MutablePtr filter;
+    /// The numbers of the rows to add to the set elements; used instead of `filter` if set.
+    ColumnUInt64::MutablePtr new_rows;
 };
 
 }

@@ -88,8 +88,6 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
-    bool supportsChmod() const override { return disk->supportsChmod(); }
-
     bool supportsStat() const override { return disk->supportsStat(); }
 
     struct stat stat(const String & path) const override { return disk->stat(path); }
@@ -154,10 +152,6 @@ public:
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
-
-    [[nodiscard]] bool supportsChmod() const override { return metadata_storage.supportsChmod(); }
-
-    void chmod(const String & path, mode_t mode) override;
 
     void setReadOnly(const std::string & path) override;
 
