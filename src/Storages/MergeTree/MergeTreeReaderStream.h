@@ -75,6 +75,9 @@ public:
     [[nodiscard]] bool stopped() const;
 
 private:
+    /// A file takes about as much memory as 8 ranges: its `ReadRanges`, its slot in the map and the `unique_ptr`.
+    static constexpr size_t units_per_file = 8;
+
     /// Reserves `units` of the limit; past it, stops the counting instead.
     bool reserve(size_t units);
 
@@ -90,8 +93,8 @@ private:
         std::equal_to<>,
         AllocatorWithMemoryTracking<std::pair<const UInt128, std::unique_ptr<ReadRanges>>>>
         read_ranges_by_path TSA_GUARDED_BY(mutex);
-    /// Given out for the files looked up once the counting stopped, which then take nothing.
-    ReadRanges not_registered;
+    /// Given out for the files looked up once the counting stopped, which then keep nothing.
+    static ReadRanges not_registered;
 };
 
 using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;

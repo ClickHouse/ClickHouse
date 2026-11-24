@@ -15,7 +15,7 @@ SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 -- The two runs must select the same granules, see `05332_autopr_min_bytes_per_replica_events`.
 SET use_query_condition_cache = 0;
 
--- The first counted file takes the only unit, so its ranges do not fit.
+-- The first counted file takes more units than the limit.
 SELECT key % 10 AS k, max(value) FROM t_autopr_input_ranges GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_max_counted_ranges = 1, log_comment = 'autopr_input_ranges_collect';
 SELECT key % 10 AS k, max(value) FROM t_autopr_input_ranges GROUP BY k FORMAT Null
