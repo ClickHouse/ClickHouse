@@ -365,10 +365,8 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, cons
 /// Splits the read of a single `uniqExact` in order (see `optimizeAggregationInOrder`) into layers by its key, or gives up
 /// the order if the read has several streams that would have to be merged into one.
 void optimizeUniqExactInOrderLayers(QueryPlan::Node & node);
-/// `index_column_name` names the row index the main branch carries to the lazy read. A plan split twice, such as the
-/// two-stage vector search (`optimizeVectorSearchWithQuantizedCodes`), gives each split its own name.
-/// `accept_lazily_read_columns`, if set, decides on the columns a MergeTree read would move to the lazy read, before the
-/// plan is changed: the plan is left as it is if it returns false.
+/// `index_column_name`: the row index the main branch carries to the lazy read; each split of a plan needs its own.
+/// `accept_lazily_read_columns`: if set and false for the columns a read would move to the lazy read, the plan is kept.
 bool optimizeLazyMaterialization2(
     QueryPlan::Node & root,
     QueryPlan & query_plan,

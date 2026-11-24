@@ -79,13 +79,8 @@ namespace DB::QueryPlanOptimizations
 /// (optimizeLazyMaterialization2) runs after this pass and fires on the inner LimitStep (k' <=
 /// query_plan_max_limit_for_lazy_materialization), automatically reading `vec` only for the k' shortlisted rows. The
 /// outer stage then rescores those k' rows against the full-precision vector and returns the exact top-k.
-///
-/// The other columns the query returns are needed for the final k rows only. Deferred on the inner LimitStep together
-/// with `vec`, they would be read for all k' rows, e.g. a document text for every row of the shortlist. So, with
-/// `vector_search_lazy_materialization_after_rescoring`, the plan is split first on the outer LimitStep: the lazy read
-/// above the final top-k reads every column the sorting and the filters do not need, and the shortlist is built on the
-/// main branch of that split, which reads the vector (deferred to the inner LimitStep as above), the codes and the filter
-/// columns. Each split addresses its rows by an index of its own.
+/// With `vector_search_lazy_materialization_after_rescoring`, the plan is first split on the outer LimitStep, so the other
+/// returned columns are read for the final k rows only, and the shortlist is built on the main branch of that split.
 namespace
 {
 
@@ -108,12 +103,10 @@ std::optional<QuantizedCodecParams> findQuantizeCodecParams(
     return {};
 }
 
-/// The row index of the lazy read of the columns the query returns, above the final top-k.
 constexpr auto returned_columns_row_index_name = "__vector_search_row_index";
 
 /// Brute-force vector search over a vector column carrying a `Quantized(...)` codec: rewrite ORDER BY distance LIMIT
 /// into a two-stage shortlist (over the quantized codes subcolumn) + rescore (against the full-precision vector).
-/// `split_returned_columns`: whether to read the columns the query returns lazily for the final top-k first.
 bool rewriteToShortlist(
     QueryPlan::Node * limit_node, QueryPlan & query_plan, QueryPlan::Nodes & nodes,
     const Optimization::ExtraSettings & settings, const QueryPlanOptimizationSettings & optimization_settings,
@@ -348,16 +341,12 @@ bool rewriteToShortlist(
 
     /// All checks passed - rewrite the plan.
 
-    /// 0. Read the columns the query returns for the final top-k only: split them off the read into a lazy read above
-    /// the final LIMIT, and build the shortlist on the main branch of that split, which has the same steps down to the
-    /// read, with the columns the sorting and the filters need. A shortlist of k rows reads the same rows either way.
-    /// The second lazy read costs a round of reads of its own (on object storage, a round of requests), so the split is
-    /// made only for wide columns, such as a text, and not for a few bytes per row, such as an id.
+    /// 0. Split the returned columns off to a lazy read above the final LIMIT, only for wide columns (it costs a round of reads).
     auto are_wide_columns = [&](const Names & columns)
     {
         static constexpr size_t min_uncompressed_bytes_per_row = 64;
 
-        /// Average row size of the columns and subcolumns in the parts that know their sizes from memory (not Compact).
+        /// Compact parts do not know their column sizes from memory, so only the other parts are measured.
         size_t rows = 0;
         size_t bytes = 0;
         for (const auto & part : read_step->getParts())
@@ -373,13 +362,12 @@ bool rewriteToShortlist(
             rows += part.data_part->rows_count;
             bytes += part_bytes;
         }
-        /// Nothing measured: keep the plan.
         if (rows == 0)
             return false;
         return bytes >= min_uncompressed_bytes_per_row * rows;
     };
 
-    /// The split adds the row index column to every header from the outer LimitStep down to the read.
+    /// The split adds the row index column to every header from the outer LimitStep down to the read: the name must be free.
     auto headers_have_row_index_name = [&]
     {
         VectorWithMemoryTracking<const QueryPlan::Node *> split_nodes{limit_node, sorting_node, expression_node};
@@ -398,8 +386,7 @@ bool rewriteToShortlist(
             *limit_node, query_plan, nodes, optimization_settings, max_limit_for_lazy_materialization, returned_columns_row_index_name,
             are_wide_columns))
     {
-        /// The main branch is the first input of `JoinLazyColumnsStep`, below the expressions computed from the columns
-        /// read lazily.
+        /// The main branch is the first input of `JoinLazyColumnsStep`, below the expressions over the lazily read columns.
         QueryPlan::Node * node = limit_node;
         while (typeid_cast<ExpressionStep *>(node->step.get()) && node->children.size() == 1)
             node = node->children.front();

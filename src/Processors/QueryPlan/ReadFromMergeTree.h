@@ -1031,8 +1031,7 @@ private:
     /// The rows the lazy read of the columns this read leaves out reads, and those columns. See `hasLazilyReadColumns`.
     LazyMaterializingRowsPtr lazy_read_rows;
     Names columns_read_lazily;
-    /// The rows of the lazy reads of a read split more than once, before the last split: the two-stage vector search
-    /// reads the columns it returns for the final top-k, and the vector for every row of its shortlist.
+    /// The rows of the earlier lazy reads of a read split more than once; filled with the parts of this read as well.
     VectorWithMemoryTracking<LazyMaterializingRowsPtr> earlier_lazy_read_rows;
 
     ExpressionActionsPtr virtual_row_conversion;

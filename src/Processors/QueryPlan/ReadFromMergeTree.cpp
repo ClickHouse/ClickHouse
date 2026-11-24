@@ -5551,7 +5551,6 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     required_source_columns = all_column_names;
 
-    /// A read split before keeps filling the rows of its earlier lazy read as well.
     if (lazy_read_rows)
         earlier_lazy_read_rows.push_back(std::move(lazy_read_rows));
     lazy_read_rows = std::make_shared<LazyMaterializingRows>();
