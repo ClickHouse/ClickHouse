@@ -3735,7 +3735,7 @@ Possible values:
 - 0 — Disabled.
 - Positive floating-point number in the range [0..1].
 )", 0, \
-        {"26.11", 0., 0., "New testing-only setting."}) \
+        {"26.12", 0., 0., "New testing-only setting."}) \
     DECLARE(FloatAuto, opentelemetry_start_keeper_trace_probability, Field("auto"), R"(
 Probability to start a trace for ZooKeeper request - whether there is a parent trace or not.
 
