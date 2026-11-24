@@ -1093,6 +1093,10 @@ bool initClickHouseDB(
     /// A single `listen_host` from the command line replaces all of them from the configuration files.
     server_args.emplace_back("--listen_host=127.0.0.1");
     server_args.emplace_back("--interserver_listen_host=127.0.0.1");
+    /// The streaming exchange of distributed queries has its own `streaming_exchange_listen_host`, not `listen_host`:
+    /// no listener for it during the initialization (port 0 disables it), whatever the configuration or the arguments
+    /// above request; the final server gets the requested one.
+    server_args.emplace_back("--distributed_query.streaming_exchange_port=0");
     /// A protocol with its own `host` does not use `listen_host`, e.g. `<protocols><bootstrap><host>0.0.0.0</host>...`
     /// in a mounted configuration file or `-- --protocols.bootstrap.host=0.0.0.0`. Every protocol, wherever it is
     /// defined, gets `127.0.0.1` as its host. A protocol without a port opens no listener, so the host does not affect it.
