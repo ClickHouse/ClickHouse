@@ -234,6 +234,13 @@ size_t PageCache::sizeInBytes() const
     return sum;
 }
 
+size_t PageCache::releasableSizeInBytes() const
+{
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    size_t size = sizeInBytes();
+    return size - std::min(size, min_size_in_bytes);
+}
+
 size_t PageCache::count() const
 {
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);

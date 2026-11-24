@@ -103,7 +103,6 @@ public:
         return 1;
     }
 
-    bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return true; }
     bool isRemote() const override { return true; }

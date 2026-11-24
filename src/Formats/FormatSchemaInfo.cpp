@@ -25,7 +25,6 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
-#include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -313,12 +312,8 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         out.sync();
         out.close();
 
-        if (fs::exists(file_path))
-            DB::renameExchange(pathToGenericString(temp_path), pathToGenericString(file_path));
-        else
-            DB::renameNoReplace(pathToGenericString(temp_path), pathToGenericString(file_path));
-
-        fs::remove(temp_path);
+        /// `rename` replaces the target atomically, so a concurrent writer of the same schema cannot make it fail.
+        fs::rename(temp_path, file_path);
     }
     catch (...)
     {

@@ -485,13 +485,29 @@ void MergeTreeTemporaryPart::prewarmCaches()
 {
     auto prewarm_caches = part->storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
+    /// `streams` also holds the streams written for this part's projections.
+    auto marksOwner = [this](const String & projection_name) -> const IMergeTreeDataPart *
+    {
+        if (projection_name.empty())
+            return part.get();
+
+        const auto & projections = part->getProjectionParts();
+        auto it = projections.find(projection_name);
+        return it == projections.end() ? nullptr : it->second.get();
+    };
+
     if (prewarm_caches.mark_cache)
     {
         for (const auto & stream : streams)
         {
             auto marks = stream.stream->releaseCachedMarks();
-            addMarksToCache(*part, marks, prewarm_caches.mark_cache.get());
+            if (const auto * owner = marksOwner(stream.projection_name))
+                addMarksToCache(*owner, marks, prewarm_caches.mark_cache.get());
         }
+
+        for (const auto & projection : released_projection_marks)
+            if (const auto * owner = marksOwner(projection.projection_name))
+                addMarksToCache(*owner, projection.marks, prewarm_caches.mark_cache.get());
     }
 
     if (prewarm_caches.index_mark_cache)
@@ -499,8 +515,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
         for (const auto & stream : streams)
         {
             auto index_marks = stream.stream->releaseCachedIndexMarks();
-            addMarksToCache(*part, index_marks, prewarm_caches.index_mark_cache.get());
+            if (const auto * owner = marksOwner(stream.projection_name))
+                addMarksToCache(*owner, index_marks, prewarm_caches.index_mark_cache.get());
         }
+
+        for (const auto & projection : released_projection_marks)
+            if (const auto * owner = marksOwner(projection.projection_name))
+                addMarksToCache(*owner, projection.index_marks, prewarm_caches.index_mark_cache.get());
     }
 
     if (prewarm_caches.primary_index_cache)
@@ -849,32 +870,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (patch_part_index && !patch_part_index->empty())
         new_part_info.mutation = patch_part_index->getMaxDataVersion();
 
-    String part_name;
-    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
-        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
-
-        const auto & date_lut = DateLUT::serverTimezoneInstance();
-
-        auto min_month = date_lut.toNumYYYYMM(min_date);
-        auto max_month = date_lut.toNumYYYYMM(max_date);
-
-        if (min_month != max_month)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
-
-        part_name = new_part_info.getPartNameV0(min_date, max_date);
-    }
-    else
-        part_name = new_part_info.getPartNameV1();
-
-    std::string temp_prefix = "tmp_insert_";
-    const auto & temp_postfix = data.getPostfixForTempInsertName();
-    if (!temp_postfix.empty())
-        temp_prefix += temp_postfix + "_";
-
-    std::string part_dir = temp_prefix + part_name;
-
     auto indices = collectSkipIndicesToMaterialize(
         metadata_snapshot,
         global_settings[Setting::materialize_skip_indexes_on_insert],
@@ -952,6 +947,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+
+        /// The merge may drop rows, so the min/max index of the part is computed again from the merged rows.
+        /// Otherwise it may hold values of no stored row, and it is used to answer queries such as `max` of a column.
+        minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        minmax_idx->update(block, minmax_columns);
     }
 
     if (expr_after_merge)
@@ -997,6 +997,34 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// part only contains empty tuples. As a result, check rows instead.
     if (block.rows() == 0)
         return temp_part;
+
+    /// The name is built after the insert-time merge, because for the old format it holds the date range of the
+    /// min/max index, which is restored from the name when the part is loaded.
+    String part_name;
+    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
+        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
+
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+
+        auto min_month = date_lut.toNumYYYYMM(min_date);
+        auto max_month = date_lut.toNumYYYYMM(max_date);
+
+        if (min_month != max_month)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
+
+        part_name = new_part_info.getPartNameV0(min_date, max_date);
+    }
+    else
+        part_name = new_part_info.getPartNameV1();
+
+    std::string temp_prefix = "tmp_insert_";
+    const auto & temp_postfix = data.getPostfixForTempInsertName();
+    if (!temp_postfix.empty())
+        temp_prefix += temp_postfix + "_";
+
+    std::string part_dir = temp_prefix + part_name;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
@@ -1230,12 +1258,23 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
                     /// part's precommitTransaction() will be handled later by the main
                     /// temp_part->finalize() which iterates part->getProjectionParts().
                     for (auto & stream : proj_temp_part->streams)
+                    {
                         stream.finalizer.finish();
+
+                        /// The stream does not outlive this iteration, so its marks are taken now.
+                        auto marks = stream.stream->releaseCachedMarks();
+                        auto index_marks = stream.stream->releaseCachedIndexMarks();
+                        if (!marks.empty() || !index_marks.empty())
+                            temp_part->released_projection_marks.push_back({projection.name, std::move(marks), std::move(index_marks)});
+                    }
                 }
                 else
                 {
                     for (auto & stream : proj_temp_part->streams)
+                    {
+                        stream.projection_name = projection.name;
                         temp_part->streams.emplace_back(std::move(stream));
+                    }
                 }
             }
         }
