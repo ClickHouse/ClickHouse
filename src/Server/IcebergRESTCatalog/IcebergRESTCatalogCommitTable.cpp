@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int METADATA_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
@@ -448,19 +449,27 @@ Poco::JSON::Object::Ptr buildMetadataFromStagedCreateCommit(const Poco::JSON::Ar
     return metadata;
 }
 
-String nextMetadataLocation(
-    const Poco::JSON::Object & metadata, const String & current_metadata_location, const String & compression_suffix)
+String tableLocationFromMetadataLocation(const String & metadata_location)
+{
+    static constexpr std::string_view metadata_directory = "/metadata/";
+    const auto pos = metadata_location.rfind(metadata_directory);
+    if (pos == String::npos || metadata_location.find('/', pos + metadata_directory.size()) != String::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata location '{}' is not of the form '<table location>/metadata/<file>'", metadata_location);
+    return metadata_location.substr(0, pos);
+}
+
+String nextMetadataLocation(const String & current_metadata_location, const String & compression_suffix)
 {
 #if USE_AVRO
     const auto version = getMetadataFileAndVersion(current_metadata_location).version;
     return fmt::format(
         "{}/metadata/v{}-{}{}.metadata.json",
-        getString(metadata, f_location),
+        tableLocationFromMetadataLocation(current_metadata_location),
         version + 1,
         toString(UUIDHelpers::generateV4()),
         compression_suffix);
 #else
-    UNUSED(metadata, compression_suffix);
+    UNUSED(compression_suffix);
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot compute the next metadata location for '{}': ClickHouse was built without Avro support", current_metadata_location);
 #endif
 }

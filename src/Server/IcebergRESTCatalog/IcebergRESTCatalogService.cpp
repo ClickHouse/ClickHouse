@@ -918,7 +918,9 @@ IcebergRESTResponse IcebergRESTCatalogService::handleLoadTable(const RoutedReque
     const auto metadata = readTableMetadata(request.warehouse, *pointer);
     /// Clients write data files with credentials from load table, so these allow writes.
     const auto access = request.user_context.getSettingsRef()[Setting::readonly] ? VendedAccessLevel::ReadOnly : VendedAccessLevel::ReadWrite;
-    const auto credentials = vendCredentialsIfRequested(request, ns, table, metadata->getValue<String>("location"), access);
+    /// Credentials are scoped to table root from Keeper, because only catalog writes it.
+    const auto location = tableLocationFromMetadataLocation(pointer->metadata_location);
+    const auto credentials = vendCredentialsIfRequested(request, ns, table, location, access);
     return makeLoadTableResult(pointer->metadata_location, metadata, credentials);
 }
 
@@ -1252,8 +1254,7 @@ std::expected<IcebergRESTCatalogService::PreparedTableCommit, IcebergRESTRespons
         return std::unexpected(makeCommitRequestError(ErrorCodes::BAD_ARGUMENTS, e.displayText()));
     }
 
-    prepared.new_location = nextMetadataLocation(
-        *prepared.metadata, pointer.metadata_location, getMetadataCompressionSuffix(prepared.compression_method));
+    prepared.new_location = nextMetadataLocation(pointer.metadata_location, getMetadataCompressionSuffix(prepared.compression_method));
     return prepared;
 }
 

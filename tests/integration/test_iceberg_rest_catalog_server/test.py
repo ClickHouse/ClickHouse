@@ -3,6 +3,7 @@
 import base64
 import gzip
 import http.client
+import io
 import json
 import time
 import uuid
@@ -2199,6 +2200,39 @@ def test_vended_credentials_need_header(started_cluster):
     assert_no_credentials(create_table(ns, "events").json())
     assert_no_credentials(stage_create_table(ns, "staged").json())
     assert_no_credentials(load_table(ns, "events"))
+
+
+def overwrite_metadata_file(metadata_location, metadata):
+    data = json.dumps(metadata).encode()
+    cluster.minio_client.put_object(BUCKET, metadata_key(metadata_location), io.BytesIO(data), len(data))
+
+
+def vended_prefix(ns, table):
+    result = load_table(ns, table, headers=VENDING_HEADERS)
+    (credential,) = result["storage-credentials"]
+    return credential["prefix"]
+
+
+# A client with write credentials can overwrite `location` in the metadata file.
+# Credentials must stay scoped to the table root that the catalog assigned.
+def test_vended_credentials_ignore_location_in_metadata_file(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    table = create_table(ns, "events").json()
+    table_root = table["metadata"]["location"]
+    bucket_root = f"s3://{BUCKET}"
+
+    # Client points `location` at the whole bucket.
+    overwrite_metadata_file(table["metadata-location"], {**table["metadata"], "location": bucket_root})
+    assert load_table(ns, "events")["metadata"]["location"] == bucket_root
+
+    # Load still vends for the table root.
+    assert vended_prefix(ns, "events") == table_root
+
+    # A commit writes the next metadata file under the table root.
+    committed = commit_table(ns, "events", [], append_updates(fake_snapshot(1, 1))).json()
+    assert committed["metadata-location"].startswith(f"{table_root}/metadata/v2-")
+    assert vended_prefix(ns, "events") == table_root
 
 
 def test_vended_credentials_readonly_user(started_cluster):

@@ -21,8 +21,10 @@ void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Ar
 
 Poco::JSON::Object::Ptr buildMetadataFromStagedCreateCommit(const Poco::JSON::Array & updates);
 
+/// Table location that the catalog assigned at create time: `metadata_location` without `/metadata/<file>`.
+String tableLocationFromMetadataLocation(const String & metadata_location);
+
 /// `<location>/metadata/v<N+1>-<random uuid><compression suffix>.metadata.json`, where N is parsed from the current file name.
-String nextMetadataLocation(
-    const Poco::JSON::Object & metadata, const String & current_metadata_location, const String & compression_suffix);
+String nextMetadataLocation(const String & current_metadata_location, const String & compression_suffix);
 
 }
