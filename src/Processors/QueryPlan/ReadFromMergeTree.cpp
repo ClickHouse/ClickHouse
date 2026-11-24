@@ -3781,13 +3781,15 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
         }
     }
 
-    const bool primary_key_takes_part = primaryKeyAtomIsInMixedDisjunction(
-        indexes.key_condition->generateUnsubstituted(), indexes.key_condition_rpn_template->generateUnsubstituted());
     indexes.use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
-                                                    && skip_indexes.useful_indices.size() + (primary_key_takes_part ? 1 : 0) > 1
+                                                    && !skip_indexes.useful_indices.empty()
                                                     && !indexes.key_condition_rpn_template->generateUnsubstituted().hasOnlyConjunctions()
                                                     && MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(
-                                                        indexes.key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
+                                                        indexes.key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings)
+                                                    && (skip_indexes.useful_indices.size() > 1
+                                                        || primaryKeyAtomIsInMixedDisjunction(
+                                                            indexes.key_condition->generateUnsubstituted(),
+                                                            indexes.key_condition_rpn_template->generateUnsubstituted()));
 
     indexes.use_skip_indexes_if_final_exact_mode = indexes.use_skip_indexes && !skip_indexes.empty()
                                                         && is_final
