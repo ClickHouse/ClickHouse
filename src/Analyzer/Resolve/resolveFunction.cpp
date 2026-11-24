@@ -3320,7 +3320,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         if (is_window_function)
         {
-            argument_types = window_function_factory.bindArgumentTypes(function_name, std::move(argument_types));
+            argument_types = window_function_factory.bindArgumentTypes(function_name, std::move(argument_types), scope.context->getSettingsRef());
             for (size_t i = 0; i < function_arguments.size(); ++i)
                 if (!function_arguments[i]->getResultType()->equals(*argument_types[i]))
                     function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);

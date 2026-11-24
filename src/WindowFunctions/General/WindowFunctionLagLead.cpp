@@ -1,4 +1,6 @@
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
@@ -8,6 +10,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool lag_lead_use_nulls;
+}
 
 namespace ErrorCodes
 {
@@ -95,12 +102,21 @@ private:
     const bool in_frame;
 };
 
-DataTypes bindLagLeadArgumentTypes(DataTypes argument_types)
+DataTypes bindLagLeadArgumentTypes(DataTypes argument_types, const Settings &)
 {
     if (argument_types.size() == 3)
         argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
 
     return argument_types;
+}
+
+/// Without a default, standard `lag` and `lead` return NULL for a row outside the partition.
+DataTypes bindStandardLagLeadArgumentTypes(DataTypes argument_types, const Settings & settings)
+{
+    if (!argument_types.empty() && argument_types.size() < 3 && settings[Setting::lag_lead_use_nulls])
+        argument_types[0] = makeNullableOrLowCardinalityNullableSafe(argument_types[0]);
+
+    return bindLagLeadArgumentTypes(std::move(argument_types), settings);
 }
 
 }
@@ -263,7 +279,7 @@ ORDER BY date DESC
 5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
    └────────────┴────────┴────────────────────┴───────┴────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindStandardLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -404,7 +420,7 @@ LIMIT 9
 9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
    └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindStandardLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

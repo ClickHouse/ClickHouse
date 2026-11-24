@@ -994,7 +994,7 @@ inline GeneralWindowFunctionPtr resolveWindowFunctionImpl(FunctionNode & functio
     const auto & window_function_factory = WindowFunctionFactory::instance();
 
     auto & arguments = function_node.getArguments().getNodes();
-    auto argument_types = window_function_factory.bindArgumentTypes(function_name, getArgumentNodeTypes(function_node));
+    auto argument_types = window_function_factory.bindArgumentTypes(function_name, getArgumentNodeTypes(function_node), context->getSettingsRef());
     for (size_t i = 0; i < arguments.size(); ++i)
         if (!arguments[i]->getResultType()->equals(*argument_types[i]))
             arguments[i] = createCastFunction(arguments[i], argument_types[i], context);

@@ -811,7 +811,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
 
         if (WindowFunctionFactory::instance().isWindowFunctionName(function_node.name))
         {
-            const DataTypes bound_types = WindowFunctionFactory::instance().bindArgumentTypes(function_node.name, window_function.argument_types);
+            const DataTypes bound_types = WindowFunctionFactory::instance().bindArgumentTypes(function_node.name, window_function.argument_types, current_context->getSettingsRef());
             for (size_t i = 0; i < arguments.size(); ++i)
             {
                 if (window_function.argument_types[i]->equals(*bound_types[i]))
