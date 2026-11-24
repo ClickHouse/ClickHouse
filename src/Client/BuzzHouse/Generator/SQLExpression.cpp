@@ -1264,7 +1264,10 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         expr = eca->mutable_expr();
     }
 
-    switch (static_cast<ExpOp>(expGen.nextOp())) /// drifts over time
+    /// A shaped query reaches the replicas only if it runs: keep most of its expressions plain column references
+    const auto next_op = this->distributed_shapes && rg.nextMediumNumber() < 71 ? ExpOp::ColumnRef : static_cast<ExpOp>(expGen.nextOp());
+
+    switch (next_op) /// drifts over time
     {
         case ExpOp::Literal: generateLiteralValue(rg, true, expr); break;
         case ExpOp::ColumnRef: generateColRef(rg, expr); break;
