@@ -3613,6 +3613,24 @@ def test_plain_engines_reject_database_rename_and_truncate_all_tables(started_cl
         assert "TRUNCATE ALL TABLES is not supported" in error
         assert int(instance.query(f"SELECT count() FROM {database}.{table}")) == 100
 
+        # A move to another database would take only the wrapper: its nested table stays behind, where
+        # TRUNCATE ALL TABLES no longer sees the wrapper that vetoes it. Both ways to move are refused.
+        instance.query(f"DROP DATABASE IF EXISTS {database}_other SYNC")
+        instance.query(f"CREATE DATABASE {database}_other ENGINE = Atomic")
+        instance.query(
+            f"CREATE TABLE {database}_other.other_table (x UInt64) ENGINE = MergeTree ORDER BY x"
+        )
+        error = instance.query_and_get_error(
+            f"RENAME TABLE {database}.{table} TO {database}_other.{table}"
+        )
+        assert "to another database" in error
+        error = instance.query_and_get_error(
+            f"EXCHANGE TABLES {database}.{table} AND {database}_other.other_table"
+        )
+        assert "to another database" in error
+        assert table in instance.query(f"SHOW TABLES FROM {database}").split()
+        assert table not in instance.query(f"SHOW TABLES FROM {database}_other").split()
+
         # Nothing was truncated or renamed, and both keep replicating.
         instance.query(
             f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100, 100)"
@@ -3626,6 +3644,7 @@ def test_plain_engines_reject_database_rename_and_truncate_all_tables(started_cl
         )
         check_tables_are_synchronized(instance, table)
     finally:
+        instance.query(f"DROP DATABASE IF EXISTS {database}_other SYNC")
         instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")
 
     pg_manager.drop_materialized_db()

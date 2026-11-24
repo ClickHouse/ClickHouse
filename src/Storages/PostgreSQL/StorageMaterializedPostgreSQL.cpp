@@ -394,10 +394,14 @@ void StorageMaterializedPostgreSQL::checkTableCanBeRenamed(const StorageID & new
     /// `DatabaseAtomic::renameTable` moves only this wrapper: its `<uuid>_nested` table stays in the old database.
     /// The next startup would look for the nested table in the new database and, with a coordination identity that
     /// expands `{database}`, register a separate replica tree for the same PostgreSQL slot and publication.
-    if (is_standalone_coordinated && new_name.database_name != getStorageID().database_name)
+    /// This holds for the plain nested engine as well: besides the lookup after a restart, the nested table left
+    /// behind is no longer protected by `checkDatabaseTablesCanBeTruncated`, because `TRUNCATE ALL TABLES` of the
+    /// old database does not see this wrapper anymore. The tables of a `MaterializedPostgreSQL` database cannot be
+    /// renamed at all (see `DatabaseMaterializedPostgreSQL::renameTable`).
+    if (!is_materialized_postgresql_database && new_name.database_name != getStorageID().database_name)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Moving the coordinated MaterializedPostgreSQL table {} to another database ({}) is not supported: "
-            "its nested table and coordination identity stay bound to the original database",
+            "Moving the MaterializedPostgreSQL table {} to another database ({}) is not supported: "
+            "its nested table and replication state stay bound to the original database",
             getStorageID().getNameForLogs(), backQuoteIfNeed(new_name.database_name));
 }
 
