@@ -45,7 +45,12 @@ INSERT INTO t_mt VALUES (16, 26000, '2066-10-07');
 INSERT INTO t_mt2 VALUES (91, 101000);
 
 SELECT * FROM (SELECT 1 UNION ALL SELECT r.v0 FROM (SELECT row_number() OVER (PARTITION BY t.v0) AS c1 FROM t_mt AS t WHERE t.v2 IN (SELECT 1 FROM t_log)) AS l INNER JOIN t_mt2 AS r ON l.c1 = r.v0) LIMIT 1 SETTINGS max_threads = 4;
-SELECT * FROM (SELECT 1 UNION ALL SELECT uniqExact(t.v1) + 1 FROM t_mt AS t WHERE t.v2 IN (SELECT 1 FROM t_log)) LIMIT 1 SETTINGS max_threads = 4, optimize_uniq_exact_radix_partitioning = 1;
+-- The radix teardown depends on scheduling, so it runs several times.
+SELECT * FROM (SELECT 1 UNION ALL SELECT uniqExact(t.v1) + 1 FROM t_mt AS t WHERE t.v2 IN (SELECT 1 FROM t_log)) LIMIT 1 SETTINGS max_threads = 2, optimize_uniq_exact_radix_partitioning = 1;
+SELECT * FROM (SELECT 1 UNION ALL SELECT uniqExact(t.v1) + 1 FROM t_mt AS t WHERE t.v2 IN (SELECT 1 FROM t_log)) LIMIT 1 SETTINGS max_threads = 2, optimize_uniq_exact_radix_partitioning = 1;
+SELECT * FROM (SELECT 1 UNION ALL SELECT uniqExact(t.v1) + 1 FROM t_mt AS t WHERE t.v2 IN (SELECT 1 FROM t_log)) LIMIT 1 SETTINGS max_threads = 2, optimize_uniq_exact_radix_partitioning = 1;
+SELECT * FROM (SELECT 1 UNION ALL SELECT uniqExact(t.v1) + 1 FROM t_mt AS t WHERE t.v2 IN (SELECT 1 FROM t_log)) LIMIT 1 SETTINGS max_threads = 2, optimize_uniq_exact_radix_partitioning = 1;
+SELECT * FROM (SELECT 1 UNION ALL SELECT uniqExact(t.v1) + 1 FROM t_mt AS t WHERE t.v2 IN (SELECT 1 FROM t_log)) LIMIT 1 SETTINGS max_threads = 2, optimize_uniq_exact_radix_partitioning = 1;
 
 DROP TABLE t_fact;
 DROP TABLE t_fact_memory;
