@@ -25,6 +25,9 @@ namespace DB
 namespace
 {
 
+constexpr size_t MAX_STATE_BYTES = 256;
+constexpr size_t ROWS_IN_CHUNK = 8;
+
 void addRows(const IAggregateFunction & function, AggregateDataPtr place, const WindowArguments & arguments, Int64 begin, Int64 end)
 {
     while (begin < end)
@@ -92,9 +95,9 @@ private:
 class SlidingAggregation
 {
 public:
-    SlidingAggregation(AggregateFunctionPtr function_, Int64 chunk_rows_)
+    SlidingAggregation(AggregateFunctionPtr function_, Int64 rows_in_chunk_)
         : function(std::move(function_))
-        , rows_in_chunk(chunk_rows_)
+        , rows_in_chunk(rows_in_chunk_)
         , left_stack(function)
         , right_state(std::max<size_t>(function->sizeOfData(), 1), function->alignOfData())
     {
@@ -174,7 +177,7 @@ public:
     AggregateWindowFunctionSliding(AggregateFunctionPtr function, Int64 min_frame_rows_)
         : min_frame_rows(min_frame_rows_)
         , state(function)
-        , aggregation(function, /*chunk_rows_=*/8)
+        , aggregation(function, ROWS_IN_CHUNK)
     {
     }
 
@@ -245,6 +248,9 @@ AggregateWindowFunctionPtr tryCreateAggregateWindowFunctionSliding(const Aggrega
         return nullptr;
 
     if (!function->hasTrivialDestructor() || function->allocatesMemoryInArena())
+        return nullptr;
+
+    if (function->sizeOfData() > MAX_STATE_BYTES)
         return nullptr;
 
     return std::make_shared<AggregateWindowFunctionSliding>(function, static_cast<Int64>(std::min<UInt64>(min_frame_rows, std::numeric_limits<Int64>::max())));
