@@ -18,6 +18,15 @@ SELECT * FROM values('v Variant(JSON(n UInt8), UInt64)', (CAST('{"n" : "42"}' AS
 SELECT * FROM values('a Array(JSON(n UInt8))', ([CAST('{"n" : null}' AS JSON(n Nullable(UInt8)))]));
 SELECT * FROM values('a Array(JSON(n UInt8))', ([CAST('{"n" : 300}' AS JSON)])); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
+SELECT 'values of typed paths are converted from the types of the source paths';
+SELECT j.e, j.__source FROM values('j JSON(with_source=1, e String)', CAST('{"e" : "ok"}' AS JSON(e Enum8('ok' = 1))));
+SELECT j.d FROM values('j JSON(d DateTime(\'UTC\'))', CAST('{"d" : "2020-01-02"}' AS JSON(d Date)));
+
+SELECT 'the elements of nested types are converted from their source types';
+SELECT * FROM values('a Array(JSON(e String))', ([CAST('{"e" : "ok"}' AS JSON(e Enum8('ok' = 1)))]));
+SELECT * FROM values('t Tuple(String)', (tuple(CAST('ok' AS Enum8('ok' = 1)))));
+SELECT * FROM values('m Map(String, String)', (map('k', CAST('ok' AS Enum8('ok' = 1)))));
+
 SELECT 'skipped paths are dropped';
 SELECT * FROM values('a Array(JSON(SKIP s, SKIP REGEXP \'^r\'))', ([CAST('{"s" : {"x" : 1}, "sx" : 2, "r1" : 3, "x" : 4}' AS JSON)]));
 SELECT * FROM values('a Array(JSON(SKIP REGEXP \'^r\'))', ([CAST('{"r1" : 3, "x" : 4}' AS JSON)])) SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 0;

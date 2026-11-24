@@ -3386,11 +3386,10 @@ ColumnPtr convertObjectColumns(
 
     for (const auto & [path, _col] : src_dynamic_paths)
     {
-        if (shouldSkip(path))
-            continue;
+        /// Typed paths are never skipped.
         if (plan.new_typed_paths.contains(path))
             src_dynamic_paths_to_typed.insert(path);
-        else
+        else if (!shouldSkip(path))
             src_dynamic_paths_to_reuse.push_back(path);
     }
 
@@ -3399,91 +3398,66 @@ ColumnPtr convertObjectColumns(
     using PathToColumnMap = UnorderedMapWithMemoryTracking<String, ColumnPtr>;
     PathToColumnMap dst_typed_columns;
 
-    const auto & dst_typed_path_types = dst_type.getTypedPaths();
-
-    /// Unchanged typed paths: reuse by pointer (unless a new skip rule matches).
+    /// Typed paths are never skipped. Unchanged typed paths: reuse by pointer.
     for (const auto & path : plan.unchanged_typed_paths)
-    {
-        if (shouldSkip(path))
-        {
-            /// New skip rule covers this typed path — fill with defaults, matching format+parse behavior.
-            const auto & type = dst_typed_path_types.at(path);
-            auto col = type->createColumn();
-            type->insertManyDefaultsInto(*col, rows);
-            dst_typed_columns[path] = std::move(col);
-        }
-        else
-        {
-            auto it = src_typed_paths.find(path);
-            dst_typed_columns[path] = it->second;
-        }
-    }
+        dst_typed_columns[path] = src_typed_paths.find(path)->second;
 
-    /// Changed typed paths: CAST (unless a new skip rule matches).
+    /// Changed typed paths: CAST.
     for (const auto & [path, type_pair] : plan.changed_typed_paths)
     {
         const auto & [from_tp, to_tp] = type_pair;
-        if (shouldSkip(path))
+        auto it = src_typed_paths.find(path);
+
+        /// Stripping Nullable and casting reproduces the parser only when a source NULL maps to the
+        /// destination default: nothing but the Nullable wrapper may differ (else the converted source
+        /// default diverges from the destination default), the destination default must be the plain
+        /// zero CAST produces (not e.g. an Enum's first value), and a NULL must become a default at all.
+        /// A NULL becomes a default with null_as_default, or with type_json_skip_null_typed_paths when the
+        /// path itself is the dropped Nullable, since then it is left out of the serialized object.
+        /// Between DateTime types the defaults are the same instant, so the nested types may differ.
+        const bool converts_instants = isDateTimeToDateTimeConversion(from_tp, to_tp);
+        const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
+        const bool can_strip_nullable = nullable_mismatch
+            && (converts_instants || nullableMismatchIsOnlyDifference(from_tp, to_tp))
+            && strippedNullsGetTrivialDefaults(from_tp, to_tp)
+            && (format_settings.null_as_default
+                || (format_settings.json.type_json_skip_null_typed_paths
+                    && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp)));
+
+        /// A CAST between DateTime types cannot fail and does not depend on how the values are written as text.
+        if ((!converts_instants
+                && (skip_invalid
+                    || needsFormatParseFallback(from_tp, format_settings)
+                    || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)))
+            || (nullable_mismatch && !can_strip_nullable))
         {
-            auto col = to_tp->createColumn();
-            to_tp->insertManyDefaultsInto(*col, rows);
-            dst_typed_columns[path] = std::move(col);
+            dst_typed_columns[path]
+                = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
         }
         else
         {
-            auto it = src_typed_paths.find(path);
+            auto src_col = it->second;
+            auto src_type = from_tp;
 
-            /// Stripping Nullable and casting reproduces the parser only when a source NULL maps to the
-            /// destination default: nothing but the Nullable wrapper may differ (else the converted source
-            /// default diverges from the destination default), the destination default must be the plain
-            /// zero CAST produces (not e.g. an Enum's first value), and a NULL must become a default at all.
-            /// A NULL becomes a default with null_as_default, or with type_json_skip_null_typed_paths when the
-            /// path itself is the dropped Nullable, since then it is left out of the serialized object.
-            /// Between DateTime types the defaults are the same instant, so the nested types may differ.
-            const bool converts_instants = isDateTimeToDateTimeConversion(from_tp, to_tp);
-            const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
-            const bool can_strip_nullable = nullable_mismatch
-                && (converts_instants || nullableMismatchIsOnlyDifference(from_tp, to_tp))
-                && strippedNullsGetTrivialDefaults(from_tp, to_tp)
-                && (format_settings.null_as_default
-                    || (format_settings.json.type_json_skip_null_typed_paths
-                        && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp)));
-
-            /// A CAST between DateTime types cannot fail and does not depend on how the values are written as text.
-            if ((!converts_instants
-                    && (skip_invalid
-                        || needsFormatParseFallback(from_tp, format_settings)
-                        || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)))
-                || (nullable_mismatch && !can_strip_nullable))
+            /// Strip Nullable where destination is non-Nullable to avoid
+            /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. NULL rows become the nested
+            /// type default, which is what the parser inserts here (see can_strip_nullable).
+            if (nullable_mismatch)
             {
-                dst_typed_columns[path]
-                    = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
-            }
-            else
-            {
-                auto src_col = it->second;
-                auto src_type = from_tp;
-
-                /// Strip Nullable where destination is non-Nullable to avoid
-                /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. NULL rows become the nested
-                /// type default, which is what the parser inserts here (see can_strip_nullable).
-                if (nullable_mismatch)
+                if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
                 {
-                    if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
-                    {
-                        src_col = std::move(stripped->first);
-                        src_type = std::move(stripped->second);
-                    }
+                    src_col = std::move(stripped->first);
+                    src_type = std::move(stripped->second);
                 }
-
-                ColumnPtr cast_result;
-                if (castMatchesParse(src_col, src_type, to_tp))
-                    cast_result = castColumnRejectingInvalid(src_col, src_type, to_tp, convert_settings);
-
-                dst_typed_columns[path] = cast_result
-                    ? cast_result
-                    : convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
             }
+
+            ColumnPtr cast_result;
+            if (castMatchesParse(src_col, src_type, to_tp))
+                cast_result = castColumnRejectingInvalid(src_col, src_type, to_tp, convert_settings);
+
+            dst_typed_columns[path] = cast_result
+                ? cast_result
+                : convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
         }
     }
 
@@ -3694,11 +3668,7 @@ ColumnPtr convertObjectColumns(
             {
                 auto path = src_paths_col->getDataAt(idx);
 
-                /// Check skip rules first — skip wins over typed-path promotion.
-                if (shouldSkip(path))
-                    return;
-
-                /// Check if this path should become a new typed path.
+                /// Check if this path should become a new typed path. Typed paths are never skipped.
                 auto it = new_typed_path_mutable_columns.find(String(path));
                 if (it != new_typed_path_mutable_columns.end())
                 {
@@ -3736,6 +3706,9 @@ ColumnPtr convertObjectColumns(
                     populated_in_row.insert(String(path));
                     return;
                 }
+
+                if (shouldSkip(path))
+                    return;
 
                 /// Copy entry to destination.
                 dst_shared_paths_col.insertData(path.data(), path.size());

@@ -913,7 +913,7 @@ private:
         if (object_type.getTypedPaths().contains(path))
             return true;
 
-        return object_type.getPathsToSkip()->shouldSkip(path, /*partial_match_regexps=*/ true);
+        return object_type.getPathsToSkip()->shouldSkip(path, /*partial_match_regexps=*/ true, /*check_parents=*/ false);
     }
 
     [[nodiscard]] bool hasTypedChildren(const String & path) const

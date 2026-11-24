@@ -1411,12 +1411,14 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
         String path;
         readStringBinaryGrowing(path, istr);
         checkPathIsNotReserved(path);
-        if (!paths_to_skip->shouldSkip(path, settings.json.type_json_use_partial_match_to_skip_paths_by_regexp))
+        /// Typed paths are never skipped.
+        if (auto it = typed_paths_serializations.find(path); it != typed_paths_serializations.end())
         {
-            if (auto it = typed_paths_serializations.find(path); it != typed_paths_serializations.end())
-                it->second->deserializeBinary(object[path], istr, settings);
-            else
-                dynamic_serialization->deserializeBinary(object[path], istr, settings);
+            it->second->deserializeBinary(object[path], istr, settings);
+        }
+        else if (!paths_to_skip->shouldSkip(path, settings.json.type_json_use_partial_match_to_skip_paths_by_regexp, /*check_parents=*/ true))
+        {
+            dynamic_serialization->deserializeBinary(object[path], istr, settings);
         }
         else
         {
@@ -1538,7 +1540,9 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             String path;
             readStringBinaryGrowing(path, istr);
             checkPathIsNotReserved(path);
-            if (!paths_to_skip->shouldSkip(path, settings.json.type_json_use_partial_match_to_skip_paths_by_regexp))
+            /// Typed paths are never skipped.
+            if (typed_paths_serializations.contains(path)
+                || !paths_to_skip->shouldSkip(path, settings.json.type_json_use_partial_match_to_skip_paths_by_regexp, /*check_parents=*/ true))
             {
                 /// Check if we have this path in typed paths.
                 if (auto typed_it = typed_paths_serializations.find(path); typed_it != typed_paths_serializations.end())

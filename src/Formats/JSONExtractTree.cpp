@@ -2467,7 +2467,8 @@ private:
         String & error,
         bool is_root,
         size_t depth,
-        bool skip_typed_path_check = false) const
+        bool skip_typed_path_check = false,
+        bool inside_skipped_object = false) const
     {
         /// Object nesting depth is bounded only by the input; the limit also keeps the memory spent
         /// on paths, which every level appends to, from growing quadratically with the depth.
@@ -2479,7 +2480,9 @@ private:
             return false;
         }
 
-        if (shouldSkipPath(current_path, insert_settings))
+        /// Typed paths are never skipped, so a skipped object is still traversed for the typed paths inside it.
+        const bool skipped = !typed_path_nodes.contains(current_path) && (inside_skipped_object || shouldSkipPath(current_path, insert_settings));
+        if (skipped && !(element.isObject() && hasTypedPathWithPrefix(current_path.empty() ? current_path : current_path + ".")))
             return true;
 
         if (element.isObject() && (skip_typed_path_check || !typed_path_nodes.contains(current_path) || (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object && hasTypedPathWithPrefix(current_path + "."))))
@@ -2495,7 +2498,7 @@ private:
                     if (isRootKeyReserved(column_object, current_path, key, insert_settings, is_root, error))
                         return false;
                     size_t parent_size = pushChildKey(current_path, key, insert_settings, is_root);
-                    bool ok = traverseAndInsert(column_object, value, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1);
+                    bool ok = traverseAndInsert(column_object, value, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1, false, skipped);
                     current_path.resize(parent_size);
                     if (!ok)
                         return false;
@@ -2598,7 +2601,7 @@ private:
                     && typed_path_nodes.contains(current_path)
                     && !canParseObjectValue(typed_paths_types.at(current_path));
 
-                bool ok = traverseAndInsert(column_object, value, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1, skip_typed);
+                bool ok = traverseAndInsert(column_object, value, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1, skip_typed, skipped);
                 current_path.resize(parent_size);
                 if (!ok)
                     return false;
@@ -2719,7 +2722,8 @@ private:
 
     [[nodiscard]] bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
     {
-        return paths_to_skip->shouldSkip(path, insert_settings.use_partial_match_to_skip_paths_by_regexp);
+        /// The parser descends into objects one by one and checks each of them, so the parents are already checked.
+        return paths_to_skip->shouldSkip(path, insert_settings.use_partial_match_to_skip_paths_by_regexp, /*check_parents=*/ false);
     }
 
     /// The fast-path logic for simple types (Bool, Int64, UInt64, Float64, String)

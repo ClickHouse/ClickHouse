@@ -53,14 +53,17 @@ public:
         ~PathsToSkip();
 
         /// `SKIP a` skips `a` and `a.b`, but not `ab`. `partial_match_regexps` is the setting
-        /// `type_json_use_partial_match_to_skip_paths_by_regexp`.
-        [[nodiscard]] bool shouldSkip(std::string_view path, bool partial_match_regexps) const;
+        /// `type_json_use_partial_match_to_skip_paths_by_regexp`. With `check_parents` a regexp is also matched against
+        /// the root and each parent object, for readers of flattened paths; a reader that descends checks each object itself.
+        [[nodiscard]] bool shouldSkip(std::string_view path, bool partial_match_regexps, bool check_parents) const;
 
         [[nodiscard]] const Paths & getPaths() const { return paths; }
         [[nodiscard]] const std::vector<String> & getRegexps() const { return regexps; }
         bool operator==(const PathsToSkip & rhs) const { return paths == rhs.paths && regexps == rhs.regexps; }
 
     private:
+        [[nodiscard]] bool matchesRegexp(std::string_view path, bool partial_match_regexps) const;
+
         Paths paths;
         std::vector<String> regexps;
         std::vector<std::unique_ptr<re2::RE2>> compiled_regexps;

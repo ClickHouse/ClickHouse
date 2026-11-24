@@ -110,7 +110,7 @@ DataTypeObject::DataTypeObject(
 
     for (const auto & [typed_path, type] : typed_paths)
     {
-        if (paths_to_skip->shouldSkip(typed_path, /*partial_match_regexps=*/ false))
+        if (paths_to_skip->shouldSkip(typed_path, /*partial_match_regexps=*/ false, /*check_parents=*/ false))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and is skipped by the SKIP or SKIP REGEXP clauses", typed_path, type->getName());
     }
 
@@ -155,26 +155,34 @@ DataTypeObject::PathsToSkip::PathsToSkip(Paths paths_, std::vector<String> regex
 
 DataTypeObject::PathsToSkip::~PathsToSkip() = default;
 
-bool DataTypeObject::PathsToSkip::shouldSkip(std::string_view path, bool partial_match_regexps) const
+bool DataTypeObject::PathsToSkip::matchesRegexp(std::string_view path, bool partial_match_regexps) const
 {
-    if (!paths.empty())
-    {
-        /// The path itself or any object containing it.
-        size_t end = path.find('.');
-        while (true)
-        {
-            if (paths.contains(path.substr(0, end)))
-                return true;
-            if (end == std::string_view::npos)
-                break;
-            end = path.find('.', end + 1);
-        }
-    }
-
     for (const auto & regexp : compiled_regexps)
     {
         if (partial_match_regexps ? re2::RE2::PartialMatch(path, *regexp) : re2::RE2::FullMatch(path, *regexp))
             return true;
+    }
+    return false;
+}
+
+bool DataTypeObject::PathsToSkip::shouldSkip(std::string_view path, bool partial_match_regexps, bool check_parents) const
+{
+    if (paths.empty() && compiled_regexps.empty())
+        return false;
+
+    if (check_parents && matchesRegexp({}, partial_match_regexps))
+        return true;
+
+    /// The path itself or any object containing it.
+    size_t end = path.find('.');
+    while (true)
+    {
+        auto prefix = path.substr(0, end);
+        if (paths.contains(prefix) || ((check_parents || end == std::string_view::npos) && matchesRegexp(prefix, partial_match_regexps)))
+            return true;
+        if (end == std::string_view::npos)
+            break;
+        end = path.find('.', end + 1);
     }
 
     return false;

@@ -9,6 +9,24 @@ a path inside a skipped one, with another skipped path sorted between them
 JSON(SKIP a, SKIP `a-b`)
 {"c":3}
 {"c":3}
+a regular expression that matches an object skips the paths inside it
+JSON(SKIP REGEXP '^a$')
+{"x":2}
+{"x":2}
+{"x":2}
+a typed path is never skipped
+JSON(ab UInt32, SKIP REGEXP '^a') --type_json_use_partial_match_to_skip_paths_by_regexp=1
+{"ab":5}
+{"ab":5}
+{"ab":5}
+JSON(a.b UInt32, SKIP REGEXP '^a$')
+{"a":{"b":1},"x":3}
+{"a":{"b":1},"x":3}
+{"a":{"b":1},"x":3}
+a typed path is never skipped by a conversion between JSON types
+{"ab":5}
+{"ab":5}
+{"ab":5}
 regular expressions match partially or fully by the setting
 JSON(SKIP REGEXP 'b') --type_json_use_partial_match_to_skip_paths_by_regexp=1
 {"c":2}

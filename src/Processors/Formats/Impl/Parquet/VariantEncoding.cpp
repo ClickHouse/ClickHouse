@@ -251,9 +251,19 @@ public:
     {
     }
 
+    /// Objects are decoded level by level, so each one is checked on its own.
     [[nodiscard]] bool shouldSkip(const String & path) const
     {
-        return type.getPathsToSkip()->shouldSkip(path, use_partial_match);
+        return type.getPathsToSkip()->shouldSkip(path, use_partial_match, /*check_parents=*/ false);
+    }
+
+    /// Whether an object holds typed paths; the root (an empty path) holds all of them.
+    [[nodiscard]] bool hasTypedPathsInside(const String & path) const
+    {
+        if (path.empty())
+            return !type.getTypedPaths().empty();
+        const String prefix = path + ".";
+        return std::ranges::any_of(type.getTypedPaths(), [&](const auto & typed_path) { return typed_path.first.starts_with(prefix); });
     }
 
     [[nodiscard]] const DataTypePtr * findTypedPath(const String & path) const
@@ -713,7 +723,8 @@ void insertObjectPaths(
     ColumnObject & column,
     const JSONPathsFilter * filter,
     size_t prev_size,
-    VectorWithMemoryTracking<SharedDataValue> & shared_data_values)
+    VectorWithMemoryTracking<SharedDataValue> & shared_data_values,
+    bool inside_skipped_object)
 {
     const ObjectLayout layout = ObjectLayout::deserialize(data, pos, value_header);
 
@@ -729,7 +740,10 @@ void insertObjectPaths(
                 "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
                 path,
                 DataTypeObject::SOURCE_SUBCOLUMN_NAME);
-        if (filter && filter->shouldSkip(path))
+        /// Typed paths are never skipped, so a skipped object is still decoded for the typed paths inside it.
+        const DataTypePtr * typed_type = filter ? filter->findTypedPath(path) : nullptr;
+        const bool skipped = !typed_type && filter && (inside_skipped_object || filter->shouldSkip(path));
+        if (skipped && !filter->hasTypedPathsInside(path))
             continue;
 
         const size_t value_pos = layout.valuePos(data, i);
@@ -739,7 +753,7 @@ void insertObjectPaths(
         if (header == UInt8(PrimitiveType::Null) << 2)
             continue;
 
-        if (const DataTypePtr * typed_type = filter ? filter->findTypedPath(path) : nullptr)
+        if (typed_type)
         {
             auto & typed_column = *column.getTypedPaths().at(path);
             if (typed_column.size() > prev_size)
@@ -754,9 +768,12 @@ void insertObjectPaths(
         {
             checkDepth(context, depth + 1);
             insertObjectPaths(
-                data, value_pos + 1, header >> 2, context, depth + 1, path, false, column, filter, prev_size, shared_data_values);
+                data, value_pos + 1, header >> 2, context, depth + 1, path, false, column, filter, prev_size, shared_data_values, skipped);
             continue;
         }
+
+        if (skipped)
+            continue;
 
         ColumnDynamic * dynamic_column = nullptr;
         auto & dynamic_paths = column.getDynamicPathsPtrs();
@@ -795,7 +812,9 @@ void decodeObjectIntoJSON(
     const size_t prev_size = column.size();
 
     VectorWithMemoryTracking<SharedDataValue> shared_data_values;
-    insertObjectPaths(data, pos, value_header, context, depth, "", true, column, filter, prev_size, shared_data_values);
+    /// The parser checks the root object too.
+    const bool root_skipped = filter && filter->shouldSkip("");
+    insertObjectPaths(data, pos, value_header, context, depth, "", true, column, filter, prev_size, shared_data_values, root_skipped);
 
     /// Paths in shared data must be sorted.
     std::sort(

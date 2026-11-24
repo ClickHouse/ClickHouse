@@ -11,6 +11,13 @@ values of typed paths are converted to their types
 ['{"n":42}']
 {"n":42}
 ['{"n":0}']
+values of typed paths are converted from the types of the source paths
+ok	{"e":"ok"}
+2020-01-02 00:00:00
+the elements of nested types are converted from their source types
+['{"e":"ok"}']
+('ok')
+{'k':'ok'}
 skipped paths are dropped
 ['{"sx":2,"x":4}']
 ['{"r1":3,"x":4}']
