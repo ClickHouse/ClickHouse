@@ -29,6 +29,7 @@
 #include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <WindowFunctions/WindowFunctionFactory.h>
@@ -75,30 +76,33 @@ namespace DB
 namespace
 {
 
-/// Ids of every scalar subquery whose folded value appears anywhere under `node`. Recurses through
-/// a constant's `source_expression` as well as its children.
-void collectScalarSubqueryIdsImpl(const QueryTreeNodePtr & node, std::vector<size_t> & ids)
+/// Ids of every scalar subquery whose folded value appears under `node`.
+///
+/// A constant already carries the ids of everything that was folded into it, so the walk takes
+/// them from the constant and does not descend into its `source_expression`. Aliases make the
+/// tree share nodes, so each node is visited once.
+void collectScalarSubqueryIdsImpl(
+    const IQueryTreeNode * node, UnorderedSetWithMemoryTracking<const IQueryTreeNode *> & visited, std::vector<size_t> & ids)
 {
-    if (!node)
+    if (!node || !visited.insert(node).second)
         return;
 
     if (const auto * constant = node->as<ConstantNode>())
     {
         const auto & node_ids = constant->getScalarSubqueryIds();
         ids.insert(ids.end(), node_ids.begin(), node_ids.end());
-
-        if (constant->hasSourceExpression())
-            collectScalarSubqueryIdsImpl(constant->getSourceExpression(), ids);
+        return;
     }
 
     for (const auto & child : node->getChildren())
-        collectScalarSubqueryIdsImpl(child, ids);
+        collectScalarSubqueryIdsImpl(child.get(), visited, ids);
 }
 
 void collectScalarSubqueryIds(const QueryTreeNodePtr & node, ConstantNode & into)
 {
+    UnorderedSetWithMemoryTracking<const IQueryTreeNode *> visited;
     std::vector<size_t> ids;
-    collectScalarSubqueryIdsImpl(node, ids);
+    collectScalarSubqueryIdsImpl(node.get(), visited, ids);
 
     ::std::sort(ids.begin(), ids.end());
     ids.erase(::std::unique(ids.begin(), ids.end()), ids.end());
@@ -3809,7 +3813,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Folding collapses the expression, and with it any scalar subquery whose value
                 /// went into it. For example, `(SELECT a) + (SELECT b)` becomes one constant.
                 /// So, carry their ids onto the result so the plan can still say which step reads them.
-                collectScalarSubqueryIds(node, *constant_node);
+                /// Only the captured plan reads the ids, so without a capture there is nothing to carry.
+                if (scope.context->getPlanLogCapture())
+                    collectScalarSubqueryIds(node, *constant_node);
             }
         }
 
