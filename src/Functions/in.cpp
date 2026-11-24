@@ -130,7 +130,7 @@ public:
 
     [[nodiscard]] bool isResultIndependentOfArgumentValues(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (ignore_set || arguments.size() != 2 || isNullableOrLowCardinalityNullable(arguments[0].type))
+        if (ignore_set || arguments.size() != 2 || (null_is_skipped && isNullableOrLowCardinalityNullable(arguments[0].type)))
             return false;
 
         const ColumnSet * column_set = tryGetColumnSet(arguments[1].column);

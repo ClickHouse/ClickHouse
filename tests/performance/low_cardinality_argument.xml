@@ -20,6 +20,9 @@
     <create_query>
         CREATE TABLE test_lc_fixed (x UInt64, lc LowCardinality(FixedString(16))) ENGINE = MergeTree order by x
     </create_query>
+    <create_query>
+        CREATE TABLE test_lc_fixed_nullable (x UInt64, lc LowCardinality(Nullable(FixedString(16)))) ENGINE = MergeTree order by x
+    </create_query>
 
     <fill_query>INSERT INTO test_lc SELECT number, number % 10 ? NULL : toString(number % 10000) FROM numbers(1e7)</fill_query>
     <!-- The queries over test_lc_agg and test_lc_runs take a time that depends on the number of parts, so both servers get one part. -->
@@ -34,6 +37,8 @@
     <fill_query>OPTIMIZE TABLE test_lc_long FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
     <fill_query>INSERT INTO test_lc_fixed SELECT number, toFixedString(concat('value ', toString(cityHash64(number) % 8001)), 16) FROM numbers(1e7)</fill_query>
     <fill_query>OPTIMIZE TABLE test_lc_fixed FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>INSERT INTO test_lc_fixed_nullable SELECT x, if(x % 10 = 0, NULL, lc) FROM test_lc_fixed</fill_query>
+    <fill_query>OPTIMIZE TABLE test_lc_fixed_nullable FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
     
     <query>SELECT isNullable(lc) FROM test_lc FORMAT Null</query>
     <query>SELECT isConstant(lc) FROM test_lc FORMAT Null</query>
@@ -54,9 +59,10 @@
     <query>SELECT count() FROM test_lc_shared WHERE x % 1000 = 7 AND lower(lc) LIKE '%42%' SETTINGS use_query_condition_cache = 0</query>
     <!-- 1 KB values on blocks with 17 times fewer rows than the dictionary: a cheap function must keep the whole-dictionary path. -->
     <query>SELECT countIf(empty(lc)) FROM test_lc_long SETTINGS max_block_size = 470</query>
-    <!-- `length` of LowCardinality(FixedString) and `IN` an empty set do not read the values: they must keep the whole-dictionary path on blocks with 17 times fewer rows than the dictionary. -->
+    <!-- `length` of LowCardinality(FixedString) and `IN` an empty set (also null-aware on Nullable) do not read the values: they must keep the whole-dictionary path on blocks with 17 times fewer rows than the dictionary. -->
     <query>SELECT sum(length(lc)) FROM test_lc_fixed SETTINGS max_block_size = 470</query>
     <query>SELECT countIf(lc IN (SELECT lc FROM test_lc_fixed WHERE x > 1000000000)) FROM test_lc_fixed SETTINGS max_block_size = 470</query>
+    <query>SELECT countIf(lc IN (SELECT lc FROM test_lc_fixed_nullable WHERE x > 1000000000)) FROM test_lc_fixed_nullable SETTINGS transform_null_in = 1, max_block_size = 470</query>
 
     <drop_query>DROP TABLE IF EXISTS test_lc</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_agg</drop_query>
@@ -65,4 +71,5 @@
     <drop_query>DROP TABLE IF EXISTS test_lc_hc</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_long</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_fixed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_lc_fixed_nullable</drop_query>
 </test>

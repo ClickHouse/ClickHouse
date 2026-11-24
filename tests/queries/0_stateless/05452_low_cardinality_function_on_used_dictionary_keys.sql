@@ -41,7 +41,7 @@ SELECT id, toFixedString(s, 5) FROM t_lc_unused_key WHERE id = 43;
 
 DROP TABLE t_lc_unused_key;
 
--- `length` of a FixedString and `IN` an empty set do not depend on the values; with Nullable they do.
+-- `length` of a FixedString and `IN` an empty set do not depend on the values; with Nullable they do, unless `transform_null_in = 1`.
 DROP TABLE IF EXISTS t_lc_fixed;
 CREATE TABLE t_lc_fixed (id UInt64, f LowCardinality(FixedString(3)), nf LowCardinality(Nullable(FixedString(3))))
 ENGINE = MergeTree ORDER BY id;
@@ -50,5 +50,7 @@ INSERT INTO t_lc_fixed SELECT number, toString(number % 1000), if(number % 7 = 0
 SELECT id, f, length(f), length(nf) FROM t_lc_fixed WHERE id IN (0, 43, 4243, 9999) ORDER BY id;
 SELECT id, f IN (SELECT f FROM t_lc_fixed WHERE id > 100000), nf NOT IN (SELECT nf FROM t_lc_fixed WHERE id > 100000)
 FROM t_lc_fixed WHERE id IN (0, 43, 4243, 9999) ORDER BY id;
+SELECT id, nf IN (SELECT nf FROM t_lc_fixed WHERE id > 100000), nf NOT IN (SELECT nf FROM t_lc_fixed WHERE id > 100000)
+FROM t_lc_fixed WHERE id IN (0, 43, 4243, 9999) ORDER BY id SETTINGS transform_null_in = 1;
 
 DROP TABLE t_lc_fixed;
