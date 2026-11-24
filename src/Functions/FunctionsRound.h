@@ -281,7 +281,7 @@ struct FloatRoundingComputation
 };
 
 
-/// `10^n * 2^-192 = hi + lo` with `|lo| <= ulp(hi) / 2`.
+/// `hi + lo` approximates `10^n * 2^-192` within a relative 2^-104, with `|lo| <= ulp(hi) / 2`.
 struct ScaledExp10
 {
     Float64 hi;
@@ -309,7 +309,7 @@ struct FloatRoundingLargeScale
         Float64 lo;
     };
 
-    /// `hi + lo = 10^digits`, times 2^-192 for a positive `N`.
+    /// `hi + lo` approximates `10^digits`, times 2^-192 for a positive `N`.
     static Scales prepare(int digits)
     {
         if constexpr (scale_mode == ScaleMode::Positive)
@@ -341,7 +341,6 @@ struct FloatRoundingLargeScale
             return res;
     }
 
-    /// `a / (hi + lo)`, corrected by the exact remainder of `a / hi`.
     static Float64 divide(Float64 a, Float64 hi, Float64 lo)
     {
         const Float64 quotient = a / hi;
@@ -367,7 +366,6 @@ struct FloatRoundingLargeScale
             /// Shifting a result at or below `DBL_MIN` down can round it a second time.
             if (std::abs(res) <= std::numeric_limits<Float64>::min())
                 res = divide(rounded * shift_down, scales.hi, scales.lo);
-            /// The correction terms do not keep the sign of a zero.
             return std::copysign(clampToDirection(res, x), x);
         }
         else
