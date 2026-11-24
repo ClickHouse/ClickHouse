@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A `logs_to_keep` above `UINT32_MAX` is rejected in a definition the user supplies now: a fresh
+# A `logs_to_keep` above the maximum (`2147483647`) is rejected in a definition the user supplies now: a fresh
 # `CREATE` and, equally, a full-syntax `ATTACH`, which carries a user-written definition. It is
 # clamped only on the paths that replay a value an older server already accepted:
 #   1. The metadata file, replayed on server startup and by the short-syntax `ATTACH DATABASE db`.
@@ -19,6 +19,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 node_db="${CLICKHOUSE_DATABASE}_node"
 node_path="/test/${CLICKHOUSE_DATABASE}/node"
+# `system.text_log` is keyed by time, not by logger: its scans below are bounded to this test's lifetime.
+test_start=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp(now())")
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $node_db SYNC"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $node_db ENGINE = Replicated('$node_path', 's1', 'r1') SETTINGS logs_to_keep = 1000"
@@ -41,14 +43,16 @@ cleanups() {
     $CLICKHOUSE_CLIENT -q "
         SYSTEM FLUSH LOGS text_log;
         SELECT count() FROM system.text_log
-        WHERE logger_name = 'DDLWorker($node_db)' AND message = 'Cleaning queue'"
+        WHERE event_date >= yesterday() AND event_time >= toDateTime($test_start)
+            AND logger_name = 'DDLWorker($node_db)' AND message = 'Cleaning queue'"
 }
 
 lost_warnings() {
     $CLICKHOUSE_CLIENT -q "
         SYSTEM FLUSH LOGS text_log;
         SELECT count() FROM system.text_log
-        WHERE logger_name = 'DDLWorker($node_db)' AND message LIKE 'Replica seems to be lost%'"
+        WHERE event_date >= yesterday() AND event_time >= toDateTime($test_start)
+            AND logger_name = 'DDLWorker($node_db)' AND message LIKE 'Replica seems to be lost%'"
 }
 
 # `Finishing replica initialization` is written after the lost-or-not decision and after the recovery
@@ -60,7 +64,8 @@ initializations() {
     $CLICKHOUSE_CLIENT -q "
         SYSTEM FLUSH LOGS text_log;
         SELECT count() FROM system.text_log
-        WHERE logger_name = 'DDLWorker($node_db)' AND message LIKE 'Finishing replica initialization%'"
+        WHERE event_date >= yesterday() AND event_time >= toDateTime($test_start)
+            AND logger_name = 'DDLWorker($node_db)' AND message LIKE 'Finishing replica initialization%'"
 }
 
 # `SYSTEM SYNC DATABASE REPLICA` cannot be the synchronization point for the cases below: an entry

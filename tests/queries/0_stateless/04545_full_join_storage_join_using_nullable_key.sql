@@ -22,7 +22,6 @@ INSERT INTO t_mem_04545 VALUES (1, 'x'), (3, 'z');
 -- USING must agree with ON and with a regular right table, under both analyzers and both
 -- join_use_nulls values.
 
-SET enable_analyzer = 1;
 SET join_use_nulls = 0;
 SELECT 'using storage analyzer=1 join_use_nulls=0';
 SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_full_04545 USING (x) ORDER BY str, x;
@@ -35,7 +34,6 @@ SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_mem_04545 US
 CREATE TABLE t_full_nulls_04545 (x UInt32, s String) ENGINE = Join(ALL, FULL, x) SETTINGS join_use_nulls = 1;
 INSERT INTO t_full_nulls_04545 VALUES (1, 'x'), (3, 'z');
 
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SELECT 'using storage analyzer=1 join_use_nulls=1';
 SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 USING (x) ORDER BY str, x;
@@ -47,7 +45,6 @@ SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_mem_04545 US
 -- storage type with its unmatched-left default. This is the reference the USING results above
 -- must agree with for the left key.
 SET join_use_nulls = 0;
-SET enable_analyzer = 1;
 SELECT 'on storage analyzer=1 join_use_nulls=0';
 SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_full_04545.x AS rx, str
 FROM t_left_04545 FULL JOIN t_full_04545 ON t_left_04545.x = t_full_04545.x ORDER BY str, lx;
@@ -59,7 +56,6 @@ FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x ORDER 
 -- join_use_nulls = 1 also makes the raw right key nullable, so the ON reference has to be taken
 -- again under that setting for the equivalence above to mean anything.
 SET join_use_nulls = 1;
-SET enable_analyzer = 1;
 SELECT 'on storage analyzer=1 join_use_nulls=1';
 SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_full_nulls_04545.x AS rx, str
 FROM t_left_04545 FULL JOIN t_full_nulls_04545 ON t_left_04545.x = t_full_nulls_04545.x ORDER BY str, lx;
@@ -73,7 +69,6 @@ FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x ORDER 
 -- (IdentifierResolver::createProjectionForUsing), so applying that to the ON output is what makes
 -- them comparable. Asserted per arm below; each must be 1.
 SET join_use_nulls = 0;
-SET enable_analyzer = 1;
 SELECT 'using == coalesced on, storage analyzer=1 join_use_nulls=0',
     (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_full_04545 USING (x)))
   = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_full_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_full_04545 ON t_left_04545.x = t_full_04545.x));
@@ -83,7 +78,6 @@ SELECT 'using == coalesced on, regular analyzer=1 join_use_nulls=0',
 
 
 SET join_use_nulls = 1;
-SET enable_analyzer = 1;
 SELECT 'using == coalesced on, storage analyzer=1 join_use_nulls=1',
     (SELECT arraySort(groupArray((x, str))) FROM (SELECT x, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 USING (x)))
   = (SELECT arraySort(groupArray((k, str))) FROM (SELECT firstNonDefault(t_left_04545.x, t_full_nulls_04545.x) AS k, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 ON t_left_04545.x = t_full_nulls_04545.x));
@@ -94,7 +88,6 @@ SELECT 'using == coalesced on, regular analyzer=1 join_use_nulls=1',
 
 -- LEFT resolves the USING key from the left side only; the NULL key must survive.
 SET join_use_nulls = 0;
-SET enable_analyzer = 1;
 CREATE TABLE t_leftj_04545 (x UInt32, s String) ENGINE = Join(ALL, LEFT, x);
 INSERT INTO t_leftj_04545 VALUES (1, 'x'), (3, 'z');
 SELECT 'left join storage';

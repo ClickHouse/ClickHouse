@@ -13,8 +13,8 @@
     <query>SELECT WatchID, sum(length(URL)) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
 
     <!-- The keeping side of the thaw verdict, next to the firing shapes above. The stream
-         repeats every key ~12.5 times, but its arguments are fixed-width and excluded from
-         the waste estimate because they drain at batch speed, so it wastes only ~276 bytes
-         per key against the 300 bound and must stay engaged as a winning aggregation. -->
+         repeats every key ~12.5 times across the query, while the verdict measures repeats
+         within each producer. One narrow argument column serves all three aggregates, so
+         staging remains cheaper than retaining and merging their separate local states. -->
     <query>SELECT number % 800000 AS k, avg(number), sum(number), max(number) FROM numbers_mt(10000000) GROUP BY k FORMAT Null</query>
 </test>

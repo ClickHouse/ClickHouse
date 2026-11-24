@@ -6,29 +6,17 @@ doc_type: 'guide'
 keywords: ['SDK Golang ClickStack', 'intégration OpenTelemetry Go', 'observabilité Golang', 'instrumentation de tracing Go', 'SDK Go ClickStack']
 ---
 
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack utilise le standard OpenTelemetry pour collecter les données de télémétrie (logs et
 traces). Les traces sont générées automatiquement grâce à l’instrumentation automatique, il n’est donc pas nécessaire de procéder à une instrumentation
 manuelle pour tirer parti du tracing.
 
-**Ce guide intègre :**
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Logs</td>
-      <td className="pe-2">✅ Metrics</td>
-      <td className="pe-2">✅ Traces</td>
-    </tr>
-  </tbody>
-</table>
+## Prise en main {#getting-started}
 
-<div id="getting-started">
-  ## Prise en main
-</div>
-
-<div id="install-opentelemetry">
-  ### Installer les paquets d’instrumentation OpenTelemetry
-</div>
+### Installer les paquets d’instrumentation OpenTelemetry {#install-opentelemetry}
 
 Pour installer les paquets Go OpenTelemetry et HyperDX, utilisez la commande ci-dessous. Il est recommandé de consulter les [paquets d’instrumentation disponibles](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages) et d’installer ceux dont vous avez besoin afin de garantir que les informations de trace sont correctement rattachées.
 
@@ -39,9 +27,7 @@ go get -u github.com/hyperdxio/opentelemetry-go
 go get -u github.com/hyperdxio/opentelemetry-logs-go
 ```
 
-<div id="native-http-server-example">
-  ### Exemple de serveur HTTP natif (net/http)
-</div>
+### Exemple de serveur HTTP natif (net/http) {#native-http-server-example}
 
 Pour cet exemple, nous utiliserons `net/http/otelhttp`.
 
@@ -149,9 +135,7 @@ func ExampleHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-<div id="gin-application-example">
-  ### Exemple d&#39;application Gin
-</div>
+### Exemple d&#39;application Gin {#gin-application-example}
 
 Pour cet exemple, nous utiliserons `gin-gonic/gin`.
 
@@ -235,26 +219,24 @@ func main() {
 }
 ```
 
-<div id="configure-environment-variables">
-  ### Configurer les variables d’environnement
-</div>
+### Configurer les variables d’environnement {#configure-environment-variables}
 
-Vous devrez ensuite configurer les variables d’environnement suivantes dans votre shell pour acheminer la télémétrie vers ClickStack via le collecteur OpenTelemetry :
+Vous devrez ensuite configurer les variables d’environnement suivantes dans votre shell pour acheminer la télémétrie vers ClickStack via le collecteur OpenTelemetry :
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>

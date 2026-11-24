@@ -72,4 +72,16 @@ the Trino dialect reaches the native aggregates, including as window functions
 nan
 2
 2
+the same functions under ClickHouse-style names
+1	1	1	1	1	1	1	1	1
+2	2
+regrAvgX	regr_avgx
+regrAvgY	regr_avgy
+regrCount	regr_count
+regrIntercept	regr_intercept
+regrR2	regr_r2
+regrSXX	regr_sxx
+regrSXY	regr_sxy
+regrSYY	regr_syy
+regrSlope	regr_slope
 wrong argument types are rejected
