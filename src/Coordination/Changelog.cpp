@@ -4128,20 +4128,31 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
         const auto new_path = timestamp_folder / path.filename();
 
         auto changelog_disk = changelog_description->disk;
+        const std::string source_path = path.generic_string();
         if (changelog_disk == disk)
         {
             try
             {
-                disk->moveFile(path.generic_string(), new_path.generic_string());
+                disk->moveFile(source_path, new_path.generic_string());
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
-                    moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
+                if (e.code() != DB::ErrorCodes::NOT_IMPLEMENTED)
+                    throw;
+                moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
             }
         }
         else
             moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
+
+        /// Keep the changelog registered if it was not detached, otherwise a stale file could be replayed after restart.
+        if (changelog_disk->existsFile(source_path))
+            throw Exception(
+                ErrorCodes::CANNOT_OPEN_FILE,
+                "Failed to detach changelog {} from disk {} to {}",
+                source_path,
+                changelog_disk->getName(),
+                new_path.generic_string());
 
         itr = existing_changelogs.erase(itr);
     }
