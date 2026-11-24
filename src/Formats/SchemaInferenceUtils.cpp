@@ -138,7 +138,7 @@ namespace
                     }
                     else if (json_info)
                     {
-                        type = json_info->mergeNegativeIntegers(type, rhs_type);
+                        json_info->mergeNegativeIntegers(type, rhs_type);
                     }
                 }
             }
@@ -154,7 +154,8 @@ namespace
                 auto it = rhs.paths.find(path);
                 if (it == rhs.paths.end())
                     return nullptr;
-                auto merged_type = json_info.mergeNegativeIntegers(type, it->second);
+                auto merged_type = type;
+                json_info.mergeNegativeIntegers(merged_type, it->second);
                 if (merged_type.get() == type.get())
                     continue;
                 if (!merged_paths)
@@ -343,7 +344,7 @@ namespace
         for (auto & type : data_types)
         {
             if (WhichDataType(type).isInt64())
-                type = json_info->mergeNegativeIntegers(type, negative);
+                json_info->mergeNegativeIntegers(type, negative);
         }
     }
 
@@ -1585,10 +1586,12 @@ bool JSONInferenceInfo::isNumberParsedFromString(const IDataType & type) const
         || &type == float64_from_string.get();
 }
 
-DataTypePtr JSONInferenceInfo::mergeNegativeIntegers(const DataTypePtr & type, const DataTypePtr & other)
+void JSONInferenceInfo::mergeNegativeIntegersImpl(DataTypePtr & type, const DataTypePtr & other)
 {
-    if (!negative_int64 && !negative_int64_from_string)
-        return type;
+    /// Nothing can move: the same instance, a negative Int64 already, or no negative Int64 in `other`.
+    if (type.get() == other.get() || isNegativeInteger(*type)
+        || (!isNegativeInteger(*other) && !other->haveSubtypes() && other->getTypeId() != TypeIndex::JSONPaths))
+        return;
 
     auto on_leaf = [&](const DataTypePtr & left, const DataTypePtr & right) -> DataTypePtr
     {
@@ -1606,15 +1609,22 @@ DataTypePtr JSONInferenceInfo::mergeNegativeIntegers(const DataTypePtr & type, c
         return left;
     };
 
-    auto result = replaceNestedTypesInPair(type, other, on_leaf);
-    return result ? result : type;
+    if (auto result = replaceNestedTypesInPair(type, other, on_leaf))
+        type = std::move(result);
 }
 
 DataTypePtr JSONInferenceInfo::mergeNegativeIntegers(const DataTypes & types)
 {
     DataTypePtr result = types.back();
+    if (!negative_int64 && !negative_int64_from_string)
+        return result;
+
     for (const auto & type : types)
-        result = mergeNegativeIntegers(result, type);
+    {
+        if (isNegativeInteger(*result))
+            break;
+        mergeNegativeIntegersImpl(result, type);
+    }
     return result;
 }
 

@@ -25,8 +25,12 @@ struct JSONInferenceInfo
     DataTypePtr getNumberParsedFromString(const DataTypePtr & number_type);
     [[nodiscard]] bool isNegativeInteger(const IDataType & type) const;
     [[nodiscard]] bool isNumberParsedFromString(const IDataType & type) const;
-    /// For equal types: returns `type`, with every Int64 that is negative in `other` negative too.
-    DataTypePtr mergeNegativeIntegers(const DataTypePtr & type, const DataTypePtr & other);
+    /// For equal types: makes every Int64 of `type` that is negative in `other` negative too.
+    void mergeNegativeIntegers(DataTypePtr & type, const DataTypePtr & other)
+    {
+        if (negative_int64 || negative_int64_from_string)
+            mergeNegativeIntegersImpl(type, other);
+    }
     /// For equal types: returns the last one, with every Int64 that is negative in any of them negative too.
     DataTypePtr mergeNegativeIntegers(const DataTypes & types);
 
@@ -39,6 +43,8 @@ struct JSONInferenceInfo
     bool allow_merging_named_tuples = false;
 
 private:
+    void mergeNegativeIntegersImpl(DataTypePtr & type, const DataTypePtr & other);
+
     DataTypePtr negative_int64;
     DataTypePtr int64_from_string;
     DataTypePtr negative_int64_from_string;

@@ -45,7 +45,7 @@ private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     NamesAndTypesList getStaticNamesAndTypes() override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformEqualTypesIfNeeded(DataTypePtr & type, const DataTypePtr & new_type) override { type = inference_info.mergeNegativeIntegers(type, new_type); }
+    void transformEqualTypesIfNeeded(DataTypePtr & type, const DataTypePtr & new_type) override { inference_info.mergeNegativeIntegers(type, new_type); }
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     bool first_row = true;

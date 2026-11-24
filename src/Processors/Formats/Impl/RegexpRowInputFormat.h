@@ -80,7 +80,7 @@ private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformEqualTypesIfNeeded(DataTypePtr & type, const DataTypePtr & new_type) override { type = json_inference_info.mergeNegativeIntegers(type, new_type); }
+    void transformEqualTypesIfNeeded(DataTypePtr & type, const DataTypePtr & new_type) override { json_inference_info.mergeNegativeIntegers(type, new_type); }
 
     using EscapingRule = FormatSettings::EscapingRule;
     RegexpFieldExtractor field_extractor;
