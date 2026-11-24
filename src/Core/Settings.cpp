@@ -10074,18 +10074,12 @@ keeps running on one node, however the time comparison turns out.
 Set to 1 to accept any amount of duplicated reading, which restores the behaviour of only comparing times.
 )", 0, \
         {"26.10", 1.0, 0.5, "Automatic parallel replicas now declines a query that would repeat more than half of its reading on every replica. Previously there was no limit, which is what 1 still asks for."}) \
-    DECLARE(UInt64, automatic_parallel_replicas_max_counted_ranges, 10'000'000, R"(
-How many ranges of compressed blocks automatic parallel replicas may keep to count the bytes a query reads while it
-collects the statistics of the query. A compressed block is counted once however many times it is loaded, so the ranges
-of the files counted so far are kept until the query ends, merged where they are contiguous: a read that skips many
-granules leaves many of them. A range takes 16 bytes, and up to twice as much while the ranges of a file grow; every
-file counted takes a unit of the limit too.
-
-When the limit is reached, the counting stops and the statistics record that the input could not be measured: the query
-is then not executed with parallel replicas, and its statistics are not collected again until the number of rows it reads
-drifts by more than `automatic_parallel_replicas_statistics_drift_ratio`. 0 means no limit.
+    DECLARE(UInt64, automatic_parallel_replicas_max_counted_ranges, 1'000'000, R"(
+The maximum number of ranges of compressed blocks automatic parallel replicas keep to measure the bytes a query reads
+while collecting its statistics. When it is reached, the input of the query is not measured, and automatic parallel
+replicas are not used for it until its statistics are collected again. 0 means no limit.
 )", 0, \
-        {"26.12", 0, 10'000'000, "New setting."}) \
+        {"26.12", 0, 1'000'000, "New setting."}) \
     DECLARE(Float, automatic_parallel_replicas_statistics_drift_ratio, 1.5, R"(
 How much the rows a read selects may differ from the rows it selected when automatic parallel replicas collected its
 statistics, as the ratio of the larger to the smaller, before the statistics are considered stale and collected again
