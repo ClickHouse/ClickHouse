@@ -418,7 +418,7 @@ public:
             && (sorted_value.front()->event_time >> 32) != (sorted_value.back()->event_time >> 32))
         {
             VectorWithMemoryTracking<size_t> low_32_bit_order(n);
-            std::iota(low_32_bit_order.begin(), low_32_bit_order.end(), 0);
+            std::iota(low_32_bit_order.begin(), low_32_bit_order.end(), size_t{0});
             ::stableSort(low_32_bit_order.begin(), low_32_bit_order.end(), [&](size_t lhs, size_t rhs)
             {
                 return typename Data::template Comparator<true>{}(sorted_value[lhs], sorted_value[rhs]);
