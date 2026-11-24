@@ -8,7 +8,6 @@
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 
 #include <base/scope_guard.h>
 
@@ -219,8 +218,6 @@ public:
 
     bool prefersRecursiveRemoval() const override;
 
-    bool supportsAtomicFileCreation() const override;
-
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
 
@@ -236,14 +233,7 @@ public:
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    /// The configuration of the cache layer is the section the cache disk is defined in, and it has
-    /// to be passed here: a disk defined in a query is not present in the server configuration at all.
-    DiskObjectStoragePtr wrapWithCache(
-        FileCachePtr cache,
-        const FileCacheSettings & cache_settings,
-        const String & layer_name,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix) const;
+    DiskObjectStoragePtr wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name) const;
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
@@ -270,9 +260,10 @@ private:
     DiskTransactionPtr createObjectStorageTransaction();
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
+    String getReadResourceName() const;
+    String getWriteResourceName() const;
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
-    void propagateResourceNamesNoLock() const;
 
     /// Points to wrapped disk in case of cache disk.
     DiskObjectStorageConstPtr wrapped_disk = nullptr;
@@ -297,6 +288,8 @@ private:
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
     mutable std::mutex resource_mutex;
+    String read_resource_name_from_config; // specified in disk config.xml read_resource element
+    String write_resource_name_from_config; // specified in disk config.xml write_resource element
     String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
     String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
@@ -319,13 +312,13 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    [[nodiscard]] UInt64 getSize() const override { return size; }
+    UInt64 getSize() const override { return size; }
 
-    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    [[nodiscard]] DiskPtr getDisk(size_t i) const override;
+    DiskPtr getDisk(size_t i) const override;
 
-    [[nodiscard]] Disks getDisks() const override { return {disk}; }
+    Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 

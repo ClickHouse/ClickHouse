@@ -39,10 +39,8 @@
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/CoverageCollection.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/getConfigPath.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/Elf.h>
@@ -118,24 +116,12 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 void BaseDaemon::loadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
-      *  then we use config from the 'config.xml', 'config.yaml' or 'config.yml' file in current directory,
+      *  then we use config from 'config.xml' file in current directory,
       *  but will log to console (or use parameters --log-file, --errorlog-file from command line)
-      *  instead of using files specified in the config.
+      *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    if (config().has("config-file"))
-    {
-        /// An explicitly requested configuration file is used as is: substituting a different file for it
-        /// would silently start the server with a configuration the user did not ask for.
-        config_path = config().getString("config-file");
-    }
-    else
-    {
-        /// A configuration file can be written in XML or in YAML, so the default one is looked up with
-        /// every supported extension, not only with `.xml`.
-        config_path = getConfigPathForAnySupportedFormat(getDefaultConfigFileName());
-    }
-
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
@@ -266,9 +252,13 @@ void BaseDaemon::initialize(Application & self)
 
     loadConfiguration();
 
-#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
-    /// As early as possible, so that the coverage of the startup (and of its failure) is attributed too.
-    initCoverageFromEnvironment(config().getString("logger.log", ""));
+#if USE_JEMALLOC
+    Jemalloc::setup(
+        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
+        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
+        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
+        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
+        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
 #endif
 
     /// This must be done before creation of any files (including logs).
@@ -282,27 +272,12 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
-    /// It decrypts the encrypted elements of the configuration, so that the values read from `config` below are
-    /// plain. It also writes the preprocessed configuration into the `path` of the configuration file, which may be
-    /// hidden by the isolation of the filesystem in `beforeStartingThreads`.
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
 #if USE_SSL
     , true // skip loading encryption keys from ZK
 #endif
     );
 
-    /// No thread but the background threads of jemalloc has been started up to this point, and `Jemalloc::setup`
-    /// below configures them.
-    beforeStartingThreads();
-
-#if USE_JEMALLOC
-    Jemalloc::setup(
-        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
-        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
-        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
-        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
-        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
-#endif
 
 #if defined(OS_LINUX)
     /// Configure RLIMIT_SIGPENDING
@@ -378,8 +353,8 @@ void BaseDaemon::initialize(Application & self)
         ///     }
         if (access(stderr_path.c_str(), W_OK))
         {
-            int fd = creat(stderr_path.c_str(), 0600);
-            if (fd == -1 && errno != EEXIST)
+            int fd = 0;
+            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
             {
@@ -511,8 +486,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #endif
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-    /// Without building the symbol index: the signal listener builds it in the background (see `SignalListener::run`).
-    build_id = SymbolIndex::getSelfBuildIDHex();
+    build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
     startSignalListener();

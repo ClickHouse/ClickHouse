@@ -38,8 +38,8 @@ public:
     {
     public:
         virtual ~FileEnumerator() = default;
-        [[nodiscard]] virtual const String & getFileName() const = 0;
-        [[nodiscard]] virtual const FileInfo & getFileInfo() const = 0;
+        virtual const String & getFileName() const = 0;
+        virtual const FileInfo & getFileInfo() const = 0;
         virtual bool nextFile() = 0;
     };
 

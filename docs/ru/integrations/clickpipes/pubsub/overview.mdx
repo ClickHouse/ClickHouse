@@ -10,6 +10,8 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <Note>
   Вы можете записаться в лист ожидания закрытой предварительной версии [здесь](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
 </Note>
@@ -20,173 +22,71 @@ Pub/Sub ClickPipes можно развертывать и управлять и�
   ## Предварительные требования
 </div>
 
-Вы уже ознакомились с [введением в ClickPipes](/ru/integrations/clickpipes/home), имеете доступ к проекту GCP, содержащему топик, из которого нужно настроить приём данных, и можете предоставить соответствующие разрешения Pub/Sub служебной учётной записи, которую использует ClickPipes. Варианты аутентификации и точный набор необходимых разрешений см. в [руководстве по разрешениям IAM для Pub/Sub](/ru/integrations/clickpipes/pubsub/auth).
+Вы уже ознакомились с [введением в ClickPipes](/ru/integrations/clickpipes/home), имеете доступ к проекту GCP, содержащему топик, из которого нужно настроить приём данных, и создали сервисный аккаунт с соответствующими разрешениями Pub/Sub. Точный набор разрешений, необходимых ClickPipes, см. в [руководстве по разрешениям IAM для Pub/Sub](/ru/integrations/clickpipes/pubsub/auth).
 
-## Создание первого ClickPipe {#creating-your-first-clickpipe}
+<div id="creating-your-first-clickpipe">
+  ## Создание первого ClickPipe
+</div>
 
 1. Откройте SQL-консоль для вашего сервиса ClickHouse Cloud.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Сервис ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Сервис ClickPipes" size="lg" border />
 
 2. Нажмите кнопку `Data Sources` в левом меню, затем — &quot;Set up a ClickPipe&quot;
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Выбор импортов](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импортов" size="lg" border />
 
 3. Выберите **GCP Pub/Sub** в качестве источника данных.
 
-<div className="ch-image-lg">
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp" alt="Выбор GCP Pub/Sub в качестве источника данных" size="lg" border />
 
-<Frame>
+4. Заполните форму: укажите имя ClickPipe, ваш **GCP Project ID** и **JSON‑файл сервисного аккаунта** для сервисного аккаунта, которому выдан доступ к Pub/Sub. Project ID должен содержать 6–30 символов, может включать строчные буквы, цифры и дефисы, должен начинаться с буквы и не может заканчиваться дефисом.
 
-![Выбор GCP Pub/Sub в качестве источника данных](/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp)
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp" alt="Заполнение сведений о подключении" size="lg" border />
 
-</Frame>
-
-</div>
-
-4. Заполните форму: укажите имя ClickPipe, ваш **GCP Project ID** и **JSON‑файл служебной учётной записи** для служебной учётной записи, которой выдан доступ к Pub/Sub. Project ID должен содержать 6–30 символов, может включать строчные буквы, цифры и дефисы, должен начинаться с буквы и не может заканчиваться дефисом.
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Заполнение сведений о подключении](/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp)
-
-</Frame>
-
-</div>
-
-5. Выберите **топик Pub/Sub**, из которого нужно получать данные. После успешной проверки учётных данных раскрывающийся список автоматически заполняется топиками из вашего проекта GCP (в алфавитном порядке).
+5. Выберите **Pub/Sub topic**, из которого нужно получать данные. После успешной проверки учётных данных раскрывающийся список автоматически заполняется топиками из вашего проекта GCP (в алфавитном порядке).
 
    * **Формат данных.** При выборе топика ClickPipes обращается к реестру схем Pub/Sub. Если к топику привязана нативная схема Avro или Protobuf, **Data format** и **Schema** определяются автоматически, а селекторы фиксируются на последней схеме топика. Для топиков без нативной схемы по умолчанию используется JSONEachRow.
    * **Начальное смещение.** Выберите, с какого места начинать чтение. Доступны варианты **Latest** (только новые сообщения), **Earliest** (самые старые сохранённые сообщения) и **Seek to Timestamp** (с выбором даты и времени в UTC).
    * **Filter expression (необязательно).** Фильтр [фильтр подписки](https://cloud.google.com/pubsub/docs/subscription-message-filter) Pub/Sub по атрибутам сообщений — например, `attributes.type = "telemetry"`. Фильтры применяются только к атрибутам сообщений, а не к полезной нагрузке, и не могут быть изменены после создания пайпа (для изменения фильтра пайп нужно пересоздать).
    * В интерфейсе будет показан пример сообщения из выбранного топика, а также переключатель **Flatten object**, с помощью которого можно предварительно посмотреть, как вложенный JSON будет развёрнут на стороне назначения.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Настройка топика Pub/Sub, формата и начального смещения](/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp" alt="Настройка топика Pub/Sub, формата и начального смещения" size="lg" border />
 
 6. На следующем шаге вы можете выбрать, хотите ли вы загружать данные в новую таблицу ClickHouse или использовать существующую. Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и настройки. Вверху страницы отображается предварительный просмотр изменений в образце таблицы в реальном времени.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Настройка таблицы, схемы и параметров](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Настройка таблицы, схемы и параметров" size="lg" border />
 
 Вы также можете настроить дополнительные параметры с помощью доступных элементов управления
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Настройка дополнительных элементов управления](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Настройка дополнительных элементов управления" size="lg" border />
 
 7. Кроме того, вы можете загрузить данные в существующую таблицу ClickHouse. В этом случае интерфейс позволит сопоставить поля источника с полями ClickHouse в выбранной целевой таблице.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Использование существующей таблицы](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Использование существующей таблицы" size="lg" border />
 
 8. Наконец, вы можете настроить разрешения для внутреннего пользователя ClickPipes.
 
 **Разрешения:** ClickPipes создаст отдельного пользователя для записи данных в целевую таблицу. Для этого внутреннего пользователя можно выбрать пользовательскую роль или одну из предопределённых ролей:
 
 * `Full access`: полный доступ к кластеру. Это может быть полезно, если вы используете materialized view или словарь с целевой таблицей.
-* `Only destination table`: только разрешения `INSERT` для целевой таблицы.
+  * `Only destination table`: только разрешения `INSERT` для целевой таблицы.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Разрешения](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Разрешения" border />
 
 9. Нажмите &quot;Complete Setup&quot;, чтобы система зарегистрировала ваш ClickPipe, после чего он появится в сводной таблице.
 
-<div className="ch-image-sm">
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Уведомление об успешной настройке" size="sm" border />
 
-<Frame>
-
-![Уведомление об успешной настройке](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Уведомление об удалении](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Уведомление об удалении" size="lg" border />
 
 В сводной таблице доступны элементы управления для просмотра примеров данных из источника или из целевой таблицы в ClickHouse
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Просмотр целевой таблицы](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Просмотр целевой таблицы" size="lg" border />
 
 А также элементы управления для удаления ClickPipe и просмотра сводки задачи ингестии.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Просмотр сводки](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Просмотр сводки" size="lg" border />
 
 10. **Поздравляем!** Вы успешно настроили свой первый Pub/Sub ClickPipe. Он будет непрерывно работать, выполняя ингестию данных в реальном времени из вашего топика Pub/Sub в ваш сервис ClickHouse Cloud.
 
@@ -349,10 +249,10 @@ ClickPipes обеспечивает высокую доступность за �
 
 ClickPipes для Pub/Sub обеспечивает доставку **at-least-once**. Сообщение Pub/Sub подтверждается только после того, как соответствующая строка была вставлена в ClickHouse (или записана в таблицу ошибок в случае некорректных записей); после обработки подтверждаются все сообщения — включая ошибочные записи, направленные в таблицу ошибок, — чтобы предотвратить бесконечную повторную доставку. Если реплика аварийно завершится после вставки, но до того, как подтверждение дойдёт до Pub/Sub, сообщение будет повторно доставлено по истечении срока подтверждения и вставлено снова, поэтому нижестоящие потребители должны быть устойчивы к дубликатам. Если вам нужна семантика «ровно один раз», выполняйте дедупликацию на стороне потребителя с помощью виртуального столбца `_message_id` (каждый идентификатор сообщения Pub/Sub уникален в пределах topic).
 
-## Аутентификация {#authentication}
+<div id="authentication">
+  ## Аутентификация
+</div>
 
-Интерфейс ClickPipes использует JSON-ключ служебной учётной записи. Файл ключа загружается при создании пайпа; ClickPipes шифрует его при хранении и использует во время выполнения для получения сообщений и управления жизненным циклом управляемой подписки.
-
-Аутентификация через GCP Workload Identity также доступна в бета-версии. Инструкции по настройке см. в [руководстве по GCP Workload Identity](/ru/integrations/clickpipes/security/gcp-workload-identity).
+ClickPipes для Pub/Sub аутентифицируется в GCP с помощью JSON-ключа сервисного аккаунта. Файл ключа загружается при создании пайпа; ClickPipes шифрует его при хранении и использует во время выполнения для получения сообщений и управления жизненным циклом управляемой подписки.
 
 Точный список необходимых разрешений IAM и рекомендуемое определение пользовательской роли см. в [руководстве по разрешениям IAM для Pub/Sub](/ru/integrations/clickpipes/pubsub/auth).

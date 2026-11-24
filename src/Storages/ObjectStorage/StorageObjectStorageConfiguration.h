@@ -10,7 +10,6 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/PartitionCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
@@ -19,7 +18,6 @@
 #include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Common/SharedMutex.h>
 
 namespace DB
 {
@@ -55,9 +53,6 @@ struct StorageObjectStorageQuerySettings
     size_t list_object_keys_size;
     bool throw_on_zero_files_match;
     bool ignore_non_existent_file;
-    /// Skip objects with a path segment starting with '_' or '.' below the non-glob prefix
-    /// when listing by glob. Tables with hive partition strategy skip them unconditionally.
-    bool skip_hidden_files;
 };
 
 
@@ -80,11 +75,11 @@ public:
 
         std::string path;
 
-        [[nodiscard]] bool hasPartitionWildcard() const;
-        [[nodiscard]] bool hasSchemaHashWildcard() const;
-        [[nodiscard]] bool hasGlobsIgnorePlaceholders() const;
-        [[nodiscard]] bool hasGlobs() const;
-        [[nodiscard]] std::string cutGlobs(bool supports_partial_prefix) const;
+        bool hasPartitionWildcard() const;
+        bool hasSchemaHashWildcard() const;
+        bool hasGlobsIgnorePlaceholders() const;
+        bool hasGlobs() const;
+        std::string cutGlobs(bool supports_partial_prefix) const;
     };
 
     using Paths = std::vector<Path>;
@@ -98,30 +93,25 @@ public:
         const StorageID * table_id = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
-    [[nodiscard]] virtual ObjectStorageType getType() const = 0;
-    [[nodiscard]] virtual std::string getTypeName() const = 0;
+    virtual ObjectStorageType getType() const = 0;
+    virtual std::string getTypeName() const = 0;
     /// Engine name: S3, HDFS, Azure.
-    [[nodiscard]] virtual std::string getEngineName() const = 0;
+    virtual std::string getEngineName() const = 0;
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
-    [[nodiscard]] virtual std::string getNamespaceType() const { return "namespace"; }
+    virtual std::string getNamespaceType() const { return "namespace"; }
 
 
     /// Base path for the object key. May be modified after construction by placeholder resolution.
-    [[nodiscard]] virtual Path getRawPath() const = 0;
+    virtual Path getRawPath() const = 0;
     virtual void setRawPath(const Path & path) = 0;
 
     /// Raw URI, specified by a user. Used in permission check.
-    [[nodiscard]] virtual const String & getRawURI() const = 0;
+    virtual const String & getRawURI() const = 0;
 
-    /// The function returns the URI of the object at `write_path` in the form the source access check uses, so that a
-    /// write to a path computed at write time is checked against the same filtered grants. It returns an empty string
-    /// when the raw URI does not end with the raw path, and then only an unfiltered grant allows the write.
-    [[nodiscard]] virtual String getURIForAccessCheck(const String & write_path) const;
-
-    [[nodiscard]] const Path & getPathForRead() const;
+    const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
-    [[nodiscard]] Path getPathForWrite(const std::string & partition_id = "") const;
+    Path getPathForWrite(const std::string & partition_id = "") const;
 
     void setPathForRead(const Path & path)
     {
@@ -133,58 +123,47 @@ public:
      * This list is used to determine the next file name and the set of files that shall be read from remote storage.
      * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
      */
-    /// The list is shared by every query on the table, so access goes through these wrappers.
-    /// Returned by value: a reference into the list would outlive the lock that protects it.
-    Paths getPaths() const;
-    void setPaths(const Paths & paths);
-    /// Appends to the current list, not to a copy taken earlier, so a concurrent append is not lost.
-    /// A path that is already listed is not added again.
-    void addPath(const Path & path);
+    virtual const Paths & getPaths() const = 0;
+    virtual void setPaths(const Paths & paths) = 0;
 
-    [[nodiscard]] virtual String getDataSourceDescription() const = 0;
-    [[nodiscard]] virtual String getNamespace() const = 0;
+    virtual String getDataSourceDescription() const = 0;
+    virtual String getNamespace() const = 0;
 
-    [[nodiscard]] virtual String getDataSourceDescriptionForNamespace(const String &) const { return getDataSourceDescription(); }
-
-    [[nodiscard]] virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;
+    virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
     virtual void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
-    [[nodiscard]] bool isNamespaceWithGlobs() const;
+    bool isNamespaceWithGlobs() const;
 
-    [[nodiscard]] virtual bool isArchive() const { return false; }
-    [[nodiscard]] bool isPathInArchiveWithGlobs() const;
-    [[nodiscard]] virtual std::string getPathInArchive() const;
+    virtual bool isArchive() const { return false; }
+    bool isPathInArchiveWithGlobs() const;
+    virtual std::string getPathInArchive() const;
 
     virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
-    [[nodiscard]] virtual bool isStaticConfiguration() const { return true; }
+    virtual bool isStaticConfiguration() const { return true; }
 
-    [[nodiscard]] virtual bool isDataLakeConfiguration() const { return false; }
-    [[nodiscard]] virtual bool isIcebergConfiguration() const { return false; }
+    virtual bool isDataLakeConfiguration() const { return false; }
+    virtual bool isIcebergConfiguration() const { return false; }
 
-    [[nodiscard]] virtual bool supportsFullyQualifiedPaths() const { return false; }
-
-    [[nodiscard]] virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
-    virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) { return {}; }
-    [[nodiscard]] virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
+    virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
+    virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
+    virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
     /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
     /// It may look confusing that this function checks only StorageMetadataPtr, and not StorageSnapshot.
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
-    [[nodiscard]] virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
+    virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
     virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
 
-    virtual void setExplicitMetadataFilePath(const String & /*path*/) {}
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    [[nodiscard]] virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
-
-    [[nodiscard]] virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
@@ -209,18 +188,16 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    [[nodiscard]] virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
-    [[nodiscard]] virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const;
-    [[nodiscard]] virtual bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
-    [[nodiscard]] virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
+    virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
+    virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const;
+    virtual bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
-    [[nodiscard]] virtual bool supportsFileIterator() const { return false; }
-    [[nodiscard]] virtual bool supportsParallelInsert() const { return false; }
-    [[nodiscard]] virtual bool supportsWrites() const { return true; }
+    virtual bool supportsFileIterator() const { return false; }
+    virtual bool supportsParallelInsert() const { return false; }
+    virtual bool supportsWrites() const { return true; }
 
-    [[nodiscard]] virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
-
-    [[nodiscard]] virtual bool supportsPartialPathPrefix() const { return true; }
+    virtual bool supportsPartialPathPrefix() const { return true; }
 
     virtual ObjectIterator iterate(
         const ActionsDAG * /* filter_dag */,
@@ -233,17 +210,7 @@ public:
     }
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
-
-    /// Request settings given as explicit arguments, which `update` keeps over the server config.
-    virtual std::map<String, String> getExplicitRequestSettings() const { return {}; }
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
-
-    /// For a table created on top of a server disk: the config section of the disk that holds the
-    /// backend object storage settings. Follows `disk` references of layered disk configs (e.g. a
-    /// cache disk over an S3 disk resolves to the S3 disk's section) and descends into the local
-    /// location's subsection for multi-location disks. Returns std::nullopt when the disk is not
-    /// present in the config (e.g. a custom disk created from SQL).
-    static std::optional<String> tryGetDiskConfigurationPrefix(const Poco::Util::AbstractConfiguration & config, const String & disk_name);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -266,7 +233,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
     }
 
-    [[nodiscard]] virtual bool supportsDelete() const { return false; }
+    virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,
         StoragePtr /*storage_ptr*/,
@@ -292,11 +259,6 @@ public:
         }
     }
 
-    virtual void checkAlterPartitionIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const PartitionCommands & /*commands*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
-    }
-
     virtual void alter(
         ObjectStoragePtr /*object_storage*/,
         const AlterCommands & /*params*/,
@@ -304,56 +266,27 @@ public:
         const StorageID & /*storage_id*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
 
-    virtual Pipe alterPartition(
-        ObjectStoragePtr /* object_storage */,
-        const PartitionCommands & /* commands */,
-        ContextPtr /* context */,
-        std::shared_ptr<DataLake::ICatalog> /* catalog */,
-        StorageID /* storage_id */)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
-    }
-
-    [[nodiscard]] virtual DataLakeStorageSettingsPtr getDataLakeSettings() const
+    virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual void setDataLakeSettings(ContextPtr /*context*/, DataLakeStorageSettingsPtr /*new_settings*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setDataLakeSettings() is not implemented for configuration type {}", getTypeName());
-    }
+    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
 
-    [[nodiscard]] virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
-
-    [[nodiscard]] virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
-
-    [[nodiscard]] virtual ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
 
 
-    [[nodiscard]] virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, const StorageID & /*table_id*/) const
+    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, const StorageID & /*table_id*/) const
     {
         return nullptr;
     }
 
-    virtual ASTs completeEngineArgsFromCatalog(const StorageID & /*table_id*/, ContextPtr /*context*/)
-    {
-        return {};
-    }
-
-    [[nodiscard]] virtual std::string getMetadataLocationURI() const;
-
-    virtual bool optimize(
-        ObjectStoragePtr /*object_storage*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/,
-        const std::optional<FormatSettings> & /*format_settings*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+    virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
     }
 
-    [[nodiscard]] virtual bool supportsPrewhere() const
+    virtual bool supportsPrewhere() const
     {
         return true;
     }
@@ -362,16 +295,9 @@ public:
     /// It requires that the physical row numbers of the main read match a later positional
     /// re-read of the same files, which for data lakes depends on how deletes and schema
     /// evolution are applied.
-    [[nodiscard]] virtual bool supportsLazyMaterialization(StorageMetadataPtr /*storage_metadata_snapshot*/, ContextPtr /*context*/) const
+    virtual bool supportsLazyMaterialization(StorageMetadataPtr /*storage_metadata_snapshot*/, ContextPtr /*context*/) const
     {
         return true;
-    }
-
-    /// See `IDataLakeMetadata::estimateRead`. Plain object storage has no metadata to estimate from.
-    virtual std::optional<DataLakeReadEstimate>
-    estimateRead(StorageMetadataPtr /*storage_metadata_snapshot*/, const ActionsDAG * /*filter*/, const Names & /*column_names*/, ContextPtr /*context*/) const
-    {
-        return std::nullopt;
     }
 
     /// Whether the data files that back this configuration are immutable, i.e. an existing data
@@ -380,14 +306,14 @@ public:
     /// a given path can be overwritten. Lazy materialization rereads the surviving files in a
     /// second pass; with immutable files that reread is race-free even on backends that cannot pin
     /// a read to a captured object generation (see ReadFromObjectStorageStep::canUseLazyMaterialization).
-    [[nodiscard]] virtual bool dataFilesAreImmutable() const
+    virtual bool dataFilesAreImmutable() const
     {
         return false;
     }
 
     virtual void drop(ContextPtr) {}
 
-    [[nodiscard]] virtual bool isBackgroundExecutable() const
+    virtual bool isBackgroundExecutable() const
     {
         return false;
     }
@@ -399,7 +325,7 @@ public:
 
     virtual void finishAllBackgroundJobs() {}
 
-    [[nodiscard]] virtual Int32 getBiasBackoffSeconds() const
+    virtual Int32 getBiasBackoffSeconds() const
     {
         return 0;
     }
@@ -424,12 +350,10 @@ public:
     /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the
     /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
     /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
-    /// Azure uses it the same way.
     bool is_loading_from_existing_metadata = false;
 
-    /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
-    /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
-    bool is_replayed_definition = false;
+    /// Set by `initialize` when the arguments come from a named collection.
+    bool initialized_from_named_collection = false;
 
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not
@@ -451,17 +375,7 @@ public:
     /// DDL does not depend on the setting at attach time.
     String url_overridden_by_base_setting;
 
-    std::optional<String> source_disk_name;
-
 protected:
-    /// Guards the path list, which subclasses store. Never held while acquiring another lock,
-    /// and never across remote I/O.
-    mutable SharedMutex paths_mutex;
-
-    /// Path list storage. Subclasses override these, never the locking wrappers above.
-    virtual const Paths & getPathsImpl() const TSA_REQUIRES_SHARED(paths_mutex) = 0;
-    virtual void setPathsImpl(const Paths & paths) TSA_REQUIRES(paths_mutex) = 0;
-
     void checkFormat() const;
 
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

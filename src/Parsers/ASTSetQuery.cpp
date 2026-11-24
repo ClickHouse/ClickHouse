@@ -4,15 +4,21 @@
 #include <Parsers/ASTFromJSON.h>
 
 #include <Core/SettingsSecrets.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Parsers/SecretArguments.h>
 #include <Parsers/formatSettingName.h>
+#include <Storages/Kafka/Kafka_fwd.h>
+#include <Storages/NATS/NATS_fwd.h>
+#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
+#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
+#include <array>
 
 namespace DB
 {
@@ -22,10 +28,35 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Each engine namespace declares its own identical `ValueMaskingFunc` alias, hence the spelled-out
+/// type. Unrelated to `CoreSettings::ValueMaskingFunc`, which rewrites a value string in place.
+using EngineSettingsToHide = std::unordered_map<String, std::function<std::optional<std::string>(const Field &)>>;
+
+/// The table and database engine settings whose value is a secret, and how each one is masked.
+///
+/// Every engine's map is consulted whatever the engine of the statement being formatted, because
+/// `FormatStateStacked::create_engine_name` is only set when a `SETTINGS` clause is formatted as part
+/// of `ENGINE = ...`. Gating on it printed the value of
+/// `ALTER TABLE t MODIFY SETTING kafka_sasl_password = '...'` in cleartext. The setting names are
+/// engine-prefixed, so there is nothing for a different engine to collide with.
+///
+/// `formatImpl` and `hasSecretParts` both read this list, so they cannot disagree on what is secret.
+static std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
+{
+    return {
+        &DataLake::SETTINGS_TO_HIDE,
+        &RabbitMQ::SETTINGS_TO_HIDE,
+        &NATS::SETTINGS_TO_HIDE,
+        &Kafka::SETTINGS_TO_HIDE,
+        &AzureQueue::SETTINGS_TO_HIDE,
+        &S3Queue::SETTINGS_TO_HIDE,
+    };
+}
+
 /// Renders a change whose value is a secret as the SQL text that hides it, and returns `nullopt` for
 /// a change that carries none. `formatImpl` and `hasSecretParts` both go through this, so they cannot
 /// disagree on what is secret.
-std::optional<String> renderSecretChangeValue(const SettingChange & change)
+static std::optional<String> renderSecretChangeValue(const SettingChange & change)
 {
     /// The queue engines also take every setting, a format setting included, with the legacy `s3queue_` prefix.
     static constexpr std::string_view s3queue_prefix = "s3queue_";
@@ -34,8 +65,14 @@ std::optional<String> renderSecretChangeValue(const SettingChange & change)
     if (auto masked = CoreSettings::renderSecretSettingValue(setting_name, change.value))
         return masked;
 
-    /// The table and database engine settings, declared by each engine in its `SecretArgumentsSpec`.
-    return getSecretArgumentsFinder().renderSecretSetting(setting_name, change.value);
+    for (const auto * settings_to_hide : engineSettingsToHide())
+    {
+        auto it = settings_to_hide->find(setting_name);
+        if (it != settings_to_hide->end())
+            return it->second(change.value);
+    }
+
+    return {};
 }
 
 
@@ -84,24 +121,8 @@ public:
 };
 
 
-void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
-    /// None of the members below is a child, so the default implementation does not see them.
-    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 112, "If members were added to ASTSetQuery, hash them here unless they are purely cosmetic.");
-
-    /// Not cosmetic: `formatImpl` prints the `SET` keyword only for a standalone query.
-    hash_state.update(is_standalone);
-
-    /// The three lists hold different kinds of entry, and a query parameter is stored with its
-    /// `param_` prefix removed. Their sizes are hashed so that one list cannot be mistaken for
-    /// another, and every value is length-prefixed so that neighbouring entries cannot be read as
-    /// one: `param_x = 0` must not stream the same bytes as `x` set to a UInt64 that happens to
-    /// spell the character `0`.
-    hash_state.update(changes.size());
-    hash_state.update(default_settings.size());
-    hash_state.update(query_parameters.size());
-
     for (const auto & change : changes)
     {
         hash_state.update(change.name.size());
@@ -109,24 +130,6 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
         hash_state.update(change.shorthand);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
-
-    /// `x = DEFAULT` resets a setting and is not recorded in `changes`.
-    for (const auto & setting_name : default_settings)
-    {
-        hash_state.update(setting_name.size());
-        hash_state.update(setting_name);
-    }
-
-    for (const auto & [name, value] : query_parameters)
-    {
-        hash_state.update(name.size());
-        hash_state.update(name);
-        hash_state.update(value.size());
-        hash_state.update(value);
-    }
-
-    /// This override used to skip the base implementation, leaving out the node's own identity.
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const

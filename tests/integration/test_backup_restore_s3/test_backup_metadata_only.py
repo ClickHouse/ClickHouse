@@ -94,7 +94,8 @@ def test_disk_made_writable_by_config_reload(start_cluster):
 def test_replicated_merge_tree_ignores_the_flag(start_cluster):
     # `RESTORE` creates a `ReplicatedMergeTree` table in a mode that refuses the parts it finds on the storage, so such a
     # table on a storage policy marked `backup_metadata_only` couldn't be restored from a backup of its definition: the flag
-    # is ignored for it with a warning, and it is backed up and restored as usual, with a new UUID.
+    # is ignored for it, and it is backed up and restored as usual, with a new UUID. Master also warns, naming the engine;
+    # that warning is left out on this branch, so only the behavior is asserted.
     policy = "policy_s3_plain_backup_metadata_only"
     node1.query(
         f"""
@@ -105,7 +106,6 @@ def test_replicated_merge_tree_ignores_the_flag(start_cluster):
     try:
         backup_destination = f"S3('http://minio1:9001/root/data/backups/{uuid.uuid4().hex}', 'minio', '{minio_secret_key}')"
         node1.query(f"BACKUP TABLE t_replicated TO {backup_destination}")
-        assert node1.contains_in_log("but it is a ReplicatedMergeTree table: its data is backed up and restored as usual")
         uuid_before = node1.query("SELECT uuid FROM system.tables WHERE name = 't_replicated'").strip()
         node1.query("DROP TABLE t_replicated SYNC")
         node1.query(f"RESTORE TABLE t_replicated FROM {backup_destination} SETTINGS structure_only = 1")

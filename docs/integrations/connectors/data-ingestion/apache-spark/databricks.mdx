@@ -7,6 +7,8 @@ title: 'Integrating ClickHouse with Databricks'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
@@ -45,25 +47,9 @@ However, if you disable Unity Catalog by creating a cluster with **No isolation 
    - Select **DBFS** or **Workspace** → Navigate to the uploaded JAR file
    - Click **Install**
 
-<div className="ch-image-lg">
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Databricks Libraries tab" />
 
-<Frame>
-
-![Databricks Libraries tab](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Installing library from workspace volume](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="Installing library from workspace volume" />
 
 4. Restart the cluster to load the library
 
@@ -94,15 +80,7 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Databricks Maven libraries configuration](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Databricks Maven libraries configuration" />
 
 3. Click **Install** and restart the cluster to load the library
 

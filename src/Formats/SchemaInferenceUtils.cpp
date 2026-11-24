@@ -1,5 +1,4 @@
 #include <Formats/SchemaInferenceUtils.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -36,6 +35,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -184,7 +184,7 @@ namespace
             /// Store path to this node for better exception message in case of ambiguous paths.
             String path;
 
-            [[nodiscard]] DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
+            DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
             {
                 if (nodes.empty())
                     return leaf_type;
@@ -275,10 +275,16 @@ namespace
         {
             if (WhichDataType(type).isInt64())
             {
-                bool is_negative = json_info && json_info->negative_integers.contains(type.get());
+                bool is_negative = json_info && json_info->isNegativeInteger(*type);
                 have_negative_integers |= is_negative;
                 if (!is_negative)
-                    type = std::make_shared<DataTypeUInt64>();
+                {
+                    auto new_type = std::make_shared<DataTypeUInt64>();
+                    if (json_info && json_info->isNumberParsedFromString(*type))
+                        type = json_info->getNumberParsedFromString(new_type);
+                    else
+                        type = new_type;
+                }
             }
         }
 
@@ -300,9 +306,10 @@ namespace
             if (which.isInt64() || which.isUInt64())
             {
                 auto new_type = std::make_shared<DataTypeFloat64>();
-                if (json_info && json_info->numbers_parsed_from_json_strings.erase(type.get()))
-                    json_info->numbers_parsed_from_json_strings.insert(new_type.get());
-                type = new_type;
+                if (json_info && json_info->isNumberParsedFromString(*type))
+                    type = json_info->getNumberParsedFromString(new_type);
+                else
+                    type = new_type;
             }
         }
 
@@ -393,7 +400,7 @@ namespace
         {
             if (isNumber(type)
                 && (settings.json.read_numbers_as_strings || !json_info
-                    || json_info->numbers_parsed_from_json_strings.contains(type.get())))
+                    || json_info->isNumberParsedFromString(*type)))
                 type = std::make_shared<DataTypeString>();
         }
 
@@ -1044,8 +1051,7 @@ namespace
     /// type inference has always reported there, and the deserializers accept the same text.
     DataTypePtr tryInferNumberFromEmptyField(const FormatSettings & settings)
     {
-        /// The integer parsers read no sign either, so the type is never a negative integer and is not
-        /// registered in json_info->negative_integers.
+        /// The integer parsers read no sign either, so the type is never a negative integer.
         if (settings.try_infer_integers)
             return std::make_shared<DataTypeInt64>();
         return std::make_shared<DataTypeFloat64>();
@@ -1086,10 +1092,9 @@ namespace
             ReadBufferFromMemory int_buf(span);
             if (tryReadIntText(tmp_int, int_buf) && int_buf.eof())
             {
-                auto type = std::make_shared<DataTypeInt64>();
                 if (json_info && tmp_int < 0)
-                    json_info->negative_integers.insert(type.get());
-                return type;
+                    return json_info->getNegativeInt64();
+                return std::make_shared<DataTypeInt64>();
             }
 
             /// In case of Int64 overflow we can try to infer UInt64.
@@ -1175,10 +1180,9 @@ namespace
             Int64 tmp_int = 0;
             if (tryReadIntText(tmp_int, buf) && buf.eof())
             {
-                auto type = std::make_shared<DataTypeInt64>();
                 if (json_inference_info && tmp_int < 0)
-                    json_inference_info->negative_integers.insert(type.get());
-                return type;
+                    return json_inference_info->getNegativeInt64();
+                return std::make_shared<DataTypeInt64>();
             }
 
             /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
@@ -1197,7 +1201,7 @@ namespace
         bool has_fractional = false;
         /// The whole field is already in contiguous memory here, so validate it directly.
         /// Keep returning nullptr on rejection: the caller falls through to String, and a String
-        /// returned from here would be registered in json_info->numbers_parsed_from_json_strings.
+        /// returned from here would be marked as a number parsed from a string.
         if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof() && preciseParserAcceptsWholeSpan(field))
             return std::make_shared<DataTypeFloat64>();
 
@@ -1234,10 +1238,7 @@ namespace
             if (settings.json.try_infer_numbers_from_strings)
             {
                 if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings, json_info))
-                {
-                    json_info->numbers_parsed_from_json_strings.insert(number_type.get());
-                    return number_type;
-                }
+                    return json_info->getNumberParsedFromString(number_type);
             }
         }
 
@@ -1484,6 +1485,42 @@ namespace
         /// Number
         return tryInferNumber<is_json>(buf, field_start_count, settings, json_info);
     }
+
+    template <typename T>
+    DataTypePtr getOrCreate(DataTypePtr & instance)
+    {
+        if (!instance)
+            instance = std::make_shared<T>();
+        return instance;
+    }
+}
+
+DataTypePtr JSONInferenceInfo::getNegativeInt64()
+{
+    return getOrCreate<DataTypeInt64>(negative_int64);
+}
+
+DataTypePtr JSONInferenceInfo::getNumberParsedFromString(const DataTypePtr & number_type)
+{
+    WhichDataType which(number_type);
+    if (which.isInt64())
+        return getOrCreate<DataTypeInt64>(isNegativeInteger(*number_type) ? negative_int64_from_string : int64_from_string);
+    if (which.isUInt64())
+        return getOrCreate<DataTypeUInt64>(uint64_from_string);
+    if (which.isFloat64())
+        return getOrCreate<DataTypeFloat64>(float64_from_string);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type {} of a number parsed from a string", number_type->getName());
+}
+
+bool JSONInferenceInfo::isNegativeInteger(const IDataType & type) const
+{
+    return &type == negative_int64.get() || &type == negative_int64_from_string.get();
+}
+
+bool JSONInferenceInfo::isNumberParsedFromString(const IDataType & type) const
+{
+    return &type == int64_from_string.get() || &type == negative_int64_from_string.get() || &type == uint64_from_string.get()
+        || &type == float64_from_string.get();
 }
 
 bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings)
@@ -1724,27 +1761,6 @@ bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time
     return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone);
 }
 
-bool tryInferDateTimeOrDateTime64FromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, bool & is_datetime64, time_t & date_time, DateTime64 & date_time64)
-{
-    /// Run the invalid-datetime fast check once, then try DateTime and DateTime64 in turn.
-    if (fastCheckForInvalidDateTimeOrDateTime64(field))
-        return false;
-
-    if (!settings.try_infer_datetimes_only_datetime64 && tryInferDateTime(field, date_time, settings, time_zone, utc_time_zone))
-    {
-        is_datetime64 = false;
-        return true;
-    }
-
-    if (tryInferDateTime64(field, date_time64, settings, time_zone, utc_time_zone))
-    {
-        is_datetime64 = true;
-        return true;
-    }
-
-    return false;
-}
-
 DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSettings & settings)
 {
     return tryInferDataTypeForSingleFieldImpl<false>(buf, settings, nullptr);
@@ -1807,12 +1823,8 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         DataTypes nested_types;
         for (const auto & nested_type: variant_type->getVariants())
         {
-            /// An alternative of a Variant cannot be Nullable, because the Variant holds the NULLs
-            /// itself. The recursion adjusts the nested types of a compound alternative, but for a Tuple
-            /// it also wraps the tuple itself when `schema_inference_allow_nullable_tuple_type` is set,
-            /// so that wrapper is removed here.
             if (!make_nullable || (!nested_type->lowCardinality() && nested_type->haveSubtypes()))
-                nested_types.push_back(removeNullable(adjustNullableRecursively(nested_type, make_nullable, settings)));
+                nested_types.push_back(adjustNullableRecursively(nested_type, make_nullable, settings));
             else
                 nested_types.push_back(nested_type);
         }

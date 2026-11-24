@@ -73,12 +73,10 @@ void RabbitMQProducer::startProducingTaskLoop()
     while ((!payloads.isFinishedAndEmpty() || publisher->hasPendingDeliveries()) && !shutdown_called.load())
         publisher->publishStep(payloads);
 
+    int res = 0;
     size_t try_num = 0;
-    while (++try_num <= FINISH_PRODUCER_NUM_TRIES)
+    while (++try_num <= FINISH_PRODUCER_NUM_TRIES && (res = publisher->iterateEventLoop()))
     {
-        int res = publisher->iterateEventLoop();
-        if (!res)
-            break;
         LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
     }
 
