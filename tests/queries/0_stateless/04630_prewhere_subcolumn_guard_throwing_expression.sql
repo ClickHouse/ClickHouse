@@ -276,9 +276,9 @@ INNER JOIN t_prewhere_guard_rf_build AS b ON b.c2 = a.c2 AND b.c1 = a.k
 SETTINGS enable_join_runtime_filters = 0;
 
 SELECT 'runtime filter is built and stays above the guard';
--- Liveness assertion for the two arms above, which a plan without the runtime filter also passes: the filter is
+-- Liveness assertion for the two cases above, which a plan without the runtime filter also passes: the filter is
 -- built, and its key, the guarded CAST, does not reach the read. enable_parallel_replicas = 0 keeps the plan local.
-SELECT countIf(explain ILIKE '%Build runtime join filter%') > 0, countIf(explain ILIKE '%Runtime filters:%' AND explain ILIKE '%CAST(c1%') = 0 FROM (
+SELECT countIf(explain ILIKE '%Build runtime join filter on%c1%') > 0, countIf(explain LIKE '%Filter column: %(CAST(c1, %') > 0, countIf(explain ILIKE '%Runtime filters:%' AND explain ILIKE '%CAST(c1%') = 0 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_probe WHERE c1 IS NOT NULL) AS a
     INNER JOIN t_prewhere_guard_rf_build AS b ON b.c2 = a.c2 AND b.c1 = a.k
@@ -315,7 +315,7 @@ INNER JOIN (SELECT toString(number) AS c1, 1 AS c2 FROM numbers(50)) AS b ON b.c
 SETTINGS enable_join_runtime_filters = 1;
 
 SELECT 'runtime filter is built and stays above the LowCardinality guard';
-SELECT countIf(explain ILIKE '%Build runtime join filter%') > 0, countIf(explain ILIKE '%Runtime filters:%' AND explain ILIKE '%CAST(c1%') = 0 FROM (
+SELECT countIf(explain ILIKE '%Build runtime join filter on%c1%') > 0, countIf(explain LIKE '%Filter column: %(CAST(c1, %') > 0, countIf(explain ILIKE '%Runtime filters:%' AND explain ILIKE '%CAST(c1%') = 0 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_lc WHERE c1 IS NOT NULL) AS a
     INNER JOIN (SELECT toString(number) AS c1, 1 AS c2 FROM numbers(50)) AS b ON b.c2 = a.c2 AND b.c1 = a.k
@@ -348,7 +348,7 @@ INNER JOIN (SELECT c1, c2 FROM t_prewhere_guard_rf_parse_build WHERE c1 >= 50000
 SETTINGS enable_join_runtime_filters = 0;
 
 SELECT 'runtime filter is built and stays above the parsing conversion guard';
-SELECT countIf(explain ILIKE '%Build runtime join filter%') > 0, countIf(explain ILIKE '%Runtime filters:%' AND explain ILIKE '%toUInt64(substring(c1%') = 0 FROM (
+SELECT countIf(explain ILIKE '%Build runtime join filter on%c1%') > 0, countIf(explain LIKE '%Filter column: %(toUInt64(substring(c1, %') > 0, countIf(explain ILIKE '%Runtime filters:%' AND explain ILIKE '%toUInt64(substring(c1%') = 0 FROM (
     EXPLAIN actions = 1
     SELECT count(), sum(h.c2 = t.c2)
     FROM (SELECT toUInt64(substring(c1, 5)) AS a1, c2 FROM t_prewhere_guard_rf_parse_probe WHERE c1 LIKE 'nmf-%') AS h

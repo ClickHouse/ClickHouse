@@ -194,3 +194,9 @@ SYSTEM STOP MERGES rl;
 INSERT INTO rl SELECT number, 0 FROM numbers(100000);
 INSERT INTO rl SELECT number, 1 FROM numbers(100000);
 SELECT count() FROM rl FINAL JOIN rk ON intDiv(100, rl.b) = rk.k SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
+
+-- A projection runs the filters between it and the join as one PREWHERE.
+CREATE TABLE pj (id UInt64, b UInt8, c UInt8, s String, PROJECTION pc (SELECT * ORDER BY c)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pj SELECT number, number % 20 = 0 AS b, number % 10 = 0 AS c, if(b, '1.2.3.4', 'bad') FROM numbers(100000);
+SELECT count(), sum(pj.id) FROM pj JOIN r ON intDiv(100, pj.b) = r.k WHERE pj.c = 1 AND pj.b = 1 SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 1, query_plan_join_swap_table = 'false', enable_multiple_prewhere_read_steps = 0;
+SELECT count(), sum(pj.id) FROM pj JOIN r32 ON IPv4StringToNum(pj.s) = r32.k WHERE pj.c = 1 AND pj.b = 1 SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 1, query_plan_join_swap_table = 'false', enable_multiple_prewhere_read_steps = 0;
