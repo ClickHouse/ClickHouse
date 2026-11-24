@@ -26,7 +26,9 @@
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/StorageFactory.h>
@@ -177,6 +179,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         registerInterpreters();
         registerFunctions();
         registerAggregateFunctions();
+        registerWindowFunctions();
         registerTableFunctions();
         registerDatabases();
         registerStorages();
@@ -240,6 +243,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
                 if (FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
+                    || WindowFunctionFactory::instance().isWindowFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || FormatFactory::instance().isOutputFormat(what)
                     || FormatFactory::instance().isInputFormat(what)
