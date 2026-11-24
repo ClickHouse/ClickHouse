@@ -5914,6 +5914,9 @@ void ReadFromMergeTree::pruneRangesByKeyCountLowerBound()
     if (result.parts_with_ranges.empty() || !result.split_parts.layers.empty() || result.has_exact_ranges || result.readFromProjection()
         || result.index_analysis_was_already_done_on_initiator || !result.isUsable())
         return;
+    /// The reader computes the default of a column a part lacks over the rows it reads, which pruning changes.
+    if (!canReadColumnsAhead(all_column_names, result.parts_with_ranges))
+        return;
 
     auto parts_with_ranges = DB::pruneRangesByKeyCountLowerBound(result.parts_with_ranges, key_count_lower_bound, context, log);
     if (!parts_with_ranges)

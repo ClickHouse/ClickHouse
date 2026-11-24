@@ -21,6 +21,7 @@ DROP ROW POLICY IF EXISTS p_having_pk_mv ON mv_having_pk;
 DROP VIEW IF EXISTS mv_having_pk;
 DROP VIEW IF EXISTS v_having_pk;
 DROP TABLE IF EXISTS t_having_pk_mv_dst;
+DROP TABLE IF EXISTS t_having_pk_default;
 DROP ROW POLICY IF EXISTS p_having_pk ON t_having_pk;
 DROP TABLE IF EXISTS t_having_pk;
 CREATE TABLE t_having_pk (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k
@@ -175,6 +176,13 @@ DROP ROW POLICY p_having_pk_mv_definer ON mv_having_pk_definer;
 DROP VIEW mv_having_pk_definer;
 DROP TABLE t_having_pk_mv_dst;
 DROP VIEW v_having_pk;
+-- The reader computes the default of a column a part lacks over the rows it reads, so that read is not pruned.
+CREATE TABLE t_having_pk_default (k UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_having_pk_default SELECT if(number < 81920, intDiv(number, 8192), 10) FROM numbers(131072);
+ALTER TABLE t_having_pk_default ADD COLUMN v UInt64 DEFAULT rowNumberInBlock();
+SELECT count() FROM (SELECT k FROM t_having_pk_default GROUP BY k HAVING count() > 20000 AND sum(v) >= 0) SETTINGS query_plan_aggregation_having_count_pruning = 1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_default_on';
+SELECT count() FROM (SELECT k FROM t_having_pk_default GROUP BY k HAVING count() > 20000 AND sum(v) >= 0) SETTINGS query_plan_aggregation_having_count_pruning = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_default_off';
 SYSTEM FLUSH LOGS query_log;
 SELECT
     sumIf(read_rows, log_comment = '05500_prune_on') < sumIf(read_rows, log_comment = '05500_prune_off'),
@@ -184,7 +192,8 @@ SELECT
     sumIf(read_rows, log_comment = '05500_prune_policy_on') = sumIf(read_rows, log_comment = '05500_prune_policy_off'),
     sumIf(read_rows, log_comment = '05500_prune_view_on') = sumIf(read_rows, log_comment = '05500_prune_view_off'),
     sumIf(read_rows, log_comment = '05500_prune_mv_policy_on') = sumIf(read_rows, log_comment = '05500_prune_mv_policy_off'),
-    sumIf(read_rows, log_comment = '05500_prune_mv_definer_on') = sumIf(read_rows, log_comment = '05500_prune_mv_definer_off')
+    sumIf(read_rows, log_comment = '05500_prune_mv_definer_on') = sumIf(read_rows, log_comment = '05500_prune_mv_definer_off'),
+    sumIf(read_rows, log_comment = '05500_prune_default_on') = sumIf(read_rows, log_comment = '05500_prune_default_off')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05500_prune_%';
 
@@ -209,3 +218,4 @@ DROP TABLE t_having_pk_lc;
 DROP TABLE t_having_pk_desc;
 DROP TABLE t_having_pk_named;
 DROP TABLE t_having_pk_cold;
+DROP TABLE t_having_pk_default;

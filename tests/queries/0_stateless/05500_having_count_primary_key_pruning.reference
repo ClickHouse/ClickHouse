@@ -68,7 +68,9 @@ pruned rows
 10
 10
 10
-1	1	1	1	1	1	1	1
+1
+1
+1	1	1	1	1	1	1	1	1
 cold primary index
 1	50000
 1
