@@ -37,3 +37,25 @@ multi-column: PREWHERE
 multi-column: WHERE
 100	1
 200	2
+shadowed argument read after column: PREWHERE
+0
+1
+2
+3
+4
+shadowed argument read after column: serialized plan
+0
+1
+2
+3
+4
+shadowed argument read before column: serialized plan
+0
+1
+2
+3
+4
+shadowed nullable column: PREWHERE
+[1,2]
+shadowed nullable column: serialized plan
+[1,2]
