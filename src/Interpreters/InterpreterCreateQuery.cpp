@@ -918,15 +918,20 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
-    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context)
+    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context, bool validate)
 {
     ASTs constraints_data;
     const auto column_names_and_types = columns.getAllPhysical();
     if (constraints)
         for (const auto & constraint : constraints->children)
         {
-            auto clone = constraint->clone();
-            TreeRewriter(local_context).analyze(clone, column_names_and_types);
+            /// Stored metadata is not analysed again: a scalar subquery cannot be evaluated while a database is loading
+            /// at startup (there is no query context), and that would leave the table unloadable.
+            if (validate)
+            {
+                auto clone = constraint->clone();
+                TreeRewriter(local_context).analyze(clone, column_names_and_types);
+            }
             constraints_data.push_back(constraint->clone());
         }
     return ConstraintsDescription{constraints_data};
@@ -1129,7 +1134,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 properties.projections.add(std::move(projection));
             }
 
-        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+        properties.constraints = getConstraintsDescription(
+            create.columns_list->constraints, properties.columns, getContext(), isFreshTableDefinition(mode, create.attach_short_syntax));
     }
     else if (!create.as_table.empty())
     {
@@ -2404,7 +2410,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// reload, accepting and rejecting the same row on the two sides of a restart.
         if (create.columns_list)
             properties.constraints
-                = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+                = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext(), isFreshTableDefinition(mode, create.attach_short_syntax));
     }
 
     DatabasePtr database;
