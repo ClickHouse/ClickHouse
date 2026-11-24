@@ -898,7 +898,7 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeVectorSearchWithQuantizedCodes(root, stack, nodes, extra_settings, optimization_settings.max_limit_for_lazy_materialization))
+                if (optimizeVectorSearchWithQuantizedCodes(root, stack, query_plan, nodes, extra_settings, optimization_settings))
                     break;
             }
 

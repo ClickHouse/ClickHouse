@@ -10506,6 +10506,10 @@ Enables a two-stage approximate vector search without index (brute force scan) o
 2. rescore the found vectors against original, full-precision vectors.
 )", 0, \
         {"26.7", false, false, "New setting to opt into the two-stage approximate vector-search optimization over a Quantize(...) column codec; queries stay exact by default."}) \
+    DECLARE(Bool, vector_search_lazy_materialization_after_rescoring, true, R"(
+With `vector_search_use_quantized_codes`, read the columns the query returns, other than the ones the rescoring and the filters need, only for the final `LIMIT` rows instead of for every row of the shortlist. Requires `query_plan_optimize_lazy_materialization`.
+)", 0, \
+        {"26.12", false, true, "New setting: the two-stage vector search over quantized codes reads the returned columns for the final rows only."}) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally.
 )", 0, \

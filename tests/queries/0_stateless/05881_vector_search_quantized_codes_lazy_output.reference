@@ -1,0 +1,62 @@
+Wide parts
+Limit (quantized shortlist limit)
+Lazily read columns: vec
+Lazily read columns: id, text
+Wide parts, setting disabled
+Lazily read columns: id, text, vec
+Wide parts, shortlist of LIMIT rows
+Lazily read columns: id, text, vec
+Wide parts, narrow returned columns
+Lazily read columns: id, vec
+Compact parts
+Lazily read columns: id, text, vec
+Name of the row index taken
+Lazily read columns: id, __vector_search_row_index, text, vec
+Rows
+123	row-123-	0
+3160	row-3160	4.824
+2587	row-2587	4.886
+3997	row-3997	5.1
+101	row-101-	5.206
+123	row-123-
+1521	row-1521
+1218	row-1218
+2587	row-2587
+3997	row-3997
+101	row-101-
+123	row-123-	0
+3160	row-3160	4.824
+2587	row-2587	4.886
+123	row-123-
+1521	row-1521
+1218	row-1218
+2587	row-2587
+3997	row-3997
+101	row-101-
+123	123	row-123-
+3160	3160	row-3160
+2587	2587	row-2587
+Rows, setting disabled
+123	row-123-	0
+3160	row-3160	4.824
+2587	row-2587	4.886
+3997	row-3997	5.1
+101	row-101-	5.206
+123	row-123-
+1521	row-1521
+1218	row-1218
+2587	row-2587
+3997	row-3997
+101	row-101-
+123	row-123-	0
+3160	row-3160	4.824
+2587	row-2587	4.886
+123	row-123-
+1521	row-1521
+1218	row-1218
+2587	row-2587
+3997	row-3997
+101	row-101-
+123	123	row-123-
+3160	3160	row-3160
+2587	2587	row-2587

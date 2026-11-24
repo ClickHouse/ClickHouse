@@ -365,7 +365,18 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, cons
 /// Splits the read of a single `uniqExact` in order (see `optimizeAggregationInOrder`) into layers by its key, or gives up
 /// the order if the read has several streams that would have to be merged into one.
 void optimizeUniqExactInOrderLayers(QueryPlan::Node & node);
-bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
+/// `index_column_name` names the row index the main branch carries to the lazy read. A plan split twice, such as the
+/// two-stage vector search (`optimizeVectorSearchWithQuantizedCodes`), gives each split its own name.
+/// `accept_lazily_read_columns`, if set, decides on the columns a MergeTree read would move to the lazy read, before the
+/// plan is changed: the plan is left as it is if it returns false.
+bool optimizeLazyMaterialization2(
+    QueryPlan::Node & root,
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & settings,
+    size_t max_limit_for_lazy_materialization,
+    const String & index_column_name = "__global_row_index",
+    const std::function<bool(const Names &)> & accept_lazily_read_columns = {});
 
 /// Lazy materialization over joins, decided on one merged `ActionsDAG` for the whole subtree below the
 /// `LIMIT` rather than by splitting each step's expressions on its own. Enabled by
@@ -405,7 +416,13 @@ void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
-bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings, size_t max_limit_for_lazy_materialization);
+bool optimizeVectorSearchWithQuantizedCodes(
+    QueryPlan::Node & root,
+    Stack & stack,
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const Optimization::ExtraSettings & settings,
+    const QueryPlanOptimizationSettings & optimization_settings);
 /// Replaces a `CommonSubplanReferenceStep` with a clone of the subplan it references. The subplan's
 /// IN-subquery sets are appended to `extracted_sets` and removed from the plan, because a
 /// `FutureSetFromSubquery` source can be claimed only once; the caller attaches one builder for them
