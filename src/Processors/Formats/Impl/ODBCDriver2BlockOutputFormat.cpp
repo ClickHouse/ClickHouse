@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -16,18 +17,17 @@ ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
 {
 }
 
-static void writeODBCString(WriteBuffer & out, const std::string & str)
+static void writeODBCString(WriteBuffer & out, std::string_view str)
 {
     writeBinaryLittleEndian(Int32(str.size()), out);
     out.write(str.data(), str.size());
 }
 
-void ODBCDriver2BlockOutputFormat::writeRow(const Columns & columns, size_t row_idx, std::string & buffer)
+void ODBCDriver2BlockOutputFormat::writeRow(const Columns & columns, size_t row_idx, WriteBufferFromOwnString & text_out)
 {
     size_t num_columns = columns.size();
     for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
     {
-        buffer.clear();
         const auto & column = columns[column_idx];
 
         if (column->isNullAt(row_idx))
@@ -36,23 +36,24 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Columns & columns, size_t row_
         }
         else
         {
-            {
-                WriteBufferFromString text_out(buffer);
-                serializations[column_idx]->serializeText(*column, row_idx, text_out, format_settings);
-            }
-            writeODBCString(out, buffer);
+            text_out.restart();
+            serializations[column_idx]->serializeText(*column, row_idx, text_out, format_settings);
+            writeODBCString(out, text_out.stringView());
         }
     }
 }
 
 void ODBCDriver2BlockOutputFormat::write(Chunk chunk, PortKind)
 {
-    String text_value;
+    /// One buffer for all the values: creating and finalizing a `WriteBuffer` for each value costs more than
+    /// formatting a number.
+    WriteBufferFromOwnString text_out;
     const auto & columns = chunk.getColumns();
 
     const size_t rows = chunk.getNumRows();
     for (size_t i = 0; i < rows; ++i)
-        writeRow(columns, i, text_value);
+        writeRow(columns, i, text_out);
+    text_out.finalize();
 }
 
 void ODBCDriver2BlockOutputFormat::consume(Chunk chunk)
