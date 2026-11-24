@@ -2057,8 +2057,8 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> removeNullableForCast(
     {
         const auto & col_nullable = assert_cast<const ColumnNullable &>(*src_column);
         auto nested_type = assert_cast<const DataTypeNullable &>(*src_type).getNestedType();
-        const auto & null_map = col_nullable.getNullMapData();
-        if (memoryIsZero(null_map.data(), 0, null_map.size()))
+        const auto * null_map = col_nullable.tryGetNullMapData();
+        if (!null_map || memoryIsZero(null_map->data(), 0, null_map->size()))
             return std::make_pair(col_nullable.getNestedColumnPtr(), nested_type);
         return std::make_pair(col_nullable.getNestedColumnWithDefaultOnNull(), nested_type);
     }
@@ -2304,7 +2304,7 @@ bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type, 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
     {
         const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
-        return fitsIntoMaxScaleDateTime64(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+        return fitsIntoMaxScaleDateTime64(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, column_nullable.tryGetNullMapData());
     }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
@@ -2366,7 +2366,7 @@ bool hasNonFiniteFloats(const IColumn & column, const IDataType & type, size_t b
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
     {
         const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
-        return hasNonFiniteFloats(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+        return hasNonFiniteFloats(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, column_nullable.tryGetNullMapData());
     }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
@@ -2404,7 +2404,7 @@ bool uint64ValuesFitInt64(const IColumn & column, const IDataType & type, size_t
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
     {
         const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
-        return uint64ValuesFitInt64(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+        return uint64ValuesFitInt64(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, column_nullable.tryGetNullMapData());
     }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
@@ -2592,8 +2592,8 @@ bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const 
     auto all_values_convert_exactly = [&]
     {
         auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
-        const auto & null_map = assert_cast<const ColumnNullable &>(*probe).getNullMapData();
-        return memoryIsZero(null_map.data(), 0, null_map.size());
+        const auto * null_map = assert_cast<const ColumnNullable &>(*probe).tryGetNullMapData();
+        return !null_map || memoryIsZero(null_map->data(), 0, null_map->size());
     };
 
     if (isDateTimeOrDateTime64(*from))

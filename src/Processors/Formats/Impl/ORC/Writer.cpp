@@ -1520,7 +1520,7 @@ ColumnPtr replaceTimestampsStoredAsEpoch(const ColumnPtr & column)
         auto nested = replaceTimestampsStoredAsEpoch(nullable->getNestedColumnPtr());
         if (nested == nullable->getNestedColumnPtr())
             return column;
-        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+        return ColumnNullable::create(nested, nullable->tryGetNullMapColumnPtr());
     }
     const auto * timestamps = checkAndGetColumn<ColumnDateTime64>(column.get());
     if (!timestamps)
