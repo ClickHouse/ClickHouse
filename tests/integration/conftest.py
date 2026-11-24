@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest  # pylint:disable=import-error; for style check
 
-from helpers.cluster import run_and_check
+from helpers.cluster import arm_per_test_coverage_for_module, run_and_check
 
 # This is a workaround for a problem with logging in pytest [1].
 #
@@ -139,6 +139,13 @@ def cleanup_environment():
     yield
 
 
+@pytest.fixture(autouse=True, scope="module")
+def per_test_coverage_module():
+    # A cluster shared between modules keeps running into the next one.
+    arm_per_test_coverage_for_module()
+    yield
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--run-id",
@@ -149,6 +156,23 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     os.environ["INTEGRATION_TESTS_RUN_ID"] = config.option.run_id
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item, call):
+    """Report an error in the setup or teardown of a test marked `xfail` as an error.
+
+    pytest applies an `xfail` mark to every phase, so it reports any exception in a fixture of such a test as an expected failure, which CI counts as passed. The mark describes a known bug in the test body, while a module fixture raises in teardown when `ClickHouseCluster.shutdown` finds a crash, a `LOGICAL_ERROR` or a sanitizer report in the server logs, and in setup when the cluster does not start: such an error in the module of an `xfail` test was hidden when that test happened to run the fixture. This wrapper runs after the one of pytest that sets the outcome. An explicit `pytest.xfail` call keeps its meaning in every phase."""
+    rep = yield
+    if (
+        call.when != "call"
+        and hasattr(rep, "wasxfail")
+        and call.excinfo is not None
+        and not isinstance(call.excinfo.value, pytest.xfail.Exception)
+    ):
+        rep.outcome = "failed"
+        del rep.wasxfail
+    return rep
 
 
 if hasattr(pytest, "xdist_plugin"):

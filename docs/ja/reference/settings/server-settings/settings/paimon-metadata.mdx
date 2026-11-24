@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse サーバー を設定するためのもので、ClickHouse のソースから自動生成されています。
 
-<div id="paimon_metadata_files_cache_max_entries">
-  ## paimon_metadata_files_cache_max_entries
-</div>
+## paimon_metadata_files_cache_max_entries {#paimon_metadata_files_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />paimon metadata files cache の最大エントリ数。0 はエントリ数の上限がないことを意味します。
 
-<div id="paimon_metadata_files_cache_policy">
-  ## paimon_metadata_files_cache_policy
-</div>
+## paimon_metadata_files_cache_policy {#paimon_metadata_files_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Paimon メタデータキャッシュのポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Paimon メタデータキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="paimon_metadata_files_cache_size">
-  ## paimon_metadata_files_cache_size
-</div>
+## paimon_metadata_files_cache_size {#paimon_metadata_files_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />paimon メタデータキャッシュの最大サイズ (バイト単位) 。0 の場合は無効です。
 
-<div id="paimon_metadata_files_cache_size_ratio">
-  ## paimon_metadata_files_cache_size_ratio
-</div>
+## paimon_metadata_files_cache_size_ratio {#paimon_metadata_files_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />paimon メタデータキャッシュの保護キュー (SLRU policy を使用する場合) のサイズを、cache 全体のサイズに対する比率で指定します。
 

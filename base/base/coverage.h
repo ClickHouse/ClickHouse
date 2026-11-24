@@ -2,8 +2,7 @@
 
 #include <string_view>
 
-/// Flush coverage report to file, depending on coverage system
-/// proposed by compiler (llvm for clang and gcov for gcc).
+/// Flush the LLVM coverage report to file.
 ///
 /// Noop if build without coverage (WITH_COVERAGE_DEPTH=0).
 /// Thread safe (use exclusive lock).
@@ -80,5 +79,9 @@ using CoverageFlushCallback = std::function<void(
 /// Only one callback can be registered at a time; a second call overwrites the first.
 /// Thread-safe.
 void registerCoverageFlushCallback(CoverageFlushCallback cb);
+
+/// Register a function that dumpCoverageReportIfPossible calls first, so that the
+/// forced-exit paths, which skip atexit handlers, also flush the per-test coverage.
+void setCoverageDumpHook(void (*hook)() noexcept);
 
 #endif

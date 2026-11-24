@@ -29,8 +29,15 @@ $CLICKHOUSE_CLIENT --query "ATTACH TABLE load_parts_refcounts"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT LOADING PARTS load_parts_refcounts"
 
-$CLICKHOUSE_CLIENT --query "
-    SELECT DISTINCT refcount FROM system.parts
-    WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_refcounts' AND NOT active"
+# Background threads (e.g. the cleanup thread clearing caches of outdated parts) can hold a part for a moment,
+# so wait until only the table references the reloaded outdated parts.
+for _ in {1..60}; do
+    refcounts=$($CLICKHOUSE_CLIENT --query "
+        SELECT DISTINCT refcount FROM system.parts
+        WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_refcounts' AND NOT active")
+    [[ "$refcounts" == "1" ]] && break
+    sleep 0.5
+done
+echo "$refcounts"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE load_parts_refcounts SYNC"

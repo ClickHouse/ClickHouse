@@ -9,15 +9,24 @@ namespace DB
 {
 
 DistinctSortedAlgorithm::DistinctSortedAlgorithm(
-    SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_, size_t max_block_size_rows_)
+    SharedHeaders input_headers,
+    SharedHeader output_header_,
+    SortDescription key_description,
+    const std::optional<String> & already_emitted_flag_column,
+    size_t max_block_size_rows_)
     : output_header(std::move(output_header_))
-    , description(std::move(description_))
-    , num_key_columns(description.size() - 1)
+    , description(std::move(key_description))
+    , has_already_emitted_flag(already_emitted_flag_column.has_value())
+    , num_key_columns(description.size())
     , max_block_size_rows(max_block_size_rows_)
     , merged_data(false, max_block_size_rows, 0, std::nullopt)
 {
-    chassert(description.size() >= 2);
-    chassert(description.back().direction == -1);
+    chassert(num_key_columns > 0);
+
+    /// Sorting the flag descending after the keys places suppression rows before ordinary rows with equal
+    /// keys, independently of input registration.
+    if (has_already_emitted_flag)
+        description.emplace_back(*already_emitted_flag_column, -1, 1);
     for (auto & header : input_headers)
         addInput(std::move(header));
 }
@@ -54,7 +63,7 @@ void DistinctSortedAlgorithm::initialize(Inputs inputs)
         {
             auto & cursor = cursors[source_num];
             cursor = SortCursorImpl(*source.header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
-            if (cursor.sort_columns[num_key_columns]->getUInt(0) == 0)
+            if (!isSuppressionRow(cursor, 0))
             {
                 for (const auto & column : *output_header)
                 {
@@ -80,7 +89,7 @@ void DistinctSortedAlgorithm::consume(Input & input, size_t source_num)
     const auto & chunk = current_inputs[source_num].chunk;
     auto & cursor = cursors[source_num];
     cursor.reset(chunk.getColumns(), *source.header, chunk.getNumRows());
-    chassert((cursor.sort_columns[num_key_columns]->getUInt(0) == 0) == !source.output_positions.empty());
+    chassert(isSuppressionRow(cursor, 0) == source.output_positions.empty());
     for (size_t i = 0; i < source.output_positions.size(); ++i)
         source.output_columns[i] = cursor.all_columns[source.output_positions[i]];
     queue.push(cursor);
@@ -119,6 +128,11 @@ Chunk DistinctSortedAlgorithm::pull()
     return merged_data.pull();
 }
 
+bool DistinctSortedAlgorithm::isSuppressionRow(const SortCursorImpl & cursor, size_t row) const
+{
+    return has_already_emitted_flag && assert_cast<const ColumnUInt8 &>(*cursor.sort_columns[num_key_columns]).getData()[row];
+}
+
 IMergingAlgorithm::Status DistinctSortedAlgorithm::merge()
 {
     while (queue.isValid())
@@ -136,12 +150,11 @@ IMergingAlgorithm::Status DistinctSortedAlgorithm::merge()
 
         const size_t batch_size = std::min(initial_batch_size, max_block_size_rows - consumed_rows);
         const size_t first_row = current->getRow();
-        const auto & flags = assert_cast<const ColumnUInt8 &>(*current->sort_columns[num_key_columns]).getData();
         detail::RowRef current_key;
         current_key.set(current);
         current_key.num_columns = num_key_columns;
         size_t skipped_rows = batch_size;
-        if (flags[first_row] == 0)
+        if (!isSuppressionRow(*current.impl, first_row))
         {
             /// Ordinary chunks are internally unique, so only the first row can repeat a prior key,
             /// and only when switching chunks. Source refills compare against the saved boundary key.

@@ -28,17 +28,17 @@ struct StudentTTestData : public TTestMoments<Float64>
 {
     static constexpr auto name = "studentTTest";
 
-    bool hasEnoughObservations() const
+    [[nodiscard]] bool hasEnoughObservations() const
     {
         return nx > 0 && ny > 0 && nx + ny > 2;
     }
 
-    Float64 getDegreesOfFreedom() const
+    [[nodiscard]] Float64 getDegreesOfFreedom() const
     {
         return nx + ny - 2;
     }
 
-    std::tuple<Float64, Float64> getResult() const
+    [[nodiscard]] std::tuple<Float64, Float64> getResult() const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
@@ -128,8 +128,9 @@ SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
         )",
         R"(
 ┌─studentTTest(sample_data, sample_index)───┐
-│ (-0.21739130434783777,0.8385421208415734) │
-└───────────────────────────────────────────┘
+├──────────t_statistic─┬────────────p_value─┤
+│ -0.21739130434783777 │ 0.8385421208415735 │
+└──────────────────────┴────────────────────┘
         )"
     }
     };

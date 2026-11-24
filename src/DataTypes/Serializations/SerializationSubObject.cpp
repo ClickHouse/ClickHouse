@@ -11,20 +11,23 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
 SerializationSubObject::SerializationSubObject(
-    const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_)
+    const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const SerializationPtr & typed_shared_data_serialization_)
     : paths_prefix(paths_prefix_)
     , typed_paths_serializations(typed_paths_serializations_)
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_serialization_)
+    , typed_shared_data_serialization(typed_shared_data_serialization_)
 {
 }
 
 
-UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_)
+UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const SerializationPtr & typed_shared_data_serialization_)
 {
     SipHash hash;
     hash.update("SubObject");
@@ -34,6 +37,9 @@ UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std:
     hash.update(dynamic_type_name.size());
     hash.update(dynamic_type_name);
     hash.update(dynamic_serialization_->getHash());
+    hash.update(typed_shared_data_serialization_ != nullptr);
+    if (typed_shared_data_serialization_)
+        hash.update(typed_shared_data_serialization_->getHash());
     std::vector<String> sorted_paths;
     sorted_paths.reserve(typed_paths_serializations_.size());
     for (const auto & [path, _] : typed_paths_serializations_)
@@ -48,21 +54,23 @@ UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std:
     return hash.get128();
 }
 
-SerializationPtr SerializationSubObject::create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization)
+SerializationPtr SerializationSubObject::create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const SerializationPtr & typed_shared_data_serialization_)
 {
     for (const auto & [_, item] : typed_paths_serializations_)
     {
         if (!item->supportsPooling())
-            return std::shared_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization));
+            return std::shared_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization, typed_shared_data_serialization_));
     }
-    if (!dynamic_serialization->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization));
-    return ISerialization::pooled(getHash(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization), [&] { return new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization); });
+    if (!dynamic_serialization->supportsPooling() || (typed_shared_data_serialization_ && !typed_shared_data_serialization_->supportsPooling()))
+        return std::shared_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization, typed_shared_data_serialization_));
+    return ISerialization::pooled(getHash(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization, typed_shared_data_serialization_), [&] { return new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization, typed_shared_data_serialization_); });
 }
 
 bool SerializationSubObject::supportsPooling() const
 {
     if (!dynamic_serialization->supportsPooling())
+        return false;
+    if (typed_shared_data_serialization && !typed_shared_data_serialization->supportsPooling())
         return false;
     for (const auto & [_, item] : typed_paths_serializations)
     {
@@ -80,18 +88,20 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     VectorWithMemoryTracking<String> dynamic_sub_paths;
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
+    ISerialization::DeserializeBinaryBulkStatePtr typed_shared_data_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObject>(*this);
 
         for (const auto & [path, state] : typed_path_states)
-            new_state->typed_path_states[path] = state ? state->clone() : nullptr;
+            new_state->typed_path_states[path] = state ? state->clone(context) : nullptr;
 
         for (const auto & [path, state] : dynamic_path_states)
-            new_state->dynamic_path_states[path] = state ? state->clone() : nullptr;
+            new_state->dynamic_path_states[path] = state ? state->clone(context) : nullptr;
 
-        new_state->shared_data_state = shared_data_state ? shared_data_state->clone() : nullptr;
+        new_state->shared_data_state = shared_data_state ? shared_data_state->clone(context) : nullptr;
+        new_state->typed_shared_data_state = typed_shared_data_state ? typed_shared_data_state->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -123,6 +133,18 @@ void SerializationSubObject::enumerateStreams(
                              .withDeserializeState(deserialize_state ? deserialize_state->typed_path_states.at(path) : nullptr);
         settings.path.back().data = path_data;
         serialization->enumerateStreams(settings, callback, path_data);
+        settings.path.pop_back();
+    }
+
+    if (typed_shared_data_serialization)
+    {
+        settings.path.push_back(Substream::ObjectTypedSharedData);
+        auto typed_shared_data = SubstreamData(typed_shared_data_serialization)
+                                     .withType(data.type)
+                                     .withColumn(data.column)
+                                     .withSerializationInfo(data.serialization_info)
+                                     .withDeserializeState(deserialize_state ? deserialize_state->typed_shared_data_state : nullptr);
+        typed_shared_data_serialization->enumerateStreams(settings, callback, typed_shared_data);
         settings.path.pop_back();
     }
 
@@ -190,6 +212,13 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
         settings.path.pop_back();
     }
 
+    if (typed_shared_data_serialization)
+    {
+        settings.path.push_back(Substream::ObjectTypedSharedData);
+        typed_shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, sub_object_state->typed_shared_data_state, cache);
+        settings.path.pop_back();
+    }
+
     for (const auto & dynamic_path : *structure_state_concrete->sorted_dynamic_paths)
     {
         /// Save only dynamic paths with requested prefix.
@@ -254,6 +283,13 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
     }
 
+    if (typed_shared_data_serialization)
+    {
+        settings.path.push_back(Substream::ObjectTypedSharedData);
+        typed_shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object, limit, settings, sub_object_state->typed_shared_data_state, cache);
+        settings.path.pop_back();
+    }
+
     for (const auto & path : sub_object_state->dynamic_paths)
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
@@ -267,6 +303,20 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     settings.path.pop_back();
+
+    /// Verify that all typed paths, dynamic paths and shared data has consistent sizes
+    size_t expected_size = column_object.getSharedDataPtr()->size();
+    for (const auto & [path, path_column] : typed_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of typed path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
+
+    for (const auto & [path, path_column] : dynamic_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
 }
 
 size_t SerializationSubObject::allocatedBytes() const

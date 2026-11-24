@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 CREATE TABLE t0 (k1 Nullable(Int)) ENGINE = Memory;
 CREATE TABLE t2 (k1 Int) ENGINE = Join(ALL, FULL, k1);

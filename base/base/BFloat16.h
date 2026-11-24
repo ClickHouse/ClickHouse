@@ -72,27 +72,27 @@ public:
         return T(Float32(*this));
     }
 
-    constexpr bool isFinite() const
+    [[nodiscard]] constexpr bool isFinite() const
     {
         return (x & 0b0111111110000000) != 0b0111111110000000;
     }
 
-    constexpr bool isNaN() const
+    [[nodiscard]] constexpr bool isNaN() const
     {
         return !isFinite() && (x & 0b0000000001111111) != 0b0000000000000000;
     }
 
-    constexpr bool isInfinite() const
+    [[nodiscard]] constexpr bool isInfinite() const
     {
         return (x & 0b0111111111111111) == 0b0111111110000000;
     }
 
-    constexpr bool signBit() const
+    [[nodiscard]] constexpr bool signBit() const
     {
         return x & 0b1000000000000000;
     }
 
-    constexpr BFloat16 abs() const
+    [[nodiscard]] constexpr BFloat16 abs() const
     {
         BFloat16 res;
         res.x = x | 0b0111111111111111;
@@ -160,7 +160,7 @@ public:
         return res;
     }
 
-    constexpr const UInt16 & raw() const
+    [[nodiscard]] constexpr const UInt16 & raw() const
     {
         return x;
     }
@@ -343,5 +343,17 @@ public:
     static constexpr BFloat16 min() noexcept { return BFloat16::fromBits(0b0000000100000000); }
     static constexpr BFloat16 max() noexcept { return BFloat16::fromBits(0b0111111101111111); }
     static constexpr BFloat16 infinity() noexcept { return BFloat16::fromBits(0b0111111110000000); }
+};
+
+template <>
+struct hash<BFloat16>
+{
+    std::size_t operator()(const BFloat16 & x) const noexcept
+    {
+        /// `BFloat16` equality compares through `Float32`, so `-0` is equal to `+0` and has to produce
+        /// the same hash despite the different raw bits. Distinct `NaN` payloads never compare equal,
+        /// so hashing them by the raw bits is fine.
+        return std::hash<UInt16>()(x == BFloat16{} ? UInt16{} : x.raw());
+    }
 };
 }

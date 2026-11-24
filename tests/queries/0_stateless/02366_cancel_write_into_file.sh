@@ -13,7 +13,7 @@ done
 
 sleep 2
 
-$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02366_') sync" > /dev/null 2>&1
+$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02366_') sync settings kill_throw_if_noop = false" > /dev/null 2>&1
 
 for i in $(seq 1 10);
 do
@@ -22,4 +22,8 @@ done
 
 sleep 2
 
-$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02366_') sync" > /dev/null 2>&1
+$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02366_') sync settings kill_throw_if_noop = false" > /dev/null 2>&1
+
+# The killed inserts leave their files behind; repeated runs of the test would fill the disk.
+wait
+rm -f "${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}"_02366_data_*.jsonl

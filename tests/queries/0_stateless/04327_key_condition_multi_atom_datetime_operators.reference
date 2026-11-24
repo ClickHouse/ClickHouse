@@ -1,0 +1,18 @@
+ts = toDateTime('2026-01-10 05:00:00', 'UTC')	1	1	2	Condition: and((toDate(ts) in [20463, 20463]), and((toYYYYMM(ts) in [202601, 202601]), (ts in [1768021200, 1768021200])))
+ts < toDateTime('2026-01-10 05:00:00', 'UTC')	221	221	221	Condition: and((toDate(ts) in (-Inf, 20463]), and((toYYYYMM(ts) in (-Inf, 202601]), (ts in (-Inf, 1768021199])))
+ts <= toDateTime('2026-01-10 05:00:00', 'UTC')	222	222	222
+ts > toDateTime('2026-01-10 05:00:00', 'UTC')	738	738	739
+ts >= toDateTime('2026-01-10 05:00:00', 'UTC')	739	739	740
+ts BETWEEN toDateTime('2026-01-10 00:00:00', 'UTC') AND toDateTime('2026-01-11 00:00:00', 'UTC')	25	25	26
+ts IN (toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-01-10 01:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC'))	3	3	7
+has([toDateTime('2026-01-10 05:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC')], ts)	2	2	6
+ts >= toDateTime('2026-01-10 00:00:00', 'UTC') AND ts < toDateTime('2026-01-11 00:00:00', 'UTC')	24	24	25
+ts < toDateTime('2026-01-03 00:00:00', 'UTC') OR ts >= toDateTime('2026-02-08 00:00:00', 'UTC')	96	96	97
+NOT (ts < toDateTime('2026-01-10 05:00:00', 'UTC'))	739	739	740
+(ts < toDateTime('2026-01-02 00:00:00', 'UTC') OR ts >= toDateTime('2026-02-09 00:00:00', 'UTC')) AND ts != toDateTime('2026-01-01 05:00:00', 'UTC')	47	47	49
+2026-01-10 04:00:00	2026-01-10 05:00:00
+0 AND ts = toDateTime('2026-01-10 05:00:00', 'UTC')	0	0	0
+1 OR ts = toDateTime('2026-01-10 05:00:00', 'UTC')	960	960	960
+NULL AND ts = toDateTime('2026-01-10 05:00:00', 'UTC')	0	0	0
+ts != toDateTime('2026-01-10 05:00:00', 'UTC')	959	959	960
+ts NOT IN (toDateTime('2026-01-10 05:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC'))	958	958	960

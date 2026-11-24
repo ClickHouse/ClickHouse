@@ -74,7 +74,7 @@ static const signed char _ControlVerbs_actions[] = {
 			155, 157, 159, 160, 161, 0
 		};
 		
-		static const char _ControlVerbs_trans_keys[] = {
+		static const unsigned char _ControlVerbs_trans_keys[] = {
 			41u, 65u, 66u, 67u, 76u, 78u, 85u, 41u,
 			41u, 78u, 41u, 89u, 41u, 67u, 41u, 82u,
 			41u, 76u, 41u, 70u, 41u, 41u, 83u, 41u,
@@ -276,7 +276,7 @@ static const signed char _ControlVerbs_actions[] = {
 			te = 0;
 		}
 		
-#line 105 "control_verbs.rl"
+#line 107 "control_verbs.rl"
 
 		
 		try {
@@ -285,7 +285,7 @@ static const signed char _ControlVerbs_actions[] = {
 	{
 				int _klen;
 				unsigned int _trans = 0;
-				const char * _keys;
+				const unsigned char * _keys;
 				const signed char * _acts;
 				unsigned int _nacts;
 				_resume: {}
@@ -321,9 +321,9 @@ static const signed char _ControlVerbs_actions[] = {
 					
 					_klen = (int)_ControlVerbs_single_lengths[cs];
 					if ( _klen > 0 ) {
-						const char *_lower = _keys;
-						const char *_upper = _keys + _klen - 1;
-						const char *_mid;
+						const unsigned char *_lower = _keys;
+						const unsigned char *_upper = _keys + _klen - 1;
+						const unsigned char *_mid;
 						while ( 1 ) {
 							if ( _upper < _lower ) {
 								_keys += _klen;
@@ -332,9 +332,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							
 							_mid = _lower + ((_upper-_lower) >> 1);
-							if ( ( (*( p))) < (*( _mid)) )
+							if ( ((unsigned char)(*p)) < (*( _mid)) )
 								_upper = _mid - 1;
-							else if ( ( (*( p))) > (*( _mid)) )
+							else if ( ((unsigned char)(*p)) > (*( _mid)) )
 								_lower = _mid + 1;
 							else {
 								_trans += (unsigned int)(_mid - _keys);
@@ -345,9 +345,9 @@ static const signed char _ControlVerbs_actions[] = {
 					
 					_klen = (int)_ControlVerbs_range_lengths[cs];
 					if ( _klen > 0 ) {
-						const char *_lower = _keys;
-						const char *_upper = _keys + (_klen<<1) - 2;
-						const char *_mid;
+						const unsigned char *_lower = _keys;
+						const unsigned char *_upper = _keys + (_klen<<1) - 2;
+						const unsigned char *_mid;
 						while ( 1 ) {
 							if ( _upper < _lower ) {
 								_trans += (unsigned int)_klen;
@@ -355,9 +355,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							
 							_mid = _lower + (((_upper-_lower) >> 1) & ~1);
-							if ( ( (*( p))) < (*( _mid)) )
+							if ( ((unsigned char)(*p)) < (*( _mid)) )
 								_upper = _mid - 2;
-							else if ( ( (*( p))) > (*( _mid + 1)) )
+							else if ( ((unsigned char)(*p)) > (*( _mid + 1)) )
 								_lower = _mid + 2;
 							else {
 								_trans += (unsigned int)((_mid - _keys)>>1);
@@ -389,9 +389,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 3:  {
 									{
-#line 76 "control_verbs.rl"
+#line 78 "control_verbs.rl"
 									{te = p+1;{
-#line 76 "control_verbs.rl"
+#line 78 "control_verbs.rl"
 											
 											mode.utf8 = true;
 										}
@@ -403,9 +403,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 4:  {
 									{
-#line 80 "control_verbs.rl"
+#line 82 "control_verbs.rl"
 									{te = p+1;{
-#line 80 "control_verbs.rl"
+#line 82 "control_verbs.rl"
 											
 											mode.ucp = true;
 										}
@@ -417,9 +417,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 5:  {
 									{
-#line 84 "control_verbs.rl"
+#line 86 "control_verbs.rl"
 									{te = p+1;{
-#line 84 "control_verbs.rl"
+#line 86 "control_verbs.rl"
 											
 											ostringstream str;
 											str << "Unsupported control verb " << string(ts, te - ts);
@@ -433,9 +433,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 6:  {
 									{
-#line 90 "control_verbs.rl"
+#line 92 "control_verbs.rl"
 									{te = p+1;{
-#line 90 "control_verbs.rl"
+#line 92 "control_verbs.rl"
 											
 											ostringstream str;
 											str << "Unknown control verb " << string(ts, te - ts);
@@ -449,9 +449,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 7:  {
 									{
-#line 97 "control_verbs.rl"
+#line 99 "control_verbs.rl"
 									{te = p+1;{
-#line 97 "control_verbs.rl"
+#line 99 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
@@ -464,9 +464,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 8:  {
 									{
-#line 97 "control_verbs.rl"
+#line 99 "control_verbs.rl"
 									{te = p;p = p - 1;{
-#line 97 "control_verbs.rl"
+#line 99 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
@@ -479,10 +479,10 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 9:  {
 									{
-#line 97 "control_verbs.rl"
+#line 99 "control_verbs.rl"
 									{p = ((te))-1;
 										{
-#line 97 "control_verbs.rl"
+#line 99 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
@@ -530,9 +530,11 @@ static const signed char _ControlVerbs_actions[] = {
 				_out: {}
 			}
 			
-#line 108 "control_verbs.rl"
+#line 110 "control_verbs.rl"
 
 		} catch (LocatedParseError &error) {
+			// cppcheck-suppress pointerLessThanZero
+			// cppcheck-suppress pointerPositive
 			if (ts >= ptr && ts <= pe) {
 				error.locate(ts - ptr + start);
 			} else {

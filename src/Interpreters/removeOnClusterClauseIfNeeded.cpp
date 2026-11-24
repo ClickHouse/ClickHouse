@@ -18,6 +18,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
@@ -53,7 +54,8 @@ static bool isAccessControlQuery(const ASTPtr & query)
         || query->as<ASTCreateRowPolicyQuery>()
         || query->as<ASTCreateSettingsProfileQuery>()
         || query->as<ASTDropAccessEntityQuery>()
-        || query->as<ASTGrantQuery>();
+        || query->as<ASTGrantQuery>()
+        || query->as<ASTSetRoleQuery>();
 }
 
 static bool isNamedCollectionQuery(const ASTPtr & query)

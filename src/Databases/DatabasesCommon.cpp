@@ -1,9 +1,11 @@
 #include <Databases/DatabasesCommon.h>
+#include <Storages/StorageTableProxy.h>
 #include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Common/ProfileEvents.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -24,6 +26,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -33,12 +36,18 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/ReadHelpers.h>
 #include <base/sleep.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -94,7 +103,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     /// Do some basic sanity checks. We cannot do the same strict checks as on create, because context might not have the same settings if it is not called directly from an alter query.
     /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
-        = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
+        = InterpreterCreateQuery::getColumnsDescription(columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, /* is_restore_from_backup = */ false);
 
     if (columns_desc.getInsertable().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
@@ -200,11 +209,13 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     if (!ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+        ASTPtr new_codec_declarations = InterpreterCreateQuery::formatCodecDeclarations(metadata.columns);
         ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
         ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
         ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
 
         ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+        ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->codec_declarations, new_codec_declarations);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
@@ -247,6 +258,10 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.primary_key.definition_ast)
                 storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
 
+            /// A partition key cannot change in `MergeTree`, but in a data lake (`Iceberg`) its source column can be renamed.
+            if (metadata.partition_key.definition_ast)
+                storage_ast.set(storage_ast.partition_by, metadata.partition_key.definition_ast);
+
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
@@ -262,14 +277,21 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             else if (storage_ast.ttl_table != nullptr) /// TTL was removed
                 storage_ast.reset(storage_ast.ttl_table);
 
-            if (metadata.settings_changes)
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+            if (metadata.hasSettingsChanges())
+            {
+                auto settings_changes_ast = metadata.getSettingsChanges();
+                if (settings_changes_ast->as<ASTSetQuery &>().changes.empty())
+                    storage_ast.reset(storage_ast.settings);
+                else
+                    storage_ast.set(storage_ast.settings, settings_changes_ast);
+            }
         }
-        else if (metadata.settings_changes)
+        else if (metadata.hasSettingsChanges())
         {
-            auto & settings_changes = metadata.settings_changes->as<ASTSetQuery &>().changes;
+            auto settings_changes_ast = metadata.getSettingsChanges();
+            auto & settings_changes = settings_changes_ast->as<ASTSetQuery &>().changes;
             if (!settings_changes.empty())
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+                storage_ast.set(storage_ast.settings, settings_changes_ast);
         }
     }
 
@@ -352,6 +374,12 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         create_table_query->set(create_table_query->columns_list, ast_columns_list);
     }
     return create_table_query;
+}
+
+ASTPtr parseDatabaseEngineDefinition(std::string_view definition)
+{
+    ParserStorage parser{ParserStorage::DATABASE_ENGINE};
+    return parseQueryFromText(parser, definition);
 }
 
 
@@ -534,6 +562,8 @@ void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANA
 
     try
     {
+        /// The tables live as long as the database, not the query that first needs them.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
         populate(const_cast<DatabaseWithOwnTablesBase &>(*this));
     }
     catch (...)
@@ -558,6 +588,54 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
     return tables.contains(table_name);
 }
 
+StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::iterator it) const
+{
+    const auto * proxy = dynamic_cast<const StorageTableProxy *>(it->second.get());
+    if (!proxy)
+        return it->second;
+    StoragePtr loaded = proxy->getLoadedTable();
+    if (!loaded)
+        return it->second;
+
+    /// The proxy is not counted like the loaded storage, e.g. `AttachedReplicatedTable` is only counted
+    /// for `StorageReplicatedMergeTree`. Computed in advance, because nothing may throw once the UUID
+    /// mapping has been replaced, or the two maps would disagree from then on.
+    std::vector<CurrentMetrics::Metric> proxy_counters;
+    std::vector<CurrentMetrics::Metric> loaded_counters;
+    if (!loaded->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    {
+        proxy_counters = getAttachedCountersForStorage(it->second);
+        loaded_counters = getAttachedCountersForStorage(loaded);
+    }
+
+    /// Replace the proxy only if nobody holds it, so that no query can be using the proxy and its own
+    /// table locks while other queries use the loaded storage and its locks. Under the mutexes of the
+    /// database and of the UUID mapping, nobody can obtain the proxy anew. Otherwise, keep the proxy for
+    /// now and try again on the next lookup.
+    ///
+    /// The UUID mapping has to be updated as well: `DatabaseCatalog::getTableImpl` answers a `StorageID`
+    /// that already carries a UUID straight from it, without asking the database.
+    const auto uuid = it->second->getStorageID().uuid;
+    if (uuid != UUIDHelpers::Nil)
+    {
+        if (!DatabaseCatalog::instance().replaceUnusedTableInUUIDMapping(uuid, it->second, loaded))
+            return it->second;
+    }
+    else if (it->second.use_count() != 1)
+        return it->second;
+
+    it->second = loaded;
+    for (auto metric : proxy_counters)
+        CurrentMetrics::sub(metric);
+    for (auto metric : loaded_counters)
+        CurrentMetrics::add(metric);
+
+    LOG_TRACE(log, "Replaced the proxy of lazily loaded table {} with the loaded {}",
+              loaded->getStorageID().getNameForLogs(), loaded->getName());
+
+    return loaded;
+}
+
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
     waitTableStarted(table_name);
@@ -568,14 +646,21 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 {
     ensurePopulated();
     std::lock_guard lock(mutex);
+
     if (!filter_by_table_name)
+    {
+        for (auto it = tables.begin(); it != tables.end(); ++it)
+            replaceLoadedLazyTableUnlocked(it);
+        ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
         return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+    }
 
     Tables filtered_tables;
-    for (const auto & [table_name, storage] : tables)
-        if (filter_by_table_name(table_name))
-            filtered_tables.emplace(table_name, storage);
+    for (auto it = tables.begin(); it != tables.end(); ++it)
+        if (filter_by_table_name(it->first))
+            filtered_tables.emplace(it->first, replaceLoadedLazyTableUnlocked(it));
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, filtered_tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
 }
 
@@ -883,7 +968,7 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
 {
     auto it = tables.find(table_name);
     if (it != tables.end())
-        return it->second;
+        return replaceLoadedLazyTableUnlocked(it);
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                     backQuote(database_name), backQuote(table_name));
 }
@@ -940,14 +1025,14 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_nam
         std::lock_guard lock(mutex);
         auto it = tables.find(table_name);
         if (it != tables.end())
-            return it->second;
+            return replaceLoadedLazyTableUnlocked(it);
     }
 
     ensurePopulated();
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end())
-        return it->second;
+        return replaceLoadedLazyTableUnlocked(it);
     return {};
 }
 
