@@ -97,11 +97,11 @@ TEST(Set, NullMarkerFollowsSuccessfulKeyInsertion)
 
     auto present = type->createColumn();
     present->insert(Field(String{"a"}));
-    set.insertFromColumns({present});
+    set.insertFromColumns({std::move(present)});
 
     auto incoming = type->createColumn();
     incoming->insert(Field{});
-    Columns incoming_columns{incoming};
+    Columns incoming_columns{std::move(incoming)};
     SetKeyColumns holder;
     holder.key_columns.reserve(1);
     holder.materialized_columns.reserve(1);
@@ -148,7 +148,7 @@ TEST(Set, NullMarkerFollowsSuccessfulKeyInsertion)
 
     auto missing = type->createColumn();
     missing->insert(Field(String{"missing"}));
-    auto membership = set.execute({ColumnWithTypeAndName(missing, type, "x")}, false);
+    auto membership = set.execute({ColumnWithTypeAndName(std::move(missing), type, "x")}, false);
     ASSERT_EQ(membership->size(), 1);
     EXPECT_FALSE(membership->getBool(0));
 }
