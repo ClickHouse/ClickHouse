@@ -826,7 +826,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 continue;
 
             const auto & conversions = global_ctx->alter_conversions[i];
-            if (part->hasLightweightDelete() || conversions->hasPatches() || conversions->hasMutations() || !conversions->getRenameMap().empty())
+            /// `hasMutations` covers only the data mutations applied on the fly and `getRenameMap` the
+            /// renames. A pending `DROP COLUMN` is tracked separately: the reader ignores the values the
+            /// part stores under the dropped name and fills a column added again under that name from
+            /// its DEFAULT, while the presence and type check below still sees the old physical column.
+            /// `getValueUpdatedColumns` includes the names touched by pending drops.
+            if (part->hasLightweightDelete() || conversions->hasPatches() || conversions->hasMutations()
+                || !conversions->getRenameMap().empty() || !conversions->getValueUpdatedColumns().empty())
             {
                 rows_ttl_source_may_change = true;
                 break;
