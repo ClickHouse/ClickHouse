@@ -11184,7 +11184,7 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
     DECLARE(Bool, allow_experimental_geo_replication_control, false, R"(
 Allows creation of `ReplicatedMergeTree` tables with a non-empty `geo_replication_control_region` setting, which enables the geo-location-aware fetching: region leader election and fetching parts within the region only.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to gate the experimental geo-location-aware fetching of `ReplicatedMergeTree` parts."}) \
+        {"26.12", false, false, "New setting to gate the experimental geo-location-aware fetching of `ReplicatedMergeTree` parts."}) \
     DECLARE(Bool, enable_pco_codec, false, R"(
 Enables the `PCO` compression codec.
 )", BETA, \
