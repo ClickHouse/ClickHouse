@@ -51,6 +51,7 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -59,6 +60,8 @@
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
+
+#include <AggregateFunctions/Combinators/AggregateFunctionMerge.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -72,6 +75,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
@@ -83,6 +87,7 @@
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
@@ -229,37 +234,6 @@ bool isMaterializedCTEDefinition(const QueryTreeNodePtr & node)
     if (const auto * table_node = node->as<TableNode>())
         return table_node->isMaterializedCTE();
     return false;
-}
-
-/// Recursively clears aliases from `node` and all of its descendants, stopping at
-/// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
-///
-/// Background: during identifier resolution, when an identifier resolves to an alias
-/// (e.g. `cond` in `PREWHERE cond` resolves to the projection alias `cond`), the alias
-/// body is deep-cloned and the clone replaces the identifier. Only the clone's root is
-/// registered for later alias removal; the clone's descendants — which carry the
-/// original inner aliases (clone preserves aliases) — are not. A plain non-recursive
-/// `removeAlias` on each registered node therefore leaks inner aliases when the alias
-/// body itself contains alias-bearing nodes.
-///
-/// This walk catches those inner aliases. Nested subqueries / lambdas live in separate
-/// scopes that are responsible for their own alias cleanup, so the walk stops at their
-/// boundary.
-void removeAliasesRecursive(QueryTreeNodePtr & node)
-{
-    if (!node)
-        return;
-
-    node->removeAlias();
-
-    auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::QUERY
-        || node_type == QueryTreeNodeType::UNION
-        || node_type == QueryTreeNodeType::LAMBDA)
-        return;
-
-    for (auto & child : node->getChildren())
-        removeAliasesRecursive(child);
 }
 
 /// Hides lambda argument names in the scopes they belong to and restores them on destruction.
@@ -421,10 +395,13 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
+QueryAnalyzer::QueryAnalyzer(
+    bool only_analyze_, bool positional_arguments_already_resolved_, StoragePtr replaced_storage_, bool view_source_in_subqueries_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
     , positional_arguments_already_resolved(positional_arguments_already_resolved_)
+    , replaced_storage(std::move(replaced_storage_))
+    , view_source_in_subqueries(view_source_in_subqueries_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -489,7 +466,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
             /// a single expression node too, not only for a list: otherwise an alias defined and later
             /// referenced within a standalone expression (such as a column DEFAULT expression checked
             /// during `ALTER TABLE ... DROP COLUMN`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-            QueryExpressionsAliasVisitor visitor(scope.aliases);
+            QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context);
             visitor.visit(node);
 
             if (node_type == QueryTreeNodeType::LIST)
@@ -501,7 +478,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
+            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, scope.context);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
@@ -554,7 +531,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
     /// above and is needed for a single expression node too, not only for a list: otherwise an alias
     /// defined and later referenced within a standalone constant expression (such as a user predicate
     /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context);
     visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
@@ -931,6 +908,7 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
   * Example: SELECT id, value FROM test_table ORDER BY 1, 2;
   * Example: SELECT id, value FROM test_table LIMIT 5 BY 1, 2;
   */
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
@@ -1196,7 +1174,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
 
     // We don't need to have GROUPING under GROUP BY ALL, so we treat GROUPING
     // as an aggregate function for GROUP BY ALL expansion
-    if (function->isAggregateFunction() || function->isWindowFunction() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
+    if (function->isAggregationCall() || function->isWindowCall() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
         return {true, 0};
 
     UInt64 pushed_children = 0;
@@ -1323,8 +1301,30 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
     query_tree_node_typed.setIsLimitByAll(false);
 }
 
+namespace
+{
+
+bool isStateOf(const DataTypes & argument_types, const String & name, NullsAction action, const Array & parameters)
+{
+    if (argument_types.size() != 1)
+        return false;
+    const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(argument_types[0].get());
+    if (!state_type)
+        return false;
+
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(name, action, state_type->getArgumentsDataTypes(), parameters, properties);
+    return AggregateFunctionMerge::canMergeStatesOf(*function, *state_type->getFunction());
+}
+
+}
+
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
-    const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context)
+    const std::string & aggregate_function_name,
+    NullsAction action,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const ContextPtr & context)
 {
     std::string result_aggregate_function_name = aggregate_function_name;
     auto aggregate_function_name_lowercase = Poco::toLower(aggregate_function_name);
@@ -1379,7 +1379,13 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
                 if (!result_aggregate_function_name.ends_with(suffix_to_check))
                     continue;
 
-                result_aggregate_function_name = result_aggregate_function_name.substr(0, function_name_size - suffix_to_check.size());
+                auto base_name = result_aggregate_function_name.substr(0, function_name_size - suffix_to_check.size());
+
+                /// sumMergeOrNull consumes sum states, sumOrNullMerge consumes sumOrNull states
+                if ((suffix == "MergeState" || suffix == "Merge") && isStateOf(argument_types, base_name, action, parameters))
+                    break;
+
+                result_aggregate_function_name = std::move(base_name);
                 result_aggregate_function_name += "OrNull";
                 result_aggregate_function_name += suffix_string_value;
 
@@ -1937,7 +1943,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context, replaced_storage);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -3027,7 +3033,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ///
     /// We traverse the APPLY expression tree because the aggregate function may be nested
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
-    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
+    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregationCall`) because
     /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
     auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
     {
@@ -3797,6 +3803,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
     lambdas_in_resolve_process.insert(lambda_with_hash);
+    SCOPE_EXIT({ lambdas_in_resolve_process.erase(lambda_with_hash); });
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3808,7 +3815,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context);
     visitor.visit(lambda_to_resolve.getExpression());
 
     /** Bind lambda arguments to the provided argument nodes.
@@ -3836,8 +3843,6 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-    lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
 }
@@ -4707,7 +4712,12 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     expanded_keys.reserve(key_list.size());
     for (auto const & key : key_list)
     {
-        if (auto * function = key->as<FunctionNode>(); function != nullptr && function->getFunctionName() == "tuple")
+        const auto * function = key->as<FunctionNode>();
+        /// a `tuple` that the query does not write is folded into a constant when its arguments are constants
+        if (const auto * constant = key->as<ConstantNode>(); constant && constant->hasSourceExpression() && !constant->getSourceExpression()->hasOriginalAST())
+            function = constant->getSourceExpression()->as<FunctionNode>();
+
+        if (function != nullptr && function->getFunctionName() == "tuple")
         {
             std::copy(function->getArguments().begin(), function->getArguments().end(), std::back_inserter(expanded_keys));
         }
@@ -4735,6 +4745,10 @@ bool convertNestedGroupByKeysToNullable(
     const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
     const ContextPtr & context)
 {
+    /// The identifier resolve cache can make several references one node: change it in place only through its own copy.
+    if (node.use_count() > 1)
+        node = node->clone();
+
     if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
     {
         node->convertToNullable();
@@ -5445,14 +5459,27 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
             if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
+
+            data.alias_columns_in_resolution.push_back(alias_column_to_resolve->getColumnName());
+            bool alias_column_resolved = false;
+            SCOPE_EXIT({
+                data.alias_columns_in_resolution.pop_back();
+                if (!alias_column_resolved)
+                    alias_column_to_resolve->setExpression(nullptr);
+            });
+
             alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
 
-            IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            auto [scope_it, scope_inserted] = node_to_scope_map.try_emplace(alias_column_to_resolve, alias_column_to_resolve, &scope /*parent_scope*/);
+            /// The scope exists only if an earlier resolution of this column threw, and holds the state of that attempt.
+            if (!scope_inserted)
+                scope_it->second = IdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            IdentifierResolveScope & alias_column_resolve_scope = scope_it->second;
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
-            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
+            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, alias_column_resolve_scope.context);
             visitor.visit(alias_column_to_resolve->getExpression());
 
             resolveExpressionNode(alias_column_resolve_scope.scope_node,
@@ -5462,6 +5489,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (resolved_expression->getResultType()->getName() != alias_column_to_resolve->getResultType()->getName())
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
+            alias_column_resolved = true;
         };
 
         data.setColumnNodeMapPopulator(std::move(populator), std::move(alias_column_resolver));
@@ -5503,6 +5531,75 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     auto & scope_context = scope.context;
 
+    /// Always use getQueryContext() for table function result caching (shared across all subqueries).
+    /// The execution context is used for the actual table function execution and its settings
+    /// are incorporated into the cache key (so identical settings still reuse the cache,
+    /// while different settings get separate entries).
+    /// The same execution context is used to infer the structure of a parameterized view, because the view
+    /// is read with the settings of its scope.
+    /// If a parent *subquery* has per-subquery SETTINGS, use the nearest query scope's
+    /// context (which has accumulated settings applied). We only consider subqueries
+    /// (not the outermost query) because the outermost query's SETTINGS are already on
+    /// the query context, and switching to the QueryNode's own context copy could change
+    /// non-settings state (e.g. isDistributed) and break table function execution
+    /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
+    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
+    /// query tree through cloning and conversion back to AST for distributed execution.
+    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
+    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
+    /// built from the union's context, so the nearest query scope below it already carries the settings.
+    /// An operand of a set operation is not a subquery, but it customizes its settings as well when it has
+    /// a `SETTINGS` clause of its own: `SELECT ... UNION ALL (SELECT ... FROM view(...) SETTINGS x = 1)`.
+    /// The clause of the parenthesized operand applies only to it (see `ParserUnionQueryElement`), so it is
+    /// not on the query context even when the set operation is the outermost query. The only clause an operand
+    /// shares with the set operation is the trailing clause of the last operand, which `QueryTreeBuilder`
+    /// appends to the clauses of the set operation, so that one is a suffix of them.
+    auto has_own_settings = [](const auto & node, const UnionNode & parent_union)
+    {
+        auto is_suffix = [](const auto & suffix, const auto & whole)
+        {
+            return suffix.size() <= whole.size() && std::equal(suffix.begin(), suffix.end(), whole.end() - suffix.size());
+        };
+
+        const auto & operands = parent_union.getQueries().getNodes();
+        bool is_last_operand = !operands.empty() && operands.back().get() == &node;
+        return !(is_last_operand
+            && is_suffix(node.getSettingsChanges(), parent_union.getSettingsChanges())
+            && is_suffix(node.getDefaultSettings(), parent_union.getDefaultSettings())
+            && is_suffix(node.getQueryParameters(), parent_union.getQueryParameters()));
+    };
+
+    auto scope_customizes_settings = [&](const IdentifierResolveScope & scope_to_check) -> bool
+    {
+        const auto * parent_union = scope_to_check.parent_scope && scope_to_check.parent_scope->scope_node
+            ? scope_to_check.parent_scope->scope_node->as<UnionNode>()
+            : nullptr;
+        if (const auto * query_node = scope_to_check.scope_node->as<QueryNode>())
+            return query_node->hasSettingsChanges()
+                && (query_node->isSubquery() || (parent_union && has_own_settings(*query_node, *parent_union)));
+        if (const auto * union_node = scope_to_check.scope_node->as<UnionNode>())
+            return union_node->hasSettingsChanges()
+                && (union_node->isSubquery() || (parent_union && has_own_settings(*union_node, *parent_union)));
+        return false;
+    };
+
+    ContextPtr execution_context = scope_context->getQueryContext();
+    {
+        const IdentifierResolveScope * scope_to_check = &scope;
+        while (scope_to_check != nullptr)
+        {
+            if (scope_customizes_settings(*scope_to_check))
+            {
+                auto * nearest_query_scope = scope.getNearestQueryScope();
+                if (nearest_query_scope)
+                    execution_context = nearest_query_scope->scope_node->as<QueryNode &>().getMutableContext();
+                break;
+            }
+            scope_to_check = scope_to_check->parent_scope;
+        }
+    }
+
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
@@ -5530,22 +5627,19 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
-                        /// Serialize the constant value using datatype specific
-                        /// interfaces to match the deserialization in ReplaceQueryParametersVistor.
+                        /// Serialize the constant with its own data type, straight from its column, to match the
+                        /// deserialization in `ReplaceQueryParameterVisitor`. Same as `analyzeFunctionParamValues`
+                        /// does for the other entrypoints of a parameterized view (`DESCRIBE`, `EXPLAIN SYNTAX`).
                         WriteBufferFromOwnString buf;
-                        const auto & value = constant->getValue();
-                        auto real_type = constant->getResultType();
-                        auto temporary_column  = real_type->createColumn();
-                        temporary_column->insert(value);
-                        real_type->getDefaultSerialization()->serializeTextEscaped(*temporary_column, 0, buf, {});
+                        constant->getResultType()->getDefaultSerialization()->serializeTextEscaped(
+                            constant->getColumn()->getDataColumn(), 0, buf, {});
                         view_params[identifier_node->getIdentifier().getFullName()] = buf.str();
                     }
                 }
             }
         }
 
-        auto context = scope_context->getQueryContext();
-        auto parameterized_view_storage = context->buildParameterizedViewStorage(
+        auto parameterized_view_storage = execution_context->buildParameterizedViewStorage(
             database_name,
             table_name,
             view_params);
@@ -5555,6 +5649,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             VectorWithMemoryTracking<size_t> skip_analysis_arguments_indexes(table_function_node_typed.getArguments().getNodes().size());
             std::iota(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), 0);
             table_function_node_typed.resolve({}, parameterized_view_storage, scope_context, std::move(skip_analysis_arguments_indexes));
+            IdentifierResolver::checkAccessToTableMetadata(
+                table_function_node_typed.getStorage(), table_function_node_typed.getStorageID(),
+                table_function_node_typed.getStorageSnapshot(), scope_context);
             return;
         }
 
@@ -5879,46 +5976,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
 
-    /// Always use getQueryContext() for table function result caching (shared across all subqueries).
-    /// The execution context is used for the actual table function execution and its settings
-    /// are incorporated into the cache key (so identical settings still reuse the cache,
-    /// while different settings get separate entries).
-    /// If a parent *subquery* has per-subquery SETTINGS, use the nearest query scope's
-    /// context (which has accumulated settings applied). We only consider subqueries
-    /// (not the outermost query) because the outermost query's SETTINGS are already on
-    /// the query context, and switching to the QueryNode's own context copy could change
-    /// non-settings state (e.g. isDistributed) and break table function execution
-    /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
-    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
-    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
-    /// query tree through cloning and conversion back to AST for distributed execution.
-    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
-    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
-    /// built from the union's context, so the nearest query scope below it already carries the settings.
-    auto subquery_customizes_settings = [](const IQueryTreeNode & node) -> bool
-    {
-        if (const auto * query_node = node.as<QueryNode>())
-            return query_node->isSubquery() && query_node->hasSettingsChanges();
-        if (const auto * union_node = node.as<UnionNode>())
-            return union_node->isSubquery() && union_node->hasSettingsChanges();
-        return false;
-    };
-
-    ContextPtr execution_context = scope_context->getQueryContext();
-    {
-        const IdentifierResolveScope * scope_to_check = &scope;
-        while (scope_to_check != nullptr)
-        {
-            if (subquery_customizes_settings(*scope_to_check->scope_node))
-            {
-                auto * nearest_query_scope = scope.getNearestQueryScope();
-                if (nearest_query_scope)
-                    execution_context = nearest_query_scope->scope_node->as<QueryNode &>().getMutableContext();
-                break;
-            }
-            scope_to_check = scope_to_check->parent_scope;
-        }
-    }
 
     /// The `parallel_replicas_for_cluster_engines` setting may have been disabled on
     /// a query node's local context (in resolveQuery, when cluster alternatives are
@@ -5934,6 +5991,21 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         execution_context = overridden_context;
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+
+    /// `merge` with one argument or with a database that evaluates to '' reads the current database, which the servers this query
+    /// is sent to do not share, so the database it resolved replaces any database argument except a `REGEXP`, which is not analyzed.
+    /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
+    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
+        merge_storage && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
+        auto database_node = std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp());
+        if (argument_nodes.size() == 1)
+            argument_nodes.insert(argument_nodes.begin(), std::move(database_node));
+        else if (!std::ranges::contains(skip_analysis_arguments_indexes, 0))
+            argument_nodes[0] = std::move(database_node);
+    }
+
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
@@ -6532,7 +6604,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             }
 
             auto & projection_node = left_subquery->getProjection().getNodes().front();
-            QueryExpressionsAliasVisitor alias_visitor(left_subquery_scope.aliases);
+            QueryExpressionsAliasVisitor alias_visitor(left_subquery_scope.aliases, left_subquery_scope.context);
             alias_visitor.visit(projection_node);
             resolveExpressionNode(projection_node, left_subquery_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -6816,6 +6888,11 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     if (view->isSealed(*storage_snapshot->metadata, scope.context))
         return;
 
+    /// An inlined `DEFINER` / `NONE` body could be shipped to parallel replicas, and its own query context would have no owner.
+    const auto & view_metadata = *storage_snapshot->metadata;
+    if (view_metadata.sql_security_type == SQLSecurityType::DEFINER || view_metadata.sql_security_type == SQLSecurityType::NONE)
+        return;
+
     auto storage_id = storage->getStorageID();
 
     /// Inlining replaces the view's TableNode with the view body, so the SELECT check the planner
@@ -6944,7 +7021,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
         /// Resolve the row policy filter expression against result_node's columns.
         auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
-        QueryAnalyzer filter_analyzer(this->only_analyze);
+        QueryAnalyzer filter_analyzer(
+            this->only_analyze, /*positional_arguments_already_resolved_=*/ false, replaced_storage, view_source_in_subqueries);
         filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
@@ -7265,10 +7343,10 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
 
         if (auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isWindowFunction())
+            if (function_node->isWindowCall())
                 return HavingConjunctMoveAction::AbortRewrite;
 
-            if (function_node->isOrdinaryFunction())
+            if (function_node->isOrdinaryCall())
             {
                 if (auto function_base = function_node->getFunction())
                 {
@@ -7280,7 +7358,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
                 }
             }
 
-            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+            if (function_node->isAggregationCall() && verdict == HavingConjunctMoveAction::Move)
                 verdict = HavingConjunctMoveAction::KeepInHaving;
 
             if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)
@@ -7485,7 +7563,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             projection_alias_names.insert(projection_node->getAlias());
 
     /// Initialize aliases in query node scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.context);
 
     if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
     {
@@ -7493,7 +7571,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
     else
     {
-        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases, scope.context);
         alias_collector.visit(query_node_typed.getWithNode());
 
         scope.aliases = scope.global_with_aliases;

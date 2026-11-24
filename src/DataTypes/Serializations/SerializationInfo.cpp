@@ -1,4 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Formats/FormatSettings.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <array>
@@ -101,15 +103,17 @@ void SerializationInfo::Data::add(const Data & other)
     /// The default value of `exact_num_defaults` is false and would otherwise pin
     /// the merged result to non exact even when every input is exact.
     bool was_empty = (num_rows == 0);
-    num_rows += other.num_rows;
-    num_defaults += other.num_defaults;
+    /// The counts are modular, like in `remove`.
+    num_rows = common::addIgnoreOverflow(num_rows, other.num_rows);
+    num_defaults = common::addIgnoreOverflow(num_defaults, other.num_defaults);
     exact_num_defaults = was_empty ? other.exact_num_defaults : (exact_num_defaults && other.exact_num_defaults);
 }
 
 void SerializationInfo::Data::remove(const Data & other)
 {
-    num_rows -= other.num_rows;
-    num_defaults -= other.num_defaults;
+    /// The counts are modular: the aggregated hints of a table can have less than the removed part had.
+    num_rows = common::subIgnoreOverflow(num_rows, other.num_rows);
+    num_defaults = common::subIgnoreOverflow(num_defaults, other.num_defaults);
     exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
 }
 
@@ -285,12 +289,6 @@ void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) co
 
     for (auto kind : kind_stack)
     {
-        if (!allowed_kinds.contains(kind))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unexpected serialization kind {} in the received data",
-                ISerialization::kindToString(kind));
-
         expected = std::find(expected, canonical_kind_order.end(), kind);
         if (expected == canonical_kind_order.end())
             throw Exception(
@@ -300,6 +298,14 @@ void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) co
 
         ++expected;
     }
+
+    /// A well-formed stack is checked from the outermost kind, the first one a consumer would have to unwrap.
+    for (auto it = kind_stack.rbegin(); it != kind_stack.rend(); ++it)
+        if (!allowed_kinds.contains(*it))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected serialization kind {} in the received data",
+                ISerialization::kindToString(*it));
 }
 
 void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
@@ -786,7 +792,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
             if (physical_column_names.contains(mc.name))
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Column '{}' is both physical and missing in serialization infos", mc.name);
-            DataTypeFactory::instance().get(mc.type_name);
+            (void)DataTypeFactory::instance().get(mc.type_name);
             missing_columns.push_back(std::move(mc));
         }
         infos.setMissingColumns(std::move(missing_columns));

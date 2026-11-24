@@ -77,11 +77,12 @@ SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
     AND table = 't_sibling_marker_cleared' AND active AND column = 'g';
 ALTER TABLE t_sibling_marker_cleared MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
 ALTER TABLE t_sibling_marker_cleared ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
--- Same batching as case 33: `CLEAR COLUMN` queues a mutation entry of its own, and only two pending
--- entries reach the part as one command set.
+-- Same batching as case 34 of 05030_skip_index_stale_type_index_lifecycle: `CLEAR COLUMN` queues a
+-- mutation entry of its own, and only two pending entries reach the part as one command set. The
+-- executor ends a command set after a clear, so `MATERIALIZE INDEX` is queued first.
 SYSTEM STOP MERGES t_sibling_marker_cleared;
-ALTER TABLE t_sibling_marker_cleared CLEAR COLUMN g SETTINGS mutations_sync = 0, alter_sync = 0;
 ALTER TABLE t_sibling_marker_cleared MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_sibling_marker_cleared CLEAR COLUMN g SETTINGS mutations_sync = 0, alter_sync = 0;
 -- Both entries are pending together, so the executor applies them to the part as one command set.
 SELECT count() = 2 FROM system.mutations WHERE database = currentDatabase()
     AND table = 't_sibling_marker_cleared' AND NOT is_done;

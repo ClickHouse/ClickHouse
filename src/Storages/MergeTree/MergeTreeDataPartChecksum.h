@@ -54,11 +54,11 @@ struct MergeTreeDataPartChecksums
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
-    bool has(const String & file_name) const { return files.contains(file_name); }
+    [[nodiscard]] bool has(const String & file_name) const { return files.contains(file_name); }
 
     bool remove(const String & file_name) { return files.erase(file_name); }
 
-    bool empty() const { return files.empty(); }
+    [[nodiscard]] bool empty() const { return files.empty(); }
 
     /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
     /// If have_uncompressed, for compressed files it compares the checksums of the decompressed data.
@@ -81,15 +81,15 @@ struct MergeTreeDataPartChecksums
     void computeTotalChecksumDataOnly(SipHash & hash) const;
 
     /// SipHash of all all files hashes represented as hex string
-    String getTotalChecksumHex() const;
+    [[nodiscard]] String getTotalChecksumHex() const;
 
-    Checksum::uint128 getTotalChecksumUInt128() const;
+    [[nodiscard]] Checksum::uint128 getTotalChecksumUInt128() const;
 
-    String getSerializedString() const;
+    [[nodiscard]] String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 
-    UInt64 getTotalSizeOnDisk() const;
-    UInt64 getTotalSizeUncompressedOnDisk() const;
+    [[nodiscard]] UInt64 getTotalSizeOnDisk() const;
+    [[nodiscard]] UInt64 getTotalSizeUncompressedOnDisk() const;
 };
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)
@@ -128,7 +128,7 @@ struct MinimalisticDataPartChecksums
 
     void serialize(WriteBuffer & to) const;
     void serializeWithoutHeader(WriteBuffer & to) const;
-    String getSerializedString() const;
+    [[nodiscard]] String getSerializedString() const;
     static String getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic);
 
     void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const;
