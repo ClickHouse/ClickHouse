@@ -35,6 +35,19 @@ class SortingStep;
 class LimitStep;
 class DistinctStep;
 
+/// The distinct values that the `uniqExact` states of an aggregation hold, summed over the states.
+/// A function with a combinator (`uniqExactIf`) is not counted: the estimate does not know which
+/// values its condition accepts.
+struct DistinctValuesOfStates
+{
+    Float64 values = 0;
+    /// The upper bound of `values`.
+    Float64 max_values = 0;
+    /// The memory that the values take in the hash sets of the states.
+    Float64 bytes = 0;
+};
+DistinctValuesOfStates estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
+
 /// Derives statistics for groups in the Cascades optimizer.
 /// Statistics are logical properties that describe the data (row counts, NDVs)
 /// and should be available before cost estimation and rule application.

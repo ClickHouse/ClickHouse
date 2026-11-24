@@ -149,6 +149,11 @@ struct CostInputs
     /// A sorted gather reads the stream layout from it: a sender with several streams per
     /// node merges them before shipping, which costs like a sort's final merge.
     const ExpressionProperties * first_input_properties = nullptr;
+    /// The distinct values that an aggregation holds in the hash sets of its `uniqExact` states, and their
+    /// bytes, when the output statistics do not have them: an aggregation without keys has one output row.
+    /// Resolved by the caller from the statistics of the input.
+    Float64 distinct_state_values = 0;
+    Float64 distinct_state_bytes = 0;
     const CostConfig & config;
 };
 

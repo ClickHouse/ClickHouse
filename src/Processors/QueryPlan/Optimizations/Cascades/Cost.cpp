@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -164,11 +165,14 @@ static Cost fullReadCost(const CostInputs & inputs)
 }
 
 /// Hash table build + probe + output materialization, divided when each node handles 1/N.
+/// The distinct values of the `uniqExact` states are entries of hash tables as the output rows are,
+/// so they have the same price.
 static Cost aggregationCost(const CostInputs & inputs, Float64 divide_by)
 {
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
                  + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+                 + inputs.distinct_state_values + inputs.distinct_state_bytes
                  + inputStats(inputs, 0).estimated_row_count) / divide_by;
     return cost;
 }
@@ -427,6 +431,18 @@ String Cost::dump(const CostConfig & config) const
     return fmt::format("work={} network={} sequential={} total={}", work, network, sequential, total(config));
 }
 
+/// Whether an aggregation without keys holds the distinct values of its `uniqExact` states in hash sets:
+/// each thread fills a set, and the sets are then merged into one. A single `uniqExact` that is computed
+/// with radix partitioning or in the order of its argument builds no set of all the values.
+static bool holdsDistinctValuesInHashSets(const AggregatingStep & step, const OptimizerContext & context)
+{
+    if (!step.getParams().keys.empty())
+        return false;
+    const bool has_no_set_of_all_values = step.canUseRadixUniqExact()
+        && (context.optimize_uniq_exact_radix_partitioning || step.hasUniqExactInOrder());
+    return !has_no_set_of_all_values;
+}
+
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
     auto group = memo.getGroup(expression->group_id);
@@ -488,6 +504,22 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     {
         auto input_group = memo.getGroup(input.group_id);
         inputs.input_stats.push_back(input_group->statistics ? &*input_group->statistics : nullptr);
+    }
+
+    /// The statistics of the partial half of a two-stage aggregation count the distinct values of its
+    /// `uniqExact` states as output rows. Any other aggregation without keys has one output row, so its
+    /// cost function gets the values from here.
+    {
+        const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step);
+        if (aggregating_step && memo.getContext().cascades_distinct_aggregation_split
+            && !expression->is_partial_of_two_stage_aggregation
+            && holdsDistinctValuesInHashSets(*aggregating_step, memo.getContext())
+            && !inputs.input_stats.empty() && inputs.input_stats[0])
+        {
+            const auto distinct_values = estimateDistinctValuesOfStates(*aggregating_step, *inputs.input_stats[0]);
+            inputs.distinct_state_values = distinct_values.values;
+            inputs.distinct_state_bytes = distinct_values.bytes;
+        }
     }
 
     /// A partial top-N emits at most L rows on each of its nodes, while the group statistics are

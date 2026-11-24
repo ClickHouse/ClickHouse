@@ -696,32 +696,36 @@ static std::pair<Float64, Float64> estimateGroupCount(const Names & columns, con
             std::min(ndv_product, input_statistics.max_row_count)};
 }
 
-/// A state of `uniqExact` holds all the distinct values of its arguments, and the exchange and the merge
-/// above the aggregation work for each value. So the values of such states are counted as the rows of the
-/// output, with their bytes. A function with a combinator (`uniqExactIf`) is not counted: the estimate
-/// does not know which values its condition accepts.
-static void countDistinctValuesOfStates(
-    const AggregateDescriptions & aggregates, const ExpressionStatistics & input_statistics, ExpressionStatistics & aggregation_statistics)
+DistinctValuesOfStates estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
 {
-    Float64 values = 0;
-    Float64 max_values = 0;
-    Float64 bytes = 0;
-    for (const auto & aggregate : aggregates)
+    DistinctValuesOfStates result;
+    for (const auto & aggregate : aggregating_step.getAggregatorParameters().aggregates)
     {
         if (aggregate.function->getName() != "uniqExact")
             continue;
-        const auto [distinct_values, max_distinct_values] = estimateGroupCount(aggregate.argument_names, input_statistics);
-        values += distinct_values;
-        max_values += max_distinct_values;
-        bytes += distinct_values * Float64(aggregate.function->getStateBytesPerDistinctInput());
+        const auto [values, max_values] = estimateGroupCount(aggregate.argument_names, input_statistics);
+        result.values += values;
+        result.max_values += max_values;
+        result.bytes += values * Float64(aggregate.function->getStateBytesPerDistinctInput());
     }
-    if (values <= aggregation_statistics.estimated_row_count)
+    return result;
+}
+
+/// A state of `uniqExact` holds all the distinct values of its arguments, and the exchange and the merge
+/// above the aggregation work for each value. So the values of such states are counted as the rows of the
+/// output, with their bytes.
+static void countDistinctValuesOfStates(
+    const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics, ExpressionStatistics & aggregation_statistics)
+{
+    const auto distinct_values = estimateDistinctValuesOfStates(aggregating_step, input_statistics);
+    if (distinct_values.values <= aggregation_statistics.estimated_row_count)
         return;
 
-    bytes += aggregation_statistics.estimated_row_count * aggregation_statistics.estimated_bytes_per_row;
-    aggregation_statistics.estimated_row_count = values;
-    aggregation_statistics.max_row_count = std::max(aggregation_statistics.max_row_count, max_values);
-    aggregation_statistics.estimated_bytes_per_row = bytes / values;
+    const Float64 bytes = distinct_values.bytes
+        + aggregation_statistics.estimated_row_count * aggregation_statistics.estimated_bytes_per_row;
+    aggregation_statistics.estimated_row_count = distinct_values.values;
+    aggregation_statistics.max_row_count = std::max(aggregation_statistics.max_row_count, distinct_values.max_values);
+    aggregation_statistics.estimated_bytes_per_row = bytes / distinct_values.values;
 }
 
 ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(
@@ -751,7 +755,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(
     /// `ROLLUP` and `CUBE` keep the statistics of their input, so there the values would be rows
     /// for the steps above them.
     if (memo.getContext().cascades_distinct_aggregation_split && is_partial_of_two_stage_aggregation && aggregator_params.keys.empty())
-        countDistinctValuesOfStates(aggregator_params.aggregates, input_statistics, aggregation_statistics);
+        countDistinctValuesOfStates(aggregating_step, input_statistics, aggregation_statistics);
 
     /// Group keys pass through with their values, so their equivalences survive; the column
     /// statistics at this point hold exactly the group keys.
