@@ -99,12 +99,20 @@ OK
 -- full access
 OK
 -- rename, then expression
-ACCESS_DENIED SELECT(p)
+ACCESS_DENIED SELECT ON t_shadow
 -- rename, then modify
-ACCESS_DENIED SELECT(p)
+ACCESS_DENIED SELECT ON t_shadow
 -- drop, then expression
-ACCESS_DENIED SELECT(p)
+ACCESS_DENIED SELECT ON t_shadow
+-- expression, then drop
+ACCESS_DENIED SELECT ON t_shadow
+-- modify, then drop
+ACCESS_DENIED SELECT ON t_shadow
 -- expression, then rename
+ACCESS_DENIED SELECT ON t_shadow
+-- constant expression, then rename
+OK
+-- table grant, expression, then rename
 OK
 -- dictionary identifier
 OK
@@ -112,7 +120,8 @@ OK
 F-S1
 F-S2
 -- shadowing alias, read
-public-o1	o1
+k	public-o1	o1
+S1
 -- added columns
 1	[2,3]	['e1']	a1	q1
 2	[3,4]	['e2']	a2	q2

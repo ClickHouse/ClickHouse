@@ -713,36 +713,20 @@ void addRequiredSelectForCommand(
     const String & table,
     const StoragePtr & storage,
     StorageMetadataHandle & metadata,
-    std::optional<StorageInMemoryMetadata> & changed_metadata,
-    bool on_cluster,
+    bool bind_to_table,
     const ContextPtr & context)
 {
-    if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN
-        && command.type != ASTAlterCommand::RENAME_COLUMN && command.type != ASTAlterCommand::DROP_COLUMN)
-        return;
-
-    /// The hosts of `ON CLUSTER` run the entry without the user and bind it to their own definition of the table.
-    if (storage && !on_cluster && !metadata)
-        metadata = storage->getInMemoryMetadataPtr(context, false);
-
-    if (command.type == ASTAlterCommand::RENAME_COLUMN || command.type == ASTAlterCommand::DROP_COLUMN)
+    if (command.type == ASTAlterCommand::RENAME_COLUMN)
     {
-        const auto column_name = getIdentifierName(command.column);
-        if (command.type == ASTAlterCommand::RENAME_COLUMN)
-            required_access.emplace_back(AccessType::SELECT, database, table, column_name);
-
-        if (!metadata || command.clear_column || command.partition)
-            return;
-        if (!changed_metadata)
-            changed_metadata.emplace(*metadata);
-        auto & columns = changed_metadata->columns;
-        if (command.type == ASTAlterCommand::DROP_COLUMN && (columns.has(column_name) || columns.hasNested(column_name)))
-            columns.remove(column_name);
-        else if (command.type == ASTAlterCommand::RENAME_COLUMN && columns.has(column_name)
-                 && !columns.has(getIdentifierName(command.rename_to)))
-            columns.rename(column_name, getIdentifierName(command.rename_to));
+        required_access.emplace_back(AccessType::SELECT, database, table, getIdentifierName(command.column));
         return;
     }
+
+    if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN)
+        return;
+
+    if (storage && bind_to_table && !metadata)
+        metadata = storage->getInMemoryMetadataPtr(context, false);
 
     const auto & declaration = command.col_decl->as<const ASTColumnDeclaration &>();
     /// Converting the values can give them other subcolumn names, e.g. unnamed `Tuple` elements become named ones.
@@ -770,18 +754,12 @@ void addRequiredSelectForCommand(
         return;
     }
 
-    /// An identifier can name another column after a RENAME COLUMN or DROP COLUMN earlier in the ALTER.
-    for (const StorageInMemoryMetadata * snapshot : {&*metadata, changed_metadata ? &std::as_const(*changed_metadata) : nullptr})
-    {
-        if (!snapshot)
-            continue;
-        const NameSet read_columns = InterpreterAlterQuery::getColumnsReadByColumnExpression(
-            *expression, snapshot->getColumnsWithVirtuals(), storage->supportsSubcolumns());
-        Names sorted(read_columns.begin(), read_columns.end());
-        std::ranges::sort(sorted);
-        for (auto & column : snapshot->getColumns().getColumnNamesForSelectAccessCheck(sorted, context, storage->getStorageID()))
-            required_access.emplace_back(AccessType::SELECT, database, table, std::move(column));
-    }
+    const NameSet read_columns = InterpreterAlterQuery::getColumnsReadByColumnExpression(
+        *expression, metadata->getColumnsWithVirtuals(), storage->supportsSubcolumns());
+    Names sorted(read_columns.begin(), read_columns.end());
+    std::ranges::sort(sorted);
+    for (auto & column : metadata->getColumns().getColumnNamesForSelectAccessCheck(sorted, context, storage->getStorageID()))
+        required_access.emplace_back(AccessType::SELECT, database, table, std::move(column));
 }
 
 }
@@ -1218,13 +1196,22 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
             return required_access;
     }
 
+    /// An expression binds to the table as it is now, except on the hosts of `ON CLUSTER`, which have their own definition,
+    /// and after a RENAME COLUMN or DROP COLUMN in the same ALTER.
+    bool bind_to_table = alter.cluster.empty();
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::RENAME_COLUMN
+            || (command.type == ASTAlterCommand::DROP_COLUMN && !command.clear_column && !command.partition))
+            bind_to_table = false;
+    }
+
     StorageMetadataHandle metadata;
-    std::optional<StorageInMemoryMetadata> changed_metadata;
-    const bool on_cluster = !alter.cluster.empty();
     for (const auto & child : alter.command_list->children)
         addRequiredSelectForCommand(
             required_access, child->as<ASTAlterCommand &>(), alter.getDatabase(), alter.getTable(), storage, metadata,
-            changed_metadata, on_cluster, getContext());
+            bind_to_table, getContext());
 
     return required_access;
 }

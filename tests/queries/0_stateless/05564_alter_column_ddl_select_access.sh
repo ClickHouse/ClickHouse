@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# ALTER ADD/MODIFY COLUMN with an expression needs SELECT on the columns the expression reads, also after an earlier
-# RENAME or DROP COLUMN of the same ALTER, ALTER RENAME COLUMN needs SELECT on the renamed column, ALTER MODIFY COLUMN
+# ALTER ADD/MODIFY COLUMN with an expression needs SELECT on the columns the expression reads, or on the whole table when
+# the same ALTER also renames or drops a column, ALTER RENAME COLUMN needs SELECT on the renamed column, ALTER MODIFY COLUMN
 # changing a type needs SELECT on the column, an Alias table refuses all three forms, and an ALTER through an Alias needs
 # ALTER on its target first.
 
@@ -18,9 +18,10 @@ U_DOT="u_dot_${DB}"
 U_ALIAS="u_alias_${DB}"
 U_ALIAS_COL="u_alias_col_${DB}"
 U_SHADOW="u_shadow_${DB}"
+U_SHADOW_FULL="u_shadow_full_${DB}"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER IF EXISTS ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW};
+    DROP USER IF EXISTS ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW}, ${U_SHADOW_FULL};
 
     CREATE TABLE t
     (
@@ -69,6 +70,8 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE USER ${U_SHADOW};
     GRANT SELECT, ALTER ADD COLUMN, ALTER MODIFY COLUMN, ALTER RENAME COLUMN, ALTER DROP COLUMN ON ${DB}.t_shadow TO ${U_SHADOW};
     REVOKE SELECT(p) ON ${DB}.t_shadow FROM ${U_SHADOW};
+    CREATE USER ${U_SHADOW_FULL};
+    GRANT SELECT, ALTER ADD COLUMN, ALTER RENAME COLUMN ON ${DB}.t_shadow TO ${U_SHADOW_FULL};
 "
 
 # check <user|default> <label> <query> [<column>]
@@ -89,6 +92,8 @@ check()
         echo "ACCESS_DENIED SELECT(${column})"
     elif [[ "${out}" == *ACCESS_DENIED* ]] && [[ "${out}" == *" ON ${DB}.t_alias."* ]]; then
         echo "ACCESS_DENIED ON t_alias"
+    elif [[ "${out}" == *ACCESS_DENIED* ]] && [[ "${out}" =~ "to have the grant SELECT ON ${DB}."([a-z_]+)"." ]]; then
+        echo "ACCESS_DENIED SELECT ON ${BASH_REMATCH[1]}"
     elif [[ "${out}" == *ACCESS_DENIED* ]] && [[ "${out}" =~ "to have the grant ALTER ON ${DB}."([a-z_]+)"." ]]; then
         echo "ACCESS_DENIED ALTER ON ${BASH_REMATCH[1]}"
     elif [[ "${out}" == *NOT_IMPLEMENTED* ]]; then
@@ -148,23 +153,28 @@ check "${U_COLS}" "subcolumn of a granted column" "ALTER TABLE t ADD COLUMN c_su
 check "${U_PARTIAL}" "subcolumn of a revoked column" "ALTER TABLE t ADD COLUMN p_sub String ALIAS tup.a" tup
 check "${U_DOT}" "quoted dotted column" "ALTER TABLE t ADD COLUMN d_quoted String ALIAS \`q.k\`"
 check "${U_FULL}" "full access" "ALTER TABLE t ADD COLUMN f String ALIAS concat('F-', restricted)"
-check "${U_SHADOW}" "rename, then expression" "ALTER TABLE t_shadow RENAME COLUMN \`p.x\` TO \`p.y\`, ADD COLUMN e String ALIAS p.x" p
-check "${U_SHADOW}" "rename, then modify" "ALTER TABLE t_shadow RENAME COLUMN \`p.x\` TO \`p.y\`, MODIFY COLUMN other String ALIAS p.x" p
-check "${U_SHADOW}" "drop, then expression" "ALTER TABLE t_shadow DROP COLUMN \`p.x\`, ADD COLUMN e String ALIAS p.x" p
+check "${U_SHADOW}" "rename, then expression" "ALTER TABLE t_shadow RENAME COLUMN \`p.x\` TO \`p.y\`, ADD COLUMN e String ALIAS p.x"
+check "${U_SHADOW}" "rename, then modify" "ALTER TABLE t_shadow RENAME COLUMN \`p.x\` TO \`p.y\`, MODIFY COLUMN other String ALIAS p.x"
+check "${U_SHADOW}" "drop, then expression" "ALTER TABLE t_shadow DROP COLUMN \`p.x\`, ADD COLUMN e String ALIAS p.x"
+check "${U_SHADOW}" "expression, then drop" "ALTER TABLE t_shadow ADD COLUMN e String ALIAS p.x, DROP COLUMN \`p.x\`"
+check "${U_SHADOW}" "modify, then drop" "ALTER TABLE t_shadow MODIFY COLUMN other String ALIAS p.x, DROP COLUMN \`p.x\`"
 check "${U_SHADOW}" "expression, then rename" "ALTER TABLE t_shadow ADD COLUMN e String ALIAS p.x, RENAME COLUMN \`p.x\` TO \`p.y\`"
+check "${U_SHADOW}" "constant expression, then rename" "ALTER TABLE t_shadow ADD COLUMN k String DEFAULT 'k', RENAME COLUMN \`p.x\` TO \`p.y\`"
+check "${U_SHADOW_FULL}" "table grant, expression, then rename" "ALTER TABLE t_shadow ADD COLUMN e String ALIAS p.x, RENAME COLUMN k TO k2"
 check "${U_COLS}" "dictionary identifier" "ALTER TABLE t ADD COLUMN c_dict String ALIAS dictGet(d, 'v', id)"
 
 echo "-- full access, read"
 ${CLICKHOUSE_CLIENT} --user "${U_FULL}" --query "SELECT f FROM t ORDER BY id"
 echo "-- shadowing alias, read"
-${CLICKHOUSE_CLIENT} --user "${U_SHADOW}" --query "SELECT e, other FROM t_shadow ORDER BY id"
+${CLICKHOUSE_CLIENT} --user "${U_SHADOW}" --query "SELECT k2, \`p.y\`, other FROM t_shadow ORDER BY id"
+${CLICKHOUSE_CLIENT} --user "${U_SHADOW_FULL}" --query "SELECT e FROM t_shadow ORDER BY id"
 echo "-- added columns"
 ${CLICKHOUSE_CLIENT} --query "SELECT ok_default2, c_lambda, c_field, s_a, d_quoted FROM t ORDER BY id"
 echo "-- schema"
 ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY position"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW};
+    DROP USER ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW}, ${U_SHADOW_FULL};
     DROP TABLE t_shadow;
     DROP TABLE t_alias;
     DROP TABLE t_alias_gone;
