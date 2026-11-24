@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# `timeSeriesSelector` needs `SHOW COLUMNS` on the TimeSeries table, as `DESCRIBE TABLE` of that table does: the returned columns
+# come from its definition. Without the grant, no error tells whether the table stores native histograms.
+
+username="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+
+${CLICKHOUSE_CLIENT} -m --query "
+    DROP USER IF EXISTS ${username};
+    SET enable_time_series_table = 1;
+    CREATE TABLE ts ENGINE = TimeSeries;
+    CREATE TABLE ts_v11 ENGINE = TimeSeries SETTINGS version = 11;
+    CREATE USER ${username} NOT IDENTIFIED;
+    GRANT CREATE TEMPORARY TABLE ON *.* TO ${username};
+    GRANT SHOW TABLES ON ${CLICKHOUSE_DATABASE}.ts TO ${username};
+    GRANT SHOW TABLES ON ${CLICKHOUSE_DATABASE}.ts_v11 TO ${username};
+"
+
+function as_user()
+{
+    echo "$1"
+    local output
+    output=$(${CLICKHOUSE_CLIENT} --user "${username}" --query "$1" 2>&1)
+    if grep -q ACCESS_DENIED <<< "${output}"
+    then
+        echo ACCESS_DENIED
+    else
+        echo "${output}"
+    fi
+}
+
+# The structure depends on the version of the TimeSeries table, so it is compared with the owner's instead of printed.
+function same_as_owner()
+{
+    echo "$1"
+    local expected actual
+    expected=$(${CLICKHOUSE_CLIENT} --query "$1" 2>&1)
+    actual=$(${CLICKHOUSE_CLIENT} --user "${username}" --query "$1" 2>&1)
+    if [ -n "${expected}" ] && [ "${expected}" = "${actual}" ]
+    then
+        echo "same as for the owner"
+    else
+        echo "${actual}"
+    fi
+}
+
+echo "--- SHOW TABLES"
+as_user "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples')"
+as_user "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'histograms')"
+as_user "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples_and_histograms')"
+as_user "DESCRIBE TABLE timeSeriesSelector(ts_v11, 'up', 0, 1, 'histograms')"
+as_user "DESCRIBE TABLE timeSeriesSelector(ts_v11, 'up', 0, 1, 'samples_and_histograms')"
+
+# A missing table must look the same as an existing one without access.
+echo "--- missing table"
+as_user "DESCRIBE TABLE timeSeriesSelector(no_such_table, 'up', 0, 1, 'histograms')"
+
+echo "--- SHOW COLUMNS"
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.ts TO ${username}"
+same_as_owner "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'histograms')"
+same_as_owner "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples_and_histograms')"
+
+${CLICKHOUSE_CLIENT} -m --query "
+    DROP USER ${username};
+    DROP TABLE ts;
+    DROP TABLE ts_v11;
+"

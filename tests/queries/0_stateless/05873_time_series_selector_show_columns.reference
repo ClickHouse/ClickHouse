@@ -1,0 +1,19 @@
+--- SHOW TABLES
+DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples')
+ACCESS_DENIED
+DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'histograms')
+ACCESS_DENIED
+DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples_and_histograms')
+ACCESS_DENIED
+DESCRIBE TABLE timeSeriesSelector(ts_v11, 'up', 0, 1, 'histograms')
+ACCESS_DENIED
+DESCRIBE TABLE timeSeriesSelector(ts_v11, 'up', 0, 1, 'samples_and_histograms')
+ACCESS_DENIED
+--- missing table
+DESCRIBE TABLE timeSeriesSelector(no_such_table, 'up', 0, 1, 'histograms')
+ACCESS_DENIED
+--- SHOW COLUMNS
+DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'histograms')
+same as for the owner
+DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples_and_histograms')
+same as for the owner

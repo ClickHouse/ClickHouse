@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -290,6 +291,9 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// The configuration is read from the definition of the TimeSeries table, as `DESCRIBE TABLE` of it does. Checked before the table
+    /// is looked up, so that an error tells nothing about a table without the grant: neither whether it exists nor its version.
+    context->checkAccess(AccessType::SHOW_COLUMNS, time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
