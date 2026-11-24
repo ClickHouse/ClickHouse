@@ -472,9 +472,12 @@ static void appendAggregateFunctions(
         const auto & match = matched_aggregates[i];
         auto type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, match.argument_types, aggregate.parameters);
 
+        /// The input must have the type of the state stored in the projection: it can differ from the
+        /// type of the query (e.g. `quantile(0.3)` in projection and `quantile(0.5)` in query), and
+        /// then the cast below makes the states carry the function of the query.
         auto & input = inputs[match.description];
         if (!input)
-            input = &proj_dag.addInput(match.description->column_name, type);
+            input = &proj_dag.addInput(match.description->column_name, match.description->function->getStateType());
 
         const auto * node = input;
 
