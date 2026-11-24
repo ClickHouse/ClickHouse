@@ -361,7 +361,7 @@ VectorWithMemoryTracking<Names> LazyReadFromMergeTreeSource::splitColumnsIntoGro
         || parts_with_ranges.front().data_part->storage.hasEnabledMaskingPolicies(context))
         return column_groups;
 
-    /// The columns of a compact part are read from one file, and each reader fills a column a part lacks from its default.
+    /// The columns of a compact part are read from one file, and each reader fills a column without data in the part from its default.
     const auto & columns_description = storage_snapshot->metadata->getColumns();
     for (const auto & part : parts_with_ranges)
     {
@@ -369,8 +369,14 @@ VectorWithMemoryTracking<Names> LazyReadFromMergeTreeSource::splitColumnsIntoGro
             return column_groups;
 
         for (const auto & column : header)
-            if (columns_description.hasPhysical(column.name) && !part.data_part->getColumnPosition(column.name))
+        {
+            if (!columns_description.hasPhysical(column.name))
+                continue;
+
+            const auto part_column = part.data_part->tryGetColumn(column.name);
+            if (!part_column || !part.data_part->hasColumnFiles(*part_column))
                 return column_groups;
+        }
     }
 
     struct Column
