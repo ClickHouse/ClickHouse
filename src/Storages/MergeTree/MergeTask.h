@@ -190,13 +190,13 @@ public:
     void cancel() noexcept;
 
     /// The snapshot the merge read its sources' delete bitmaps at; built for every unique-key merge.
-    const DeleteBitmapSnapshot & getDeleteBitmapSnapshot() const
+    [[nodiscard]] const DeleteBitmapSnapshot & getDeleteBitmapSnapshot() const
     {
         chassert(global_ctx->unique_key_read_snapshot);
         return *global_ctx->unique_key_read_snapshot;
     }
     /// Where each source row landed in the merged part; built for every unique-key merge.
-    const MergedPartOffsets & getUniqueKeyMergedPartOffsets() const
+    [[nodiscard]] const MergedPartOffsets & getUniqueKeyMergedPartOffsets() const
     {
         chassert(global_ctx->merged_part_offsets);
         return *global_ctx->merged_part_offsets;

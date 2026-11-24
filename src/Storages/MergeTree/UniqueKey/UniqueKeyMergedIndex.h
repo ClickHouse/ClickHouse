@@ -31,10 +31,10 @@ public:
         const MergedPartOffsets & merged_part_offsets);
 
     /// The merged row of `source_row` of source `source_index`, or nullopt if it was dead at the snapshot.
-    std::optional<UInt64> toMergedRow(size_t source_index, UInt64 source_row) const;
+    [[nodiscard]] std::optional<UInt64> toMergedRow(size_t source_index, UInt64 source_row) const;
 
     /// Every source row live at the snapshot, which is the merged part's row count.
-    UInt64 mergedRowsCount() const { return merged_rows_count; }
+    [[nodiscard]] UInt64 mergedRowsCount() const { return merged_rows_count; }
 
 private:
     /// Resolved once: `toMergedRow` runs per index entry and per late kill.

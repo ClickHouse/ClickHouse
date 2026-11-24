@@ -49,7 +49,7 @@ public:
     [[nodiscard]] std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
 
     /// Every entry in key order, for a sequential scan that leaves no blocks in a cache.
-    std::unique_ptr<rocksdb::Iterator> newIterator() const;
+    [[nodiscard]] std::unique_ptr<rocksdb::Iterator> newIterator() const;
 
     /// Delegates to `SstFileReader::VerifyChecksum` - re-reads every block.
     [[nodiscard]] rocksdb::Status verifyChecksum() const;

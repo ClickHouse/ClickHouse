@@ -24,7 +24,8 @@ wait_for_log() {
     for _ in {1..240}; do
         logged=$($CLICKHOUSE_CLIENT --query "
             SYSTEM FLUSH LOGS text_log;
-            SELECT count() FROM system.text_log WHERE query_id = '$1' AND startsWith(message, '$2')")
+            SELECT count() FROM system.text_log
+            WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$1' AND startsWith(message, '$2')")
         [[ "$logged" -gt 0 ]] && return
         sleep 0.5
     done

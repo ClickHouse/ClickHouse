@@ -115,7 +115,7 @@ namespace
         std::unique_ptr<rocksdb::Iterator> iterator;
 
         /// False once the source is exhausted; a read error throws instead of ending the scan early.
-        bool hasEntry() const
+        [[nodiscard]] bool hasEntry() const
         {
             if (iterator->Valid())
                 return true;
