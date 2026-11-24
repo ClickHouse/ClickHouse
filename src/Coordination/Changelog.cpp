@@ -4222,6 +4222,9 @@ void Changelog::writeThread()
     bool batch_append_ok = true;
     size_t pending_appends = 0;
 
+    /// Highest index a flush may report as durable: lowered by a failed append, raised by successful ones.
+    uint64_t durable_write_ceiling = std::numeric_limits<uint64_t>::max();
+
     /// Flush request that we delay to batch it with more appends and to limit the flush frequency.
     /// A newer Flush request subsumes an older pending one: its index is not less,
     /// and one completion notification is enough for both.
@@ -4244,7 +4247,10 @@ void Changelog::writeThread()
 
         {
             std::lock_guard lock{durable_idx_mutex};
-            last_durable_idx = flush.index;
+            last_durable_idx = std::min(flush.index, durable_write_ceiling);
+            /// An entry up to `flush.index` was never written: fail the flush, which also releases the waiters in `Changelog::flush`.
+            if (durable_write_ceiling < flush.index)
+                *flush.failed = true;
         }
 
         pending_appends = 0;
@@ -4329,6 +4335,10 @@ void Changelog::writeThread()
                 chassert(current_writer);
 
                 batch_append_ok = current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
+                if (batch_append_ok)
+                    durable_write_ceiling = std::max(durable_write_ceiling, append_log->index);
+                else
+                    durable_write_ceiling = std::min(durable_write_ceiling, append_log->index - 1);
                 ++pending_appends;
             }
             else

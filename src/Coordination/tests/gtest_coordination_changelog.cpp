@@ -378,6 +378,31 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestAppendAfterPreallocationFai
     }
 }
 
+/// A failed append must not become durable through the flush in `compact`.
+TEST_P(CoordinationTestWithCompression, ChangelogCompactDoesNotReportFailedAppendsAsDurable)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000, .max_size = 1024 * 1024},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    /// Entry 1 is queued (max_log_id becomes 1), but writing it fails.
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_preallocate_no_space);
+    auto entry = getLogEntry("hello world", 1);
+    changelog.append(entry);
+    EXPECT_FALSE(changelog.flush());
+    EXPECT_EQ(changelog.last_durable_index(), 0);
+
+    changelog.compact(0);
+    EXPECT_EQ(changelog.last_durable_index(), 0);
+}
+
 TEST_P(CoordinationTestWithCompression, ChangelogTestFile)
 {
     ChangelogDirTest test("./logs");
