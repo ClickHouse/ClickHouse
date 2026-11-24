@@ -487,6 +487,12 @@ public:
     /// also only to read their properties (for example, `isDeterministic`), and this must not throw.
     virtual void checkAccessOnBuild() const {}
 
+    /// Wrappers that build an `IFunctionBase` from this resolver forward the
+    /// captured `IN` mode through these properties.
+    virtual void updateHash(SipHash &) const {}
+    [[nodiscard]] virtual bool useNullAsUnknownSemanticsForIn() const { return false; }
+    [[nodiscard]] virtual bool isInMembershipFunction() const { return false; }
+
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
     void checkNumberOfArguments(size_t number_of_arguments) const;
