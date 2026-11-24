@@ -410,18 +410,23 @@ QueryAnalyzer::QueryAnalyzer(
 
 QueryAnalyzer::~QueryAnalyzer() = default;
 
+void QueryAnalyzer::applyRootScopeRestrictions(const QueryTreeNodePtr & node, IdentifierResolveScope & scope) const
+{
+    if (allow_compound_table_identifier_qualification)
+        return;
+
+    scope.allow_compound_table_identifier_qualification = false;
+    if (auto * query_node = node->as<QueryNode>())
+        query_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
+    else if (auto * union_node = node->as<UnionNode>())
+        union_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
+}
+
 void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
 
-    if (!allow_compound_table_identifier_qualification)
-    {
-        scope.allow_compound_table_identifier_qualification = false;
-        if (auto * query_node = node->as<QueryNode>())
-            query_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
-        else if (auto * union_node = node->as<UnionNode>())
-            union_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
-    }
+    applyRootScopeRestrictions(node, scope);
 
     if (!scope.context)
         scope.context = context;
@@ -514,14 +519,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
 
-    if (!allow_compound_table_identifier_qualification)
-    {
-        scope.allow_compound_table_identifier_qualification = false;
-        if (auto * query_node = node->as<QueryNode>())
-            query_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
-        else if (auto * union_node = node->as<UnionNode>())
-            union_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
-    }
+    applyRootScopeRestrictions(node, scope);
 
     if (!scope.context)
         scope.context = context;

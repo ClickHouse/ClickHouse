@@ -137,6 +137,8 @@ private:
 
     IdentifierResolveScope & createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope);
 
+    void applyRootScopeRestrictions(const QueryTreeNodePtr & node, IdentifierResolveScope & scope) const;
+
     static ProjectionName calculateFunctionProjectionName(const QueryTreeNodePtr & function_node,
         const ProjectionNames & parameters_projection_names,
         const ProjectionNames & arguments_projection_names);
@@ -403,6 +405,7 @@ private:
     const StoragePtr replaced_storage;
     /// See `SelectQueryOptions`. Not passed to the analyzers of inlined views: the inner query of a view reads the table itself.
     const bool view_source_in_subqueries;
+    /// False for stored SQL: table names in it are read as written.
     const bool allow_compound_table_identifier_qualification;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect

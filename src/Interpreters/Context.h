@@ -681,8 +681,8 @@ protected:
     bool is_view_inner_query = false;
 
     /// Whether a compound table identifier `a.b` may also be read as table `a.b` of the current database.
-    /// False while analyzing SQL stored in an object definition (a view, a row policy, a column default,
-    /// a dictionary source) and mutations: table names in them are read as written.
+    /// False in contexts of stored definitions such as view bodies and mutations: table names in them are read as written.
+    /// The analyzer can also take the restriction as an argument (`QueryAnalysisPass`); then only nested query contexts get it.
     bool allow_compound_table_identifier_qualification = true;
     /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not hand its reads to parallel
     /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its

@@ -121,6 +121,7 @@ NameSet checkAccessRights(
 
 /// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
 /// `view_source_in_subqueries`: see `SelectQueryOptions`.
+/// `allow_compound_table_identifier_qualification = false` is for stored filters such as row policies.
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,

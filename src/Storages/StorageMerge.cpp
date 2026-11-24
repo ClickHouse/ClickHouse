@@ -1485,14 +1485,13 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                         modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
                 /// TODO: build the filter with the analyzer and pass the restriction as an argument.
+                row_policy_context = modified_context;
                 if (modified_context->isCompoundTableIdentifierQualificationAllowed())
                 {
                     auto copy = Context::createCopy(modified_context);
                     copy->setAllowCompoundTableIdentifierQualification(false);
                     row_policy_context = std::move(copy);
                 }
-                else
-                    row_policy_context = modified_context;
 
                 /// A row policy is a stored definition: read table names in it as written.
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage_metadata_snapshot, row_policy_context);
