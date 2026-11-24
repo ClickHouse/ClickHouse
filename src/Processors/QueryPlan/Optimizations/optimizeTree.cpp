@@ -14,6 +14,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -28,6 +30,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/Transforms/DistinctSetFilter.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <fmt/ranges.h>
@@ -117,6 +120,30 @@ static bool containsFilterAffectingProbeBudget(const IQueryPlanStep & step)
     return false;
 }
 
+static bool canStopFingerprintProbeEarly(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const LimitStep *>(&step))
+        return true;
+    if (const auto * range = typeid_cast<const LimitRangeStep *>(&step))
+        return range->canStopReadingEarly();
+    if (const auto * distinct = typeid_cast<const DistinctStep *>(&step))
+    {
+        const auto & limits = distinct->getSettings().set_size_limits;
+        return distinct->getLimitHint() || (limits.hasLimits() && limits.overflow_mode == OverflowMode::BREAK)
+            || calculateDistinctKeyColumnsPositions(*distinct->getInputHeaders().front(), distinct->getColumnNames()).empty();
+    }
+    if (const auto * limit_by = typeid_cast<const LimitByStep *>(&step))
+    {
+        const auto & header = *limit_by->getInputHeaders().front();
+        return !limit_by->alwaysReadTillEnd() && std::ranges::all_of(limit_by->getColumns(), [&](const auto & name)
+        {
+            const auto & column = header.getByName(name).column;
+            return column && isColumnConst(*column);
+        });
+    }
+    return false;
+}
+
 static void invalidateAutoFingerprintProbeEstimates(QueryPlan::Node & root, bool runtime_filters_added)
 {
     /// Nested queries can choose a different fingerprint mode from the outer query.
@@ -127,7 +154,7 @@ static void invalidateAutoFingerprintProbeEstimates(QueryPlan::Node & root, bool
     {
         probe_budget_invalid |= containsRuntimeFilter(*node.step)
             || containsFilterAffectingProbeBudget(*node.step)
-            || typeid_cast<const LimitStep *>(node.step.get()) != nullptr;
+            || canStopFingerprintProbeEarly(*node.step);
     });
     if (!probe_budget_invalid)
         return;
@@ -135,7 +162,7 @@ static void invalidateAutoFingerprintProbeEstimates(QueryPlan::Node & root, bool
     /// An ancestor's runtime filter can be pushed through an already physical child join.
     /// Decline automatic lookup selection throughout this plan rather than treating a pre-filter
     /// estimate as its remaining probe budget. Other planner and hash-table estimates are unchanged.
-    /// A `LimitStep` can likewise stop probing before an otherwise accurate input estimate is consumed.
+    /// A downstream step can likewise stop probing before an otherwise accurate input estimate is consumed.
     /// Ordinary filters are also excluded: for example, the `Memory` row estimate can retain the
     /// unfiltered storage row count, which does not establish enough probes to amortize index preparation.
     traverseQueryPlan(stack, root, [](auto & node)
