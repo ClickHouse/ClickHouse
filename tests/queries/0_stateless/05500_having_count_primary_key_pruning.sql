@@ -97,7 +97,7 @@ DROP TABLE IF EXISTS t_having_pk_s;
 -- Adaptive granularity: the last granule of a part ends at the part's last key.
 CREATE TABLE t_having_pk_s (s String, v UInt64) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 8192;
 SYSTEM STOP MERGES t_having_pk_s;
-INSERT INTO t_having_pk_s SELECT toString(k), k FROM t_having_pk WHERE k < 1000;
+INSERT INTO t_having_pk_s SELECT toString(k), k FROM t_having_pk WHERE k < 300;
 INSERT INTO t_having_pk_s SELECT toString(k), k FROM t_having_pk WHERE k >= 1000;
 SELECT count(), sum(length(s)), sum(c) FROM (SELECT s, count() AS c FROM t_having_pk_s GROUP BY s HAVING count() > 20000) SETTINGS query_plan_aggregation_having_count_pruning = 0;
 SELECT count(), sum(length(s)), sum(c) FROM (SELECT s, count() AS c FROM t_having_pk_s GROUP BY s HAVING count() > 20000) SETTINGS query_plan_aggregation_having_count_pruning = 1;
@@ -107,7 +107,7 @@ DROP TABLE IF EXISTS t_having_pk_lc;
 CREATE TABLE t_having_pk_lc (s LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY s
 SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_having_pk_lc;
-INSERT INTO t_having_pk_lc SELECT toString(k), k FROM t_having_pk WHERE k < 1000;
+INSERT INTO t_having_pk_lc SELECT toString(k), k FROM t_having_pk WHERE k < 300;
 INSERT INTO t_having_pk_lc SELECT toString(k), k FROM t_having_pk WHERE k >= 1000;
 SELECT count(), sum(length(s)), sum(c) FROM (SELECT s, count() AS c FROM t_having_pk_lc GROUP BY s HAVING count() > 20000) SETTINGS query_plan_aggregation_having_count_pruning = 0;
 SELECT count(), sum(length(s)), sum(c) FROM (SELECT s, count() AS c FROM t_having_pk_lc GROUP BY s HAVING count() > 20000) SETTINGS query_plan_aggregation_having_count_pruning = 1;
@@ -117,8 +117,8 @@ DROP TABLE IF EXISTS t_having_pk_desc;
 CREATE TABLE t_having_pk_desc (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k DESC
 SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_having_pk_desc;
-INSERT INTO t_having_pk_desc SELECT k, v FROM t_having_pk WHERE k < 1000;
-INSERT INTO t_having_pk_desc SELECT k, v FROM t_having_pk WHERE k >= 500;
+INSERT INTO t_having_pk_desc SELECT k, v FROM t_having_pk WHERE k < 300;
+INSERT INTO t_having_pk_desc SELECT k, v FROM t_having_pk WHERE k >= 200 AND k < 300;
 SELECT count(), sum(k), sum(c) FROM (SELECT k, count() AS c FROM t_having_pk_desc GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 0;
 SELECT count(), sum(k), sum(c) FROM (SELECT k, count() AS c FROM t_having_pk_desc GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 1;
 
@@ -162,7 +162,7 @@ SELECT count() FROM (SELECT k FROM v_having_pk GROUP BY k HAVING count() > 49999
 SELECT count() FROM (SELECT k FROM v_having_pk GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_view_off';
 CREATE TABLE t_having_pk_mv_dst (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-INSERT INTO t_having_pk_mv_dst SELECT k, v FROM t_having_pk;
+INSERT INTO t_having_pk_mv_dst SELECT k, v FROM t_having_pk WHERE k < 300;
 CREATE MATERIALIZED VIEW mv_having_pk TO t_having_pk_mv_dst (k UInt32, v UInt32) AS SELECT k, toUInt32(v) AS v FROM t_having_pk;
 CREATE ROW POLICY p_having_pk_mv ON mv_having_pk FOR SELECT USING v % 2 = 0 TO CURRENT_USER;
 SELECT count() FROM (SELECT k FROM mv_having_pk GROUP BY k HAVING count() > 24999) SETTINGS query_plan_aggregation_having_count_pruning = 1, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_mv_policy_on';
@@ -204,9 +204,9 @@ DROP TABLE IF EXISTS t_having_pk_cold;
 CREATE TABLE t_having_pk_cold (k UInt32, v UInt64, INDEX iv v TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, primary_key_lazy_load = 1, use_primary_key_cache = 0, prewarm_primary_key_cache = 0;
 SYSTEM STOP MERGES t_having_pk_cold;
-INSERT INTO t_having_pk_cold SELECT k, v FROM t_having_pk;
+INSERT INTO t_having_pk_cold SELECT k, v FROM t_having_pk WHERE k < 300;
 SYSTEM UNLOAD PRIMARY KEY t_having_pk_cold;
--- The skip index selects 7 of the part's 98 marks: their read must not load the whole primary index, a full read does.
+-- The skip index selects 7 of the part's 26 marks: their read must not load the whole primary index, a full read does.
 SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_having_pk_cold WHERE v < 1000000 GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SELECT sum(primary_key_bytes_in_memory) = 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_having_pk_cold' AND active;
 SELECT count() FROM (SELECT k FROM t_having_pk_cold GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 1, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;

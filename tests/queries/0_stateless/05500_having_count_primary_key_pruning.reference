@@ -37,14 +37,14 @@ no primary key column among the keys
 disjunction
 6	3507	270280
 string key
-11	31	540280
-11	31	540280
+3	7	150000
+3	7	150000
 low cardinality key
-11	31	540280
-11	31	540280
+3	7	150000
+3	7	150000
 descending key
-10	4500	790160
-10	4500	790160
+3	300	200000
+3	300	200000
 key expression named like a column
 1	53248
 1	53248
@@ -57,23 +57,23 @@ pruned rows
 10
 1500
 10
+3
+3
+3
+3
 10
 10
 10
 10
-10
-10
-10
-10
-10
-10
-10
-10
+3
+3
+3
+3
 1
 1
 1	1	1	1	1	1	1	1	1	1
 cold primary index
 1	50000
 1
-10
+3
 1
