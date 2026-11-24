@@ -359,7 +359,7 @@ inline TimeSeriesFloatHistogram TimeSeriesFloatHistogram::fromPayloadTupleRow(
         const auto & tuple = typeid_cast<const ColumnTuple &>(array.getData());
         const auto & span_offsets = typeid_cast<const ColumnInt32 &>(tuple.getColumn(0)).getData();
         const auto & span_lengths = typeid_cast<const ColumnUInt32 &>(tuple.getColumn(1)).getData();
-        const size_t begin = (row == 0) ? 0 : offsets[row - 1];
+        const size_t begin = (row == 0) ? 0 : offsets[static_cast<ssize_t>(row) - 1];
         const size_t end = offsets[row];
         out.clear();
         out.reserve(end - begin);
@@ -372,7 +372,7 @@ inline TimeSeriesFloatHistogram TimeSeriesFloatHistogram::fromPayloadTupleRow(
         const auto & array = typeid_cast<const ColumnArray &>(column);
         const auto & offsets = array.getOffsets();
         const auto & data = typeid_cast<const ColumnFloat64 &>(array.getData()).getData();
-        const size_t begin = (row == 0) ? 0 : offsets[row - 1];
+        const size_t begin = (row == 0) ? 0 : offsets[static_cast<ssize_t>(row) - 1];
         const size_t end = offsets[row];
         out.assign(data.begin() + begin, data.begin() + end);
     };
