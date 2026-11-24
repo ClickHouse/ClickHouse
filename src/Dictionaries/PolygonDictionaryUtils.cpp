@@ -220,6 +220,10 @@ void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & pol
 
 void SlabsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
 {
+    /// An empty ring (from an empty multipolygon) has no edges; `ring.size() - 1` below would wrap.
+    if (ring.empty())
+        return;
+
     for (size_t i = 0, prev = ring.size() - 1; i < ring.size(); prev = i, ++i)
     {
         Point a = ring[prev];
