@@ -25,7 +25,7 @@ EOF
 
 ${CLICKHOUSE_LOCAL} --config-file "${CLICKHOUSE_TMP}/05871_local.xml" --path "$local_dir" --query "
     CREATE TABLE data (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
-    CREATE TABLE dist AS data ENGINE = Distributed(test_shard_localhost, currentDatabase(), data);
+    CREATE TABLE dist AS data ENGINE = Distributed(test_shard_localhost, currentDatabase(), data) SETTINGS flush_on_detach = 0;
     SYSTEM STOP DISTRIBUTED SENDS dist;
     INSERT INTO dist SETTINGS distributed_foreground_insert = 0, prefer_localhost_replica = 0 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc');
 "
