@@ -62,6 +62,7 @@ HashJoinTable::HashJoinTable(
 {
     joinDispatchInit(kind, strictness, maps, maps_kind);
     std::visit([&](auto & maps_) { maps_.create(key_type, robin_hood_allowed); }, maps);
+    buffer_bytes.store(bufferBytes(), std::memory_order_relaxed);
 
     arenas.reserve(layout.num_build_streams);
     for (size_t stream = 0; stream < layout.num_build_streams; ++stream)
@@ -171,6 +172,34 @@ size_t HashJoinTable::bufferBytes() const
 size_t HashJoinTable::bufferSizeInCells() const
 {
     return std::visit([&](const auto & maps_) { return maps_.getBufferSizeInCells(key_type); }, maps);
+}
+
+size_t HashJoinTable::ordinaryBufferBytesForKeys(size_t keys) const
+{
+    auto buffer_bytes_for_keys = [keys]<typename Table>(const std::shared_ptr<Table> &) -> size_t
+    {
+        if constexpr (requires(Table & table) { table.setRobinHoodAllowed(true); })
+        {
+            typename Table::Impl::grower_type grower;
+            grower.setRobinHoodAllowed(false);
+            grower.set(keys / Table::NUM_BUCKETS);
+            return Table::NUM_BUCKETS * grower.bufSize() * sizeof(typename Table::cell_type);
+        }
+        else
+            return 0;
+    };
+    return std::visit([&](const auto & maps_) { return maps_.visit(key_type, buffer_bytes_for_keys); }, maps);
+}
+
+void HashJoinTable::allowRobinHood()
+{
+    auto allow = []<typename Table>(const std::shared_ptr<Table> & table)
+    {
+        if constexpr (requires { table->setRobinHoodAllowed(true); })
+            if (table)
+                table->setRobinHoodAllowed(true);
+    };
+    slots.underAllSlotLocks([&] { std::visit([&](auto & maps_) { maps_.visit(key_type, allow); }, maps); });
 }
 
 size_t HashJoinTable::cellSize() const

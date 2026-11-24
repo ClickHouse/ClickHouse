@@ -3,6 +3,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Common/CacheLine.h>
 #include <Common/HashTable/BucketPartitionedTable.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <absl/functional/function_ref.h>
 
@@ -68,6 +69,17 @@ public:
             reserved[slot] = 1;
             return reserve_keys / slots.size();
         }
+    }
+
+    /// Calls `f` while holding the locks of all slots, taken in index order.
+    template <typename F>
+    void underAllSlotLocks(F && f)
+    {
+        VectorWithMemoryTracking<std::unique_lock<std::mutex>> locks;
+        locks.reserve(slots.size());
+        for (auto & slot : slots)
+            locks.emplace_back(slot.mutex);
+        std::forward<F>(f)();
     }
 
     /// Calls `insert_slot(slot)` under the lock of every slot that `per_slot` gives rows to. Slots are taken in

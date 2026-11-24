@@ -86,6 +86,7 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool enable_robin_hood_hash_for_joins;
+    extern const SettingsBool enable_robin_hood_hash_for_joins_under_memory_pressure;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
     extern const SettingsBool enable_packed_string_keys_in_hash_join;
 }
@@ -237,6 +238,7 @@ TableJoin::TableJoin(
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , enable_robin_hood_hash_for_joins(settings[Setting::enable_robin_hood_hash_for_joins])
+    , enable_robin_hood_hash_for_joins_under_memory_pressure(settings[Setting::enable_robin_hood_hash_for_joins_under_memory_pressure])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , enable_packed_string_keys_in_hash_join(settings[Setting::enable_packed_string_keys_in_hash_join])
     , max_memory_usage(settings[Setting::max_memory_usage])
@@ -274,6 +276,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , enable_robin_hood_hash_for_joins(settings.enable_robin_hood_hash_for_joins)
+    , enable_robin_hood_hash_for_joins_under_memory_pressure(settings.enable_robin_hood_hash_for_joins_under_memory_pressure)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , enable_packed_string_keys_in_hash_join(settings.enable_packed_string_keys_in_hash_join)
     , max_memory_usage(settings.max_bytes_in_join)

@@ -601,8 +601,15 @@ public:
     void freezeForProbing();
 
     size_t bufferBytes() const;
+    /// `bufferBytes` as of the last insert. Other threads may be inserting.
+    size_t bufferBytesDuringBuild() const { return buffer_bytes.load(std::memory_order_relaxed); }
     size_t bufferSizeInCells() const;
     size_t cellSize() const;
+    /// The buffer bytes of a map that can switch to the Robin Hood mode, reserved for `keys` in the ordinary mode. 0 for other maps.
+    size_t ordinaryBufferBytesForKeys(size_t keys) const;
+
+    /// Lets the two-level maps switch to the Robin Hood mode at their next growth. Takes every slot lock, so inserts may run concurrently.
+    void allowRobinHood();
 
     /// Replaces the map of a `key32` or `key64` table with a direct-addressed one if its keys span a small enough range. That
     /// map reads keys relative to the key range. Sets the key type and the key range of the table, and returns whether it did.
@@ -832,7 +839,11 @@ private:
             const size_t bytes_before = slots.slotBytes(map, slot);
             /// Under the slot lock so a concurrent limit check cannot miss this slot. Also when an insert throws: the
             /// rows before it stay in the map, and `StorageJoin` keeps serving them.
-            SCOPE_EXIT({ add_bytes(slots.slotBytes(map, slot) - bytes_before); });
+            SCOPE_EXIT({
+                const size_t grown = slots.slotBytes(map, slot) - bytes_before;
+                buffer_bytes.fetch_add(grown, std::memory_order_relaxed);
+                add_bytes(grown);
+            });
 
             if (const size_t reserved = slots.reserveOnFirstInsert(map, slot))
                 ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
@@ -1187,6 +1198,7 @@ private:
     std::vector<std::unique_ptr<Arena>> arenas;
     BuildSlots slots;
     std::atomic<size_t> num_keys = 0;
+    std::atomic<size_t> buffer_bytes = 0;
 };
 
 }

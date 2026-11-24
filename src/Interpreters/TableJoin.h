@@ -174,6 +174,7 @@ private:
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
     const bool enable_robin_hood_hash_for_joins = false;
+    const bool enable_robin_hood_hash_for_joins_under_memory_pressure = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
     /// The planner turns it off for a join that is faster with exact keys, see `shouldPackStringJoinKeys` in `PlannerJoins.cpp`.
     bool enable_packed_string_keys_in_hash_join = false;
@@ -361,6 +362,7 @@ public:
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
     bool enableRobinHoodHashForJoins() const { return enable_robin_hood_hash_for_joins; }
+    bool enableRobinHoodHashForJoinsUnderMemoryPressure() const { return enable_robin_hood_hash_for_joins_under_memory_pressure; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     bool enablePackedStringKeysInHashJoin() const { return enable_packed_string_keys_in_hash_join; }
     void setPackedStringKeysInHashJoinEnabled(bool value) { enable_packed_string_keys_in_hash_join = value; }

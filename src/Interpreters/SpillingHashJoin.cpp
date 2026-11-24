@@ -57,6 +57,9 @@ SpillingHashJoin::SpillingHashJoin(
     /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
     hash_join->keepRightBlocksForAnotherAlgorithm();
     supports_parallel_non_joined_blocks_processing = hash_join->supportParallelNonJoinedBlocksProcessing();
+
+    robin_hood_under_memory_pressure
+        = table_join->enableRobinHoodHashForJoinsUnderMemoryPressure() && hash_join->canAllowRobinHoodHashTables();
 }
 
 SpillingHashJoin::~SpillingHashJoin() = default;
@@ -149,8 +152,14 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
-    if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+    const size_t total_bytes = hash_join->getTotalByteCount();
+    if (total_bytes * 2 >= max_bytes_before_external_join)
         switchToExternalJoin(context);
+    /// One more doubling of the hash table buffers would reach it.
+    else if (
+        robin_hood_under_memory_pressure && !robin_hood_hash_tables_allowed.load(std::memory_order_acquire)
+        && (total_bytes + hash_join->getHashTableBufferBytes()) * 2 >= max_bytes_before_external_join)
+        allowRobinHoodHashTables();
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
@@ -168,6 +177,19 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
         throwIfSwitchFailed();
         return addBlockToExternalJoin(block, num_rows, context);
     }
+
+    /// A reserve that the build would not grow leaves the rule above nothing to decide. The size statistics hold no bytes, so
+    /// the first block, prepared as the join stores it, gives the bytes of a row. The maps take the reserve at their first
+    /// insert, which comes after this.
+    if (robin_hood_under_memory_pressure && block.rows())
+        std::call_once(
+            reserve_checked,
+            [&]
+            {
+                const size_t row_bytes = hash_join->prepareRightBlock(block).allocatedBytes() / block.rows();
+                if (hash_join->getReservedBuildBytes(row_bytes) * 2 >= max_bytes_before_external_join)
+                    hash_join->leaveLastGrowthToBuild();
+            });
 
     return hash_join->addBlockToJoin(block, num_rows, context);
 }
@@ -318,6 +340,26 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
     /// queued on the lock need not wait for the free. Freeing before the conversion lowers its peak.
     hash_join->releaseJoinMaps();
     tryConvertBuildStreams(context);
+}
+
+void SpillingHashJoin::allowRobinHoodHashTables()
+{
+    /// Shared: it only has to exclude the switch to the external join, which releases the maps.
+    std::shared_lock lock(switch_mutex);
+
+    if (state.load(std::memory_order_relaxed) != State::COLLECTING || robin_hood_hash_tables_allowed.exchange(true))
+        return;
+
+    hash_join->allowRobinHoodHashTables();
+
+    LOG_DEBUG(
+        log,
+        "Growing the hash tables would reach the memory spill threshold, allowing the Robin Hood mode: {} holds {} bytes, "
+        "{} of them in hash table buffers, the threshold is {} bytes",
+        hash_join->getName(),
+        hash_join->getTotalByteCount(),
+        hash_join->getHashTableBufferBytes(),
+        max_bytes_before_external_join);
 }
 
 void SpillingHashJoin::throwIfSwitchFailed() const

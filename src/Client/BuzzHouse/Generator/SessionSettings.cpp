@@ -491,6 +491,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_parallel_single_level_merge_by_index", trueOrFalseSetting},
        {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
        {"enable_robin_hood_hash_for_joins", trueOrFalseSetting},
+       {"enable_robin_hood_hash_for_joins_under_memory_pressure", trueOrFalseSetting},
        {"enable_software_prefetch_in_join", trueOrFalseSetting},
        {"external_storage_push_down_limit", trueOrFalseSetting},
        {"group_by_top_k_optimization_shared_boundary", trueOrFalseSetting},

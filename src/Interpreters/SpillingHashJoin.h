@@ -149,6 +149,8 @@ private:
     bool addBlockToExternalJoin(const Block & block, size_t num_rows, JoinBuildContext context);
     void tryConvertBuildStreams(JoinBuildContext context);
     void throwIfSwitchFailed() const;
+    /// Lets the hash tables of the in-memory join switch to the Robin Hood mode, once, while collecting.
+    void allowRobinHoodHashTables();
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -159,6 +161,11 @@ private:
     size_t max_num_buckets;
     bool any_take_last_row;
     size_t max_bytes_before_external_join;
+    /// `enable_robin_hood_hash_for_joins_under_memory_pressure` applies to the maps of `hash_join`.
+    bool robin_hood_under_memory_pressure = false;
+    std::atomic<bool> robin_hood_hash_tables_allowed = false;
+    /// Once, before the first insert: whether the reserve from the size statistics is halved.
+    std::once_flag reserve_checked;
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_build_stream_to_convert{0};

@@ -760,6 +760,9 @@ private:
 
     const bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     const size_t reserve_num;
+    size_t keys_to_reserve = 0;
+    /// The size statistics of an earlier run that `keys_to_reserve` comes from.
+    std::optional<HashJoinEntry> statistics_hint;
     const String instance_id;
     const HashJoinBuildLayout build_layout;
     std::optional<TypeIndex> asof_type;
@@ -864,6 +867,18 @@ public:
     /// Called once that algorithm can no longer take them - it has settled on this join. A join that
     /// stores only the keys reads nothing from them, so they can go.
     void dropRightBlocksKeptForAnotherAlgorithm();
+
+    /// Whether the maps can switch to the Robin Hood mode and the setting does not already allow it.
+    bool canAllowRobinHoodHashTables() const;
+    /// Lets the maps switch to the Robin Hood mode at their next growth. Other threads may be inserting.
+    void allowRobinHoodHashTables();
+    /// The bytes of the buffers of the maps. Other threads may be inserting.
+    size_t getHashTableBufferBytes() const;
+    /// The bytes the join reaches with the reserve from the size statistics when the build would not grow it, with `row_bytes`
+    /// per right row, or 0.
+    size_t getReservedBuildBytes(size_t row_bytes) const;
+    /// Halves the reserve, so the maps grow at least once during the build. Call it before the first insert.
+    void leaveLastGrowthToBuild();
 
 private:
 

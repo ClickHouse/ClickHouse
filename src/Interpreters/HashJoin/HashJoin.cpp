@@ -471,9 +471,11 @@ HashJoin::HashJoin(
     size_t size_hint = reserve_num;
     if (!size_hint && build_layout.two_level && table_join->oneDisjunct())
         if (const auto hint = getSizeHint(stats_collecting_params.build))
+        {
             size_hint = hint->ht_size;
-    const size_t keys_to_reserve
-        = capReserveAtSpillBudget(size_hint, table_join->maxBytesBeforeExternalJoin(), data->tables.front()->cellSize());
+            statistics_hint = hint;
+        }
+    keys_to_reserve = capReserveAtSpillBudget(size_hint, table_join->maxBytesBeforeExternalJoin(), data->tables.front()->cellSize());
     for (auto & table : data->tables)
         table->reserve(keys_to_reserve);
 
@@ -742,6 +744,51 @@ void HashJoin::recomputeBucketBytes()
         res += table->arenaBytes() + table->bufferBytes();
 
     data->setBytes(data->bucket_bytes, res);
+}
+
+bool HashJoin::canAllowRobinHoodHashTables() const
+{
+    return build_layout.two_level && keyType() != Type::two_level_key8 && keyType() != Type::two_level_key16
+        && !table_join->enableRobinHoodHashForJoins();
+}
+
+void HashJoin::allowRobinHoodHashTables()
+{
+    if (!data)
+        return;
+    for (auto & table : data->tables)
+        table->allowRobinHood();
+}
+
+size_t HashJoin::getHashTableBufferBytes() const
+{
+    if (!data)
+        return 0;
+    size_t res = 0;
+    for (const auto & table : data->tables)
+        res += table->bufferBytesDuringBuild();
+    return res;
+}
+
+size_t HashJoin::getReservedBuildBytes(size_t row_bytes) const
+{
+    if (!statistics_hint || !keys_to_reserve)
+        return 0;
+    /// A hint comes only for one disjunct, so there is one table.
+    const auto & table = *data->tables.front();
+    const size_t reserved_buffer_bytes = table.ordinaryBufferBytesForKeys(keys_to_reserve);
+    if (reserved_buffer_bytes < table.ordinaryBufferBytesForKeys(statistics_hint->ht_size))
+        return 0;
+    return reserved_buffer_bytes + statistics_hint->source_rows * row_bytes;
+}
+
+void HashJoin::leaveLastGrowthToBuild()
+{
+    if (!keys_to_reserve)
+        return;
+    keys_to_reserve /= 2;
+    for (auto & table : data->tables)
+        table->reserve(keys_to_reserve);
 }
 
 void HashJoin::doDebugAsserts() const

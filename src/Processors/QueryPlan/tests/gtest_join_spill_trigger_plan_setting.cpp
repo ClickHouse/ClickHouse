@@ -616,6 +616,27 @@ TEST(JoinRowStoreStringPlanSetting, GatedOnThePlanVersion)
     EXPECT_EQ(read_back.min_string_column_bytes_for_hash_join_row_store, defaults.min_string_column_bytes_for_hash_join_row_store);
 }
 
+/// `enable_robin_hood_hash_for_joins_under_memory_pressure` is written only towards a peer that knows the name, and a plan
+/// from a peer that predates it is read back with the setting off.
+TEST(JoinRobinHoodUnderMemoryPressurePlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROBIN_HOOD_UNDER_MEMORY_PRESSURE - 1;
+    const auto enabled = makeJoinSettings({{"enable_robin_hood_hash_for_joins_under_memory_pressure", true}});
+
+    auto carries_setting = [](const QueryPlanSerializationSettings & settings)
+    {
+        WriteBufferFromOwnString out;
+        settings.write(out);
+        return out.str().contains("enable_robin_hood_hash_for_joins_under_memory_pressure");
+    };
+
+    EXPECT_TRUE(carries_setting(serializeAt(enabled, current_version)));
+    EXPECT_TRUE(JoinSettings(serializeAt(enabled, current_version), current_version).enable_robin_hood_hash_for_joins_under_memory_pressure);
+
+    EXPECT_FALSE(carries_setting(serializeAt(enabled, pre_version)));
+    EXPECT_FALSE(JoinSettings(serializeAt(enabled, pre_version), pre_version).enable_robin_hood_hash_for_joins_under_memory_pressure);
+}
+
 /// `enable_packed_string_keys_in_hash_join` and `min_rows_for_packed_string_keys_in_hash_join` are written at every
 /// version and read back as sent. Plan settings without the names read back as `false` and `0`: exact keys.
 TEST(JoinPackedStringKeysPlanSetting, RoundTrip)

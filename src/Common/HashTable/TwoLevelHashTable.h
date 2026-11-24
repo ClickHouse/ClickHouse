@@ -99,7 +99,7 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    /// Whether the buckets may switch to the Robin Hood mode when they become large. Call it before inserting.
+    /// Whether the buckets may switch to the Robin Hood mode when they become large. Call it while nothing inserts.
     void setRobinHoodAllowed(bool allowed) requires GrowerWithRobinHood<Grower>
     {
         for (auto & impl : impls)

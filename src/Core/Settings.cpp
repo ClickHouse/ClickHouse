@@ -10982,9 +10982,19 @@ Use hash tables that store the join keys alone, without a reference to a right r
 )", 0, \
         {"26.9", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}) \
     DECLARE(Bool, enable_robin_hood_hash_for_joins, false, R"(
-Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
+Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys. With this setting off, `enable_robin_hood_hash_for_joins_under_memory_pressure` can allow the mode for a join that would otherwise spill to disk.
 )", 0, \
         {"26.11", true, false, "New setting. In 26.10 the hash tables of the `parallel_hash` join used the Robin Hood mode when they became large, which saves memory but can make large joins slower."}) \
+    DECLARE(Bool, enable_robin_hood_hash_for_joins_under_memory_pressure, false, R"(
+Lets a hash join switch its hash tables to the Robin Hood mode before it would spill to disk. Applies to a hash join that splits its hash table into parts (see `hash_join_layout`).
+
+The switch happens when growing the hash tables once more would make the join spill (see `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join`). The join can then stay in memory, at the cost of slower lookups.
+
+The hash tables can be preallocated for the size of an earlier run (see `collect_hash_table_stats_during_joins`). If the join would spill with that size, only half is preallocated, so that the same rule decides the last growth.
+
+Has no effect on a join that cannot spill, or when `enable_robin_hood_hash_for_joins` already allows the mode.
+)", 0, \
+        {"26.12", false, false, "New setting: the hash tables of a hash join switch to the Robin Hood mode when growing them would make the join spill to disk."}) \
     DECLARE(Bool, enable_packed_string_keys_in_hash_join, true, R"(
 Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nullable(String)` key faster and lowers their memory use. A join with `OR` qualifies when each of its conditions has a single such key.
 
