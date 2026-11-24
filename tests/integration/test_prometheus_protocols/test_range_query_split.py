@@ -13,7 +13,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/prometheus.xml"],
+    main_configs=["configs/prometheus.xml", "configs/query_thread_log.xml"],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
 )
 
@@ -463,3 +463,27 @@ def test_quota_charges_events_of_each_chunk_once():
         assert_quota_usage(query_id, errors=1, hits=2)
     finally:
         node.query(f"DROP QUOTA IF EXISTS {quota}")
+
+
+def test_perf_events_of_request_thread_in_each_chunk():
+    # The first chunk disables the perf events of the request thread when it finishes, so the next chunks must enable them again.
+    query_id = f"range-split-{uuid.uuid4()}"
+    params = {
+        "promql_range_query_split_interval": INTERVAL,
+        "metrics_perf_events_enabled": 1,
+        # A software event, so it doesn't need a hardware PMU.
+        "metrics_perf_events_list": "PerfTaskClock",
+        "log_query_threads": 1,
+    }
+    query_range("node_load1", H + 3600, H + 3 * 3600 + 1800, 60, params, query_id)
+    assert_executed_queries(query_id, 3)
+    node.query("SYSTEM FLUSH LOGS query_thread_log")
+    # The request thread logs a row for each chunk; it plans every chunk and merges them in the last one.
+    task_clock = node.query(
+        "SELECT ProfileEvents['PerfTaskClock'] FROM system.query_thread_log"
+        f" WHERE query_id = '{query_id}' AND thread_id = master_thread_id ORDER BY event_time_microseconds"
+    ).split()
+    assert len(task_clock) == 3, task_clock
+    if task_clock[0] == "0":
+        pytest.skip("Perf events can't be opened in this environment")
+    assert "0" not in task_clock, task_clock

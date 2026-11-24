@@ -428,6 +428,9 @@ private:
 
     void initPerformanceCounters();
 
+    /// Opens and enables the perf events of the thread if the query sets metrics_perf_events_enabled.
+    void initPerfEvents();
+
     void initQueryProfiler();
 
     void finalizeQueryProfiler();
