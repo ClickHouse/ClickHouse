@@ -7,7 +7,7 @@
 
 SELECT 'Avro, a column missing from the schema';
 INSERT INTO FUNCTION file(currentDatabase() || '_05872.avro', Avro) SELECT toInt8(1) AS x SETTINGS engine_file_truncate_on_insert = 1;
-SELECT * FROM file(currentDatabase() || '_05872.avro', Avro, 'x Int8, e Enum8(\'a\' = 1, \'b\' = 2), t Tuple(s String, e Enum16(\'x\' = 5, \'y\' = 7)), ne Nullable(Enum8(\'a\' = 1, \'b\' = 2)), j JSON(e Enum8(\'a\' = 1, \'b\' = 2))')
+SELECT * FROM file(currentDatabase() || '_05872.avro', Avro, 'x Int8, e Enum8(\'a\' = 1, \'b\' = 2), t Tuple(s String, e Enum16(\'x\' = 5, \'y\' = 7)), ne Nullable(Enum8(\'a\' = 1, \'b\' = 2)), j JSON(e Enum8(\'a\' = 1, \'b\' = 2)), z Enum8(\'neg\' = -1, \'zero\' = 0)')
 SETTINGS input_format_avro_allow_missing_fields = 1;
 SELECT count() FROM file(currentDatabase() || '_05872.avro', Avro, 'x Int8, e Enum8(\'a\' = 1, \'b\' = 2)') WHERE e = 'a'
 SETTINGS input_format_avro_allow_missing_fields = 1;
@@ -19,7 +19,7 @@ SET format_schema_message_name = 'M';
 -- x = 7, n = {y = 5}, r = [{y = 1}, {y = 2}]. `e`, `t` and `ne` are missing from M, `n.e` from the nested message,
 -- and `r.e` is the missing sibling of `r.y`, so it gets an array of the same length.
 SELECT 'Protobuf, a column missing from the message';
-SELECT * FROM format(ProtobufSingle, 'x Int32, e Enum8(\'a\' = 1, \'b\' = 2), t Tuple(s String, e Enum16(\'x\' = 5, \'y\' = 7)), ne Nullable(Enum8(\'a\' = 1, \'b\' = 2)), n Tuple(y Int32, e Enum8(\'a\' = 1, \'b\' = 2)), `r.y` Array(Int32), `r.e` Array(Enum8(\'a\' = 1, \'b\' = 2))', '\x08\x07\x12\x02\x08\x05\x1a\x02\x08\x01\x1a\x02\x08\x02');
+SELECT * FROM format(ProtobufSingle, 'x Int32, e Enum8(\'a\' = 1, \'b\' = 2), t Tuple(s String, e Enum16(\'x\' = 5, \'y\' = 7)), ne Nullable(Enum8(\'a\' = 1, \'b\' = 2)), n Tuple(y Int32, e Enum8(\'a\' = 1, \'b\' = 2)), `r.y` Array(Int32), `r.e` Array(Enum8(\'a\' = 1, \'b\' = 2)), z Enum8(\'neg\' = -1, \'zero\' = 0)', '\x08\x07\x12\x02\x08\x05\x1a\x02\x08\x01\x1a\x02\x08\x02');
 SELECT * FROM format(ProtobufSingle, 'x Int32, r Nested(y Int32, e Enum8(\'a\' = 1, \'b\' = 2))', '\x08\x07\x1a\x02\x08\x01\x1a\x02\x08\x02')
 SETTINGS flatten_nested = 0;
 
@@ -27,17 +27,19 @@ SELECT 'ProtobufList, a column missing from the message';
 SET format_schema = 'syntax = "proto3"; message Envelope { message M { int32 x = 1; } repeated M row = 1; }';
 SELECT * FROM format(ProtobufList, 'x Int32, e Enum8(\'a\' = 1, \'b\' = 2), t Tuple(s String, e Enum16(\'x\' = 5, \'y\' = 7)), ne Nullable(Enum8(\'a\' = 1, \'b\' = 2))', '\x04\x0a\x02\x08\x07');
 
--- A wrapper message without `value` holds the default of `value`, 0, read like the same wrapper into the type
--- without Nullable. An absent wrapper is NULL.
+-- A wrapper message without `value` holds the default of `value` (0, or '' for a StringValue), read like the same
+-- wrapper into the type without Nullable. An absent wrapper is NULL.
 SELECT 'Protobuf, a google wrapper without value';
 SET input_format_protobuf_flatten_google_wrappers = 1;
-SET format_schema = 'syntax = "proto3"; import "google/protobuf/wrappers.proto"; message W { google.protobuf.Int32Value w = 1; int32 k = 2; }';
+SET format_schema = 'syntax = "proto3"; import "google/protobuf/wrappers.proto"; message W { google.protobuf.Int32Value w = 1; int32 k = 2; google.protobuf.StringValue s = 3; }';
 SET format_schema_message_name = 'W';
 SELECT * FROM format(ProtobufSingle, 'w Enum8(\'a\' = 1, \'b\' = 2), k Int32', '\x0a\x00\x10\x01'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT * FROM format(ProtobufSingle, 'w Nullable(Enum8(\'a\' = 1, \'b\' = 2)), k Int32', '\x0a\x00\x10\x01'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT * FROM format(ProtobufSingle, 'w Nullable(Enum8(\'neg\' = -1, \'zero\' = 0)), k Int32', '\x0a\x00\x10\x01');
 SELECT * FROM format(ProtobufSingle, 'w Nullable(Int32), k Int32', '\x0a\x00\x10\x01');
 SELECT * FROM format(ProtobufSingle, 'w Nullable(Enum8(\'a\' = 1, \'b\' = 2)), k Int32', '\x10\x01');
+SELECT * FROM format(ProtobufSingle, 's Nullable(Enum8(\'\' = 3, \'b\' = 2)), k Int32', '\x1a\x00\x10\x01');
+SELECT * FROM format(ProtobufSingle, 's Nullable(Date), k Int32', '\x1a\x00\x10\x01'); -- { serverError CANNOT_PARSE_DATE }
 
 SELECT 'FileLog, handle_error_mode = stream';
 DROP TABLE IF EXISTS file_log;
