@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SetWithMemoryTracking.h>
@@ -17,6 +18,8 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -42,7 +45,7 @@ class FunctionHMAC final : public IFunction
 {
 private:
     inline static std::once_flag supported_algorithms_flag;
-    inline static MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> grouped_algorithms;
+    [[clang::no_destroy]] inline static MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> grouped_algorithms;
 
     static void fetchAndGroupSupportedAlgorithms()
     {
@@ -108,36 +111,27 @@ public:
     static constexpr auto name = "HMAC";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHMAC>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        validateFunctionArguments(
-            *this,
-            arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "Hash algorithm name (e.g., 'sha256')"},
-                {"message", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Message to be authenticated"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Secret key for HMAC"},
-            });
-
-        return std::make_shared<DataTypeString>();
+        return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const std::string_view mode = arguments[0].column->getDataAt(0);
         const EVP_MD_ptr evp_md = getHashAlgorithm(mode);
@@ -210,6 +204,19 @@ public:
             return fmt::format("{}", fmt::join(formatted_algorithms, ", "));
     }
 };
+
+/// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+void findHMACSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    if (finder.function->arguments->size() < 3)
+        return;
+
+    /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
+    /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+    /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
+    finder.result.start = 2;
+    finder.result.count = finder.function->arguments->size() - 2;
+}
 
 }
 
@@ -290,7 +297,7 @@ SELECT
         category
     };
 
-    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive, SecretArgumentsSpec{.custom = findHMACSecretArguments});
 }
 
 }

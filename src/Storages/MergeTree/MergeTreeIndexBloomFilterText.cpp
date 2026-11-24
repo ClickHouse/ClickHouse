@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/RegexpUtils.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Functions/Regexps.h>
@@ -28,6 +29,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -128,7 +130,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
 
             for (size_t i = 0; i < rows_read; ++i)
             {
-                size_t element_start_row = column_offsets[current_position - 1];
+                size_t element_start_row = column_offsets[static_cast<ssize_t>(current_position) - 1];
                 size_t elements_size = column_offsets[current_position] - element_start_row;
 
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
@@ -160,7 +162,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
-    NameSet columns_shadowing_map_subcolumns_,
+    IsShadowingColumn is_column_shadowing_map_subcolumn_,
     JSONIndexArgumentTypes json_argument_types_)
     : index_columns(index_sample_block.getNames())
     , json_argument_types(std::move(json_argument_types_))
@@ -168,7 +170,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
-    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
 {
     if (!predicate)
     {
@@ -504,6 +506,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                  function_name == "mapContainsValue" ||
                  function_name == "mapContainsValueLike" ||
                  function_name == "match" ||
+                 function_name == "fullMatch" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name.starts_with("hasToken") ||
@@ -552,7 +555,7 @@ Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & t
     if (isFixedString(inner_type) && field.getType() == Field::Types::String)
     {
         String value = field.safeGet<String>();
-        value.resize(value.find_last_not_of('\0') + 1);
+        trimRight(value, '\0');
         return Field(std::move(value));
     }
 
@@ -732,7 +735,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
     if (!key_index)
     {
-        if (auto parsed = tryParseMapSubcolumnName(column_name, columns_shadowing_map_subcolumns))
+        if (auto parsed = tryParseMapSubcolumnName(column_name, is_column_shadowing_map_subcolumn))
         {
             auto & [map_column_name, serialized_key] = *parsed;
 
@@ -964,13 +967,17 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.set_bloom_filters = std::move(bloom_filters);
         return true;
     }
-    if (function_name == "match")
+    if (function_name == "match" || function_name == "fullMatch")
     {
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_MATCH;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
-        auto & value = const_value.safeGet<String>();
+        /// `fullMatch` is `match` with the pattern anchored at both ends, so its substrings come from the anchored form.
+        String value = const_value.safeGet<String>();
+        if (function_name == "fullMatch")
+            value = anchorRegexpToMatchWholeString(value);
+
         /// Validate the regexp before using its required substring to build
         /// the skip-index condition.
         Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
@@ -1100,7 +1107,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, params, tokenizer.get(), getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
@@ -1208,6 +1215,36 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         args[first_bf_param_idx].safeGet<size_t>(),
         args[first_bf_param_idx+1].safeGet<size_t>(),
         args[first_bf_param_idx+2].safeGet<size_t>());
+}
+
+static size_t bloomFilterIndexTextTotalSize(const IndexDescription & index)
+{
+    if (index.type != NgramsTokenizer::getName()
+        && index.type != SplitByNonAlphaTokenizer::getName()
+        && index.type != SparseGramsTokenizer::getBloomFilterIndexName())
+        return 0;
+
+    /// The size of bloom filter is the first of the last three arguments, whatever the tokenizer.
+    /// The arguments are already checked by `bloomFilterIndexTextValidator`, and the size is at most `MAX_BLOOM_FILTER_SIZE`,
+    /// so the multiplication cannot overflow.
+    FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+    return args.at(args.size() - 3).safeGet<size_t>() * index.column_names.size();
+}
+
+void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const IndexDescription * old_index)
+{
+    const size_t total_size = bloomFilterIndexTextTotalSize(index);
+    if (total_size <= MAX_BLOOM_FILTER_SIZE)
+        return;
+
+    /// An index inherited from the old metadata may have been created before this check, so it is accepted as long as it does not grow.
+    if (old_index && bloomFilterIndexTextTotalSize(*old_index) >= total_size)
+        return;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "The total size of bloom filters in a granule of index {} cannot be more than {}: "
+        "the index has {} columns and the total size of their bloom filters is {}",
+        backQuote(index.name), MAX_BLOOM_FILTER_SIZE, index.column_names.size(), total_size);
 }
 
 }

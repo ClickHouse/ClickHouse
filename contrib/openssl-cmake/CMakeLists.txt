@@ -121,10 +121,7 @@ set(LIB_SOVERSION ${VERSION_MAJOR})
 enable_language(ASM)
 
 add_definitions(-Wno-unused-command-line-argument)
-# Note that s390x build uses mold linker
-if(NOT ARCH_S390X)
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
-endif()
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
 
 set(CRYPTO_SRC
     common/providers/der_digests_gen.c
@@ -1263,8 +1260,10 @@ elseif(ARCH_PPC64LE)
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
         ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
-        ${OPENSSL_SOURCE_DIR}/engines/e_afalg.c
     )
+    if (OS_LINUX)
+        set(CRYPTO_SRC ${CRYPTO_SRC} ${OPENSSL_SOURCE_DIR}/engines/e_afalg.c)
+    endif()
 elseif(ARCH_S390X)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         asm/crypto/aes/aes-s390x.S
@@ -1471,7 +1470,17 @@ target_include_directories(ssl
 
 target_link_libraries(ssl crypto)
 
+# OpenSSL calls many functions through pointers whose types differ only in pointer types, e.g. `d2i_X509` through
+# `d2i_of_void`, `RSA_free` through `void (*)(void *)` and every provider function through `OSSL_DISPATCH`, which strict
+# CFI (`cfi-icall`) rejects. Upstream fixed stacks and sparse arrays (backported here) and the `decode_der2key` free
+# callbacks (4.1.0); as of 4.1.0 and master (2026-11), the provider dispatch tables and the `X509V3_EXT_METHOD`
+# callbacks still need it. So OpenSSL's indirect calls are checked with all pointer types treated alike: return type,
+# arity, the constness of pointees and non-pointer arguments are still checked. TODO: drop this once upstream fixes the rest.
+if (ENABLE_CFI)
+    foreach (target crypto ssl)
+        target_compile_options (${target} PRIVATE $<$<COMPILE_LANGUAGE:C>:-fsanitize-cfi-icall-generalize-pointers>)
+    endforeach ()
+endif ()
+
 add_library(OpenSSL::Crypto ALIAS crypto)
 add_library(OpenSSL::SSL ALIAS ssl)
-
-install(FILES openssl.conf fipsmodule.conf DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)

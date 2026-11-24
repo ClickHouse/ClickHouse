@@ -1,0 +1,8 @@
+--- zero_runs ---
+Failed to deserialize deletion vector roaring bitmap
+BAD_ARGUMENTS
+--- bitset_wrong_cardinality ---
+Failed to deserialize deletion vector roaring bitmap
+BAD_ARGUMENTS
+--- valid_run ---
+[10,11,12,13,14]

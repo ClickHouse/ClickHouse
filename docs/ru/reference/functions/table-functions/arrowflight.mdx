@@ -34,6 +34,7 @@ arrowFlight('host:port', 'dataset_name' [, 'username', 'password'])
 **Настройки**
 
 * `arrow_flight_request_descriptor_type` — Управляет тем, как имя набора данных отправляется на сервер Flight. Значения: `path` (по умолчанию) или `command`. Подробности см. в разделе [движок таблицы ArrowFlight](/ru/reference/engines/table-engines/integrations/arrowflight#settings).
+* `arrow_flight_request_timeout_sec` — Тайм-аут одного запроса Arrow Flight в секундах, по умолчанию `300`; `0` означает отсутствие тайм-аута. Подробности см. в разделе [движок таблицы ArrowFlight](/ru/reference/engines/table-engines/integrations/arrowflight#settings).
 
 **Примеры**
 

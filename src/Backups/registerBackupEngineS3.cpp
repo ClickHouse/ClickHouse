@@ -3,6 +3,7 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_S3.h>
@@ -19,11 +20,11 @@
 namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsSecretString secret_access_key;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString http_client;
@@ -31,8 +32,9 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_service_account_key;
 }
 
 #endif
@@ -141,8 +143,8 @@ namespace
 
         if (backup_info.args.size() == 3)
         {
-            backup_info.args[1].safeGet<String>();
-            backup_info.args[2].safeGet<String>();
+            (void)backup_info.args[1].safeGet<String>();
+            (void)backup_info.args[2].safeGet<String>();
         }
 
         if (backup_info.function_arg)
@@ -171,7 +173,7 @@ namespace
         /// `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            backup_info.getNamedCollection(context);
+            (void)backup_info.getNamedCollection(context);
             return target;
         }
 
@@ -214,7 +216,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         auto location = resolveS3BackupLocation(params.backup_info, params.context);
         String & s3_uri = location.uri;
         String access_key_id;
-        String secret_access_key;
+        SecretString secret_access_key;
         String role_arn;
         String role_session_name;
         String external_id;
@@ -226,7 +228,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         if (const auto & collection = location.collection)
         {
             access_key_id = collection->getOrDefault<String>("access_key_id", "");
-            secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
+            secret_access_key = collection->getOrDefault<SecretString>("secret_access_key");
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
             external_id = collection->getOrDefault<String>("external_id", "");
@@ -275,7 +277,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             /// its own key pair without a token.
             auth[S3AuthSetting::session_token]
                 = (drop_collection_keys_for_query_role || drop_inherited_token)
-                ? "" : collection->getOrDefault<String>("session_token", "");
+                ? SecretString{} : collection->getOrDefault<SecretString>("session_token");
             auth[S3AuthSetting::role_arn] = role_arn;
             auth[S3AuthSetting::role_session_name] = role_session_name;
             auth[S3AuthSetting::external_id] = external_id;
@@ -284,8 +286,9 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::metadata_service] = collection->getOrDefault<String>("metadata_service", "");
             auth[S3AuthSetting::request_token_path] = collection->getOrDefault<String>("request_token_path", "");
             auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
-            auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
-            auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
+            auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<SecretString>("google_adc_client_secret");
+            auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<SecretString>("google_adc_refresh_token");
+            auth[S3AuthSetting::google_service_account_key] = collection->getOrDefault<SecretString>("google_service_account_key");
 
         }
         else
@@ -452,7 +455,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn, s3BackupSecretArguments());
 }
 
 }

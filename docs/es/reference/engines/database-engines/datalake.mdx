@@ -13,7 +13,7 @@ y consultar datos en formatos de tabla abiertos sin necesidad de duplicarlos.
 Esto transforma a ClickHouse en un potente motor de consultas que se integra perfectamente con
 la infraestructura existente de su lago de datos.
 
-## Catálogos compatibles
+## Catálogos compatibles {#supported-catalogs}
 
 El motor `DataLakeCatalog` es compatible con los siguientes catálogos de datos:
 
@@ -22,7 +22,7 @@ El motor `DataLakeCatalog` es compatible con los siguientes catálogos de datos:
 * **Hive Metastore** - Catálogo tradicional del ecosistema Hadoop
 * **Catálogos REST** - Cualquier catálogo compatible con la especificación REST de Iceberg
 
-## Crear una base de datos
+## Crear una base de datos {#creating-a-database}
 
 Deberá habilitar la configuración correspondiente que se indica a continuación para usar el motor `DataLakeCatalog`:
 
@@ -48,9 +48,10 @@ Se admiten los siguientes ajustes:
 
 | Configuración           | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `catalog_type`          | Tipo de catálogo: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, espacios de nombres planos), `horizon` (Snowflake Horizon Iceberg REST)                                                                                                                                                                                                                                          |
+| `catalog_type`          | Tipo de catálogo: `glue`, `unity` (Delta, o Delta e Iceberg con `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, espacios de nombres planos), `horizon` (Snowflake Horizon Iceberg REST)                                                                                                                                                                                            |
 | `warehouse`             | Nombre del almacén/base de datos que se usará en el catálogo.                                                                                                                                                                                                                                                                                                                                                                        |
 | `catalog_credential`    | Credencial de autenticación para el catálogo (p. ej., API key o token)                                                                                                                                                                                                                                                                                                                                                               |
+| `use_unity_catalog_v2`  | Para `catalog_type = 'unity'`: se usa la nueva implementación, compatible tanto con tablas Delta Lake como con tablas Iceberg. Valor predeterminado: `false`. Establézcalo en `CREATE` o cámbielo en una base de datos existente con `ALTER DATABASE ... MODIFY SETTING`.                                                                                                                                                            |
 | `auth_header`           | HTTP header personalizado para la autenticación con el servicio de catálogo                                                                                                                                                                                                                                                                                                                                                          |
 | `auth_scope`            | Scope de OAuth2 para la autenticación (si se usa OAuth)                                                                                                                                                                                                                                                                                                                                                                              |
 | `storage_endpoint`      | URL del endpoint del almacenamiento subyacente                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -66,11 +67,30 @@ Se admiten los siguientes ajustes:
 | `dlf_access_key_secret` | Clave de acceso secreta para acceder a DLF                                                                                                                                                                                                                                                                                                                                                                                           |
 | `force_add_bucket`      | Al construir las URL del almacenamiento de objetos a partir de la ubicación de la tabla proporcionada por el catálogo y `storage_endpoint`, anteponga el nombre del bucket/contenedor aunque el endpoint ya lo contenga. Valor predeterminado: `false`. Establézcallo en `true` para los catálogos que devuelven rutas sin el bucket y requieren que se agregue durante el paso de construcción de la URL (rutas de estilo Polaris). |
 
-## Ejemplos
+## Ejemplos {#examples}
 
 Consulte las secciones siguientes para ver ejemplos de uso del motor `DataLakeCatalog`:
 
 * [Unity Catalog](/es/guides/use-cases/data-warehousing/unity-catalog)
+* Unity Catalog con tablas Delta Lake e Iceberg
+  Con `use_unity_catalog_v2 = 1`, el catálogo `unity` admite tanto tablas Delta Lake como tablas Iceberg
+  y detecta el formato de cada tabla.
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog('https://<workspace>.cloud.databricks.com/api/2.1/unity-catalog')
+SETTINGS
+    catalog_type = 'unity',
+    use_unity_catalog_v2 = 1,
+    warehouse = 'my_catalog',
+    catalog_credential = '<client_id>:<client_secret>';
+SHOW TABLES FROM database_name;
+SELECT count() FROM database_name.`schema_name.table_name`;
+```
+
+`catalog_credential` acepta una entidad de servicio de OAuth en el formato `<client_id>:<client_secret>`,
+un token de acceso personal (`dapi...`) o un token de OAuth obtenido previamente.
+
 * [Glue Catalog](/es/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
   Puede usarse habilitando `allow_database_iceberg`.

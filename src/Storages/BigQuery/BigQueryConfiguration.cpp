@@ -1,5 +1,7 @@
 #include <Storages/BigQuery/BigQueryConfiguration.h>
 
+#include <IO/HTTPHeaderEntries.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -7,10 +9,12 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <array>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 
 namespace DB
 {
@@ -92,7 +96,7 @@ void validate(BigQueryConfiguration & configuration)
         configuration.base_url.pop_back();
 }
 
-using ConfigurationFields = std::unordered_map<std::string_view, String BigQueryConfiguration::*>;
+using ConfigurationFields = std::unordered_map<std::string_view, std::variant<String BigQueryConfiguration::*, SecretString BigQueryConfiguration::*>>;
 
 const ConfigurationFields & configurationFields()
 {
@@ -113,6 +117,11 @@ const ConfigurationFields & configurationFields()
     return fields;
 }
 
+void setField(BigQueryConfiguration & configuration, const ConfigurationFields::mapped_type & member, const String & value)
+{
+    std::visit([&](auto field) { configuration.*field = value; }, member);
+}
+
 BigQueryConfiguration fromNamedCollection(const NamedCollection & collection)
 {
     BigQueryConfiguration configuration;
@@ -125,7 +134,7 @@ BigQueryConfiguration fromNamedCollection(const NamedCollection & collection)
     {
         String name{key};
         if (collection.has(name))
-            configuration.*member = collection.get<String>(name);
+            setField(configuration, member, collection.get<String>(name));
     }
     return configuration;
 }
@@ -184,7 +193,7 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "BigQuery argument '{}' must be a string literal", key);
                 if (!provided.emplace(it->first).second)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "BigQuery argument '{}' is specified more than once", key);
-                configuration.*(it->second) = value.safeGet<String>();
+                setField(configuration, it->second, value.safeGet<String>());
             }
             else
             {
@@ -204,7 +213,7 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "BigQuery argument '{}' is specified both positionally and in the key = value form", positional_slots[i]);
-            configuration.*(fields.at(positional_slots[i])) = positional[i];
+            setField(configuration, fields.at(positional_slots[i]), positional[i]);
         }
 
         if (!provided.contains("project") || !provided.contains("dataset") || !provided.contains("table"))
@@ -215,6 +224,16 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
 
     validate(configuration);
     return configuration;
+}
+
+void BigQueryConfiguration::checkHeaders(const ContextPtr & context) const
+{
+    HTTPHeaderEntries headers;
+    if (!access_token.empty())
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", access_token));
+    if (!billing_project.empty())
+        headers.emplace_back("X-Goog-User-Project", billing_project);
+    context->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 }

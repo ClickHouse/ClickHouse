@@ -22,16 +22,15 @@ doc_type: 'reference'
 دالة أو محرك جدول أو قاعدة بيانات، وما إلى ذلك. في الأمثلة أدناه، أُدرج رابط إلى قائمة المعلَمات
 الخاصة بكل نوع.
 
-يمكن تجاوز المعلَمات المضبوطة في مجموعة مسماة داخل SQL، وهذا موضح في الأمثلة
-أدناه. ويمكن تقييد هذه الإمكانية باستخدام الكلمات المفتاحية `[NOT] OVERRIDABLE` وسمات XML
-و/أو خيار التهيئة `allow_named_collection_override_by_default`.
+يتطلب استبدال معلَمة مخزّنة في مجموعة مسماة امتياز `SHOW NAMED COLLECTIONS SECRETS` على تلك المجموعة، حتى عندما تكون المعلَمة موسومة بـ `OVERRIDABLE`. ولا يمكن استبدال المفاتيح الموسومة بـ `NOT OVERRIDABLE` في SQL أو بـ `overridable="false"` في XML. أما إضافة معلَمة لا تخزّنها المجموعة فلا تتطلب هذا الامتياز الإضافي. وتُعدّ الأسماء البديلة، مثل `addresses_expr` الذي يُعدّ اسمًا بديلًا لـ `host`، استبدالًا للمعلَمة المخزّنة.
 
-<Warning>
-  إذا كان السماح بالتجاوز مفعّلًا، فقد يتمكن المستخدمون الذين لا يملكون وصولًا إداريًا من
-  معرفة بيانات الاعتماد التي تحاول إخفاءها.
-  إذا كنت تستخدم المجموعات المسماة لهذا الغرض، فينبغي عليك تعطيل
-  `allow_named_collection_override_by_default` (وهو مفعّل افتراضيًا).
-</Warning>
+```sql
+GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
+```
+
+يتطلب هذا التحقق الامتياز وحده، ولا يعتمد على الإعدادات التي تتحكم في عرض البيانات السرية. الإعداد `allow_named_collection_override_by_default` متقادم وليس له أي تأثير.
+
+وتخضع مصادر القاموس للقاعدة نفسها، إذ يُتحقق من الامتياز عند إنشاء القاموس أو إرفاقه أو استعادته. أما عند تحميل القاموس، فلا تُفرض إلا المفاتيح المُعلَّمة بـ `NOT OVERRIDABLE`.
 
 ## تخزين المجموعات المسماة في قاعدة بيانات النظام {#storing-named-collections-in-the-system-database}
 
@@ -46,9 +45,9 @@ url = 'https://connection.url/'
 
 في المثال أعلاه:
 
-* يمكن دائمًا استبدال قيمة `key_1`.
+* يمكن للمستخدمين الذين يملكون الصلاحية `SHOW NAMED COLLECTIONS SECRETS` على المجموعة استبدال قيمة `key_1`.
 * لا يمكن أبدًا استبدال قيمة `key_2`.
-* يمكن استبدال قيمة `url` أو عدم استبدالها بحسب قيمة `allow_named_collection_override_by_default`.
+* يمكن للمستخدمين الذين يملكون الصلاحية `SHOW NAMED COLLECTIONS SECRETS` على المجموعة استبدال قيمة `url`.
 
 ### الأذونات اللازمة لإنشاء المجموعات المسماة باستخدام DDL {#permissions-to-create-named-collections-with-ddl}
 
@@ -128,9 +127,9 @@ WHERE name = 'named_collections_storage.type';
 
 في المثال أعلاه:
 
-* يمكن دائمًا إعادة تعريف `key_1`.
-* لا يمكن مطلقًا إعادة تعريف `key_2`.
-* يمكن إعادة تعريف `url` أو عدم إعادة تعريفه بحسب قيمة `allow_named_collection_override_by_default`.
+* يمكن للمستخدمين الذين يملكون الامتياز `SHOW NAMED COLLECTIONS SECRETS` على المجموعة استبدال `key_1`.
+* لا يمكن مطلقًا استبدال `key_2`.
+* يمكن للمستخدمين الذين يملكون الامتياز `SHOW NAMED COLLECTIONS SECRETS` على المجموعة استبدال `url`.
 
 ## تعديل المجموعات المسماة {#modifying-named-collections}
 
@@ -503,9 +502,16 @@ SELECT * FROM remote(remote1, database = default, table = test);
 ### مثال على استخدام المجموعات المسماة مع قاموس مصدره ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
+CREATE NAMED COLLECTION remote_dict AS
+host = 'localhost',
+port = 9000,
+database = 'default',
+user = 'default',
+password = '';
+
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
-SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+SOURCE(CLICKHOUSE(NAME remote_dict TABLE test))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED());
 
@@ -689,7 +695,7 @@ CREATE DICTIONARY dict
     `b` String
 )
 PRIMARY KEY a
-SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+SOURCE(MONGODB(NAME mymongo))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED())
 
@@ -701,5 +707,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 <Note>
-  تحدِّد المجموعة المُسمّاة اسم الـ `collection` على أنه `my_collection`. وفي استدعاء الدالة، يُتجاوز هذا الإعداد باستخدام `collection = 'my_dict'` لاختيار `collection` أخرى.
+  يستخدم القاموس `my_collection` كما هو محدَّد في المجموعة المُسمّاة. لاستخدام `collection` أخرى في MongoDB، عرِّف مجموعة مُسمّاة منفصلة بتلك القيمة.
 </Note>

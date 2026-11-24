@@ -6,6 +6,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
+#include <Core/Field.h>
+#include <Processors/TopKThresholdTracker.h>
 
 namespace DB
 {
@@ -15,8 +17,8 @@ size_t TopKAggregationHeapBase::initBase(
     size_t heap_key_count,
     size_t total_group_by_keys,
     size_t query_k,
-    const std::vector<int> & dirs,
-    const std::vector<int> & null_dirs,
+    const VectorWithMemoryTracking<int> & dirs,
+    const VectorWithMemoryTracking<int> & null_dirs,
     UInt64 observation_rows)
 {
     is_prefix_mode = heap_key_count < total_group_by_keys;
@@ -78,8 +80,8 @@ void TopKAggregationHeapBase::init(
 void TopKAggregationHeapBase::init(
     const ColumnRawPtrs & source_columns,
     size_t query_k,
-    const std::vector<int> & dirs,
-    const std::vector<int> & null_dirs)
+    const VectorWithMemoryTracking<int> & dirs,
+    const VectorWithMemoryTracking<int> & null_dirs)
 {
     const size_t n = source_columns.size();
     is_composite = true;
@@ -156,9 +158,22 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
         const T boundary = boundary_data[boundaryRow()];
         const int direction = directions[0];
         const int nulls_direction = nulls_directions[0];
-        for (size_t i = begin; i < end; ++i)
-            skip_bitmap[i] = direction * CompareHelper<T>::compare(src[i], boundary, nulls_direction) > 0;
-        result = skip_bitmap.data();
+        /// A row is skipped when `direction * compare(row, boundary) > 0`. The direction is 1 or -1, so this is
+        /// `greater` or `less`, chosen once outside of the loop. clang 23 turns the three-way compare into a
+        /// `ucmp`/`scmp` intrinsic, which the x86 backend expands to a scalar `cmp`/`sbb` per row instead of
+        /// a vector compare (see `compareColumnImpl` in `ColumnVector.cpp`).
+        UInt8 * bitmap = skip_bitmap.data();
+        if (direction > 0)
+        {
+            for (size_t i = begin; i < end; ++i)
+                bitmap[i] = CompareHelper<T>::greater(src[i], boundary, nulls_direction);
+        }
+        else
+        {
+            for (size_t i = begin; i < end; ++i)
+                bitmap[i] = CompareHelper<T>::less(src[i], boundary, nulls_direction);
+        }
+        result = bitmap;
     });
     return result;
 }
@@ -166,6 +181,7 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
 void TopKAggregationHeapBase::initBoundary()
 {
     withComparator([&](auto cmp) { boundary_row = *std::max_element(heap_indices.begin(), heap_indices.end(), cmp); });
+    boundary_changed = true;
     publish_pending = true;
     updateBoundaryChoice();
 }
@@ -248,6 +264,20 @@ void TopKAggregationHeapBase::updateBoundaryChoice()
     boundary_is_shared = compareRanked(*shared_cache_column, 0, *heap_column, boundary_row) < 0;
 }
 
+void TopKAggregationHeapBase::publishBoundary()
+{
+    boundary_changed = false;
+
+    if (!threshold_tracker || !heap_column || boundary_row == invalid_row)
+        return;
+
+    const IColumn & first_column = is_composite ? assert_cast<const ColumnTuple &>(*heap_column).getColumn(0) : *heap_column;
+
+    Field boundary_value;
+    first_column.get(boundary_row, boundary_value);
+    threshold_tracker->testAndSet(boundary_value);
+}
+
 void TopKAggregationHeapBase::trimToK()
 {
     evicted_rows.clear();
@@ -259,6 +289,7 @@ void TopKAggregationHeapBase::trimToK()
     {
         std::nth_element(heap_indices.begin(), heap_indices.begin() + k - 1, heap_indices.end(), cmp);
         boundary_row = heap_indices[k - 1];
+        boundary_changed = true;
 
         const auto tied_with_boundary
             = [&](size_t idx) { return !cmp(idx, boundary_row) && !cmp(boundary_row, idx); };
