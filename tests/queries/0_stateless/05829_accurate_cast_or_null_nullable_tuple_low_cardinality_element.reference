@@ -1,0 +1,32 @@
+\N
+\N
+\N
+\N
+\N
+('ab')
+\N
+ab	('ab','ab')
+abc	\N
+\N	\N
+cd	('cd','cd')
+ab	('ab','ab','ab')
+abc	\N
+('ab')
+Nullable(Tuple(LowCardinality(FixedString(2)))), Nullable(size = 1, Tuple(size = 1, LowCardinality(size = 1, UInt8(size = 1), Unique(size = 3, FixedString(size = 3)))), UInt8(size = 1))
+\N
+\N
+\N
+\N
+(NULL)
+('a')	('a')
+\N	\N
+\N
+\N
+('a')	('a')	('a')
+\N	\N	\N
+\N	\N
+('a')	('a')
+\N	\N
+\N	\N
+('a')	('a')
+\N	\N
