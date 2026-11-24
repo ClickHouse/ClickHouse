@@ -54,8 +54,9 @@
     <query>SELECT count() FROM test_lc_shared WHERE x % 1000 = 7 AND lower(lc) LIKE '%42%' SETTINGS use_query_condition_cache = 0</query>
     <!-- 1 KB values on blocks with 17 times fewer rows than the dictionary: a cheap function must keep the whole-dictionary path. -->
     <query>SELECT countIf(empty(lc)) FROM test_lc_long SETTINGS max_block_size = 470</query>
-    <!-- The known loss: `length` of LowCardinality(FixedString) reads no value, but blocks with 17 times fewer rows than the dictionary are compacted. -->
+    <!-- `length` of LowCardinality(FixedString) and `IN` an empty set do not read the values: they must keep the whole-dictionary path on blocks with 17 times fewer rows than the dictionary. -->
     <query>SELECT sum(length(lc)) FROM test_lc_fixed SETTINGS max_block_size = 470</query>
+    <query>SELECT countIf(lc IN (SELECT lc FROM test_lc_fixed WHERE x > 1000000000)) FROM test_lc_fixed SETTINGS max_block_size = 470</query>
 
     <drop_query>DROP TABLE IF EXISTS test_lc</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_agg</drop_query>

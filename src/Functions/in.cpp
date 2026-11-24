@@ -128,6 +128,17 @@ public:
         return result_type->createColumnConst(1, static_cast<UInt8>(negative));
     }
 
+    [[nodiscard]] bool isResultIndependentOfArgumentValues(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (ignore_set || arguments.size() != 2 || isNullableOrLowCardinalityNullable(arguments[0].type))
+            return false;
+
+        const ColumnSet * column_set = tryGetColumnSet(arguments[1].column);
+        FutureSetPtr future_set = column_set ? column_set->getData() : nullptr;
+        SetPtr set = future_set ? future_set->get() : nullptr;
+        return set && set->getTotalRowCount() == 0 && canReportEmptySetAsConstant(*future_set);
+    }
+
     [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, true, input_rows_count);
