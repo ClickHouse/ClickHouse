@@ -99,6 +99,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 
 #include <algorithm>
@@ -8096,6 +8097,39 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         writeStringBinary(distributed_read_param_name, ctx.out);
 }
 
+/// The filter DAGs of a shipped read (the row-level filter and `PREWHERE`) are deserialized with the input types of the
+/// plan. A column that only a filter reads never reaches the output header of the read, so a change of its type is not
+/// caught by the header check, and the stale actions would later fail on the column of the new type. Compare every input
+/// that names a column of the table with the type the table gives now. Other inputs (the columns that the row-level
+/// filter computes for `PREWHERE`) are skipped.
+static void checkFilterInputsMatchTable(
+    const ActionsDAG & actions, const NameSet & computed_names, const StorageSnapshot & storage_snapshot, const StorageID & table_id)
+{
+    const auto & columns = storage_snapshot.metadata->getColumns();
+    const auto & virtuals = storage_snapshot.metadata->virtuals;
+
+    for (const auto * input : actions.getInputs())
+    {
+        if (computed_names.contains(input->result_name))
+            continue;
+
+        DataTypePtr table_type;
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, input->result_name))
+            table_type = column->type;
+        else if (auto virtual_column = virtuals.tryGet(input->result_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
+            table_type = virtual_column->type;
+        else
+            continue;
+
+        if (!input->result_type || !input->result_type->equals(*table_type))
+            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "The structure of table {} changed after the query plan was built. The plan filters by column {} of type {}, "
+                "the table gives {}",
+                table_id.getNameForLogs(), backQuote(input->result_name),
+                input->result_type ? input->result_type->getName() : "<none>", table_type->getName());
+    }
+}
+
 std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
 {
     String database_name;
@@ -8217,6 +8251,19 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     const auto metadata_snapshot = table.getInMemoryMetadataPtr(ctx.context, false);
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+
+    /// Same reason as for the header check below, for the columns that only the filters read.
+    if (query_info.row_level_filter)
+        checkFilterInputsMatchTable(query_info.row_level_filter->actions, {}, *storage_snapshot, table_id);
+    if (query_info.prewhere_info)
+    {
+        NameSet computed_by_row_level_filter;
+        if (query_info.row_level_filter)
+            for (const auto * output : query_info.row_level_filter->actions.getOutputs())
+                if (output->type != ActionsDAG::ActionType::INPUT)
+                    computed_by_row_level_filter.insert(output->result_name);
+        checkFilterInputsMatchTable(query_info.prewhere_info->prewhere_actions, computed_by_row_level_filter, *storage_snapshot, table_id);
+    }
 
     auto step = executor.readFromParts(
         snapshot_data.parts,
