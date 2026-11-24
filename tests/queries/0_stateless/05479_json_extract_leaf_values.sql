@@ -100,8 +100,6 @@ SELECT JSONExtractLeafValues(s, '', materialize('skip')) FROM (SELECT '{}' AS s)
 SELECT JSONExtractLeafValues(s, CAST(NULL AS Nullable(String))) FROM (SELECT '{}' AS s); -- { serverError ILLEGAL_COLUMN }
 SELECT JSONExtractLeafValues(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT JSONExtractLeafValues(toFixedString('{"a": 1}', 8)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT JSONExtractLeafPathsAndValues('{"a": 1}'::JSON); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT JSONExtractLeafValues('{"a": 1}'::JSON, '.*'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- text index over JSONExtractLeafValues with a skip regex';
 DROP TABLE IF EXISTS tab_leaf;

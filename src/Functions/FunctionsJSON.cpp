@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/assert_cast.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 
@@ -21,6 +22,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnVariant.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -30,6 +34,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
@@ -44,8 +51,10 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include "config.h"
 
 
@@ -65,6 +74,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_COMPILE_REGEXP;
+extern const int INCORRECT_DATA;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -94,6 +104,16 @@ concept Preparable = requires (T t)
         std::declval<const ColumnsWithTypeAndName&>(),
         std::declval<const DataTypePtr&>()
     );
+};
+
+template <typename T>
+concept ExecutableForObjectColumn = requires (T t)
+{
+    t.executeForObjectColumn(
+        std::declval<const ColumnWithTypeAndName &>(),
+        std::declval<const DataTypePtr &>(),
+        size_t{0},
+        std::declval<const FormatSettings &>());
 };
 
 /// Functions to parse JSONs and extract values from it.
@@ -126,9 +146,20 @@ public:
                                 "The first argument of function {} should be a string containing JSON or a JSON object, illegal type: "
                                 "{}", String(Name::name), first_column.type->getName());
 
-            /// For JSON/Object type input: use subcolumn extraction (constant string keys only).
+            /// For JSON/Object type input: use the Impl's own traversal of the column if it has one,
+            /// otherwise subcolumn extraction (constant string keys only).
             if (is_object_input)
-                return runForObjectColumn<Name, Impl>(arguments, result_type, input_rows_count, format_settings);
+            {
+                if constexpr (ExecutableForObjectColumn<Impl<JSONParser>>)
+                {
+                    Impl<JSONParser> impl;
+                    if constexpr (Preparable<Impl<JSONParser>>)
+                        impl.prepare(Name::name, arguments, result_type);
+                    return impl.executeForObjectColumn(first_column, result_type, input_rows_count, format_settings);
+                }
+                else
+                    return runForObjectColumn<Name, Impl>(arguments, result_type, input_rows_count, format_settings);
+            }
 
             /// String input: parse JSON and extract values.
             const ColumnPtr & arg_json = first_column.column;
@@ -1566,18 +1597,10 @@ public:
                 function_name,
                 arguments.size());
 
-        if (isObject(arguments[0].type))
+        if (!isString(removeLowCardinality(arguments[0].type)) && !isObject(arguments[0].type) && !isNothing(arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function {} should be a string containing JSON, illegal type: {}. "
-                "Use the function JSONAllValues for the JSON type",
-                function_name,
-                arguments[0].type->getName());
-
-        if (!isString(removeLowCardinality(arguments[0].type)) && !isNothing(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function {} should be a String containing JSON, illegal type: {}",
+                "The first argument of function {} should be a String containing JSON or a JSON object, illegal type: {}",
                 function_name,
                 arguments[0].type->getName());
 
@@ -1662,6 +1685,32 @@ public:
         return true;
     }
 
+    /// Reads the typed paths, the dynamic paths and the shared data of a `JSON` column directly.
+    /// The result is the same as for the column cast to `String` with the default settings.
+    ColumnPtr executeForObjectColumn(
+        const ColumnWithTypeAndName & argument, const DataTypePtr & result_type, size_t input_rows_count, const FormatSettings & format_settings)
+    {
+        ColumnPtr column = argument.column->convertToFullColumnIfConst();
+        const auto * column_object = typeid_cast<const ColumnObject *>(column.get());
+        if (!column_object)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}", column->getName());
+
+        auto result = result_type->createColumn();
+        auto & col_arr = assert_cast<ColumnArray &>(*result);
+        auto & offsets = col_arr.getOffsets();
+        offsets.reserve(input_rows_count);
+
+        ObjectViews views;
+        const auto & view = getObjectView(*column_object, *argument.type, views);
+        String path;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            walkObjectRow(view, row, path, false, col_arr.getData(), views, format_settings);
+            offsets.push_back(col_arr.getData().size());
+        }
+        return result;
+    }
+
 private:
     enum class ArraysMode
     {
@@ -1669,6 +1718,348 @@ private:
         String,
         Elements,
     };
+
+    /// A typed or dynamic path of a `ColumnObject`.
+    struct ObjectEntry
+    {
+        std::string_view path;
+        const IColumn * column = nullptr;
+        DataTypePtr type;
+        bool is_dynamic = false;
+    };
+
+    /// The paths of a `ColumnObject` in sorted order, which is the order of its text form.
+    struct ObjectView
+    {
+        VectorWithMemoryTracking<ObjectEntry> entries;
+        const ColumnString * shared_data_paths = nullptr;
+        const ColumnString * shared_data_values = nullptr;
+        const ColumnArray::Offsets * shared_data_offsets = nullptr;
+    };
+
+    using ObjectViews = UnorderedMapWithMemoryTracking<const ColumnObject *, ObjectView>;
+
+    static const ObjectView & getObjectView(const ColumnObject & column, const IDataType & type, ObjectViews & views)
+    {
+        auto [it, inserted] = views.try_emplace(&column);
+        auto & view = it->second;
+        if (!inserted)
+            return view;
+
+        const auto & typed_path_types = assert_cast<const DataTypeObject &>(type).getTypedPaths();
+        DataTypePtr dynamic_type = column.getDynamicType();
+        view.entries.reserve(column.getTypedPaths().size() + column.getDynamicPaths().size());
+        for (const auto & [path, path_column] : column.getTypedPaths())
+            view.entries.push_back({path, path_column.get(), typed_path_types.at(path), false});
+        for (const auto & [path, path_column] : column.getDynamicPaths())
+            view.entries.push_back({path, path_column.get(), dynamic_type, true});
+        std::sort(view.entries.begin(), view.entries.end(), [](const auto & lhs, const auto & rhs) { return lhs.path < rhs.path; });
+
+        std::tie(view.shared_data_paths, view.shared_data_values) = column.getSharedDataPathsAndValues();
+        view.shared_data_offsets = &column.getSharedDataOffsets();
+        return view;
+    }
+
+    /// The text form splits a stored path `a.b.c` into the nested objects `a` and `a.b`, so the walk visits them
+    /// first, as `walkValue` does. Returns false if `skip_regex` matches one of them.
+    bool appendStoredPath(std::string_view stored_path, String & path, bool has_parent) const
+    {
+        if (!build_paths)
+            return true;
+
+        if (has_parent)
+            path += '.';
+
+        size_t start = 0;
+        if (skip_matcher)
+        {
+            for (size_t dot = stored_path.find('.'); dot != std::string_view::npos; dot = stored_path.find('.', start))
+            {
+                path.append(stored_path.substr(start, dot - start));
+                if (isSkipped(path))
+                    return false;
+                path += '.';
+                start = dot + 1;
+            }
+        }
+        path.append(stored_path.substr(start));
+        return true;
+    }
+
+    void walkObjectRow(
+        const ObjectView & view, size_t row, String & path, bool has_parent, IColumn & dest, ObjectViews & views, const FormatSettings & format_settings)
+    {
+        checkStackSize();
+
+        auto walk_entry = [&](const ObjectEntry & entry)
+        {
+            /// A NULL dynamic path is absent.
+            if (entry.is_dynamic && entry.column->isNullAt(row))
+                return;
+
+            size_t old_path_size = path.size();
+            if (appendStoredPath(entry.path, path, has_parent))
+                walkColumnValue(*entry.column, row, entry.type, path, dest, views, format_settings);
+            path.resize(old_path_size);
+        };
+
+        /// Typed and dynamic paths never occur in the shared data.
+        size_t entry_index = 0;
+        size_t shared_data_end = (*view.shared_data_offsets)[row];
+        for (size_t i = (*view.shared_data_offsets)[static_cast<ssize_t>(row) - 1]; i < shared_data_end; ++i)
+        {
+            std::string_view shared_data_path = view.shared_data_paths->getDataAt(i);
+            for (; entry_index < view.entries.size() && view.entries[entry_index].path < shared_data_path; ++entry_index)
+                walk_entry(view.entries[entry_index]);
+
+            size_t old_path_size = path.size();
+            if (appendStoredPath(shared_data_path, path, has_parent) && !isSkipped(path))
+                walkEncodedValue(view.shared_data_values->getDataAt(i), path, dest, views, format_settings);
+            path.resize(old_path_size);
+        }
+
+        for (; entry_index < view.entries.size(); ++entry_index)
+            walk_entry(view.entries[entry_index]);
+    }
+
+    void walkColumnValue(
+        const IColumn & column, size_t row, const DataTypePtr & type, String & path, IColumn & dest, ObjectViews & views, const FormatSettings & format_settings)
+    {
+        if (column.isNullAt(row) || isSkipped(path))
+            return;
+
+        walkNotNullValue(column, row, type, path, dest, views, format_settings);
+    }
+
+    /// Walks a value, which is not NULL and whose path is not skipped.
+    void walkNotNullValue(
+        const IColumn & column, size_t row, const DataTypePtr & type, String & path, IColumn & dest, ObjectViews & views, const FormatSettings & format_settings)
+    {
+        checkStackSize();
+
+        auto walk_nested = [&](const IColumn & nested_column, size_t nested_row, const DataTypePtr & nested_type)
+        {
+            if (!nested_column.isNullAt(nested_row))
+                walkNotNullValue(nested_column, nested_row, nested_type, path, dest, views, format_settings);
+        };
+
+        switch (type->getTypeId())
+        {
+            case TypeIndex::Nullable:
+            {
+                walk_nested(
+                    assert_cast<const ColumnNullable &>(column).getNestedColumn(),
+                    row,
+                    assert_cast<const DataTypeNullable &>(*type).getNestedType());
+                return;
+            }
+            case TypeIndex::LowCardinality:
+            {
+                const auto & column_lc = assert_cast<const ColumnLowCardinality &>(column);
+                walk_nested(
+                    *column_lc.getDictionary().getNestedNotNullableColumn(),
+                    column_lc.getIndexes().getUInt(row),
+                    removeNullable(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType()));
+                return;
+            }
+            case TypeIndex::Variant:
+            {
+                const auto & column_variant = assert_cast<const ColumnVariant &>(column);
+                auto discriminator = column_variant.globalDiscriminatorAt(row);
+                walk_nested(
+                    column_variant.getVariantByGlobalDiscriminator(discriminator),
+                    column_variant.offsetAt(row),
+                    assert_cast<const DataTypeVariant &>(*type).getVariants()[discriminator]);
+                return;
+            }
+            case TypeIndex::Dynamic:
+            {
+                const auto & column_dynamic = assert_cast<const ColumnDynamic &>(column);
+                const auto & column_variant = column_dynamic.getVariantColumn();
+                auto discriminator = column_variant.globalDiscriminatorAt(row);
+                size_t offset = column_variant.offsetAt(row);
+                if (discriminator == column_dynamic.getSharedVariantDiscriminator())
+                    walkEncodedValue(column_dynamic.getSharedVariant().getDataAt(offset), path, dest, views, format_settings);
+                else
+                    walk_nested(
+                        column_variant.getVariantByGlobalDiscriminator(discriminator),
+                        offset,
+                        assert_cast<const DataTypeVariant &>(*column_dynamic.getVariantInfo().variant_type).getVariants()[discriminator]);
+                return;
+            }
+            case TypeIndex::Object:
+            {
+                const auto & view = getObjectView(assert_cast<const ColumnObject &>(column), *type, views);
+                walkObjectRow(view, row, path, true, dest, views, format_settings);
+                return;
+            }
+            case TypeIndex::Array:
+            {
+                if (arrays == ArraysMode::Skip)
+                    return;
+
+                if (arrays == ArraysMode::String)
+                {
+                    walkSerializedValue(column, row, *type, path, dest, format_settings);
+                    return;
+                }
+
+                const auto & column_array = assert_cast<const ColumnArray &>(column);
+                const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+                size_t begin = column_array.getOffsets()[static_cast<ssize_t>(row) - 1];
+                size_t end = column_array.getOffsets()[row];
+                size_t old_path_size = path.size();
+                for (size_t i = begin; i < end; ++i)
+                {
+                    if (build_paths)
+                    {
+                        path += '[';
+                        path += std::to_string(i - begin);
+                        path += ']';
+                    }
+                    walkColumnValue(column_array.getData(), i, nested_type, path, dest, views, format_settings);
+                    path.resize(old_path_size);
+                }
+                return;
+            }
+            case TypeIndex::String:
+            case TypeIndex::FixedString:
+            {
+                auto value = column.getDataAt(row);
+                insertLeafPath(dest, path).insertData(value.data(), value.size());
+                return;
+            }
+            case TypeIndex::UInt8:
+            {
+                if (isBool(type))
+                {
+                    insertTextLeaf(dest, path, [&](WriteBuffer & buf) { writeCString(column.getBool(row) ? "true" : "false", buf); });
+                    return;
+                }
+                [[fallthrough]];
+            }
+            case TypeIndex::UInt16:
+            case TypeIndex::UInt32:
+            case TypeIndex::UInt64:
+            {
+                insertTextLeaf(dest, path, [&](WriteBuffer & buf) { writeIntText(column.getUInt(row), buf); });
+                return;
+            }
+            case TypeIndex::Int8:
+            case TypeIndex::Int16:
+            case TypeIndex::Int32:
+            case TypeIndex::Int64:
+            {
+                insertTextLeaf(dest, path, [&](WriteBuffer & buf) { writeIntText(column.getInt(row), buf); });
+                return;
+            }
+            case TypeIndex::Float32:
+            {
+                insertFloatLeaf(assert_cast<const ColumnFloat32 &>(column).getData()[row], path, dest);
+                return;
+            }
+            case TypeIndex::Float64:
+            {
+                insertFloatLeaf(assert_cast<const ColumnFloat64 &>(column).getData()[row], path, dest);
+                return;
+            }
+            case TypeIndex::Date:
+            case TypeIndex::Date32:
+            case TypeIndex::DateTime:
+            case TypeIndex::DateTime64:
+            {
+                /// The text form is this text in quotes.
+                auto serialization = type->getDefaultSerialization();
+                insertTextLeaf(dest, path, [&](WriteBuffer & buf) { serialization->serializeText(column, row, buf, getFixedFormatSettings()); });
+                return;
+            }
+            default:
+            {
+                walkSerializedValue(column, row, *type, path, dest, format_settings);
+                return;
+            }
+        }
+    }
+
+    template <typename T>
+    static void insertFloatLeaf(T value, const String & path, IColumn & dest)
+    {
+        /// Not finite values are `null` in the text form, which is not a leaf.
+        if (!std::isfinite(value))
+            return;
+
+        /// `-0` is parsed back as the integer 0.
+        if (value == 0)
+            value = 0;
+
+        insertTextLeaf(dest, path, [&](WriteBuffer & buf) { writeFloatText(value, buf, getFixedFormatSettings()); });
+    }
+
+    /// A value from the shared data or from the shared variant of `Dynamic`: the binary encoded type and value.
+    void walkEncodedValue(std::string_view value_data, String & path, IColumn & dest, ObjectViews & views, const FormatSettings & format_settings)
+    {
+        ReadBufferFromMemory buf(value_data);
+        char type_index = 0;
+        if (!buf.peek(type_index))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared data value of JSON: no type index found");
+
+        const auto & cache = getSimpleDataTypesCache();
+        auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
+        if (cache.hasElement(binary_type_index))
+        {
+            ++buf.position();
+            const auto & element = cache.getElement(binary_type_index);
+            if (isNothing(element.type))
+                return;
+
+            /// A value of a simple type contains no encoded values, so its column is not in use when it is reused.
+            auto & column = simple_type_columns[static_cast<UInt8>(type_index)];
+            if (!column)
+                column = element.type->createColumn();
+            element.serialization->deserializeBinary(*column, buf, getFixedFormatSettings());
+            size_t row = column->size() - 1;
+            if (!column->isNullAt(row))
+                walkNotNullValue(*column, row, element.type, path, dest, views, format_settings);
+            column->popBack(1);
+        }
+        else
+        {
+            auto type = decodeDataType(buf);
+            if (isNothing(type))
+                return;
+
+            auto column = type->createColumn();
+            type->getDefaultSerialization()->deserializeBinary(*column, buf, getFixedFormatSettings());
+            ObjectViews value_views;
+            if (!column->isNullAt(0))
+                walkNotNullValue(*column, 0, type, path, dest, value_views, format_settings);
+        }
+    }
+
+    /// Any other value is walked through its text form, which gives the same result as for the `String` input by construction.
+    void walkSerializedValue(const IColumn & column, size_t row, const IDataType & type, String & path, IColumn & dest, const FormatSettings & format_settings)
+    {
+        {
+            WriteBufferFromString buf(serialized_value);
+            type.getDefaultSerialization()->serializeTextJSON(column, row, buf, getFixedFormatSettings());
+        }
+
+        Element element;
+        if (value_parser.parse(serialized_value, element))
+            walkValue(element, path, dest, format_settings);
+    }
+
+    /// The default settings of the text form, which do not depend on the session, see `ignores_allow_simdjson`.
+    static const FormatSettings & getFixedFormatSettings()
+    {
+        static const FormatSettings settings = []
+        {
+            FormatSettings result;
+            result.json.quote_denormals = false;
+            return result;
+        }();
+        return settings;
+    }
 
     static String getConstantStringOption(const char * function_name, const ColumnWithTypeAndName & argument)
     {
@@ -1751,42 +2142,53 @@ private:
 
     static void insertLeaf(IColumn & dest, const String & path, const Element & value, const FormatSettings & format_settings)
     {
-        ColumnString * col_path = nullptr;
-        ColumnString * col_value = nullptr;
-        if constexpr (with_paths)
-        {
-            auto & col_tuple = assert_cast<ColumnTuple &>(dest);
-            col_path = &assert_cast<ColumnString &>(col_tuple.getColumn(0));
-            col_value = &assert_cast<ColumnString &>(col_tuple.getColumn(1));
-        }
-        else
-            col_value = &assert_cast<ColumnString &>(dest);
-
-        if constexpr (with_paths)
-            col_path->insertData(path.data(), path.size());
-
         if (value.isString())
         {
             std::string_view str = value.getString();
-            col_value->insertData(str.data(), str.size());
+            insertLeafPath(dest, path).insertData(str.data(), str.size());
         }
         else
         {
             /// No depth limit, so the result does not depend on `input_format_json_max_depth`.
             /// The parse limit of simdjson (nesting below 1024) bounds the recursion; `checkStackSize` guards RapidJSON.
-            auto & chars = col_value->getChars();
-            {
-                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-                jsonElementToString<JSONParser>(value, buf, format_settings, /* max_depth = */ 0);
-            }
-            col_value->getOffsets().push_back(chars.size());
+            insertTextLeaf(dest, path, [&](WriteBuffer & buf) { jsonElementToString<JSONParser>(value, buf, format_settings, /* max_depth = */ 0); });
         }
+    }
+
+    /// Inserts the path of a leaf, if the result has paths, and returns the column for its value.
+    static ColumnString & insertLeafPath(IColumn & dest, const String & path)
+    {
+        if constexpr (with_paths)
+        {
+            auto & col_tuple = assert_cast<ColumnTuple &>(dest);
+            assert_cast<ColumnString &>(col_tuple.getColumn(0)).insertData(path.data(), path.size());
+            return assert_cast<ColumnString &>(col_tuple.getColumn(1));
+        }
+        else
+            return assert_cast<ColumnString &>(dest);
+    }
+
+    template <typename WriteValue>
+    static void insertTextLeaf(IColumn & dest, const String & path, WriteValue && write_value)
+    {
+        auto & col_value = insertLeafPath(dest, path);
+        auto & chars = col_value.getChars();
+        {
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            write_value(buf);
+        }
+        col_value.getOffsets().push_back(chars.size());
     }
 
     std::unique_ptr<re2::RE2> skip_matcher;
     /// The path is needed only for the result and for `skip_regex`; building it costs a string append per member.
     bool build_paths = with_paths;
     ArraysMode arrays = ArraysMode::Elements;
+
+    /// For the `JSON` input only.
+    JSONParser value_parser;
+    String serialized_value;
+    std::array<MutableColumnPtr, 256> simple_type_columns;
 };
 
 template <typename JSONParser>
@@ -2581,11 +2983,14 @@ The result does not depend on the settings, such as `allow_simdjson`, `input_for
 So an index over the function gives the same rows as a full scan.
 </Note>
 
-Use [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) for columns of the `JSON` data type.
+For a value of the [`JSON`](/reference/data-types/newjson) data type, the function reads its typed paths, dynamic paths and shared data directly.
+The result is the same as for the value cast to `String`.
+So the paths are the paths of the `JSON` type, in sorted order.
+A `DateTime` value without a time zone in its type is written in the session time zone, as in the cast to `String`.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractLeafValues(json[, skip_regex[, arrays]])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a value of the `JSON` data type.", {"String", "JSON"}},
             {"skip_regex", "Optional. Constant regular expression ([re2](https://github.com/google/re2/wiki/Syntax) syntax). Paths that match are skipped together with everything below them. An empty string (default) skips nothing.", {"const String"}},
             {"arrays", "Optional. Constant, case-sensitive. How arrays are handled: `'skip'` produces nothing for arrays, `'string'` returns each array as one value in compact JSON, `'elements'` (default) walks the elements, and the element paths are `a[0]`, `a[1]` and so on.", {"const String"}}
         };
@@ -2638,7 +3043,7 @@ SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
     {
         FunctionDocumentation::Description description = R"(
 The same as [`JSONExtractLeafValues`](#JSONExtractLeafValues), but returns a tuple `(path, value)` for every scalar leaf.
-See the description of `JSONExtractLeafValues` for the rules of the paths and the arguments `skip_regex` and `arrays`.
+See the description of `JSONExtractLeafValues` for the rules of the paths, the arguments `skip_regex` and `arrays`, and the `JSON` data type.
 
 <Note>
 The result does not depend on the settings, such as `allow_simdjson`, `input_format_json_max_depth` and `json_type_escape_dots_in_keys`.
@@ -2647,7 +3052,7 @@ So an index over the function gives the same rows as a full scan.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a value of the `JSON` data type.", {"String", "JSON"}},
             {"skip_regex", "Optional. Constant regular expression ([re2](https://github.com/google/re2/wiki/Syntax) syntax). Paths that match are skipped together with everything below them. An empty string (default) skips nothing.", {"const String"}},
             {"arrays", "Optional. Constant, case-sensitive. How arrays are handled: `'skip'`, `'string'` or `'elements'` (default).", {"const String"}}
         };
