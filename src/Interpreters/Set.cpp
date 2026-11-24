@@ -383,6 +383,8 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
         {
             if ((*null_map)[i])
             {
+                if (i == 0)
+                    has_input_rows.store(true);
                 if constexpr (build_filter)
                 {
                     (*out_filter)[i] = false;
@@ -392,6 +394,9 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
         }
 
         auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+        if (i == 0)
+            has_input_rows.store(true);
 
         /// Publish the null marker only after its key was accepted. A later row
         /// can throw while the already inserted keys remain visible.
@@ -546,9 +551,6 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
     if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
-    if (!columns.at(0)->empty())
-        has_input_rows.store(true);
-
     holder.key_columns.reserve(keys_size);
     holder.materialized_columns.reserve(keys_size);
 
@@ -577,6 +579,7 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
         if (!keys->empty())
         {
             disk_set_builder->add(std::move(keys));
+            has_input_rows.store(true);
             if (transform_null_in && keys_size == 1 && !contains_null_row.load())
                 for (size_t row = 0; row < rows; ++row)
                     if (holder.key_columns[0]->isNullAt(row))
@@ -585,6 +588,8 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
                         break;
                     }
         }
+        else if (rows != 0)
+            has_input_rows.store(true);
         return true;
     }
 

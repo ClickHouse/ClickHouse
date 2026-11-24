@@ -151,4 +151,44 @@ TEST(Set, NullMarkerFollowsSuccessfulKeyInsertion)
     auto membership = set.execute({ColumnWithTypeAndName(std::move(missing), type, "x")}, false);
     ASSERT_EQ(membership->size(), 1);
     EXPECT_FALSE(membership->getBool(0));
+
+    Set empty_set(SizeLimits{}, /*max_elements_to_fill_=*/ 0, /*transform_null_in_=*/ true);
+    empty_set.setHeader({ColumnWithTypeAndName(type->createColumn(), type, "x")});
+    SetKeyColumns empty_holder;
+    empty_holder.key_columns.reserve(1);
+    empty_holder.materialized_columns.reserve(1);
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+    CurrentThread::get().untracked_memory_limit = 0;
+    CurrentThread::flushUntrackedMemory();
+    total_memory_tracker.resetCounters();
+    thread_tracker.resetCounters();
+    total_memory_tracker.setHardLimit(1);
+    thread_tracker.setHardLimit(1);
+
+    bool empty_insert_failed = false;
+    try
+    {
+        empty_set.insertFromColumns(incoming_columns, empty_holder);
+    }
+    catch (const DB::Exception & e)
+    {
+        empty_insert_failed = e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED;
+    }
+
+    total_memory_tracker.setHardLimit(saved_total_hard_limit);
+    thread_tracker.setHardLimit(saved_thread_hard_limit);
+    CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_alloc_to_throw);
+
+    ASSERT_TRUE(empty_insert_failed);
+    EXPECT_TRUE(empty_set.sourceIsEmpty());
+    EXPECT_FALSE(empty_set.hasNull());
+    empty_set.finishInsert();
+
+    auto null_probe = type->createColumn();
+    null_probe->insert(Field{});
+    auto empty_membership = empty_set.execute({ColumnWithTypeAndName(std::move(null_probe), type, "x")}, false);
+    ASSERT_EQ(empty_membership->size(), 1);
+    EXPECT_FALSE(empty_membership->getBool(0));
 }

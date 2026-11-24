@@ -492,8 +492,12 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         size_t size = values->size();
 
         for (size_t row = 0; row < size; ++row)
+        {
+            if (values->isNullAt(row))
+                continue;
             /// Only inserted if the key doesn't exists already
             res.insert({std::string{values->getDataAt(row)}, ZkPathType::Exact});
+        }
     }
     else if (function_name == "equals")
     {

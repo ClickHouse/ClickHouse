@@ -70,6 +70,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_insert_select_as_async_insert;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
@@ -647,7 +648,8 @@ void executeQuery(
         const auto & shard_info = cluster->getShardsInfo()[i];
 
         auto query_for_shard = query_for_all_shards;
-        if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
+        if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in]
+            && !settings[Setting::in_null_as_unknown] && shards > 1 &&
             /// TODO: support composite sharding key
             sharding_key_expr->getRequiredColumns().size() == 1)
         {

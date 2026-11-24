@@ -303,6 +303,36 @@ namespace
     return false;
 }
 
+[[nodiscard]] bool hasNumericTemporalPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasNumericTemporalPair(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasNumericTemporalPair(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasNumericTemporalPair(left_map->getKeyType(), right_map->getKeyType())
+                || hasNumericTemporalPair(left_map->getValueType(), right_map->getValueType());
+    }
+    const bool left_temporal = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left);
+    const bool right_temporal = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right);
+    return (isNumber(left) && right_temporal) || (left_temporal && isNumber(right));
+}
+
 [[nodiscard]] bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -1009,6 +1039,9 @@ public:
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
             const bool mixed_nested_calendar_types = (isArray(left_type) || isMap(left_type) || isTuple(left_type))
                 && hasNestedCalendarDateInComparison(left_type, key_type);
+            const bool mixed_numeric_temporal_types = hasNumericTemporalPair(left_type, key_type);
+            const bool mixed_enum_numeric_types = (isEnum(left_type) && isNumber(key_type))
+                || (isNumber(left_type) && isEnum(key_type));
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !left_type->equals(*key_type);
             /// A set containing only `NULL` has no key whose type-sensitive hash
@@ -1027,7 +1060,8 @@ public:
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
                     left_arg.type->getName(), set_types[0]->getName(), getName());
-            if ((mixed_temporal_types || mixed_nested_calendar_types) && !only_null_key)
+            if ((mixed_temporal_types || mixed_nested_calendar_types || mixed_numeric_temporal_types || mixed_enum_numeric_types)
+                && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",

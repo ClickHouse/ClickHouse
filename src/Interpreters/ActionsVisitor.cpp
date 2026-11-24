@@ -593,6 +593,7 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
         const auto right_bare = removeNullable(removeLowCardinality(right_nested));
         return (isNumber(left_bare) && isNumber(right_bare)
                 && !left_bare->equals(*right_bare))
+            || (isFloat(left_bare) && isFloat(right_bare) && !left_nested->equals(*right_nested))
             || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare) && isNumber(right_bare))
             || (isNumber(left_bare) && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right_bare))
             || needsExactCompoundNumericInComparison(left_nested, right_nested);

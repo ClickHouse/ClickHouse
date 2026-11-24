@@ -1531,6 +1531,7 @@ static bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type,
         const bool temporal_right = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right_bare);
         return (isNumber(left_bare) && isNumber(right_bare)
                 && !left_bare->equals(*right_bare))
+            || (isFloat(left_bare) && isFloat(right_bare) && !left_nested->equals(*right_nested))
             || (temporal_left && isNumber(right_bare))
             || (isNumber(left_bare) && temporal_right)
             || needsExactCompoundNumericInComparison(left_nested, right_nested);
