@@ -62,7 +62,7 @@ String makeRemotePath(const String & path)
         }
     }
 
-    return fmt::format("/{}{}{}", directory, escapeForFileName(String(stem)), extension);
+    return fmt::format("/{}{}{}", directory, escapeForFileName(stem), extension);
 }
 
 /// The metadata of a web disk is a namespace of `/`-separated logical paths, not of local filesystem paths,

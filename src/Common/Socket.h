@@ -48,7 +48,7 @@ struct Socket
     Socket() = default;
     explicit Socket(Handle handle_) : handle(handle_) { }
 
-    bool isValid() const
+    [[nodiscard]] bool isValid() const
     {
 #if defined(OS_WINDOWS)
         return handle != INVALID;
@@ -75,7 +75,7 @@ struct Socket
     /// Returns the subset of `events` (plus `Error`) that is ready, or `None` on timeout.
     /// Retries on interruption, so a signal does not shorten the wait. Throws `NetException` if
     /// the socket cannot be waited on at all.
-    int poll(int events, Int64 timeout_microseconds) const;
+    [[nodiscard]] int poll(int events, Int64 timeout_microseconds) const;
 
     /// Reads up to `size` bytes without consuming them, and without ever blocking - whether or
     /// not the socket is in non-blocking mode, and without changing that mode, since the socket
@@ -106,7 +106,7 @@ struct Socket
     /// here, with this note attached, instead of appearing as a bare cast at each call site.
     /// It should disappear when `AsyncCallback` takes a `Socket`, which has to wait until those
     /// consumers can be compiled for Windows at all.
-    int toDescriptor() const
+    [[nodiscard]] int toDescriptor() const
     {
 #if defined(OS_WINDOWS)
         return static_cast<int>(static_cast<unsigned int>(handle));
