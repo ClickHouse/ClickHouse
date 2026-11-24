@@ -35,7 +35,7 @@ void INATSProducer::finishImpl()
     {
         if (connection)
         {
-            if (!stopped_by_shutdown && connection->isConnected())
+            if (!shutdown_called && connection->isConnected())
                 natsConnection_Flush(connection->getConnection());
 
             connection->disconnect();
@@ -46,7 +46,7 @@ void INATSProducer::finishImpl()
         tryLogCurrentException(log);
     }
 
-    if (stopped_by_shutdown)
+    if (shutdown_called)
         throw Exception(ErrorCodes::ABORTED, "Table is detached");
 }
 
@@ -109,21 +109,15 @@ void INATSProducer::startProducingTaskLoop()
 
     try
     {
-        while (!payloads.isFinishedAndEmpty())
+        while (!payloads.isFinishedAndEmpty() && !shutdown_called)
         {
-            if (shutdown_called)
-            {
-                stopped_by_shutdown = true;
-                break;
-            }
-
             if (!connection->isConnected())
                 std::this_thread::sleep_for(std::chrono::milliseconds(connection->getReconnectWait()));
             else
                 publish();
         }
 
-        if (stopped_by_shutdown)
+        if (shutdown_called)
         {
             /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
             payloads.finish();
