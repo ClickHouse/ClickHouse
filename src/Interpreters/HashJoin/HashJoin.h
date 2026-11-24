@@ -32,6 +32,7 @@
 #include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/PartitionedFixedHashTable.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -439,15 +440,20 @@ public:
             HashMapTable,
             BITS_FOR_BUCKET_SERIAL>>;
 
+    /// A bucket starts with 2 cells and gets its initial size at the first insert of its slot, see `BuildSlots::reserveOnFirstInsert`.
+    using JoinTwoLevelHashTableGrower = TwoLevelHashTableGrower<1>;
+
     template <typename Key, typename Mapped, typename Hash>
-    using JoinTwoLevelHashMap
-        = std::conditional_t<std::is_same_v<Mapped, VoidMapped>, TwoLevelHashSet<Key, Hash>, TwoLevelHashMap<Key, Mapped, Hash>>;
+    using JoinTwoLevelHashMap = std::conditional_t<
+        std::is_same_v<Mapped, VoidMapped>,
+        TwoLevelHashSet<Key, Hash, JoinTwoLevelHashTableGrower>,
+        TwoLevelHashMap<Key, Mapped, Hash, JoinTwoLevelHashTableGrower>>;
 
     template <typename Key, typename Mapped>
     using JoinTwoLevelHashMapWithSavedHash = std::conditional_t<
         std::is_same_v<Mapped, VoidMapped>,
-        TwoLevelHashSetWithSavedHash<Key>,
-        TwoLevelHashMapWithSavedHash<Key, Mapped>>;
+        TwoLevelHashSetWithSavedHash<Key, DefaultHash<Key>, JoinTwoLevelHashTableGrower>,
+        TwoLevelHashMapWithSavedHash<Key, Mapped, DefaultHash<Key>, JoinTwoLevelHashTableGrower>>;
 
     template <typename Key, typename Mapped>
     using JoinFixedHashMap = std::conditional_t<
