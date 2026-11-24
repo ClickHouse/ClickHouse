@@ -81,15 +81,13 @@ public:
     AzureIteratorAsync(
         const std::string & path_prefix,
         std::shared_ptr<const AzureBlobStorage::ContainerClient> client_,
-        size_t max_list_size,
-        bool reads_explicit_version_)
+        size_t max_list_size)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
             CurrentMetrics::ObjectStorageAzureThreadsScheduled,
             ThreadName::AZURE_LIST_POOL)
         , client(client_)
-        , reads_explicit_version(reads_explicit_version_)
     {
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
@@ -118,16 +116,6 @@ private:
         {
             if (isDirectoryEntry(blob))
                 continue;
-
-            /// The listing describes the current version of each blob, but the blobs are read at the version selected
-            /// by `version_id`, whose size can differ (and the size bounds the read). So the metadata is left unset,
-            /// to be requested with the properties of the selected version where it is needed.
-            if (reads_explicit_version)
-            {
-                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(blob.Name));
-                continue;
-            }
-
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -149,7 +137,6 @@ private:
     }
 
     std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
-    const bool reads_explicit_version;
     Azure::Storage::Blobs::ListBlobsOptions options;
 };
 
@@ -235,8 +222,7 @@ ObjectStorageIteratorPtr AzureObjectStorage::iterate(
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
 
-    return std::make_shared<AzureIteratorAsync>(
-        path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size, !blob_version_id.empty());
+    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size);
 }
 
 void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const

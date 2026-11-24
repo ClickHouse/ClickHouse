@@ -2194,11 +2194,11 @@ def test_read_blob_version(cluster):
     old_version = "2026-11-20T10:00:00.0000001Z"
     new_version = "2026-11-20T10:00:01.0000002Z"
 
-    def blob(version_id=None, structure="x UInt64"):
+    def blob(version_id=None, structure="x UInt64", path="data.csv"):
         structure = f", '{structure}'" if structure else ""
         version_id = f", version_id = '{version_id}'" if version_id else ""
         return (
-            f"azureBlobStorage('{url}', 'cont', 'data.csv', 'devstoreaccount1', '{account_key}', "
+            f"azureBlobStorage('{url}', 'cont', '{path}', 'devstoreaccount1', '{account_key}', "
             f"'CSV', 'auto'{structure}{version_id})"
         )
 
@@ -2220,3 +2220,7 @@ def test_read_blob_version(cluster):
     azure_query(node, f"SELECT * FROM {blob()}", expect_error=True)
     # A version that does not exist.
     azure_query(node, f"SELECT * FROM {blob('2026-11-20T10:00:02.0000003Z')}", expect_error=True)
+    # A version belongs to a single blob, so a path with globs is rejected.
+    assert "cannot be used with a path with globs" in azure_query(
+        node, f"SELECT * FROM {blob(old_version, path='*.csv')}", expect_error=True
+    )

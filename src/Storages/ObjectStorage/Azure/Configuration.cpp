@@ -81,6 +81,15 @@ void StorageAzureConfiguration::check(ContextPtr context)
 {
     auto url = Poco::URI(connection_params.getConnectionURLWithoutQuery());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
+
+    /// A version ID belongs to one blob (it is the time of the write that created the version), and a listing
+    /// returns only the blobs that have a current version, so a deleted blob would be skipped silently.
+    if (!blob_version_id.empty() && blob_path.hasGlobs())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The `version_id` argument selects a version of a single blob, so it cannot be used with a path with globs: {}",
+            blob_path.path);
+
     StorageObjectStorageConfiguration::check(context);
 }
 
