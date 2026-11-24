@@ -46,10 +46,22 @@ NamedCollectionFactory::~NamedCollectionFactory()
 
 void NamedCollectionFactory::shutdown()
 {
+    /// Stop the update task without holding `mutex`: the task locks it, and `deactivate` waits for the task.
     shutdown_called = true;
     if (update_task)
         update_task->deactivate();
+
+    /// The factory is a process-wide singleton, but its metadata storage belongs to the global context which is
+    /// being shut down. Return to the initial state, so that the next use loads the collections again (from the
+    /// next global context, if the process creates one) instead of using the destroyed metadata storage.
+    std::lock_guard lock(mutex);
+    update_task = {};
     metadata_storage.reset();
+    loaded_named_collections.clear();
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, 0);
+    dependencies.clear();
+    loaded = false;
+    shutdown_called = false;
 }
 
 bool NamedCollectionFactory::exists(const std::string & collection_name) const

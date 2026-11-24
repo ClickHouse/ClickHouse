@@ -124,7 +124,7 @@ You shouldn't specify virtual columns in the `CREATE TABLE` query, and you can't
 
 To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` does not return values from virtual columns.
 
-If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
+If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore. For tables of the `MergeTree` family such a column is rejected, unless the `allow_reserved_column_names` setting is enabled.
 
 - `_table` — Contains the name of the table from which data was read. Type: [String](/reference/data-types/string).
 
