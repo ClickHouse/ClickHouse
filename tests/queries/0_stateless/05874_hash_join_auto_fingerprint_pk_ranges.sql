@@ -6,6 +6,8 @@ SET enable_join_runtime_filters = 0, enable_join_fixed_hash_table_conversion = 0
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET max_threads = 2, max_threads_min_free_memory_per_thread = 0, max_streams_to_max_threads_ratio = 1;
 SET optimize_read_in_order = 1, max_block_size = 65536, explain_query_plan_default = 'legacy';
+-- A throwing limit above both tables still permits the full probe scan.
+SET max_rows_to_read = 20000000, read_overflow_mode = 'throw';
 SET join_use_nulls = 0, aggregate_functions_null_for_empty = 0;
 SET log_queries_min_query_duration_ms = 0, log_queries_min_type = 'QUERY_FINISH';
 SET use_query_cache = 0, log_queries = 1, log_queries_probability = 1, log_profile_events = 1;

@@ -468,6 +468,15 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
     };
 }
 
+/// Later planning can exempt the executed read from a throwing limit. An intermediate estimate
+/// must not enforce that limit or fix the ranges of the executed read.
+ReadFromMergeTree::AnalysisResultPtr analyzeRangesForRowEstimate(const ReadFromMergeTree & reading)
+{
+    return reading.hasThrowingReadRowLimit()
+        ? reading.selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+        : reading.selectRangesToRead();
+}
+
 /// Statistics of a node that is estimated without first estimating a child: a read step or an
 /// already optimized logical join. Returns `std::nullopt` for every other step.
 std::optional<RelationStats>
@@ -499,15 +508,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 }
             }
             else
-            {
-                /// Range analysis normally enforces throwing read limits and memoizes its result.
-                /// At this stage, however, later planning may make the executed read exempt from those
-                /// limits. In that case use an estimation-only analysis; execution will analyze again
-                /// after its final read mode is known.
-                analyzed_result = reading->hasThrowingReadRowLimit()
-                    ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
-                    : reading->selectRangesToRead();
-            }
+                analyzed_result = analyzeRangesForRowEstimate(*reading);
         }
 
         /// An exact empty range selection proves that the relation is empty. Other empty
@@ -802,8 +803,8 @@ std::optional<UInt64> getFingerprintProbeRows(QueryPlan::Node & probe)
     /// The range analysis counts rows directly. A local full read can use that count without deriving
     /// column statistics or consulting cardinality hints used by the join-order optimizer.
     auto analysis = reading->getAnalyzedResult();
-    if (!analysis && !reading->hasThrowingReadRowLimit())
-        analysis = reading->selectRangesToRead();
+    if (!analysis)
+        analysis = analyzeRangesForRowEstimate(*reading);
     if (!analysis || analysis->exact_ranges_excluded || analysis->index_analysis_was_already_done_on_initiator)
         return std::nullopt;
     if (analyzeReadCoverage(*reading, analysis->parts_with_ranges, /*has_plan_time_filter=*/false).mayDropRows(analysis->selected_rows))
