@@ -280,13 +280,6 @@ public:
         return delegate->stat(wrappedPath(path));
     }
 
-    void chmod(const String & path, mode_t mode) override
-    {
-        auto tx = createEncryptedTransaction();
-        tx->chmod(path, mode);
-        tx->commit();
-    }
-
     void setReadOnly(const String & path) override
     {
         auto tx = createEncryptedTransaction();
@@ -334,8 +327,8 @@ public:
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
     bool prefersRecursiveRemoval() const override { return delegate->prefersRecursiveRemoval(); }
+    bool supportsAtomicFileCreation() const override { return delegate->supportsAtomicFileCreation(); }
     bool supportsStat() const override { return delegate->supportsStat(); }
-    bool supportsChmod() const override { return delegate->supportsChmod(); }
     bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }
 
     bool isReadOnly() const override { return delegate->isReadOnly(); }

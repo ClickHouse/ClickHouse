@@ -366,7 +366,8 @@ static FillColumnDescription::StepFunction getStepFunction(
         /// a value past `INT64_MAX` that the column can hold continues as a UInt64, so that the filling from an
         /// explicit FROM goes on like it does from a data value. Any other step wraps around in the carrier like
         /// for the other integer types, which `FillingRow` takes for passing the border of the filling.
-        return [step_value = step.safeGet<Int64>()](Field & field, Int64 jumps_count)
+        /// Both the shift of a negative step and the step from a UInt64 cursor wrap around on purpose.
+        return [step_value = step.safeGet<Int64>()](Field & field, Int64 jumps_count) NO_SANITIZE_UNSIGNED_OVERFLOW
         {
             const UInt64 shift = static_cast<UInt64>(step_value) * static_cast<UInt64>(jumps_count);
 
@@ -945,7 +946,7 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
                     if (last_row.size() > col_pos && !last_row[col_pos]->empty())
                         column->insertFrom(*last_row[col_pos], 0);
                     else
-                        column->insertDefault();
+                        name_type.type->insertDefaultInto(*column);
                 }
                 else /// take value from previous row of current chunk
                     column->insertFrom(*res_column, size - 1);
@@ -968,6 +969,13 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
 }
 
 using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn*>;
+
+static void insertTypeDefaults(const MutableColumnRawPtrs & dest, const VectorWithMemoryTracking<size_t> & positions, const Block & header)
+{
+    chassert(dest.size() == positions.size());
+    for (size_t i = 0, size = dest.size(); i < size; ++i)
+        header.getByPosition(positions[i]).type->insertDefaultInto(*dest[i]);
+}
 
 void FillingTransform::insertFromFillingRow(
     const MutableColumnRawPtrs & filling_columns,
@@ -997,8 +1005,7 @@ void FillingTransform::insertFromFillingRow(
             interpolate_column->insertDefault();
     }
 
-    for (auto * other_column : other_columns)
-        other_column->insertDefault();
+    insertTypeDefaults(other_columns, other_column_positions, input.getHeader());
 
     filling_row_inserted = true;
 }
@@ -1115,8 +1122,7 @@ bool FillingTransform::generateSuffixIfNeeded(
         if (!last_range_sort_prefix.empty())
             copyRowFromColumns(res_sort_prefix_columns, last_range_sort_prefix, 0);
         else
-            for (auto * sort_prefix_column : res_sort_prefix_columns)
-                sort_prefix_column->insertDefault();
+            insertTypeDefaults(res_sort_prefix_columns, sort_prefix_positions, input.getHeader());
     }
 
     bool filling_row_changed = false;
@@ -1139,8 +1145,7 @@ bool FillingTransform::generateSuffixIfNeeded(
         if (!last_range_sort_prefix.empty())
             copyRowFromColumns(res_sort_prefix_columns, last_range_sort_prefix, 0);
         else
-            for (auto * sort_prefix_column : res_sort_prefix_columns)
-                sort_prefix_column->insertDefault();
+            insertTypeDefaults(res_sort_prefix_columns, sort_prefix_positions, input.getHeader());
     }
     /// new valid filling row was generated but not inserted
     if (filling_row_changed)

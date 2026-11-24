@@ -17,7 +17,7 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 
 ## adaptive_codec_selection_period {#adaptive_codec_selection_period}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "New setting"}]}]}/>
 
@@ -76,7 +76,7 @@ Before enabling, check that all replicas support UUID version 4.
 
 ## auto_statistics_types {#auto_statistics_types}
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "Enable auto statistics by default"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "26.7 replaced `minmax, uniq` with `basic, uniq_v2` (`basic` is a superset of the deprecated `minmax`, `uniq_v2` has less overhead on inserts, merges and memory). The change is recorded at 26.4, so that `compatibility` with 26.4 to 26.6 does not bring back `minmax, uniq`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "basic, uniq_v2"},{"label": "Enable auto statistics by default. 26.4 to 26.6 shipped `minmax, uniq`, but `compatibility` with these versions gives `basic, uniq_v2`: statistics affect only query planning, not results, and merging the large `uniq` states of every part makes query planning many times slower in newer versions."}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "New setting"}]}]}/>
 
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
@@ -87,6 +87,14 @@ The `minmax` statistics type is deprecated: it is a subset of `basic`, which sho
 
 Target time to execution of one step of merge or mutation. Can be exceeded if
 one step takes longer time
+
+## cache_temporarily_for_merges {#cache_temporarily_for_merges}
+
+<ExperimentalBadge/>
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New experimental setting."}]}]}/>
+
+Background merge and mutation reads use the filesystem cache as a temporary buffer: a miss is read into the cache and served from it, and the cache removes it when nobody holds it anymore, unless a reader or writer outside this mode used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `force_read_through_cache_for_merges` takes precedence.
 
 ## clean_deleted_rows {#clean_deleted_rows}
 <SettingsInfoBlock type="CleanDeletedRows" default_value="Never" />
@@ -160,6 +168,22 @@ The codec combinator `FirstApplicable` selects a codec for the data type of ever
 e.g. `FirstApplicable(PCO, ZSTD(3))` compresses numbers with `PCO` and other data with `ZSTD(3)`. At least one of its
 alternatives must be applicable to any data type, and lossy codecs are not allowed among them.
 Default value: an empty string (not defined).
+
+## delay_merges_after_startup_seconds {#delay_merges_after_startup_seconds}
+<SettingsInfoBlock type="UInt64" default_value="60" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "60"},{"label": "New setting to delay background merges after the server startup"}]}]}/>
+
+Background merges of a table that the server loads at startup do not start
+until this many seconds after the table starts up, so that the first queries
+after a restart do not compete with them. The first `INSERT`, `OPTIMIZE`,
+mutation or lightweight update of the table on this server ends the delay. A
+replica of a `ReplicatedMergeTree` table postpones the merges of its
+replication queue, also those it would fetch as a merged part, so
+`SYSTEM SYNC REPLICA` and mutations started on another replica can wait on it
+until the delay ends. Tables created by `CREATE TABLE`, attached by
+`ATTACH TABLE` or restored by `UNDROP TABLE` are not delayed. Merges are not
+delayed while a partition has at least `parts_to_delay_insert` active parts.
+0 disables the delay.
 
 ## disk {#disk}
 
@@ -713,6 +737,15 @@ Required to enable `skip_empty_columns_on_insert`.
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
 switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
+
+## serialize_statistics_bounds_with_column_type {#serialize_statistics_bounds_with_column_type}
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+When enabled, the minimum and maximum of `minmax` and `basic` statistics are written with the serialization
+of the column type, in statistics file format `V5`, instead of the generic `Field` encoding of `V4`.
+Older versions cannot read the statistics files of `V5`, so do not enable it before all replicas are upgraded:
+the statistics of the parts written with it have to be rematerialized after a downgrade.
 
 ## share_nested_offsets {#share_nested_offsets}
 <SettingsInfoBlock type="Bool" default_value="1" />
