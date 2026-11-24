@@ -1360,7 +1360,8 @@ void StorageRabbitMQ::threadFunc()
                     if (!hasDependencies(table_id))
                         break;
 
-                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+                    /// The views may change between cycles (e.g. a cycle ended early because a view was created).
+                    LOG_DEBUG(log, "Started streaming to {} attached views", DatabaseCatalog::instance().getDependentViews(table_id).size());
 
                     /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
                     /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
@@ -1448,6 +1449,10 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         ? (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_flush_interval_ms]
         : static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_flush_interval_ms].totalMilliseconds());
 
+    /// Taken before the insert pipeline is built, so a view created after this point (and possibly missing from
+    /// the pipeline) is always detected by the sources, which then end the cycle before consuming a message.
+    auto streaming_views = DatabaseCatalog::instance().getDependentViews(table_id);
+
     auto new_context = Context::createCopy(rabbitmq_context);
 
     /// Create a fresh query context from rabbitmq_context, discarding any caches attached to the previous context to
@@ -1461,7 +1466,8 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
             /* drive_loop_on_worker */drive_loop_on_worker,
-            /* first_poll_timeout_ms */static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()));
+            /* first_poll_timeout_ms */static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()),
+            streaming_views);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
