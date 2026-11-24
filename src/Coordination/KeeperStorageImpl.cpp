@@ -2163,8 +2163,13 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
 
     KeeperResponsesForSessions results;
 
+    /// Do not use `operator[]` here: it would insert the session with zero timeout if it is unknown
+    /// (e.g. already closed), resurrecting a ghost session that is immediately expired.
     if (session_id >= 0)
-        session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
+    {
+        if (auto session_it = session_and_timeout.find(session_id); session_it != session_and_timeout.end())
+            session_expiry_queue.addNewSessionOrUpdate(session_id, session_it->second);
+    }
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
@@ -2372,9 +2377,16 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
         results[request_idx] = KeeperResponseForSession{session_id, nullptr, zk_request};
 
         /// Bump session expiry times along the way.
+        /// Only known sessions are bumped: local requests do not go through Raft, so they must not
+        /// add entries to `session_and_timeout` (e.g. for a session that is not yet committed on a
+        /// lagging follower, or one that is already closed).
         if (session_id != prev_session_id)
         {
-            session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
+            if (session_id >= 0)
+            {
+                if (auto session_it = session_and_timeout.find(session_id); session_it != session_and_timeout.end())
+                    session_expiry_queue.addNewSessionOrUpdate(session_id, session_it->second);
+            }
             prev_session_id = session_id;
         }
 
