@@ -34,6 +34,26 @@ NOT_IMPLEMENTED
 OK
 -- alias table, lambda only
 OK
+-- alias table, type change
+NOT_IMPLEMENTED
+-- alias table, same type
+OK
+-- alias table, missing column
+OK
+-- alias table, rename of a missing column
+OK
+-- alias table without target grants, same type
+ACCESS_DENIED ALTER ON t
+-- alias table without target grants, type change
+ACCESS_DENIED ALTER ON t
+-- alias table without column grant, same type
+ACCESS_DENIED ALTER ON t
+-- alias table without column grant, type change
+ACCESS_DENIED ALTER ON t
+-- alias table with a dropped target
+ACCESS_DENIED ALTER ON t_gone
+-- alias table without alias grants
+ACCESS_DENIED ON t_alias
 -- rename
 ACCESS_DENIED SELECT(restricted)
 -- granted column
@@ -42,6 +62,10 @@ OK
 OK
 -- rename, granted column
 OK
+-- type change, granted column
+OK
+-- type change by a NULL modifier
+ACCESS_DENIED SELECT(restricted)
 -- lambda parameter
 OK
 -- field of a lambda parameter
@@ -53,6 +77,12 @@ ACCESS_DENIED SELECT(restricted)
 -- not granted virtual column
 ACCESS_DENIED SELECT(_table)
 -- granted virtual column
+OK
+-- type change, granted subcolumn
+ACCESS_DENIED SELECT(tup)
+-- same type, granted subcolumn
+OK
+-- same type by a NULL modifier
 OK
 -- granted subcolumn
 OK
@@ -87,6 +117,7 @@ pub_tup
 eph
 q.k
 k
+nul
 via_alias_const
 via_alias_lambda
 ok_default2

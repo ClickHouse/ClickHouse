@@ -6,9 +6,16 @@ ACCESS_DENIED SELECT ON db.t
 OK
 -- on cluster, table only on the hosts
 ACCESS_DENIED SELECT ON db.t_absent
+-- on cluster, type change, table only on the hosts
+ACCESS_DENIED SELECT(x) ON db.t_absent
+-- on cluster, alias without target grants
+ACCESS_DENIED ALTER ON db.t
+-- on cluster, alias with target grants
+OK
 -- local, identifier without a column
 (UNKNOWN_IDENTIFIER)
 -- schema
 id
 restricted
 oc_ok
+oc_via_alias

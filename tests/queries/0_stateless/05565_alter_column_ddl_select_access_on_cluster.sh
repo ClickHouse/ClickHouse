@@ -2,7 +2,9 @@
 # Tags: zookeeper, no-replicated-database
 
 # ALTER ... ON CLUSTER ADD COLUMN with an expression needs SELECT on the columns the expression reads,
-# and SELECT on the whole table when an identifier names no column of the initiator's table.
+# and SELECT on the whole table when an identifier names no column of the initiator's table. MODIFY COLUMN changing
+# a type needs SELECT on the column, also when the initiator does not have the table. An ALTER through an Alias needs
+# ALTER on the target on the initiator, since the hosts forward it without the user.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,11 +17,14 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER IF EXISTS ${U_OC};
     CREATE TABLE t (id UInt64, restricted String) ENGINE = MergeTree ORDER BY id;
     INSERT INTO t VALUES (1, 'S1'), (2, 'S2');
+    SET allow_experimental_alias_table_engine = 1;
+    CREATE TABLE t_alias ENGINE = Alias('t');
     CREATE USER ${U_OC};
     GRANT SELECT, ALTER ADD COLUMN ON ${DB}.t TO ${U_OC};
     REVOKE SELECT(restricted) ON ${DB}.t FROM ${U_OC};
     GRANT CLUSTER ON *.* TO ${U_OC};
-    GRANT SELECT(id), ALTER ADD COLUMN ON ${DB}.t_absent TO ${U_OC};
+    GRANT SELECT(id), ALTER ADD COLUMN, ALTER MODIFY COLUMN ON ${DB}.t_absent TO ${U_OC};
+    GRANT ALTER ON ${DB}.t_alias TO ${U_OC};
 "
 
 # check <label> <query> [<table>]
@@ -44,6 +49,10 @@ check "on cluster, not granted column" "ALTER TABLE t ON CLUSTER test_shard_loca
 check "on cluster, identifier without a column" "ALTER TABLE t ON CLUSTER test_shard_localhost ADD COLUMN oc_unbound String ALIAS concat('x', absent)"
 check "on cluster, granted column" "ALTER TABLE t ON CLUSTER test_shard_localhost ADD COLUMN oc_ok String DEFAULT toString(id)"
 check "on cluster, table only on the hosts" "ALTER TABLE t_absent ON CLUSTER test_shard_localhost ADD COLUMN oc_absent String ALIAS toString(id)" t_absent
+check "on cluster, type change, table only on the hosts" "ALTER TABLE t_absent ON CLUSTER test_shard_localhost MODIFY COLUMN x Tuple(String)" t_absent
+check "on cluster, alias without target grants" "ALTER TABLE t_alias ON CLUSTER test_shard_localhost ADD COLUMN oc_via_alias String"
+${CLICKHOUSE_CLIENT} --query "GRANT ALTER ON ${DB}.* TO ${U_OC}"
+check "on cluster, alias with target grants" "ALTER TABLE t_alias ON CLUSTER test_shard_localhost ADD COLUMN oc_via_alias String DEFAULT 'k'"
 check "local, identifier without a column" "ALTER TABLE t ADD COLUMN l_unbound String ALIAS concat('x', absent)"
 
 echo "-- schema"
@@ -51,5 +60,6 @@ ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = c
 
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER ${U_OC};
+    DROP TABLE t_alias;
     DROP TABLE t;
 "

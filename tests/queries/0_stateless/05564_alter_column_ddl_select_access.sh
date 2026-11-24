@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # ALTER ADD/MODIFY COLUMN with an expression needs SELECT on the columns the expression reads,
-# ALTER RENAME COLUMN needs SELECT on the renamed column, and an Alias table refuses both forms.
+# ALTER RENAME COLUMN needs SELECT on the renamed column, ALTER MODIFY COLUMN changing a type needs SELECT on the
+# column, an Alias table refuses all three forms, and an ALTER through an Alias needs ALTER on its target first.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,9 +14,11 @@ U_COLS="u_cols_${DB}"
 U_SUB="u_sub_${DB}"
 U_FULL="u_full_${DB}"
 U_DOT="u_dot_${DB}"
+U_ALIAS="u_alias_${DB}"
+U_ALIAS_COL="u_alias_col_${DB}"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER IF EXISTS ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT};
+    DROP USER IF EXISTS ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL};
 
     CREATE TABLE t
     (
@@ -24,7 +27,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
         \`n.secret\` Array(String), \`n.x\` Array(UInt8),
         pub_tup Tuple(s String) ALIAS tuple(restricted),
         eph String EPHEMERAL concat('E-', restricted),
-        \`q.k\` String, k String
+        \`q.k\` String, k String, nul Nullable(String)
     ) ENGINE = MergeTree ORDER BY id;
     INSERT INTO t (id, restricted, other, tup, arr, \`n.secret\`, \`n.x\`, \`q.k\`, k) VALUES
         (1, 'S1', 'o1', ('a1', 'b1'), [tuple('e1')], ['N1'], [1], 'q1', 'K1'),
@@ -32,6 +35,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
 
     SET allow_experimental_alias_table_engine = 1;
     CREATE TABLE t_alias ENGINE = Alias('t');
+    CREATE TABLE t_gone (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE t_alias_gone ENGINE = Alias('t_gone');
+    DROP TABLE t_gone;
 
     CREATE TABLE dict_src (id UInt64, v String) ENGINE = MergeTree ORDER BY id;
     INSERT INTO dict_src VALUES (1, 'd1'), (2, 'd2');
@@ -45,11 +51,16 @@ ${CLICKHOUSE_CLIENT} -m --query "
     GRANT SELECT(id, pub, arr, tup), ALTER ADD COLUMN ON ${DB}.t TO ${U_COLS};
     GRANT dictGet ON ${DB}.d TO ${U_COLS};
     CREATE USER ${U_SUB};
-    GRANT SELECT(id, \`tup.a\`), ALTER ADD COLUMN ON ${DB}.t TO ${U_SUB};
+    GRANT SELECT(id, \`tup.a\`), ALTER ADD COLUMN, ALTER MODIFY COLUMN ON ${DB}.t TO ${U_SUB};
     CREATE USER ${U_FULL};
     GRANT SELECT, ALTER ADD COLUMN ON ${DB}.t TO ${U_FULL};
     CREATE USER ${U_DOT};
     GRANT SELECT(id, \`q.k\`), ALTER ADD COLUMN ON ${DB}.t TO ${U_DOT};
+    CREATE USER ${U_ALIAS};
+    GRANT SELECT, ALTER ON ${DB}.t_alias TO ${U_ALIAS};
+    GRANT SELECT, ALTER ON ${DB}.t_alias_gone TO ${U_ALIAS};
+    CREATE USER ${U_ALIAS_COL};
+    GRANT SELECT(id), ALTER ON ${DB}.t_alias TO ${U_ALIAS_COL};
 "
 
 # check <user|default> <label> <query> [<column>]
@@ -68,6 +79,10 @@ check()
     elif [ -n "${column}" ] && [[ "${out}" == *ACCESS_DENIED* ]] \
         && { [[ "${out}" == *"SELECT(${column})"* ]] || [[ "${out}" == *"SELECT(\`${column}\`)"* ]]; }; then
         echo "ACCESS_DENIED SELECT(${column})"
+    elif [[ "${out}" == *ACCESS_DENIED* ]] && [[ "${out}" == *" ON ${DB}.t_alias."* ]]; then
+        echo "ACCESS_DENIED ON t_alias"
+    elif [[ "${out}" == *ACCESS_DENIED* ]] && [[ "${out}" =~ "to have the grant ALTER ON ${DB}."([a-z_]+)"." ]]; then
+        echo "ACCESS_DENIED ALTER ON ${BASH_REMATCH[1]}"
     elif [[ "${out}" == *NOT_IMPLEMENTED* ]]; then
         echo "NOT_IMPLEMENTED"
     else
@@ -93,16 +108,31 @@ check default "alias table, rename" "ALTER TABLE t_alias RENAME COLUMN other TO 
 check default "alias table, modify" "ALTER TABLE t_alias MODIFY COLUMN other String DEFAULT upper(restricted)"
 check default "alias table, constant" "ALTER TABLE t_alias ADD COLUMN via_alias_const String DEFAULT 'k'"
 check default "alias table, lambda only" "ALTER TABLE t_alias ADD COLUMN via_alias_lambda Array(UInt8) DEFAULT arrayMap(x -> x + 1, [1])"
+check default "alias table, type change" "ALTER TABLE t_alias MODIFY COLUMN other LowCardinality(String)"
+check default "alias table, same type" "ALTER TABLE t_alias MODIFY COLUMN other String COMMENT 'c'"
+check default "alias table, missing column" "ALTER TABLE t_alias MODIFY COLUMN IF EXISTS missing LowCardinality(String)"
+check default "alias table, rename of a missing column" "ALTER TABLE t_alias RENAME COLUMN IF EXISTS missing TO missing2"
+check "${U_ALIAS}" "alias table without target grants, same type" "ALTER TABLE t_alias MODIFY COLUMN other String"
+check "${U_ALIAS}" "alias table without target grants, type change" "ALTER TABLE t_alias MODIFY COLUMN other LowCardinality(String)"
+check "${U_ALIAS_COL}" "alias table without column grant, same type" "ALTER TABLE t_alias MODIFY COLUMN other String"
+check "${U_ALIAS_COL}" "alias table without column grant, type change" "ALTER TABLE t_alias MODIFY COLUMN other LowCardinality(String)"
+check "${U_ALIAS}" "alias table with a dropped target" "ALTER TABLE t_alias_gone ADD COLUMN g String DEFAULT toString(id)"
+check "${U_SUB}" "alias table without alias grants" "ALTER TABLE t_alias MODIFY COLUMN other String"
 check "${U_PARTIAL}" "rename" "ALTER TABLE t RENAME COLUMN restricted TO s2" restricted
 check "${U_PARTIAL}" "granted column" "ALTER TABLE t ADD COLUMN ok_default String DEFAULT toString(id)"
 check "${U_PARTIAL}" "modify, granted column" "ALTER TABLE t MODIFY COLUMN other String DEFAULT concat('o', toString(id))"
 check "${U_PARTIAL}" "rename, granted column" "ALTER TABLE t RENAME COLUMN ok_default TO ok_default2"
+check "${U_PARTIAL}" "type change, granted column" "ALTER TABLE t MODIFY COLUMN other LowCardinality(String) SETTINGS mutations_sync = 2"
+check "${U_PARTIAL}" "type change by a NULL modifier" "ALTER TABLE t MODIFY COLUMN restricted String NULL" restricted
 check "${U_COLS}" "lambda parameter" "ALTER TABLE t ADD COLUMN c_lambda Array(UInt64) ALIAS arrayMap(x -> x + id, [1, 2])"
 check "${U_COLS}" "field of a lambda parameter" "ALTER TABLE t ADD COLUMN c_field Array(String) ALIAS arrayMap(x -> x.restricted, arr)"
 check "${U_COLS}" "granted alias column" "ALTER TABLE t ADD COLUMN c_pub String ALIAS concat(pub, '!')"
 check "${U_COLS}" "not granted column" "ALTER TABLE t ADD COLUMN c_restricted String ALIAS restricted" restricted
 check "${U_COLS}" "not granted virtual column" "ALTER TABLE t ADD COLUMN c_virtual String ALIAS _table" _table
 check "${U_PARTIAL}" "granted virtual column" "ALTER TABLE t ADD COLUMN p_virtual String ALIAS _table"
+check "${U_SUB}" "type change, granted subcolumn" "ALTER TABLE t MODIFY COLUMN tup Tuple(String, String)" tup
+check "${U_SUB}" "same type, granted subcolumn" "ALTER TABLE t MODIFY COLUMN tup Tuple(a String, b String) COMMENT 'c'"
+check "${U_SUB}" "same type by a NULL modifier" "ALTER TABLE t MODIFY COLUMN nul String NULL COMMENT 'c'"
 check "${U_SUB}" "granted subcolumn" "ALTER TABLE t ADD COLUMN s_a String ALIAS tup.a"
 check "${U_SUB}" "not granted subcolumn" "ALTER TABLE t ADD COLUMN s_b String ALIAS tup.b" tup
 check "${U_COLS}" "subcolumn of a granted column" "ALTER TABLE t ADD COLUMN c_sub String ALIAS tup.b"
@@ -119,8 +149,9 @@ echo "-- schema"
 ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY position"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT};
+    DROP USER ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL};
     DROP TABLE t_alias;
+    DROP TABLE t_alias_gone;
     DROP TABLE t;
     DROP DICTIONARY d;
     DROP TABLE dict_src;

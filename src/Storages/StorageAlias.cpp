@@ -417,6 +417,9 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
                 backQuoteIfNeed(target_table));
         }
 
+        if (command.ignore)
+            continue;
+
         bool reads_target_columns = false;
         if ((command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN) && command.default_expression)
         {
@@ -426,12 +429,21 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
                 *command.default_expression, target_metadata->getColumnsWithVirtuals(), target->supportsSubcolumns()).empty();
         }
 
-        if (reads_target_columns || command.type == AlterCommand::RENAME_COLUMN)
+        bool changes_type = false;
+        if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type && !command.add_enum_values)
+        {
+            const auto target_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
+            const auto * column = target_metadata->getColumns().tryGet(command.column_name);
+            changes_type = !column || !column->type->equals(*command.data_type);
+        }
+
+        if (reads_target_columns || changes_type || command.type == AlterCommand::RENAME_COLUMN)
         {
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "A column expression that reads columns of the target table, or a column rename, cannot be applied through an alias, "
-                "because the target's grants are not checked for it. Execute the ALTER directly on the target table: {}.{}",
+                "A column expression that reads columns of the target table, a column type change, or a column rename, cannot be "
+                "applied through an alias, because the target's grants are not checked for it. "
+                "Execute the ALTER directly on the target table: {}.{}",
                 backQuoteIfNeed(target_database),
                 backQuoteIfNeed(target_table));
         }
