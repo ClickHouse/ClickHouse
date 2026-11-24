@@ -4728,6 +4728,179 @@ bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
     return node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION;
 }
 
+void rerunFunctionResolveWithLambdaArguments(FunctionNode & function_node, const ContextPtr & context);
+
+bool containsColumnWithSource(const QueryTreeNodePtr & node, const IQueryTreeNode * column_source)
+{
+    if (const auto * column_node = node->as<ColumnNode>())
+        return column_node->getColumnSourceOrNull().get() == column_source;
+
+    auto node_type = node->getNodeType();
+    if (node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::LAMBDA && node_type != QueryTreeNodeType::LIST)
+        return false;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && containsColumnWithSource(child, column_source))
+            return true;
+    }
+
+    return false;
+}
+
+void resolveLambdaTypeFromExpression(LambdaNode & lambda_node)
+{
+    const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node.getResultType().get());
+    if (!lambda_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Lambda node {} result type is not a function type",
+            lambda_node.formatASTForErrorMessage());
+
+    lambda_node.resolve(std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), lambda_node.getExpression()->getResultType()));
+}
+
+/** Set the types of the columns that refer to the arguments of a lambda to the types stored in its
+  * arguments node, and recompute the types of all nodes above them.
+  * Returns true if any type in the given subtree changed.
+  */
+bool retypeLambdaArgumentColumns(QueryTreeNodePtr & node, const LambdaArgumentsNode & lambda_arguments, const ContextPtr & context)
+{
+    auto node_type = node->getNodeType();
+
+    if (node_type == QueryTreeNodeType::COLUMN)
+    {
+        const auto & column_node = node->as<const ColumnNode &>();
+        if (column_node.getColumnSourceOrNull().get() != &lambda_arguments)
+            return false;
+
+        const auto & names = lambda_arguments.getNames();
+        const auto & types = lambda_arguments.getTypes();
+        auto it = std::find(names.begin(), names.end(), column_node.getColumnName());
+        if (it == names.end() || types.size() != names.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} does not match the arguments of its lambda",
+                column_node.getColumnName());
+
+        const auto & new_type = types[it - names.begin()];
+        if (column_node.getColumnType()->equals(*new_type))
+            return false;
+
+        if (node.use_count() > 1)
+            node = node->clone();
+
+        node->as<ColumnNode &>().setColumnType(new_type);
+        return true;
+    }
+
+    if (node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::LAMBDA && node_type != QueryTreeNodeType::LIST)
+        return false;
+
+    /// The identifier resolve cache can make several references one node: change it in place only through its own copy.
+    if (node.use_count() > 1)
+    {
+        if (!containsColumnWithSource(node, &lambda_arguments))
+            return false;
+        node = node->clone();
+    }
+
+    bool changed = false;
+    for (auto & child : node->getChildren())
+    {
+        if (child && retypeLambdaArgumentColumns(child, lambda_arguments, context))
+            changed = true;
+    }
+
+    if (!changed)
+        return false;
+
+    if (auto * function_node = node->as<FunctionNode>())
+        rerunFunctionResolveWithLambdaArguments(*function_node, context);
+    else if (auto * lambda_node = node->as<LambdaNode>())
+        resolveLambdaTypeFromExpression(*lambda_node);
+
+    return true;
+}
+
+/** Resolve a function again after the types of its arguments changed. This mirrors resolveFunction:
+  * the argument types of its lambda arguments are derived again from the other arguments with
+  * getLambdaArgumentTypes, and the lambda bodies are retyped accordingly, before the function itself
+  * is resolved again. Example: in arrayExists(a -> a > 0, [x]) with x converted to Nullable, the
+  * lambda argument a becomes Nullable as well.
+  */
+void rerunFunctionResolveWithLambdaArguments(FunctionNode & function_node, const ContextPtr & context)
+{
+    auto & arguments = function_node.getArguments().getNodes();
+
+    DataTypes argument_types;
+    argument_types.reserve(arguments.size());
+    std::vector<size_t> lambda_argument_indexes;
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (const auto * lambda_node = arguments[i]->as<LambdaNode>())
+        {
+            size_t lambda_arguments_size = lambda_node->getArguments().getNames().size();
+            argument_types.push_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr));
+            lambda_argument_indexes.push_back(i);
+        }
+        else
+        {
+            argument_types.push_back(arguments[i]->getResultType());
+        }
+    }
+
+    if (!lambda_argument_indexes.empty() && function_node.isOrdinaryCall())
+    {
+        auto function = FunctionFactory::instance().get(function_node.getFunctionName(), context);
+        function->getLambdaArgumentTypes(argument_types);
+
+        for (size_t index : lambda_argument_indexes)
+        {
+            const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[index].get());
+            if (!function_data_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function '{}' expected function data type for lambda argument with index {}. Actual: {}",
+                    function_node.getFunctionName(),
+                    index,
+                    argument_types[index]->getName());
+
+            const auto & new_lambda_argument_types = function_data_type->getArgumentTypes();
+            const auto & old_lambda_argument_types = arguments[index]->as<const LambdaNode &>().getArguments().getTypes();
+
+            bool lambda_argument_types_changed = new_lambda_argument_types.size() != old_lambda_argument_types.size();
+            for (size_t i = 0; !lambda_argument_types_changed && i < new_lambda_argument_types.size(); ++i)
+            {
+                if (!new_lambda_argument_types[i] || !old_lambda_argument_types[i]
+                    || !new_lambda_argument_types[i]->equals(*old_lambda_argument_types[i]))
+                    lambda_argument_types_changed = true;
+            }
+
+            if (!lambda_argument_types_changed)
+                continue;
+
+            for (const auto & lambda_argument_type : new_lambda_argument_types)
+            {
+                if (!lambda_argument_type)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Function '{}' did not derive the types of lambda argument with index {}",
+                        function_node.getFunctionName(),
+                        index);
+            }
+
+            auto & lambda_argument = arguments[index];
+            if (lambda_argument.use_count() > 1)
+                lambda_argument = lambda_argument->clone();
+
+            auto & lambda_node = lambda_argument->as<LambdaNode &>();
+            lambda_node.getArguments().resolve(new_lambda_argument_types);
+            retypeLambdaArgumentColumns(lambda_node.getExpression(), lambda_node.getArguments(), context);
+            lambda_node.resolve(std::make_shared<DataTypeFunction>(new_lambda_argument_types, lambda_node.getExpression()->getResultType()));
+        }
+    }
+
+    rerunFunctionResolve(&function_node, context);
+}
+
 /** Convert maximal subtrees that are GROUP BY keys to Nullable and recompute the types of all
   * nodes above them. This mirrors what resolveExpressionNode does during bottom-up resolution
   * of an expression containing GROUP BY keys as subexpressions: a subexpression equal to a key
@@ -4765,19 +4938,9 @@ bool convertNestedGroupByKeysToNullable(
         return false;
 
     if (auto * function_node = node->as<FunctionNode>())
-    {
-        rerunFunctionResolve(function_node, context);
-    }
+        rerunFunctionResolveWithLambdaArguments(*function_node, context);
     else if (auto * lambda_node = node->as<LambdaNode>())
-    {
-        const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node->getResultType().get());
-        if (!lambda_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Lambda node {} result type is not a function type",
-                lambda_node->formatASTForErrorMessage());
-
-        lambda_node->resolve(std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), lambda_node->getExpression()->getResultType()));
-    }
+        resolveLambdaTypeFromExpression(*lambda_node);
 
     return true;
 }
@@ -4812,7 +4975,7 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
 
             if (converted)
             {
-                rerunFunctionResolve(key_with_converted_sub_keys->as<FunctionNode>(), scope.context);
+                rerunFunctionResolveWithLambdaArguments(key_with_converted_sub_keys->as<FunctionNode &>(), scope.context);
                 scope.nullable_group_by_keys.emplace(std::move(key_with_converted_sub_keys), key);
             }
         }

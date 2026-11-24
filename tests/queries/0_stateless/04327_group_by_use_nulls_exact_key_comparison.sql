@@ -46,3 +46,15 @@ SELECT 1 AS a, arrayMap(x -> intDiv(x, 1), [1, 2, 3]) AS m
 GROUP BY a, m WITH CUBE
 ORDER BY ALL
 SETTINGS max_threads = 1;
+
+-- A key that passes another key to a lambda function: the lambda argument type is derived
+-- from the converted (Nullable) key, so the projection must still read the key.
+SELECT x, arrayExists(a -> a > 0, [x]) AS e, toTypeName(e), count()
+FROM (SELECT number % 2 AS x FROM numbers(4))
+GROUP BY ROLLUP(e, x)
+ORDER BY ALL;
+
+SELECT x, y, arrayCount(a -> a > 0, [x, y]) AS c, toTypeName(c), count()
+FROM (SELECT number % 2 AS x, intDiv(number, 2) % 2 AS y FROM numbers(4))
+GROUP BY ROLLUP(c, x, y)
+ORDER BY ALL;
