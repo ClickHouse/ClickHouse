@@ -815,13 +815,15 @@ bool rewriteDateTimeLiteralsWithTimezone(
     };
     const auto table_node = make_table_node(columns);
 
+    /// Each `WHERE` and each value of `GROUP BY ... SET` is analyzed alone, as `TTLDescription` analyzes it, so an alias in one of
+    /// them does not change what an identifier in another one is bound to.
     LiteralUses uses;
-    if (!expressions.empty())
+    for (const auto & expression_to_analyze : expressions)
     {
-        auto expressions_uses = tryCollectLiteralUses(expressions, table_node, execution_context);
-        if (!expressions_uses)
+        auto expression_uses = tryCollectLiteralUses({expression_to_analyze}, table_node, execution_context);
+        if (!expression_uses)
             return false;
-        uses = std::move(*expressions_uses);
+        uses.merge(*expression_uses);
     }
 
     /// The expression of each `TTL` is analyzed alone, as `TTLDescription` analyzes it: with `Date` and `DateTime` widened to
