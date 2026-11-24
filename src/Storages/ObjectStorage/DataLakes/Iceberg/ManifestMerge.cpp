@@ -167,14 +167,12 @@ bool isSamePartition(const Row & lhs, const Row & rhs)
 
 }
 
-SingleInsertDataFiles::SingleInsertDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_)
-    : partition_value(std::move(partition_value_))
-    , writer(writer_)
-    , sort_order_id(sort_order_id_)
-{
-}
-
-void SingleInsertDataFiles::appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const
+void appendInsertedFiles(
+    ManifestEntries & entries,
+    ManifestListEntryCounts & counts,
+    const Row & partition_value,
+    const MultipleFileWriter & writer,
+    std::optional<Int32> sort_order_id)
 {
     const auto & files = writer.getDataFiles();
     const auto & row_counts = writer.getDataFileRowCounts();
@@ -204,22 +202,6 @@ void SingleInsertDataFiles::appendToManifest(ManifestEntries & entries, Manifest
         counts.files_count += 1;
         counts.rows_count += static_cast<Int64>(row_counts[i]);
     }
-}
-
-void MergeWindowDataFiles::appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const
-{
-    auto append = [](auto & to, const auto & from) { to.insert(to.end(), from.begin(), from.end()); };
-    append(entries.paths, window.paths);
-    append(entries.row_counts, window.row_counts);
-    append(entries.byte_counts, window.byte_counts);
-    append(entries.partition_values, window.partition_values);
-    append(entries.fresh_statistics, window.fresh_statistics);
-    append(entries.carried_over_statistics, window.carried_over_statistics);
-    append(entries.sort_order_ids, window.sort_order_ids);
-    append(entries.lineage, window.lineage);
-    counts.existing_files_count += static_cast<Int64>(window.paths.size());
-    counts.existing_rows_count += rows_count;
-    counts.min_sequence_number = std::min(counts.min_sequence_number, min_sequence_number);
 }
 
 std::vector<ManifestToMerge> selectManifestsToMerge(
@@ -273,7 +255,11 @@ std::vector<ManifestToMerge> selectManifestsToMerge(
     return selected;
 }
 
-MergeWindowDataFiles::MergeWindowDataFiles(const Row & partition_value, const std::vector<ManifestToMerge> & manifests)
+void appendMergedManifests(
+    ManifestEntries & entries,
+    ManifestListEntryCounts & counts,
+    const Row & partition_value,
+    const std::vector<ManifestToMerge> & manifests)
 {
     auto log = getLogger("IcebergManifestMerge");
     for (const auto & [manifest, files_handle] : manifests)
@@ -283,16 +269,17 @@ MergeWindowDataFiles::MergeWindowDataFiles(const Row & partition_value, const st
         {
             const auto & entry = *file->parsed_entry;
             auto lineage = getEntryLineageForRewrite(entry, *manifest);
-            min_sequence_number = std::min(min_sequence_number, *lineage.sequence_number);
-            rows_count += entry.record_count;
-            window.paths.push_back(entry.file_path_key);
-            window.row_counts.push_back(static_cast<UInt64>(entry.record_count));
-            window.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
-            window.partition_values.push_back(partition_value);
-            window.fresh_statistics.push_back(nullptr);
-            window.carried_over_statistics.push_back(getColumnStatisticsForRewrite(entry));
-            window.sort_order_ids.push_back(entry.sort_order_id);
-            window.lineage.push_back(std::move(lineage));
+            counts.min_sequence_number = std::min(counts.min_sequence_number, *lineage.sequence_number);
+            counts.existing_files_count += 1;
+            counts.existing_rows_count += entry.record_count;
+            entries.paths.push_back(entry.file_path_key);
+            entries.row_counts.push_back(static_cast<UInt64>(entry.record_count));
+            entries.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
+            entries.partition_values.push_back(partition_value);
+            entries.fresh_statistics.push_back(nullptr);
+            entries.carried_over_statistics.push_back(getColumnStatisticsForRewrite(entry));
+            entries.sort_order_ids.push_back(entry.sort_order_id);
+            entries.lineage.push_back(std::move(lineage));
         }
         LOG_DEBUG(log, "Merging manifest file {} with {} data files into the new manifest", manifest->manifest_file_path.serialize(), files.size());
     }

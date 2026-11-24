@@ -1924,51 +1924,22 @@ bool IcebergStorageSink::initializeMetadata()
 
             const bool single_manifest = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
 
-            Iceberg::ManifestEntriesSources sources;
+            const ManifestListEntryCounts empty_counts{
+                .min_sequence_number = merge_settings ? new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number) : 0,
+                .counts_are_added = true};
+            Iceberg::ManifestEntries entries;
+            auto counts = empty_counts;
             std::optional<ManifestPartitionSummary> partition_summary;
 
-            auto write_manifest = [&](const ChunkPartitioner::PartitionKey & partition_key)
+            auto write_manifest = [&]
             {
-                if (merge_settings)
-                {
-                    auto to_merge = Iceberg::selectManifestsToMerge(
-                        *merge_settings,
-                        parent_manifests,
-                        partition_key,
-                        partitioner ? partitioner->getResultTypes() : DataTypes{},
-                        static_cast<Int32>(partition_spec_id),
-                        static_cast<Int32>(current_schema_id),
-                        write_format,
-                        persistent_table_components,
-                        object_storage,
-                        context);
-                    if (!to_merge.empty())
-                    {
-                        for (const auto & manifest : to_merge)
-                            replaced_manifest_paths.insert(manifest.manifest->manifest_file_path.serialize());
-                        sources.push_back(std::make_unique<Iceberg::MergeWindowDataFiles>(partition_key, to_merge));
-                    }
-                }
-
-                Iceberg::ManifestEntries entries;
-                ManifestListEntryCounts counts;
-                counts.min_sequence_number = std::numeric_limits<Int64>::max();
-                counts.counts_are_added = true;
-                for (const auto & source : sources)
-                    source->appendToManifest(entries, counts);
-                sources.clear();
-
                 auto manifest_entry_path = filename_generator.generateManifestEntryName();
                 manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
                 manifest_entries.push_back(manifest_entry_path);
                 manifest_entry_row_counts.push_back(counts.rows_count);
                 manifest_entry_file_counts.push_back(counts.files_count);
                 if (merge_settings)
-                {
-                    counts.min_sequence_number
-                        = std::min(counts.min_sequence_number, new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number));
                     manifest_entry_counts.push_back(counts);
-                }
                 if (partition_summary)
                     entry_partition_summaries.push_back(std::move(*partition_summary));
                 partition_summary.reset();
@@ -2004,23 +1975,45 @@ bool IcebergStorageSink::initializeMetadata()
                 if (size == 0)
                     size = object_storage->getObjectMetadata(resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
                 manifest_entry_sizes.push_back(size);
+
+                entries = {};
+                counts = empty_counts;
             };
 
             /// Either one manifest for every partition the insert touched, or one manifest per partition.
             for (const auto & [partition_key, writer] : writer_per_partition_key)
             {
-                sources.push_back(std::make_unique<Iceberg::SingleInsertDataFiles>(partition_key, writer, data_file_sort_order_id));
+                Iceberg::appendInsertedFiles(entries, counts, partition_key, writer, data_file_sort_order_id);
                 if (partitioner)
                 {
                     if (!partition_summary)
                         partition_summary.emplace(partitioner->getResultTypes());
                     partition_summary->add(partition_key);
                 }
-                if (!single_manifest)
-                    write_manifest(partition_key);
+                if (single_manifest)
+                    continue;
+
+                if (merge_settings)
+                {
+                    auto to_merge = Iceberg::selectManifestsToMerge(
+                        *merge_settings,
+                        parent_manifests,
+                        partition_key,
+                        partitioner ? partitioner->getResultTypes() : DataTypes{},
+                        static_cast<Int32>(partition_spec_id),
+                        static_cast<Int32>(current_schema_id),
+                        write_format,
+                        persistent_table_components,
+                        object_storage,
+                        context);
+                    for (const auto & manifest : to_merge)
+                        replaced_manifest_paths.insert(manifest.manifest->manifest_file_path.serialize());
+                    Iceberg::appendMergedManifests(entries, counts, partition_key, to_merge);
+                }
+                write_manifest();
             }
             if (single_manifest)
-                write_manifest({});
+                write_manifest();
         }
         {
             auto buffer_manifest_list = object_storage->writeObject(

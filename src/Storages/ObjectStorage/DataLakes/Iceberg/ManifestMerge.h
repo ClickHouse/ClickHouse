@@ -2,7 +2,6 @@
 
 #include "config.h"
 
-#include <limits>
 #include <memory>
 
 #if USE_AVRO
@@ -50,27 +49,12 @@ struct ManifestEntries
     std::vector<DataFileEntryLineage> lineage;
 };
 
-class IManifestEntriesSource
-{
-public:
-    virtual ~IManifestEntriesSource() = default;
-    virtual void appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const = 0;
-};
-
-using ManifestEntriesSources = std::vector<std::unique_ptr<IManifestEntriesSource>>;
-
-class SingleInsertDataFiles final : public IManifestEntriesSource
-{
-public:
-    SingleInsertDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_);
-
-    void appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
-
-private:
-    const Row partition_value;
-    const MultipleFileWriter & writer;
-    const std::optional<Int32> sort_order_id;
-};
+void appendInsertedFiles(
+    ManifestEntries & entries,
+    ManifestListEntryCounts & counts,
+    const Row & partition_value,
+    const MultipleFileWriter & writer,
+    std::optional<Int32> sort_order_id);
 
 struct ManifestToMerge
 {
@@ -90,18 +74,11 @@ std::vector<ManifestToMerge> selectManifestsToMerge(
     ObjectStoragePtr object_storage,
     ContextPtr context);
 
-class MergeWindowDataFiles final : public IManifestEntriesSource
-{
-public:
-    MergeWindowDataFiles(const Row & partition_value, const std::vector<ManifestToMerge> & manifests);
-
-    void appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
-
-private:
-    ManifestEntries window;
-    Int64 rows_count = 0;
-    Int64 min_sequence_number = std::numeric_limits<Int64>::max();
-};
+void appendMergedManifests(
+    ManifestEntries & entries,
+    ManifestListEntryCounts & counts,
+    const Row & partition_value,
+    const std::vector<ManifestToMerge> & manifests);
 
 }
 
