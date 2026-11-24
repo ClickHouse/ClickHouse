@@ -483,7 +483,6 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
 
 static bool allReadsCanLeaveConjunctsOut(const QueryPlan::Node & node)
 {
-    /// Fail closed: a leaf that is not a read opting in (`ReadFromStreamLikeEngine`, a view's source, `ReadNothing`, ...) disables the gate.
     if (node.children.empty())
     {
         const auto * read = dynamic_cast<const SourceStepWithFilterBase *>(node.step.get());
@@ -547,7 +546,6 @@ static size_t tryPushDownOverJoinStep(
         || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste))
         return 0;
 
-    /// A conjunct may stay above the join only if every read below may go without it (see `canLeaveConjunctsOutOfFilter`).
     const size_t max_expanded_conjunct_size = allReadsCanLeaveConjunctsOut(*child_node) ? settings.max_expanded_ast_elements : 0;
 
     UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
