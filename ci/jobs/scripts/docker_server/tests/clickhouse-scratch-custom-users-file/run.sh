@@ -85,8 +85,9 @@ chmod a+r "$config/legacy-users-config.xml"
 checkPassword "-v $config/legacy-users-config.xml:/etc/clickhouse-server/config.d/legacy-users-config.xml:ro"
 
 # A users file path through a symbolic link followed by `..`: `/mounted/link/../users.xml` is `/mounted/sub/users.xml`
-# for the server, which merges `/mounted/sub/users.d`, while its lexically normal form is `/mounted/users.xml`.
-# Both files exist, so only writing to the `.d` directory of the path as written applies the password.
+# for the server, which lists `/mounted/sub/users.d`, while its lexically normal form is `/mounted/users.xml`. The server
+# opens the files it lists there through the lexically normal path, so it cannot load a generated user from either
+# directory: writing to one of them would start it without the password, or not at all. The container must refuse it.
 volume="$(docker volume create)"
 trap '[ $? -eq 0 ] || [ -z "$cid" ] || dumpServerLogs "$cid"; docker rm -vf "$config_cid" $cid > /dev/null; docker volume rm -f "$volume" > /dev/null; rm -rf "$config"' EXIT
 docker run --rm \
@@ -104,4 +105,25 @@ cat > "$config/symlink-users-path.xml" <<'XML'
 </clickhouse>
 XML
 chmod a+r "$config/symlink-users-path.xml"
-checkPassword "-v $volume:/mounted -v $config/symlink-users-path.xml:/etc/clickhouse-server/config.d/symlink-users-path.xml:ro"
+
+cid="$(
+  docker run -d \
+    -e CLICKHOUSE_PASSWORD="$password" \
+    -v "$volume":/mounted \
+    -v "$config/symlink-users-path.xml":/etc/clickhouse-server/config.d/symlink-users-path.xml:ro \
+    --name "$(cname)" \
+    "$image"
+)"
+# A server that started anyway keeps running, and `docker wait` does not return.
+if ! exit_code="$(timeout 120 docker wait "$cid")"; then
+  echo "the container is still running instead of refusing the users file path through a symbolic link and \`..\`" >&2
+  exit 1
+fi
+if [ "$exit_code" = 0 ]; then
+  echo "the container exited with code 0 instead of refusing the users file path" >&2
+  exit 1
+fi
+if ! docker logs "$cid" 2>&1 | grep -F 'after a symbolic link' > /dev/null; then
+  echo "the container failed for another reason than the users file path through a symbolic link" >&2
+  exit 1
+fi

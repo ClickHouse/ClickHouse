@@ -608,6 +608,22 @@ std::string getUsersConfigFile(const std::string & config_file, const std::vecto
         throw Poco::Exception("the configuration has several users configuration files (" + list
             + "), and the user setup can manage only one");
     }
+
+    /// A path with `..` after a symbolic link names one directory as written and another one lexically normalized.
+    /// The server lists the `.d` directory through the path as written but opens the files found there through the
+    /// XML parser, which normalizes the path lexically, so it cannot load a generated user there: refuse it.
+    if (!users_files.empty())
+    {
+        const fs::path file = users_files.front();
+        /// An error resolving the path (e.g. no permission) is reported by reading the file later.
+        std::error_code ec_written;
+        std::error_code ec_normal;
+        const fs::path written = fs::weakly_canonical(file, ec_written);
+        const fs::path normal = fs::weakly_canonical(file.lexically_normal(), ec_normal);
+        if (!ec_written && !ec_normal && written != normal)
+            throw Poco::Exception("the users configuration file " + file.string() + " is named through `..` after a symbolic link, "
+                "so the server cannot load users from its `.d` directory; name it without `..` (e.g. " + written.string() + ")");
+    }
     return users_files.empty() ? std::string{} : users_files.front();
 }
 
