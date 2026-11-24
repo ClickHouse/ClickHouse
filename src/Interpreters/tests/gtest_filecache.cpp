@@ -4915,9 +4915,8 @@ TEST_F(FileCacheTest, LRUPendingPriorityIncreases)
     for (size_t i = 0; i < 4; ++i)
         add(i);
 
-    /// More hits than a buffer holds: the hit which finds it full applies it.
-    for (size_t i = 0; i < 40; ++i)
-        hit(0);
+    /// Fewer hits than make a buffer half full, so that only the insert of a new entry applies them.
+    hit(0);
 
     hit(1);
     cache->removeFileSegment(keys[1], 0, user.user_id);
@@ -5042,12 +5041,13 @@ TEST_F(FileCacheTest, PendingPriorityIncreasesRing)
     const auto iterators = makeIterators(nodes);
 
     PendingPriorityIncreases pending;
+    pending.allocateBuffers(buffer_size);
     size_t notifications = 0;
     const std::function<void()> notify = [&] { ++notifications; };
     auto add = [&](size_t i)
     {
         PendingPriorityIncrease increase{{}, iterators[i]};
-        return pending.tryAdd(increase, buffer_size, notify);
+        return pending.tryAdd(increase, notify);
     };
 
     for (size_t pass = 0; pass < passes; ++pass)
@@ -5091,6 +5091,7 @@ TEST_F(FileCacheTest, PendingPriorityIncreasesConcurrent)
         index_of_node[&*iterators[i]] = i;
 
     PendingPriorityIncreases pending;
+    pending.allocateBuffers(buffer_size);
     std::atomic<size_t> notifications = 0;
     const std::function<void()> notify = [&] { ++notifications; };
     std::atomic<size_t> finished_writers = 0;
@@ -5103,7 +5104,7 @@ TEST_F(FileCacheTest, PendingPriorityIncreasesConcurrent)
             for (size_t i = 0; i < increases_per_writer; ++i)
             {
                 PendingPriorityIncrease increase{{}, iterators[writer * increases_per_writer + i]};
-                while (!pending.tryAdd(increase, buffer_size, notify))
+                while (!pending.tryAdd(increase, notify))
                     std::this_thread::yield();
             }
             ++finished_writers;

@@ -423,7 +423,6 @@ public:
     virtual void setBatchPriorityIncreaseSettings(const BatchPriorityIncreaseSettings & settings)
     {
         batch_priority_increase_enabled.store(settings.enabled, std::memory_order_relaxed);
-        batch_priority_increase_buffer_size.store(settings.buffer_size, std::memory_order_relaxed);
         batch_priority_increase_max_batch_size.store(settings.max_batch_size, std::memory_order_relaxed);
     }
 
@@ -560,7 +559,6 @@ protected:
     std::function<void()> invalidate_notifier;
 
     std::atomic<bool> batch_priority_increase_enabled = false;
-    std::atomic<size_t> batch_priority_increase_buffer_size = BatchPriorityIncreaseSettings{}.buffer_size;
     std::atomic<size_t> batch_priority_increase_max_batch_size = BatchPriorityIncreaseSettings{}.max_batch_size;
     std::function<void()> apply_priority_increases_notifier;
 };

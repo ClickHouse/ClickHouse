@@ -216,6 +216,8 @@ private:
 
     void logFailedToCollectCandidates(const EvictionInfo & eviction_info, const FileCacheReserveStat & stat) const;
 
+    void setBatchPriorityIncreaseSettings(const BatchPriorityIncreaseSettings & settings) override;
+
     void applyAllPendingPriorityIncreases() override;
 
     size_t getPendingPriorityIncreasesApprox() const override { return pending_priority_increases.getSizeApprox(); }

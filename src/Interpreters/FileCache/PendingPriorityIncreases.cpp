@@ -7,8 +7,14 @@
 #include <vector>
 #include <Common/CacheLine.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
+
+namespace ProfileEvents
+{
+    extern const Event FilesystemCachePriorityIncreaseBufferHalfFull;
+}
 
 namespace DB
 {
@@ -31,6 +37,14 @@ public:
             buffer.createSlots(buffer_size);
     }
 
+    [[nodiscard]] size_t getSizeApprox() const
+    {
+        size_t size = 0;
+        for (const auto & buffer : buffers)
+            size += buffer.getSizeApprox();
+        return size;
+    }
+
     bool tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full)
     {
         return getBufferOfCurrentThread().tryAdd(increase, on_half_full);
@@ -50,14 +64,6 @@ public:
     }
 
     void popBufferOfCurrentThread(PriorityIncreases & increases) { getBufferOfCurrentThread().popAll(increases); }
-
-    [[nodiscard]] size_t getSizeApprox() const
-    {
-        size_t size = 0;
-        for (const auto & buffer : buffers)
-            size += buffer.getSizeApprox();
-        return size;
-    }
 
 private:
     /// Each slot on its own cache line, so that threads writing or popping neighbouring slots do not slow each other down.
@@ -106,7 +112,10 @@ private:
                 slot.increase = std::move(increase);
                 slot.sequence.store(position + 1, std::memory_order_release);
                 if (on_half_full && isHalfFullWith(position))
+                {
+                    ProfileEvents::increment(ProfileEvents::FilesystemCachePriorityIncreaseBufferHalfFull);
                     on_half_full();
+                }
                 return true;
             }
         }
@@ -170,29 +179,23 @@ private:
 PendingPriorityIncreases::PendingPriorityIncreases() = default;
 PendingPriorityIncreases::~PendingPriorityIncreases() = default;
 
-PendingPriorityIncreases::Buffers & PendingPriorityIncreases::getOrAllocateBuffers(size_t buffer_size)
+void PendingPriorityIncreases::allocateBuffers(size_t buffer_size)
 {
-    if (auto * current_buffers = buffers.load(std::memory_order_acquire))
-        return *current_buffers;
+    if (allocated_buffers)
+        return;
 
     /// `FileCacheSettings::validate` rejects such a size.
     if (buffer_size < FILECACHE_MIN_BATCH_PRIORITY_INCREASE_BUFFER_SIZE || buffer_size > FILECACHE_MAX_BATCH_PRIORITY_INCREASE_BUFFER_SIZE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer size of priority increases is out of range: {}", buffer_size);
 
-    auto created = std::make_unique<Buffers>(std::max(1u, getNumberOfCPUCoresToUse()), buffer_size);
-    Buffers * expected = nullptr;
-    if (buffers.compare_exchange_strong(expected, created.get(), std::memory_order_acq_rel))
-    {
-        allocated_buffers = std::move(created);
-        return *allocated_buffers;
-    }
-    /// Another hit allocated them first.
-    return *expected;
+    allocated_buffers = std::make_unique<Buffers>(std::max(1u, getNumberOfCPUCoresToUse()), buffer_size);
+    buffers.store(allocated_buffers.get(), std::memory_order_release);
 }
 
-bool PendingPriorityIncreases::tryAdd(PendingPriorityIncrease & increase, size_t buffer_size, const std::function<void()> & on_half_full)
+bool PendingPriorityIncreases::tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full)
 {
-    return getOrAllocateBuffers(buffer_size).tryAdd(increase, on_half_full);
+    auto * current_buffers = buffers.load(std::memory_order_acquire);
+    return current_buffers && current_buffers->tryAdd(increase, on_half_full);
 }
 
 void PendingPriorityIncreases::pop(PriorityIncreases & increases, size_t max_increases)

@@ -162,7 +162,8 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     }
 
     /// Earlier hits should end up before the new entry. One batch bounds the time under the lock.
-    applyPendingPriorityIncreases(batch_priority_increase_max_batch_size.load(std::memory_order_relaxed), lock);
+    if (batch_priority_increase_enabled.load(std::memory_order_relaxed))
+        applyPendingPriorityIncreases(batch_priority_increase_max_batch_size.load(std::memory_order_relaxed), lock);
 
 #ifndef NDEBUG
     for (const auto & queue_entry : queue)
@@ -353,6 +354,15 @@ size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch)
         ++removed;
     }
     return removed;
+}
+
+void LRUFileCachePriority::setBatchPriorityIncreaseSettings(const BatchPriorityIncreaseSettings & settings)
+{
+    /// Allocated here rather than by the first hit, so that a query neither pays for them nor gets an exception from a hit.
+    /// Kept when batching is disabled, as increases may still be pending in them.
+    if (settings.enabled)
+        pending_priority_increases.allocateBuffers(settings.buffer_size);
+    IFileCachePriority::setBatchPriorityIncreaseSettings(settings);
 }
 
 void LRUFileCachePriority::applyAllPendingPriorityIncreases()
@@ -849,8 +859,7 @@ bool LRUFileCachePriority::tryIncreasePriority(
     }
 
     PendingPriorityIncrease increase{entry, lru_iterator.get()};
-    if (pending_priority_increases.tryAdd(
-            increase, batch_priority_increase_buffer_size.load(std::memory_order_relaxed), apply_priority_increases_notifier))
+    if (pending_priority_increases.tryAdd(increase, apply_priority_increases_notifier))
         return true;
 
     /// The buffer is full because the cleanup task did not keep up. Apply it if the queue is not locked, otherwise
@@ -861,6 +870,9 @@ bool LRUFileCachePriority::tryIncreasePriority(
     if (!lock.owns_lock())
     {
         ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+        /// Only a buffer reaching half wakes the cleanup task, and a run of the task may leave this buffer above half.
+        if (apply_priority_increases_notifier)
+            apply_priority_increases_notifier();
         return false;
     }
     pending_priority_increases.popBufferOfCurrentThread(increases);
@@ -883,6 +895,9 @@ bool LRUFileCachePriority::applyPriorityIncrease(const PendingPriorityIncrease &
 
 void LRUFileCachePriority::applyPriorityIncreases(const PriorityIncreases & increases, const CachePriorityGuard::WriteLock & lock)
 {
+    if (increases.empty())
+        return;
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheApplyPriorityIncreasesMicroseconds);
     size_t applied = 0;
     {

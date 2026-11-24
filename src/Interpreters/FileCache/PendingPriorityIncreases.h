@@ -32,9 +32,13 @@ public:
     PendingPriorityIncreases();
     ~PendingPriorityIncreases();
 
-    /// Returns false, without moving from `increase`, if the buffer of the calling thread is full.
-    /// Calls `on_half_full` if it is set and this increase filled the buffer to half.
-    [[nodiscard]] bool tryAdd(PendingPriorityIncrease & increase, size_t buffer_size, const std::function<void()> & on_half_full);
+    /// Allocates the buffers, of `buffer_size` increases each, unless they are allocated already. Must not run concurrently
+    /// with itself, but may run concurrently with the other methods.
+    void allocateBuffers(size_t buffer_size);
+
+    /// Returns false, without moving from `increase`, if the buffers are not allocated or the buffer of the calling thread
+    /// is full. Calls `on_half_full` if it is set and this increase filled the buffer to half.
+    [[nodiscard]] bool tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full);
 
     /// Moves up to `max_increases` increases to the end of `increases`. Increases of one thread keep their order.
     /// Takes at most one buffer size from each buffer, so a call ends while hits keep adding.
@@ -49,9 +53,7 @@ public:
 private:
     class Buffers;
 
-    Buffers & getOrAllocateBuffers(size_t buffer_size);
-
-    /// Owns what `buffers` points to. Set once, by the hit which allocates the buffers.
+    /// Owns what `buffers` points to. Set once, by `allocateBuffers`.
     std::unique_ptr<Buffers> allocated_buffers;
     std::atomic<Buffers *> buffers = nullptr;
 };

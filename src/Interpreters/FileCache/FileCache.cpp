@@ -57,7 +57,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFreeSpaceKeepingThreadErrors;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
     extern const Event FilesystemCacheFailToIncreasePriorityBecauseOfCacheResize;
-    extern const Event FilesystemCachePriorityIncreaseBufferHalfFull;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
@@ -607,11 +606,7 @@ void FileCache::initializeImpl(bool load_metadata)
             StorageID::createEmpty(), "FileCacheBackgroundCleanup", [this] { backgroundCleanupTaskFunc(); });
         main_priority->setInvalidateNotifier(
             invalidated_entries_cleanup_threshold, [this] { background_cleanup_task->schedule(); });
-        main_priority->setApplyPriorityIncreasesNotifier([this]
-        {
-            ProfileEvents::increment(ProfileEvents::FilesystemCachePriorityIncreaseBufferHalfFull);
-            background_cleanup_task->schedule();
-        });
+        main_priority->setApplyPriorityIncreasesNotifier([this] { background_cleanup_task->schedule(); });
         background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
 
         if (load_metadata)
