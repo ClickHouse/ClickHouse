@@ -161,7 +161,7 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
-    extern const SettingsBool enable_polyglot_dialect;
+    extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 max_ast_depth;
@@ -204,7 +204,6 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int CANNOT_APPEND_TO_FILE;
 }
 
 }
@@ -222,38 +221,6 @@ namespace
 {
 
 constexpr UInt64 THREAD_GROUP_ID = 0;
-
-/// The console output of the client. If the reader of the output goes away, as `head` does in
-/// `clickhouse-local -q '...' | head -1`, the write fails with `EPIPE` (`SIGPIPE` is blocked).
-/// The buffer remembers that, so the client can stop quietly, like `cat` and other tools do.
-/// It is done here and not in `WriteBufferFromFileDescriptor`, because only the client's own
-/// stdout is special: a broken pipe anywhere else (e.g. a pipe to a child process) is an error.
-class WriteBufferToStdout : public DB::WriteBufferFromFileDescriptor
-{
-public:
-    WriteBufferToStdout(int fd_, std::atomic<bool> & stdout_is_broken_)
-        : DB::WriteBufferFromFileDescriptor(fd_)
-        , stdout_is_broken(stdout_is_broken_)
-    {
-    }
-
-private:
-    std::atomic<bool> & stdout_is_broken;
-
-    void nextImpl() override
-    {
-        try
-        {
-            DB::WriteBufferFromFileDescriptor::nextImpl();
-        }
-        catch (const DB::ErrnoException & e)
-        {
-            if (e.getErrno() == EPIPE)
-                stdout_is_broken = true;
-            throw;
-        }
-    }
-};
 
 /// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
 bool hasStreamingTableExpression(const DB::IAST & ast)
@@ -521,28 +488,6 @@ private:
     std::function<void()> on_flush_callback;
 };
 
-/// Sets the flag when the buffer is canceled, e.g. on a write error. Unlike `isCanceled`, the flag can be read
-/// while a background formatting thread may still write into the buffer.
-template <typename Base>
-class CancellationReportingWriteBuffer : public Base
-{
-public:
-    template <typename... Args>
-    explicit CancellationReportingWriteBuffer(std::atomic<bool> & canceled_flag_, Args &&... args)
-        : Base(std::forward<Args>(args)...), canceled_flag(canceled_flag_)
-    {
-    }
-
-private:
-    void cancelImpl() noexcept override
-    {
-        canceled_flag.store(true);
-        Base::cancelImpl();
-    }
-
-    std::atomic<bool> & canceled_flag;
-};
-
 ClientBase::~ClientBase() = default;
 
 ClientBase::ClientBase(
@@ -559,7 +504,7 @@ ClientBase::ClientBase(
     , cmd_settings(std::make_unique<Settings>())
     , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
-    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferToStdout>>(out_fd_, stdout_is_broken))
+    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
     , progress_indication(output_stream_, in_fd_, err_fd_)
     , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
@@ -767,7 +712,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else if (dialect == Dialect::polyglot)
-            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::enable_polyglot_dialect]);
+            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
         else if (dialect == Dialect::logsql)
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],
@@ -887,7 +832,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
-    if (block.empty() || local_format_error_happened)
+    if (block.empty())
         return;
 
     processed_rows_from_blocks += block.rows();
@@ -919,7 +864,6 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         //this is a bad catch. It catches too much cases unrelated to LocalFormatError
         /// Catch client errors like NO_ROW_DELIMITER
-        local_format_error_happened = true;
         throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
     }
 
@@ -971,8 +915,6 @@ void ClientBase::onLogData(Block & block)
 
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
-    if (local_format_error_happened)
-        return;
     initOutputFormat(block, parsed_query);
     output_format->setTotals(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
@@ -980,8 +922,6 @@ void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
-    if (local_format_error_happened)
-        return;
     initOutputFormat(block, parsed_query);
     output_format->setExtremes(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
@@ -1045,8 +985,6 @@ try
 {
     if (!output_format)
     {
-        output_buffer_canceled = false;
-
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -1080,8 +1018,7 @@ try
         const bool output_goes_to_terminal = stdout_is_a_tty || !pager.empty();
 
         /// Use the flush callback wrapper to prevent progress flickering
-        std_out_wrapper = std::make_unique<CancellationReportingWriteBuffer<FlushCallbackWriteBuffer>>(
-            output_buffer_canceled,
+        std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
             underlying_buf,
             [this, output_goes_to_terminal]()
             {
@@ -1110,7 +1047,6 @@ try
         /// True when the output format was derived from an `INTO OUTFILE` file extension; like an explicit
         /// format, it must not be overridden by the `default_format` setting fallback below.
         bool outfile_format_from_extension = false;
-        String non_empty_appended_file;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -1154,14 +1090,8 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
-                /// A canceled compression buffer or ForkWriteBuffer above cancels the file too.
-                auto file_buf = std::make_unique<CancellationReportingWriteBuffer<WriteBufferFromFile>>(
-                    output_buffer_canceled, out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
-                if ((flags & O_APPEND) && file_buf->size() > 0)
-                    non_empty_appended_file = out_file;
-
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::move(file_buf),
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
                     compression_method,
                     static_cast<int>(compression_level),
                     /*zstd_window_log=*/ 0,
@@ -1172,7 +1102,7 @@ try
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferToStdout>(stdout_fd, stdout_is_broken)});
+                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -1258,14 +1188,6 @@ try
             format_settings.pretty.squash_max_wait_ms = 0;
         }
 
-        if (!non_empty_appended_file.empty()
-            && !FormatFactory::instance().checkIfFormatSupportAppend(current_format, client_context, format_settings))
-            throw Exception(
-                ErrorCodes::CANNOT_APPEND_TO_FILE,
-                "Data cannot be appended to file {} because the {} format doesn't support appends. "
-                "Use TRUNCATE instead of APPEND, or write into a new file",
-                non_empty_appended_file, current_format);
-
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
@@ -1275,10 +1197,6 @@ try
         else
             output_format = client_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
-
-        /// The file already starts with the prefix of the format, e.g. the header of `CSVWithNames`.
-        if (!non_empty_appended_file.empty())
-            output_format->doNotWritePrefix();
 
         output_format->setAutoFlush();
 
@@ -1309,9 +1227,6 @@ Do you want to output it anyway? [y/N] )", current_format);
 }
 catch (...)
 {
-    /// The format refers to the buffers reset below.
-    output_format.reset();
-
     if (out_file_buf)
         out_file_buf->cancel();
     out_file_buf.reset();
@@ -1320,7 +1235,6 @@ catch (...)
         std_out_wrapper->cancel();
     std_out_wrapper.reset();
 
-    local_format_error_happened = true;
     throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
 
@@ -2105,7 +2019,6 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 }
                 catch (...)
                 {
-                    local_format_error_happened = true;
                     local_format_error = std::make_exception_ptr(
                         LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode()));
                     sendCancel(local_format_error);
@@ -2436,8 +2349,7 @@ void ClientBase::resetOutput()
 
     try
     {
-        /// The format takes no more writes once a buffer it writes into is canceled, e.g. after the terminal of the embedded client is gone.
-        if (output_format && !output_buffer_canceled)
+        if (output_format)
             output_format->finalize();
     }
     catch (...)
@@ -2454,8 +2366,8 @@ void ClientBase::resetOutput()
     /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
     if (out_file_buf)
     {
-        if (out_file_buf->isCanceled() || output_buffer_canceled)
-            out_file_buf->cancel();
+        if (out_file_buf->isCanceled())
+            out_file_buf.reset();
         else
             out_file_buf->finalize();
     }
@@ -2658,7 +2570,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
-            receiveEndOfQueryForInsert(parsed_query);
+            receiveEndOfQueryForInsert();
         }
     }
     catch (...)
@@ -2669,7 +2581,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         try
         {
             if (sendCancel(std::current_exception()))
-                receiveEndOfQueryForInsert(parsed_query);
+                receiveEndOfQueryForInsert();
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
@@ -2700,9 +2612,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    /// `FROM INFILE` names the data source, so stdin is not read for it. Do not even check stdin then: the check waits
-    /// for data or EOF, so an open pipe would block the query.
-    bool have_data_in_stdin = !parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
     if (need_render_progress)
     {
@@ -2807,13 +2717,16 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 std::move(pipe),
                 parsed_query,
-                /*have_more_data=*/ false);
+                have_data_in_stdin);
         }
         catch (Exception & e)
         {
             e.addMessage("data for INSERT was parsed from file");
             throw;
         }
+
+        if (have_data_in_stdin && !cancelled)
+            sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else if (parsed_insert_query->data)
     {
@@ -2974,20 +2887,14 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
 }
 
 
-/// Process Log packets, used when inserting data by blocks.
-/// Also process the result of INSERT ... RETURNING, which is sent by the server while it receives the data.
+/// Process Log packets, used when inserting data by blocks
 void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
     while (packet_type && (*packet_type == Protocol::Server::Log
             || *packet_type == Protocol::Server::ProfileEvents
-            || *packet_type == Protocol::Server::TimezoneUpdate
-            || *packet_type == Protocol::Server::Data
-            || *packet_type == Protocol::Server::Totals
-            || *packet_type == Protocol::Server::Extremes
-            || *packet_type == Protocol::Server::ProfileInfo
-            || *packet_type == Protocol::Server::Progress))
+            || *packet_type == Protocol::Server::TimezoneUpdate))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -2995,8 +2902,8 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 }
 
 
-/// Process Log packets and the result of INSERT ... RETURNING, exit when receive Exception or EndOfStream
-bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
+/// Process Log packets, exit when receive Exception or EndOfStream
+bool ClientBase::receiveEndOfQueryForInsert()
 {
     while (true)
     {
@@ -3004,22 +2911,6 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
 
         switch (packet.type)
         {
-            case Protocol::Server::Data:
-                onData(packet.block, parsed_query);
-                break;
-
-            case Protocol::Server::Totals:
-                onTotals(packet.block, parsed_query);
-                break;
-
-            case Protocol::Server::Extremes:
-                onExtremes(packet.block, parsed_query);
-                break;
-
-            case Protocol::Server::ProfileInfo:
-                onProfileInfo(packet.profile_info);
-                break;
-
             case Protocol::Server::EndOfStream:
                 onEndOfStream();
                 return true;
@@ -3049,7 +2940,7 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress, ProfileEvents, Data, Totals, Extremes or ProfileInfo. Got {})",
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -3109,7 +3000,6 @@ void ClientBase::processParsedSingleQuery(
     error_code = 0;
     cancelled = false;
     cancelled_printed = false;
-    local_format_error_happened = false;
     client_exception.reset();
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());
@@ -4018,8 +3908,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     processError(full_query);
 
                 // Stop processing queries if needed.
-                if (have_error && stdout_is_broken)
-                    return false;
                 if (have_error && (buzz_house || !ignore_error))
                     return buzz_house || is_interactive;
 
@@ -5357,13 +5245,6 @@ void ClientBase::runInteractive()
                 lr->setInitialText(next_query_to_prepopulate);
                 next_query_to_prepopulate.clear();
             }
-
-            if (on_waiting_for_query_input)
-                on_waiting_for_query_input(true);
-            SCOPE_EXIT_SAFE({
-                if (on_waiting_for_query_input)
-                    on_waiting_for_query_input(false);
-            });
 
             input = lr->readLine(getPrompt(), ":-] ");
         }

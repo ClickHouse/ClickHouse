@@ -2,10 +2,8 @@
 
 #if USE_XGBOOST
 
-#include <atomic>
 #include <limits>
 
-#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -74,24 +72,24 @@ public:
         return std::make_shared<FunctionPredictXGBoost>(context_);
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     /// With all features constant, the model is evaluated once per block instead of once per row.
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// A NULL feature is passed to XGBoost as a missing value (NaN), which the model handles the way it was
     /// trained to, instead of turning the prediction into NULL. So the result is always `Float64`.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     /// A dictionary can be reloaded (retrained) under the same name.
-    bool isDeterministic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(
@@ -140,13 +138,16 @@ public:
 
         const String dictionary_name = getConstString(arguments[0], "dictionary name");
 
-        checkAccess(dictionary_name);
+        /// Check access before reading the definition, so that a user without access learns nothing about the dictionary,
+        /// and read the definition of the dictionary that passed the check.
+        const auto & loader = context->getExternalDictionariesLoader();
+        const auto dictionary = loader.resolveDictionaryCheckingAccess(dictionary_name, context);
 
-        validateDictionaryIsXGBoost(dictionary_name);
+        validateDictionaryIsXGBoost(dictionary);
 
         /// Validated here, from the dictionary structure and without loading the dictionary, rather than only in
         /// `executeImpl`: a call over no rows never reaches the model, and must fail the same way as a call with rows.
-        const auto structure = context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        const auto structure = loader.getDictionaryStructure(dictionary);
         const size_t n_features = structure.key ? structure.key->size() : 0;
         const size_t num_feature_args = feature_end - 1;
         if (num_feature_args != n_features)
@@ -164,18 +165,20 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const String dictionary_name = getConstString(arguments[0], "dictionary name");
 
         const auto & loader = context->getExternalDictionariesLoader();
 
-        checkAccess(dictionary_name);
+        /// Check access before loading the dictionary, because loading contacts the dictionary source,
+        /// and load the dictionary that passed the check.
+        const auto resolved_dictionary = loader.resolveDictionaryCheckingAccess(dictionary_name, context);
 
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dictionary = loader.getDictionary(dictionary_name, context);
+        auto dictionary = loader.getDictionary(resolved_dictionary, context);
 
         const auto * xgb_dict = typeid_cast<const XGBoostDictionary *>(dictionary.get());
         if (!xgb_dict)
@@ -211,20 +214,6 @@ public:
 
 private:
     ContextPtr context;
-    mutable std::atomic<bool> access_checked{false};
-
-    void checkAccess(const String & dictionary_name) const
-    {
-        if (access_checked.load(std::memory_order_relaxed))
-            return;
-
-        auto qualified = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
-        context->checkAccess(
-            AccessType::dictGet,
-            qualified.database.empty() ? IDictionary::NO_DATABASE_TAG : qualified.database,
-            qualified.table);
-        access_checked.store(true, std::memory_order_relaxed);
-    }
 
     /// Index one past the last feature argument. The trailing `params` (a Map) is excluded; everything
     /// from index 1 up to this bound is a feature.
@@ -274,14 +263,14 @@ private:
         return static_cast<Int64>(unsigned_value);
     }
 
-    void validateDictionaryIsXGBoost(const String & dictionary_name) const
+    void validateDictionaryIsXGBoost(const ExternalDictionariesLoader::ResolvedDictionary & dictionary) const
     {
-        const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
+        const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary);
         if (layout_type != "xgboost")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Dictionary '{}' has layout '{}', but function {} requires a dictionary with the XGBOOST layout",
-                dictionary_name,
+                dictionary.name,
                 layout_type,
                 getName());
     }

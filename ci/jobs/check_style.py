@@ -6,7 +6,6 @@ import os
 import pathlib
 import re
 import shlex
-import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -19,7 +18,6 @@ from ci.jobs.scripts.settings_history import (
     violation_message as settings_violation_message,
     violations as settings_history_violations,
 )
-from ci.jobs.scripts.check_style.check_broken_links import check_pr as check_pr_links
 from ci.jobs.scripts.check_style.clickhouse_spelling import (
     CLICKHOUSE_ANY_SPELLING,
     CLICKHOUSE_CORRECT_SPELLINGS,
@@ -185,17 +183,11 @@ def check_yamllint(file_paths):
 def check_xmllint(file_paths):
     if not isinstance(file_paths, list):
         file_paths = [file_paths]
-    # Pass the files as separate arguments, without a shell. A `sh -c` command line is a
-    # single argument, limited to 128 KiB by the kernel (`MAX_ARG_STRLEN`), and the names
-    # of all XML files under `tests/` and `programs/` are about 260 KB, so with two CPUs
-    # (two chunks) it failed with `[Errno 7] Argument list too long: '/bin/sh'`.
-    proc = subprocess.run(
-        ["xmllint", "--noout", "--nonet", *file_paths],
-        capture_output=True,
-        text=True,
-        check=False,
+    file_paths = " ".join([f"'{file}'" for file in file_paths])
+    exit_code, out, err = Shell.get_res_stdout_stderr(
+        f"xmllint --noout --nonet {file_paths}", verbose=False
     )
-    return proc.stdout.strip() or proc.stderr.strip()
+    return out or err
 
 
 def check_functional_test_cases(files):
@@ -372,15 +364,6 @@ SERVER_DATA_MANIPULATION_EXCLUSIONS = {
     "03599_empty_checksums_txt_not_fatal.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
-    # False positive: no server is involved. The test runs `clickhouse-local` with `HOME` pointed
-    # at a per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is
-    # inside that directory, and the files it corrupts are the ones `clickhouse-local` itself
-    # wrote there a few lines earlier.
-    "05227_broken_persisted_table_does_not_block_clickhouse_local.sh",
-    # False positive: no server is involved. The test runs `clickhouse-local` with `--path` set to a
-    # per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is inside
-    # that directory, and the files it corrupts are the ones `clickhouse-local` itself wrote there.
-    "05407_clickhouse_local_buffer_flush_with_broken_table_load.sh",
 }
 
 
@@ -1518,15 +1501,6 @@ def check_settings_changes_history():
     return settings_violation_message(found, version) if found else ""
 
 
-def check_broken_links_in_diff():
-    """The links added by the PR must be reachable. Not run outside of PRs: the merge queue and
-    master would only get flaky on unrelated sites going down, as every link was checked in its PR."""
-    info = Info()
-    if info.pr_number <= 0:
-        return ""
-    return check_pr_links(info.repo_name, info.pr_number)
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
     parser.add_argument("--test", help="Sub check name", default="")
@@ -1706,14 +1680,6 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_settings_changes_history,
-            )
-        )
-    testname = "broken_links"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_broken_links_in_diff,
             )
         )
     testname = "cpp"

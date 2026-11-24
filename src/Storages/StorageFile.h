@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
-#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/ISource.h>
@@ -19,7 +17,6 @@
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
 #include <sys/stat.h>
 
 namespace DB
@@ -31,15 +28,10 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
-struct FileBucketInfo;
-using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
-
 class PullingPipelineExecutor;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
-
-struct ParquetCachedStatisticsFilter;
 
 class StorageFile final : public IStorage
 {
@@ -123,7 +115,6 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool storesDataOnDisk() const override;
-    bool hasUnreplicatedTableDataOnDisk() const override;
     Strings getDataPaths() const override;
 
     /// Check if the format supports reading only some subset of columns.
@@ -353,27 +344,6 @@ private:
     };
     using TopKQueryConditionCacheKeyPtr = std::shared_ptr<const TopKQueryConditionCacheKey>;
 
-    /// A single file that is read by several sources in parallel, which take its buckets (subsets of the
-    /// row groups) one at a time. Made by `ReadFromFile::trySplitSingleFile` and shared by these sources.
-    struct SplitFile
-    {
-        String path;
-        /// The version of the file that was split, see `computeFileCacheVersionToken`. The buckets
-        /// describe this version only, so every source checks that it reads this version.
-        String file_cache_version;
-        VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
-        std::atomic<size_t> next_bucket = 0;
-
-        /// Every source reads only the row groups of the buckets it takes, so the query condition cache entry
-        /// for the file can be written only after all buckets are read.
-        std::mutex mutex;
-        size_t buckets_read TSA_GUARDED_BY(mutex) = 0;
-        bool can_write_query_condition_cache TSA_GUARDED_BY(mutex) = true;
-        size_t total_row_groups TSA_GUARDED_BY(mutex) = 0;
-        std::unordered_set<size_t> matched_row_groups TSA_GUARDED_BY(mutex);
-    };
-    using SplitFilePtr = std::shared_ptr<SplitFile>;
-
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
@@ -385,9 +355,7 @@ private:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
-        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
-        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil,
-        SplitFilePtr split_file_ = nullptr);
+        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -419,15 +387,8 @@ private:
     /// key was made for; `still_holds` is false if the file has changed since it was opened.
     void checkTopKQueryConditionCacheKeyHolds(bool still_holds) const;
 
-    /// Whether the cached Parquet statistics of the current file version show that no row group can match the filter.
-    bool canSkipFileByCachedStatistics();
-
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
-
-    /// Records the row groups of the bucket of `split_file` this source has read that produced rows,
-    /// and writes the query condition cache entry for the file once all buckets are read.
-    void finishReadingSplitFileBucket();
 
     std::shared_ptr<StorageFile> storage;
     FilesIteratorPtr files_iterator;
@@ -446,22 +407,15 @@ private:
     /// settle check in `generate`). The query condition cache skips data based on the
     /// token, so it must fail close and stay bypassed while this is false.
     bool current_file_version_settled = false;
-    bool cached_statistics_filter_prepared = false;
-    std::shared_ptr<const ParquetCachedStatisticsFilter> cached_statistics_filter;
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
-    /// The archive reader's own buffer when `read_buf` decompresses a file inside an archive. Declared before `read_buf`,
-    /// which references it, so that it is destroyed after.
-    std::unique_ptr<ReadBuffer> archive_entry_read_buf;
     std::unique_ptr<ReadBuffer> read_buf;
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
-    /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
-    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
 
     /// A file read by a TopN read, whose query condition cache entry is written only when the source
@@ -471,21 +425,14 @@ private:
     {
         String cache_file_key;
         size_t total_row_groups = 0;
-        VectorWithMemoryTracking<size_t> matched_row_groups;
+        std::vector<size_t> matched_row_groups;
         /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
-        VectorWithMemoryTracking<std::pair<size_t, Field>> best_values;
+        std::vector<std::pair<size_t, Field>> best_values;
     };
     std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
-    /// If set, this source reads the buckets of `split_file` it takes; `split_file_bucket` is the current one.
-    SplitFilePtr split_file;
-    size_t split_file_bucket = 0;
-
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
-    ArchiveEntryPositions entry_positions;
-    /// The row count cache key of the archive entry being read, unset for a plain file.
-    std::optional<String> current_archive_entry_cache_key;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
@@ -523,7 +470,6 @@ public:
     /// and only for a sort column it physically reads from the file.
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
-    bool supportsTopKStatisticsOnlyFilter() const override { return true; }
 
     bool supportsMinMaxFromStatistics() const override;
     void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
@@ -561,15 +507,6 @@ public:
 
 private:
     StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
-
-    /// If the query reads a single file that can be split into buckets, returns the buckets to read by
-    /// separate sources. Otherwise the file is read by one source, whose reader may still use several
-    /// threads, but that is much less efficient: the rest of the pipeline then starts with a single
-    /// stream, and the reader can't keep as many threads busy as independent sources do.
-    /// Takes the read lock of the storage into `read_lock` before looking at the file, so that the
-    /// caller keeps it until the sources (which take their own read locks) are constructed.
-    StorageFileSource::SplitFilePtr trySplitSingleFile(
-        const FormatFilterInfoPtr & format_filter_info, const UUID & query_condition_cache_table_id, RWLockImpl::LockHolder & read_lock) const;
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;

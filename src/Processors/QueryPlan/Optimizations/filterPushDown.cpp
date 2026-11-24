@@ -92,7 +92,7 @@ static void addImpliedIndexHintInputs(const ActionsDAG::Node & node, NameSet & r
         addImpliedIndexHintInputs(inner, res);
 }
 
-static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
+static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node, NameSet & implied_index_hint_inputs)
 {
     NameSet res;
     visitReachableNodes({node}, [&](const ActionsDAG::Node * cur)
@@ -101,7 +101,7 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
         if (cur->type == ActionsDAG::ActionType::INPUT)
             res.emplace(cur->result_name);
         else
-            addImpliedIndexHintInputs(*cur, res);
+            addImpliedIndexHintInputs(*cur, implied_index_hint_inputs);
         return VisitResult::Continue;
     });
     return res;
@@ -246,10 +246,8 @@ static size_t addNewFilterStepOrThrow(
 
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
-    auto new_filter = std::make_unique<FilterStep>(
+    node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
-    new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
-    node.step = std::move(new_filter);
     node.step->setStepDescription(*filter);
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
@@ -793,15 +791,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             cross_type_equivalent_columns.insert(replaced_name);
 
             /// A source that already has the supertype is not cast by the JOIN either, so it can stand in
-            /// under its own name, provided that name carries the source's type wherever it also occurs in
-            /// the JOIN output, and does occur at that type in the input of the stream this filter is pushed to.
-            const auto & source_stream_input_header
-                = source.fromLeft() ? *left_stream_input_header : *right_stream_input_header;
+            /// under its own name provided that name denotes a single type here: the JOIN republishes an
+            /// input's name at its output type, and a pushed filter binds its inputs to those outputs by name.
             const auto * source_in_output = join_output_header.findByName(source.getColumnName());
-            const auto * source_in_stream = source_stream_input_header.findByName(source.getColumnName());
             if (source.getType()->equals(*supertype)
-                && (!source_in_output || source_in_output->type->equals(*source.getType()))
-                && source_in_stream && source_in_stream->type->equals(*source.getType()))
+                && (!source_in_output || source_in_output->type->equals(*source.getType())))
             {
                 equivalent_columns[replaced_name] = source.getColumn();
                 return;
@@ -1235,6 +1229,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (aggregating || merging_aggregated)
     {
+        auto index_hints = ActionsDAG::PushDownIndexHints::Implied;
+
         /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
         /// of the grouping sets, we could not push the filter down.
         bool is_grouping_sets = aggregating ? aggregating->isGroupingSets() : merging_aggregated->isGroupingSets();
@@ -1247,11 +1243,16 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions.findInOutputs(filter->getFilterColumnName());
 
-            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
+            NameSet index_hint_inputs;
+            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node, index_hint_inputs);
 
             const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
             if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
+
+            /// A hint reading a column that some set lacks would prune rows that set aggregates.
+            if (!identifiersIsAmongAllGroupingSets(grouping_sets, index_hint_inputs))
+                index_hints = ActionsDAG::PushDownIndexHints::None;
         }
 
         const auto & params = aggregating ? aggregating->getParams() : merging_aggregated->getParams();
@@ -1266,7 +1267,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, ActionsDAG::PushDownIndexHints::Implied))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, index_hints))
             return updated_steps;
     }
 
@@ -1449,13 +1450,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             filter_node.children.push_back(parent_node->children[i]);
             parent_node->children[i] = &filter_node;
 
-            auto new_filter = std::make_unique<FilterStep>(
+            filter_node.step = std::make_unique<FilterStep>(
                 filter_node.children.front()->step->getOutputHeader(),
                 filter->getExpression().clone(),
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
-            new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
-            filter_node.step = std::move(new_filter);
         }
 
         ///       - Filter - Something

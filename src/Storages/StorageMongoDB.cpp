@@ -655,6 +655,13 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     bool throw_on_error = context->getSettingsRef()[Setting::mongodb_throw_on_unsupported_query];
 
+    if (!query.query_tree)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage requires the query tree, which is not available for this query. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
+        return make_document();
+    }
+
     const auto & query_tree = query.query_tree->as<QueryNode &>();
 
     if (throw_on_error)
@@ -708,8 +715,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     if (limit || offset)
     {
         /// Otherwise it was already checked above.
-        /// With `SHUFFLE`, the limit must be applied after shuffling all rows.
-        if (!query_tree.hasGroupBy() && !query_tree.hasLimitBy() && !query_tree.isShuffle())
+        if (!query_tree.hasGroupBy() && !query_tree.hasLimitBy())
         {
             auto limit_value = limit ? limit->getValue().safeGet<UInt64>() : 0;
             auto offset_value = offset ? offset->getValue().safeGet<UInt64>() : 0;

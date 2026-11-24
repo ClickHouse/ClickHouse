@@ -1,11 +1,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/MaskOperations.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -61,38 +58,6 @@ public:
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
-
-    bool isShortCircuitForArgumentTypes(ShortCircuitSettings & settings, const DataTypes & arguments) const override
-    {
-        /// The first argument that is not always NULL is always needed. Every other argument is needed only
-        /// for the rows where all the preceding arguments are NULL, so it is evaluated lazily.
-        /// The arguments that are always NULL and the arguments after the first one that cannot contain NULL
-        /// are never executed by `executeImpl`, but they are counted as well: they can still have descendants
-        /// in the actions DAG (e.g. `if(intDiv(100, number) > 0, NULL, NULL)` has the type `Nullable(Nothing)`),
-        /// and a node shared by such an argument and a reachable lazy argument should stay lazy, because
-        /// it is then evaluated only once, under the mask of the reachable argument.
-        std::optional<size_t> first_live_argument;
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (!arguments[i]->onlyNull())
-            {
-                first_live_argument = i;
-                break;
-            }
-        }
-        settings.arguments_with_disabled_lazy_execution.insert(first_live_argument.value_or(0));
-        /// As in `and`, the masks of the arguments are nested: the rows needed by an argument are a subset
-        /// of the rows needed by every preceding argument. So a node that is a common descendant of several
-        /// lazy arguments can be lazily executed as well, it is evaluated under the mask of each argument it belongs to.
-        /// E.g. in `coalesce(a, f(x), g(x))` the node `x` must not be evaluated for the rows where `a` is not NULL.
-        /// A node shared with the first live argument is evaluated eagerly, once for all rows.
-        /// With two arguments `coalesce` is the same as `ifNull`, there is only one lazy argument, and nothing
-        /// is gained, so keep the same settings as in `ifNull` (as `multiIf` does for its `if` form).
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = (arguments.size() > 2);
-        settings.force_enable_lazy_execution = false;
-        return true;
-    }
-
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
         ColumnNumbers args;
@@ -117,74 +82,48 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    String getSignatureString() const override
-    {
-        /// All non-last arguments are stripped of Nullable before computing the supertype,
-        /// so the result is non-Nullable iff the last argument is non-Nullable.
-        ///
-        /// `use_variant_as_common_type` selects `leastSupertypeOrVariant`, matching `if`/`multiIf`.
-        if (use_variant_as_common_type)
-            return
-                "() -> NULL"
-                " OR (T) -> T"
-                " OR (T1, ..., E) -> leastSupertypeOrVariant(removeNullable(T1), ..., E)";
-        return
-            "() -> NULL"
-            " OR (T) -> T"
-            " OR (T1, ..., E) -> leastSupertype(removeNullable(T1), ..., E)";
-    }
-
-    /// The declarative signature is bypassed on both the column and the types-only paths so
-    /// that the legacy short-circuit semantics are preserved: stop at the first non-nullable
-    /// argument and ignore trailing arguments for the supertype. The signature
-    /// `leastSupertype(removeNullable(T1), ..., E)` includes all arguments, so a query like
-    /// `coalesce(non_nullable_int, incompatible_type)` previously type-checked (returning the
-    /// int) but would otherwise fail during analysis. The `ColumnsWithTypeAndName` overload
-    /// forwards to the `DataTypes` one so both analysis paths share this logic.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes types;
-        types.reserve(arguments.size());
-        for (const auto & arg : arguments)
-            types.push_back(arg.type);
-        return getReturnTypeImpl(types);
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty())
-            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-
-        /// Mirror `executeImpl`'s filter: skip `Nothing`/`Null` arguments and stop at
-        /// the first argument that cannot be NULL. Strip `Nullable` from all but the
-        /// last surviving argument — the last one keeps its `Nullable` so the result
-        /// inherits its nullability (matching the legacy DSL).
-        DataTypes filtered_types;
-        filtered_types.reserve(arguments.size());
-        for (const auto & type : arguments)
+        /// Skip all NULL arguments. If any argument is non-Nullable, skip all next arguments.
+        DataTypes filtered_args;
+        filtered_args.reserve(arguments.size());
+        for (const auto & arg : arguments)
         {
-            if (type->onlyNull())
+            if (arg->onlyNull())
                 continue;
-            filtered_types.push_back(type);
-            if (!canContainNull(*type))
+
+            filtered_args.push_back(arg);
+
+            if (!canContainNull(*arg))
                 break;
         }
 
-        if (filtered_types.empty())
+        DataTypes new_args;
+        for (size_t i = 0; i < filtered_args.size(); ++i)
+        {
+            bool is_last = i + 1 == filtered_args.size();
+
+            if (is_last)
+                new_args.push_back(filtered_args[i]);
+            else
+                new_args.push_back(removeNullable(filtered_args[i]));
+        }
+
+        if (new_args.empty())
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        if (new_args.size() == 1)
+            return new_args.front();
 
-        for (size_t i = 0; i + 1 < filtered_types.size(); ++i)
-            filtered_types[i] = removeNullable(filtered_types[i]);
+        bool has_variant = std::any_of(new_args.begin(), new_args.end(), [](const auto & t) { return isVariant(t); });
+        auto res = (use_variant_as_common_type || has_variant)
+            ? getLeastSupertypeOrVariant(new_args, allow_lossy_numeric_supertype)
+            : getLeastSupertype(new_args, allow_lossy_numeric_supertype);
 
-        if (filtered_types.size() == 1)
-            return filtered_types[0];
+        /// if last argument is not nullable, result should be also not nullable
+        if (!canContainNull(*new_args.back()) && res->isNullable())
+            res = removeNullable(res);
 
-        /// Preserve the legacy behavior: expand to a Variant whenever any surviving argument
-        /// is already a Variant, even if `use_variant_as_common_type` is off.
-        const bool has_variant = std::any_of(filtered_types.begin(), filtered_types.end(), [](const auto & t) { return isVariant(t); });
-        return (use_variant_as_common_type || has_variant)
-            ? getLeastSupertypeOrVariant(filtered_types, allow_lossy_numeric_supertype)
-            : getLeastSupertype(filtered_types, allow_lossy_numeric_supertype);
+        return res;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -208,20 +147,6 @@ public:
                 break;
         }
 
-        /// Short-circuit evaluation: the arguments after the first one can be lazily executed
-        /// (see `isShortCircuit`). The i-th argument is needed only for the rows where all the
-        /// preceding arguments are NULL, so we execute it under the mask of exactly these rows.
-        const int last_lazy_argument_index = checkShortCircuitArguments(filtered_args);
-        /// The first argument is always needed, but it can still be lazily executed when `coalesce`
-        /// itself is an argument of an enclosing short-circuit function.
-        if (last_lazy_argument_index >= 0)
-            executeColumnIfNeeded(filtered_args[0]);
-
-        const bool has_lazy_arguments = last_lazy_argument_index > 0;
-        IColumn::Filter mask;
-        MaskInfo mask_info{.has_ones = true, .has_zeros = false};
-        if (has_lazy_arguments)
-            mask.resize_fill(input_rows_count, 1);
 
         ColumnsWithTypeAndName multi_if_args;
         ColumnsWithTypeAndName tmp_args(1);
@@ -230,9 +155,6 @@ public:
         {
             bool is_last = i + 1 == filtered_args.size();
 
-            if (has_lazy_arguments && i > 0)
-                maskedExecute(filtered_args[i], mask, mask_info);
-
             if (is_last)
             {
                 multi_if_args.push_back(filtered_args[i]);
@@ -240,70 +162,38 @@ public:
             else
             {
                 tmp_args[0] = filtered_args[i];
+                auto & cond = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
+                cond.column = is_not_null->build(tmp_args)->execute(tmp_args, cond.type, input_rows_count, /* dry_run = */ false);
 
-                DataTypePtr cond_type = std::make_shared<DataTypeUInt8>();
-                ColumnPtr cond_column
-                    = is_not_null->build(tmp_args)->execute(tmp_args, cond_type, input_rows_count, /* dry_run = */ false);
-
-                DataTypePtr val_type = removeNullable(filtered_args[i].type);
-                ColumnPtr val_column
-                    = assume_not_null->build(tmp_args)->execute(tmp_args, val_type, input_rows_count, /* dry_run = */ false);
-
-                multi_if_args.emplace_back(cond_column, cond_type, "");
-                multi_if_args.emplace_back(val_column, val_type, "");
-
-                /// Narrow the mask down to the rows where this argument is NULL - only these rows
-                /// need the next arguments. When the mask becomes all zeros, `maskedExecute` does not
-                /// execute the remaining arguments at all and substitutes default values instead.
-                /// A lazily executed argument can be reduced to a sparse column (and then `isNotNull`
-                /// keeps it sparse), while mask extraction supports only full and constant columns.
-                if (has_lazy_arguments && static_cast<int>(i) < last_lazy_argument_index)
-                    mask_info = extractInvertedMask(mask, recursiveRemoveSparse(cond_column));
+                tmp_args[0] = filtered_args[i];
+                auto & val = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(filtered_args[i].type), ""});
+                val.column = assume_not_null->build(tmp_args)->execute(tmp_args, val.type, input_rows_count, /* dry_run = */ false);
             }
         }
-
-        ColumnPtr res;
-        DataTypePtr res_type;
 
         /// If all arguments appeared to be NULL.
         if (multi_if_args.empty())
-        {
-            res = result_type->createColumnConstWithDefaultValue(input_rows_count);
-            res_type = result_type;
-        }
-        else if (multi_if_args.size() == 1)
-        {
-            res = multi_if_args.front().column;
-            res_type = multi_if_args.front().type;
-        }
-        else
-        {
-            /// If there was only two arguments (3 arguments passed to multiIf)
-            /// use function "if" instead, because it's implemented more efficient.
-            /// TODO: make "multiIf" the same efficient.
-            FunctionOverloadResolverPtr if_or_multi_if = multi_if_args.size() == 3 ? if_function : multi_if_function;
-            auto func = if_or_multi_if->build(multi_if_args);
-            res_type = func->getResultType();
-            res = func->execute(multi_if_args, res_type, input_rows_count, /* dry_run = */ false);
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-            /// if last argument is not nullable, result should be also not nullable
-            if (!multi_if_args.back().column->isNullable() && res->isNullable())
-            {
-                if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(&*res))
-                    res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn()).getNestedColumnPtr();
-                else if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*res))
-                    res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn()).getNestedColumnPtr();
-                else
-                    res = checkAndGetColumn<ColumnNullable>(&*res)->getNestedColumnPtr();
-                res_type = removeNullable(res_type);
-            }
-        }
+        if (multi_if_args.size() == 1)
+            return multi_if_args.front().column;
 
-        /// The DSL-declared return type is leastSupertype(removeNullable(non_last), ..., last),
-        /// but our "stop after first non-nullable" filter produces a narrower column type
-        /// (e.g. coalesce(Int32, Int64) declares Int64 but computes Int32). Cast to match.
-        if (!res_type->equals(*result_type))
-            res = castColumn({res, res_type, ""}, result_type);
+        /// If there was only two arguments (3 arguments passed to multiIf)
+        /// use function "if" instead, because it's implemented more efficient.
+        /// TODO: make "multiIf" the same efficient.
+        FunctionOverloadResolverPtr if_or_multi_if = multi_if_args.size() == 3 ? if_function : multi_if_function;
+        ColumnPtr res = if_or_multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count, /* dry_run = */ false);
+
+        /// if last argument is not nullable, result should be also not nullable
+        if (!multi_if_args.back().column->isNullable() && res->isNullable())
+        {
+            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(&*res))
+                res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn()).getNestedColumnPtr();
+            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*res))
+                res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn()).getNestedColumnPtr();
+            else
+                res = checkAndGetColumn<ColumnNullable>(&*res)->getNestedColumnPtr();
+        }
 
         return res;
     }
@@ -323,16 +213,6 @@ REGISTER_FUNCTION(Coalesce)
 {
     FunctionDocumentation::Description description = R"(
 Returns the leftmost non-`NULL` argument.
-
-The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
-
-If enabled, an argument is evaluated only on the rows where all the preceding arguments are `NULL`.
-
-For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the following query:
-
-```sql
-SELECT coalesce(if(number = 0, toNullable(0), NULL), intDiv(42, number)) FROM numbers(10)
-```
     )";
     FunctionDocumentation::Syntax syntax = "coalesce(x[, y, ...])";
     FunctionDocumentation::Arguments arguments = {

@@ -180,6 +180,10 @@ namespace
             {
                 if (strm.at_end)
                     return 0;
+                /// minizip computes the size as `int32_t` from sizes stored in the archive, and a negative one
+                /// arrives here converted to a huge number.
+                if (size > static_cast<unsigned long>(std::numeric_limits<int32_t>::max())) // NOLINT(google-runtime-int)
+                    throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Invalid size of a read from a zip archive: {}", size);
                 return strm.read_buffer->read(reinterpret_cast<char *>(buf), size);
             }
             catch (...)
@@ -601,7 +605,7 @@ private:
         if (!bytes_read)
             return false;
 
-        setWorkingBufferFromInternal();
+        working_buffer = internal_buffer;
         working_buffer.resize(bytes_read);
         return true;
     }

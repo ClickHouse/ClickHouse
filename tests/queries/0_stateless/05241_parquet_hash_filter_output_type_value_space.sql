@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the Parquet format is not built in the fast-test image.
+
 -- The Parquet bloom-filter and dictionary-filter row-group legs hash the stored side in physical space
 -- (the dictionary is materialized as the decoded type and cast to the physical type, and the file's own
 -- bloom filter holds digests of the physical values) but hash query constants of the requested type.
@@ -10,9 +13,6 @@ set max_threads = 1;
 set max_insert_threads = 1;
 set max_block_size = 1000000;
 set output_format_parquet_row_group_size = 1000000;
--- Several queries repeat a condition on the same file. Once the file is a few seconds old (in a slow build),
--- the query condition cache would drop the row groups instead, and count them in `ParquetPrunedRowGroups`.
-set use_query_condition_cache = 0;
 
 insert into function file(currentDatabase() || '_05241_u32.parquet', Parquet, 'x UInt32')
     select toUInt32(70000) as x;

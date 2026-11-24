@@ -1,7 +1,6 @@
 import copy
 import dataclasses
 import json
-import os
 import time
 import urllib
 from typing import List, Optional
@@ -122,18 +121,6 @@ class CIDB:
             user=data.get("user"),
             passwd=data.get("password"),
         )
-
-    READ_URL_ENV = "CI_DB_READ_URL"
-
-    @staticmethod
-    def lookup_read_url(source) -> str:
-        url = json.loads(source.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value())["url"]
-        assert "@" not in url, f"CI DB url must not carry credentials, got [{url.rsplit('@', 1)[-1]}]"
-        return url
-
-    @staticmethod
-    def get_read_url(info) -> str:
-        return os.environ.get(CIDB.READ_URL_ENV) or CIDB.lookup_read_url(info)
 
     def get_link_to_test_case_statistics(
         self,
