@@ -37,6 +37,16 @@ echo '-- and reads it while the second shard skips a partition'
 $CLICKHOUSE_CLIENT --user "$TEST_USER" --prefer_localhost_replica 1 -q "SELECT sum(x) FROM dist"
 $CLICKHOUSE_CLIENT --user "$TEST_USER" --prefer_localhost_replica 1 -q "SELECT count() FROM dist"
 
+echo '-- a query that reads _partition_id of another table does not need the grant on the local table'
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE other (d Date, x UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY x;
+    INSERT INTO other SELECT '2024-01-15', number FROM numbers(1, 3);
+    INSERT INTO other SELECT '2024-02-15', number FROM numbers(10, 3);
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.other TO $TEST_USER;
+"
+$CLICKHOUSE_CLIENT --user "$TEST_USER" --prefer_localhost_replica 1 -q "SELECT sum(x) FROM dist WHERE x IN (SELECT x FROM other WHERE _partition_id = '202401')"
+$CLICKHOUSE_CLIENT --user "$TEST_USER" --prefer_localhost_replica 1 -q "SELECT sum(x) FROM dist AS l INNER JOIN other AS r USING (x) WHERE r._partition_id = '202401'"
+
 echo '-- a query that reads _partition_id itself needs the grant on the local table'
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(_partition_id) ON ${CLICKHOUSE_DATABASE}.dist TO $TEST_USER"
 $CLICKHOUSE_CLIENT --user "$TEST_USER" --prefer_localhost_replica 1 -q "SELECT sum(x) FROM dist WHERE _partition_id = '202402'" 2>&1 \
@@ -47,5 +57,6 @@ $CLICKHOUSE_CLIENT --user "$TEST_USER" --prefer_localhost_replica 1 -q "SELECT s
 $CLICKHOUSE_CLIENT -m -q "
     DROP USER $TEST_USER;
     DROP TABLE dist;
+    DROP TABLE other;
     DROP TABLE data;
 "

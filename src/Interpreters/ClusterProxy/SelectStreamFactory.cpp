@@ -1,3 +1,4 @@
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableNode.h>
@@ -85,13 +86,18 @@ bool joinKeepsRowsOfTable(const ASTTableJoin & join, bool table_is_on_the_left)
     return isInnerOrRight(join.kind) && (join.strictness == JoinStrictness::All || join.strictness == JoinStrictness::Unspecified);
 }
 
-bool hasPartitionIdColumn(const ASTPtr & ast)
+/// Whether the query tree for a shard reads `_partition_id` of `table`, and not only of other tables.
+bool readsPartitionIdOfTable(const QueryTreeNodePtr & node, const StorageID & table)
 {
-    const auto * identifier = ast->as<ASTIdentifier>();
-    if (identifier && identifier->shortName() == "_partition_id")
-        return true;
+    if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnName() == "_partition_id")
+    {
+        auto column_source = column_node->getColumnSourceOrNull();
+        const auto * table_node = column_source ? column_source->as<TableNode>() : nullptr;
+        if (table_node && StorageID::DatabaseAndTableNameEqual{}(table_node->getStorageID(), table))
+            return true;
+    }
 
-    return std::ranges::any_of(ast->children, hasPartitionIdColumn);
+    return std::ranges::any_of(node->getChildren(), [&](const auto & child) { return child && readsPartitionIdOfTable(child, table); });
 }
 
 /// The tables named as the remote table in the query tree for a shard, by the place of each of them.
@@ -230,8 +236,8 @@ void SelectStreamFactory::createForShard(
 
     /// The query of this shard: the shared one, unless some partitions are skipped on this shard.
     ASTPtr query_ast = query.ast;
-    /// A query that reads `_partition_id` itself keeps the access check of the column.
-    const bool check_partition_id = !partitions_to_skip || hasPartitionIdColumn(query_ast);
+    /// A query that reads `_partition_id` of the table itself keeps the access check of the column.
+    const bool check_partition_id = !partitions_to_skip || readsPartitionIdOfTable(query_tree, main_table);
     if (partitions_to_skip)
     {
         query_ast = query_ast->clone();
