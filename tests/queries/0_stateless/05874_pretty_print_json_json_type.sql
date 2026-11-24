@@ -95,15 +95,16 @@ SELECT toTypeName(prettyPrintJSON('{"a":1}'::Dynamic)), prettyPrintJSON('{"a":1}
 -- { echoOff }
 
 SELECT 'query condition cache keeps the format settings apart for Dynamic and Variant arguments';
+-- startsWith and not `=`: a comparison hashes the format settings by itself.
 DROP TABLE IF EXISTS t_qcc;
 CREATE TABLE t_qcc (id UInt64, j JSON, v Variant(String, UInt64)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_qcc SELECT number, '{"d":18446744073709551615}', 18446744073709551615::UInt64 FROM numbers(20000);
-SELECT count() FROM t_qcc WHERE prettyPrintJSON(j.d) = '"18446744073709551615"'
+SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(j.d), '"')
 SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 0;
-SELECT count() FROM t_qcc WHERE prettyPrintJSON(j.d) = '"18446744073709551615"'
+SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(j.d), '"')
 SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1;
-SELECT count() FROM t_qcc WHERE prettyPrintJSON(v) = '"18446744073709551615"'
+SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(v), '"')
 SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 0;
-SELECT count() FROM t_qcc WHERE prettyPrintJSON(v) = '"18446744073709551615"'
+SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(v), '"')
 SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1;
 DROP TABLE t_qcc;
