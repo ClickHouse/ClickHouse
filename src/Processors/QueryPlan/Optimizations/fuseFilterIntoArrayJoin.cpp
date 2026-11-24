@@ -74,7 +74,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     auto ignores_row_count = [](const IFunctionBase & function) { return !function.isStateful() && !function.hasObservableSideEffects(); };
     if (!fully_fused
         && (!std::ranges::all_of(expression.getNodes(), [&](const auto & node) { return allNodeFunctions(node, ignores_row_count); })
-            || !std::ranges::all_of(ActionsDAG::extractConjunctionAtoms(filter_node), [](const auto * atom) { return canBeEvaluatedOnMoreRows(atom); })))
+            || !std::ranges::all_of(ActionsDAG::extractConjunctionAtoms(filter_node), canBeEvaluatedOnMoreRows)))
         return 0;
 
     /// With short-circuit off, a FilterStep still masks a throwing atom by splitting the AND into sequential
