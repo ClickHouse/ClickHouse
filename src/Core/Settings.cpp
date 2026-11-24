@@ -6798,7 +6798,7 @@ if a reference is filtered (`WHERE`, `PREWHERE`) by a column that is a key of it
 
 Works independently of the setting `enable_materialized_cte`.
 )", 0, \
-        {"26.11", false, true, "New setting"}) \
+        {"26.12", false, true, "New setting"}) \
     DECLARE(Bool, analyzer_inline_views, false, R"(
 When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
 )", EXPERIMENTAL, \
