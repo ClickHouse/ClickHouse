@@ -15,10 +15,6 @@
 #include <string>
 #include <vector>
 
-#if defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
-#include <arm_neon.h>
-#endif
-
 #include <fmt/format.h>
 
 namespace DB
@@ -296,29 +292,26 @@ float raBitQNumerator(const RaBitQQuery & q, const char * code)
     UInt64 pc = 0;
     UInt64 plane_pc[RABITQ_QUERY_BITS] = {};
     size_t b = 0;
-#if defined(__aarch64__) && defined(__ARM_FEATURE_DOTPROD)
-    /// AArch64 has no scalar popcount instruction: count 16 bytes at a time with CNT and sum the byte counts with UDOT.
-    if (code_bytes >= 16)
+#if defined(__aarch64__)
+    /// AArch64 has no scalar popcount instruction, so count 16 bytes at a time in vector registers.
+    using Words = UInt32 __attribute__((ext_vector_type(4)));
+    Words pc_lanes = {};
+    Words plane_lanes[RABITQ_QUERY_BITS] = {};
+    for (; b + sizeof(Words) <= code_bytes; b += sizeof(Words))
     {
-        const uint8x16_t ones = vdupq_n_u8(1);
-        uint32x4_t pc_lanes = vdupq_n_u32(0);
-        uint32x4_t plane_lanes[RABITQ_QUERY_BITS];
-        for (auto & lanes : plane_lanes)
-            lanes = vdupq_n_u32(0);
-        for (; b + 16 <= code_bytes; b += 16)
-        {
-            const uint8x16_t code_bits = vld1q_u8(reinterpret_cast<const uint8_t *>(code) + b);
-            pc_lanes = vdotq_u32(pc_lanes, vcntq_u8(code_bits), ones);
-            for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
-            {
-                const uint8x16_t plane_bits = vld1q_u8(reinterpret_cast<const uint8_t *>(planes) + static_cast<size_t>(j) * code_bytes + b);
-                plane_lanes[j] = vdotq_u32(plane_lanes[j], vcntq_u8(vandq_u8(code_bits, plane_bits)), ones);
-            }
-        }
-        pc = vaddvq_u32(pc_lanes);
+        Words code_words;
+        std::memcpy(&code_words, code + b, sizeof(code_words));
+        pc_lanes += __builtin_elementwise_popcount(code_words);
         for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
-            plane_pc[j] = vaddvq_u32(plane_lanes[j]);
+        {
+            Words plane_words;
+            std::memcpy(&plane_words, planes + static_cast<size_t>(j) * code_bytes + b, sizeof(plane_words));
+            plane_lanes[j] += __builtin_elementwise_popcount(code_words & plane_words);
+        }
     }
+    pc = __builtin_reduce_add(pc_lanes);
+    for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        plane_pc[j] = __builtin_reduce_add(plane_lanes[j]);
 #endif
     for (; b + 8 <= code_bytes; b += 8)
     {
