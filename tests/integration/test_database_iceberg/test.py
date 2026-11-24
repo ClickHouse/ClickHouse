@@ -3657,7 +3657,8 @@ def test_soak_catalog_read_with_external_snapshots(started_cluster):
             SOAK_ITERATIONS,
             require_nonzero=["S3GetObject"] if operation == "point_read" else [],
         )
-    sampler.assert_bounded(cache_metrics=["IcebergMetadataFilesCacheBytes"])
+    sampler.# The external writer makes each read open metadata files of a new snapshot, so the pools of S3 and catalog connections settle later and a little higher than in the tests that only write through ClickHouse.
+    sampler.assert_bounded(cache_metrics=["IcebergMetadataFilesCacheBytes"], fds_tolerance=32)
     node.query(f"DROP DATABASE {database}")
 
 
