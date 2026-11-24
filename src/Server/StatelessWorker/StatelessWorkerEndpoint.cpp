@@ -247,12 +247,7 @@ void readRuntimeFilterDescriptors(VectorWithMemoryTracking<RuntimeFilterReceiveD
 
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
-    serializeTask(task_description, task_description.task, task_description.exchange_stream_sources, out);
-}
-
-void serializeTask(const DistributedQueryTaskDescription & task_description, const DistributedQueryTask & task,
-    const ExchangeStreamSources & stream_sources, WriteBuffer & out)
-{
+    const auto & task = task_description.task;
     const UInt64 version = task_description.serialization_version;
     writeVarUInt(version, out);
     writeStringBinary(task_description.initial_query_id, out);
@@ -263,7 +258,7 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, con
     writeExchangeStreams(task.input_exchange_streams, out);
     writeExchangeStreams(task.output_exchange_streams, out);
     writeExchanges(task_description.exchanges, out);
-    writeStreamSources(stream_sources, version, out);
+    writeStreamSources(task_description.exchange_stream_sources, version, out);
     writeSettingsChanges(task_description.settings_changes, out);
     writeRuntimeFilterDescriptors(task.runtime_filter_descriptors, version, out);
 }

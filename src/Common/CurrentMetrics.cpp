@@ -625,9 +625,9 @@
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
     M(TaskTrackerThreadsActive, "Number of threads in the distributed query remote task tracker thread pool running a task.") \
     M(TaskTrackerThreadsScheduled, "Number of queued or active jobs in the distributed query remote task tracker thread pool.") \
-    M(DistributedPlanTaskDispatchThreads, "Number of threads that send the descriptions of distributed query tasks to the stateless workers.") \
-    M(DistributedPlanTaskDispatchThreadsActive, "Number of threads sending the description of a distributed query task to a stateless worker.") \
-    M(DistributedPlanTaskDispatchThreadsScheduled, "Number of queued or active jobs sending the descriptions of distributed query tasks to the stateless workers.") \
+    M(DistributedPlanTaskDispatchThreads, "Number of threads that send the `start_tasks` batches of distributed queries to the stateless workers.") \
+    M(DistributedPlanTaskDispatchThreadsActive, "Number of threads sending a `start_tasks` batch of a distributed query to a stateless worker.") \
+    M(DistributedPlanTaskDispatchThreadsScheduled, "Number of queued or active jobs sending the `start_tasks` batches of distributed queries to the stateless workers.") \
     M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \

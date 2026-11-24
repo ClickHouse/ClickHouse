@@ -11650,7 +11650,7 @@ another. The query's thread never sends.
     DECLARE(Bool, distributed_plan_task_dispatch_batching, true, R"(
 Send the tasks of a distributed query to each stateless worker in batches (`start_tasks`): one request carries all the
 worker's tasks of the stages started together, with each stage's plan written once, up to 100 MiB of plans per request.
-`0` sends one task per request.
+`0` sends one task per `start_tasks` request.
 )", PRIVATE_PREVIEW, \
         {"26.12", true, true, "New setting."}) \
     DECLARE(UInt64, distributed_plan_task_dispatch_stages_per_flush, 0, R"(
