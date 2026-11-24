@@ -2270,7 +2270,7 @@ private:
             {
                 auto data = element.getString();
 
-                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings))
+                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings, timeZoneForSchemaInference(format_settings)))
                     return type;
 
                 if (format_settings.json.try_infer_numbers_from_strings)
