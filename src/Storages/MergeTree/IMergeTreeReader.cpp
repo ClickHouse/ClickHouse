@@ -619,7 +619,7 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
         bool frozen = false;
-        /// A subcolumn the marker type lacks is read like one of an older stored type, see `injectRequiredColumnsRecursively`.
+        /// A subcolumn the marker type lacks is extracted from the converted parent, see `injectRequiredColumnsRecursively`.
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty()
             && !isSubcolumnMissingFromMarkerType(*data_part_info_for_read, name_pair.first, name_pair.second))
         {
