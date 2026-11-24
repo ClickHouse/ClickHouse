@@ -317,7 +317,10 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             /// Skip chunk if it doesn't have requested path.
             if (!paths_info_chunk.path_to_info.contains(path))
             {
-                column.insertManyDefaults(chunk_structure.limit);
+                if (subcolumn_type->isDefaultInsertTrivial())
+                    column.insertManyDefaults(chunk_structure.limit);
+                else
+                    subcolumn_type->insertManyDefaultsInto(column, chunk_structure.limit);
                 continue;
             }
 
