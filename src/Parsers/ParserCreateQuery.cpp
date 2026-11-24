@@ -3135,9 +3135,7 @@ When the data type is not known, as for marks, the first alternative that is app
 
 ## Adaptive Codec Selection {#adaptive-codec-selection}
 
-<BetaBadge/>
-
-The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings/enable#enable_adaptive_codec_selection) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), the codec that compresses a block smallest is chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it. The choice is made on one block in every [`adaptive_codec_selection_period`](/reference/settings/merge-tree-settings/other#adaptive_codec_selection_period) blocks and reused for the blocks in between.
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings/enable#enable_adaptive_codec_selection), which is enabled by default, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), the codec that compresses a block smallest is chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it. The choice is made on one block in every [`adaptive_codec_selection_period`](/reference/settings/merge-tree-settings/other#adaptive_codec_selection_period) blocks and reused for the blocks in between.
 
 <Note>
 Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
@@ -3152,8 +3150,7 @@ CREATE TABLE adaptive
     user_id UInt64
 )
 ENGINE = MergeTree
-ORDER BY time
-SETTINGS enable_adaptive_codec_selection = 1;
+ORDER BY time;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;

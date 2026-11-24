@@ -2793,13 +2793,14 @@ Enables commit-order projections that store `_block_number` and `_block_offset` 
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
 )", EXPERIMENTAL, \
         {"26.4", false, false, "New setting"}) \
-    DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
+    DECLARE(Bool, enable_adaptive_codec_selection, true, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 The smallest output wins and incompressible blocks are stored raw. The choice is made on one block in every `adaptive_codec_selection_period` blocks and reused for the blocks in between.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/index) table function.
-)", BETA, \
+)", 0, \
+        {"26.12", false, true, "Adaptive codec selection is production-ready and enabled by default."}, \
         {"26.11", false, false, "Adaptive codec selection was moved to Beta."}, \
         {"26.8", false, false, "New setting."}) \
     DECLARE(NonZeroUInt64, adaptive_codec_selection_period, 8, R"(
@@ -2810,7 +2811,8 @@ A priced block is never larger than the default codec would make it, a block reu
 The profile events `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` and `AdaptiveCodecBlocksReused` count the blocks of each kind per merge or mutation in `system.part_log`.
 `AdaptiveCodecBytesDefault` and `AdaptiveCodecBytesWritten` sum the default codec's size and the written size of the sample blocks, so their ratio is the saving of adaptive selection, exact with period `1`.
 Streams whose only candidates are the default codec and `NONE` are not counted.
-)", BETA, \
+)", 0, \
+        {"26.12", 8, 8, "Adaptive codec selection is production-ready. The default is unchanged."}, \
         {"26.11", 8, 8, "New setting"}) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
