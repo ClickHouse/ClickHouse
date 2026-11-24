@@ -413,8 +413,10 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
         }
         else if (c == ')')
         {
-            if (depth > 0)
-                --depth;
+            /// A `)` that closes no group makes the regex invalid; the group added below could balance it (`a)|b(`).
+            if (depth == 0)
+                return String{regexp};
+            --depth;
         }
         else if (c == '|' && depth == 0)
             top_level_alternation = true;
