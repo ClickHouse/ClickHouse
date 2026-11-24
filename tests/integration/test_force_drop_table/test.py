@@ -212,7 +212,7 @@ def test_drop_database_refused_by_leftover_of_pending_refresh(started_cluster):
 
 
 def test_drop_database_concurrent_exchange(started_cluster):
-    # A table exchanged out of the database while DROP DATABASE stops a refresh is not dropped.
+    # A table cannot be exchanged out of the database while DROP DATABASE stops a refresh.
     for db in ["d7", "d8"]:
         node.query(f"CREATE DATABASE {db} ENGINE=Atomic")
         node.query(f"CREATE TABLE {db}.t (s String) ENGINE=MergeTree ORDER BY s")
@@ -235,12 +235,12 @@ def test_drop_database_concurrent_exchange(started_cluster):
             "SELECT count() FROM system.processes WHERE query LIKE '%.tmp.inner_id.%' AND is_cancelled",
             "1",
         )
-        node.query("EXCHANGE TABLES d7.t AND d8.t")
+        assert "UNFINISHED" in node.query_and_get_error("EXCHANGE TABLES d7.t AND d8.t")
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
     drop.get_answer()
     assert node.query("SELECT count() FROM system.databases WHERE name = 'd7'") == "0\n"
-    assert node.query("SELECT s FROM d8.t") == "d7\n"
+    assert node.query("SELECT s FROM d8.t") == "d8\n"
     node.query("DROP DATABASE d8 SYNC SETTINGS max_table_size_to_drop = 0")
 
 
