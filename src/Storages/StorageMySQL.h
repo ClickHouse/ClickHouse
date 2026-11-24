@@ -4,6 +4,7 @@
 
 #if USE_MYSQL
 
+#include <Common/parseRemoteDescription.h>
 #include <Core/MultiEnum.h>
 #include <Core/SettingsEnums.h>
 #include <Processors/Sources/MySQLSource.h>
@@ -84,13 +85,15 @@ public:
         String addresses_expr;
     };
 
+    /// `caller` names the surface the user invoked (`Table function 'mysql'`, `Table engine 'MySQL'`,
+    /// `Database engine 'MySQL'`, ...); it is only used in the error messages of the address parser.
     static Configuration getConfiguration(
         ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
-        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
+        const RemoteDescriptionCaller & caller, const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
-        ContextPtr context_, bool require_table_or_query = true);
+        ContextPtr context_, const RemoteDescriptionCaller & caller, bool require_table_or_query = true);
 
     /// Reads the TLS/SSL credentials from a named collection.
     /// The paths `ssl_ca`, `ssl_cert` and `ssl_key` are only accepted from a collection defined in the
@@ -100,9 +103,10 @@ public:
     /// the path inherited from the collection, unless the operator marked that path as not overridable.
     static mysqlxx::SSLParams getSSLParams(const NamedCollection & named_collection);
 
-    /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'` and `ssl_key_pem = '...'`
-    /// arguments off a positional argument list (the form without a named collection) and removes them
-    /// from `arguments`, so that the caller sees only the positional arguments it knows about.
+    /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'`, `ssl_key_pem = '...'` and
+    /// `ssl_key_passphrase = '...'` arguments off a positional argument list (the form without a named
+    /// collection) and removes them from `arguments`, so that the caller sees only the positional
+    /// arguments it knows about.
     /// A path (`ssl_ca`, `ssl_cert`, `ssl_key`) is rejected here: it is only accepted from a named
     /// collection defined in the server configuration file, see `getSSLParams`.
     static mysqlxx::SSLParams extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_);
@@ -142,9 +146,9 @@ public:
     ReadFromMySQLStep(const ReadFromMySQLStep &) = default;
     ReadFromMySQLStep(ReadFromMySQLStep &&) = default;
 
-    String getName() const override { return "ReadFromMySQL"; }
+    [[nodiscard]] String getName() const override { return "ReadFromMySQL"; }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromMySQLStep>(*this);
     }

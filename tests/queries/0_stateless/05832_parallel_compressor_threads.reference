@@ -1,0 +1,4 @@
+threads=4: same stream as threads=1
+threads=4: decompressed 100000 rows back unchanged
+threads=2: same stream as threads=1
+threads=2: decompressed 100000 rows back unchanged

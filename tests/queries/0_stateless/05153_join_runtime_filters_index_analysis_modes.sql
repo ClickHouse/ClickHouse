@@ -23,7 +23,6 @@ CREATE TABLE rf_idx_dim (id UInt64, tag String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO rf_idx_fact SELECT number, number FROM numbers(2000);
 INSERT INTO rf_idx_dim SELECT number, if(number < 64, 'hot', 'cold') FROM numbers(2000);
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;

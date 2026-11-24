@@ -1,6 +1,7 @@
 <test>
     <settings>
         <join_algorithm>hash</join_algorithm>
+        <hash_join_layout>serial</hash_join_layout>
     </settings>
 
     <create_query>CREATE TABLE test_table_1(id UInt64, value String) ENGINE=MergeTree ORDER BY id</create_query>

@@ -1,8 +1,10 @@
 #include <Core/ProtocolDefines.h>
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Jemalloc.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/SeccompFilter.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -38,6 +40,7 @@
 #include <Storages/System/ServerSettingColumnsParams.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
+#    include <Server/DistributedCache/DistributedCacheServerConnectionRegistry.h>
 #endif
 #include <base/sanitizer_defs.h>
 #include <base/sort.h>
@@ -47,6 +50,7 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 
 #include <Common/DNSResolver.h>
@@ -139,6 +143,26 @@ namespace
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
+    DECLARE(Bool, totp_track_used_codes_in_keeper, false, R"(
+Enforces single use of time-based one-time password (TOTP) codes across all servers that share the same ZooKeeper or ClickHouse Keeper, instead of per server.
+
+The accepted codes are recorded in Keeper under the path set by `totp_used_codes_keeper_path`, one node per user named by the SHA-256 hash of the user name: a code accepted by one server is rejected by all the others, and the record survives server restarts. Keeper must be configured when this setting is enabled; while Keeper is unavailable, authentication with a one-time password fails.
+
+**Example**
+
+```xml
+<totp_track_used_codes_in_keeper>1</totp_track_used_codes_in_keeper>
+```
+)", 0) \
+    DECLARE(String, totp_used_codes_keeper_path, "/clickhouse/access/one_time_passwords", R"(
+The path in Keeper under which the accepted time-based one-time password codes are recorded when `totp_track_used_codes_in_keeper` is enabled. Clusters that share one Keeper without a chroot must use different paths, otherwise users with the same name on different clusters would share their records.
+
+**Example**
+
+```xml
+<totp_used_codes_keeper_path>/clickhouse/access/one_time_passwords</totp_used_codes_keeper_path>
+```
+)", 0) \
     DECLARE(UInt64, shutdown_wait_unfinished, 120, R"(Delay in seconds to wait for unfinished queries on shutdown. Also bounds the wait for running backups and restores when `shutdown_wait_backups_and_restores` is disabled.)", 0) \
     DECLARE(UInt64, max_thread_pool_size, 10000, R"(
 ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
@@ -200,16 +224,17 @@ A value of `0` means unlimited.
     DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
 Maximum total number of threads to use for parsing input.
 )", 0) \
-    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(
-Maximum total number of threads to use for decoding Iceberg data manifest files.
-
-The pool is separate from the IO pool on purpose: a decode task can block until the query consumes the entries it has produced, while the delete manifest decode waits for its tasks on the IO pool before any entry is consumed - sharing one pool could deadlock.
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(Maximum total number of threads to use for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.)", SettingsTierType::OBSOLETE) \
+    DECLARE(NonZeroUInt64, ai_function_max_thread_pool_size, 1000, R"(
+Maximum total number of threads to use for requests to AI providers. One thread holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of it.
 )", 0) \
-    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(
-Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files.
+    DECLARE(UInt64, ai_function_max_thread_pool_free_size, 0, R"(
+Maximum number of idle standby threads to keep in the thread pool for requests to AI providers.
 )", 0) \
-    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
-The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+    DECLARE(UInt64, ai_function_thread_pool_queue_size, 10'000, R"(
+The maximum number of jobs that can be scheduled on the thread pool for requests to AI providers.
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
@@ -299,17 +324,17 @@ The setting is applied on the fly: it is re-read on every update of the asynchro
 )", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, default_session_user, "default", R"(
-The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
+The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, a gRPC query without `user_name`, an Arrow Flight call without an `authorization` header (or with Basic credentials with an empty user name), or a [web terminal](/concepts/features/interfaces/web-terminal) WebSocket `auth` message with an omitted or empty `user` field.
 
 The empty user name is resolved to this value before authentication, so the connection is still subject to the substituted user's authentication: the password, network, and other access checks apply as usual. An empty user name is merely an alias for the configured user name, and accepting it grants no access beyond what specifying the same user name explicitly already gives. In versions before this setting was introduced, the fallback of an empty user name to `default` existed only for the plain HTTP query-parameter path, gRPC queries, Arrow Flight calls, and the web terminal, while the native, MySQL, and PostgreSQL protocols rejected an empty user name; now all of them accept it. HTTP Basic authentication with an empty user name and requests with `X-ClickHouse-Key` but without `X-ClickHouse-User` also rejected an empty user name before this setting was introduced.
 
 If set to an empty string, connections without a user name are rejected. HTTP handlers with a fixed user (the `user` key inside `handler` of an `http_handlers` rule, or the `user` key inside `handler` of a `prometheus.handlers` rule) authenticate as their configured user and are not affected.
 
-When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/operations/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
+When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/reference/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
 
 The default session user is never applied to interserver connections: they identify themselves with a special marker instead of a user name and are authenticated by the cluster secret and the initial user.
 
-The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/operations/settings/composable-protocols).
+The value can be overridden for a specific endpoint of a composable protocol with the `default_session_user` key in the `protocols` section, see [Composable protocols](/concepts/features/configuration/server-config/composable-protocols).
 )", 0) \
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
@@ -333,7 +358,7 @@ For more information see the [MergeTree Table Engine](/reference/engines/table-e
 
 When `/disk1` is full, temporary data will be stored on `/disk2`.
 
-```xml
+```xml highlight={13-20,24}
 <clickhouse>
 <storage_configuration>
     <disks>
@@ -346,7 +371,6 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
     </disks>
 
     <policies>
-        <!-- highlight-start -->
         <tmp_two_disks>
             <volumes>
                 <main>
@@ -355,13 +379,10 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
                 </main>
             </volumes>
         </tmp_two_disks>
-        <!-- highlight-end -->
     </policies>
 </storage_configuration>
 
-<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
-<!-- highlight-end -->
 </clickhouse>
 ```
 )", 0) \
@@ -390,7 +411,7 @@ Only one option can be used to configure temporary data storage: `tmp_path` ,`tm
 
 Both the cache for `local_disk`, and temporary data will be stored in `/tiny_local_cache` on the filesystem, managed by `tiny_local_cache`.
 
-```xml
+```xml highlight={9-16,20}
 <clickhouse>
 <storage_configuration>
     <disks>
@@ -399,7 +420,6 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
             <path>/local_disk/</path>
         </local_disk>
 
-        <!-- highlight-start -->
         <tiny_local_cache>
             <type>cache</type>
             <disk>local_disk</disk>
@@ -408,13 +428,10 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
             <max_file_segment_size>1M</max_file_segment_size>
             <cache_on_write_operations>1</cache_on_write_operations>
         </tiny_local_cache>
-        <!-- highlight-end -->
     </disks>
 </storage_configuration>
 
-<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
-<!-- highlight-end -->
 </clickhouse>
 ```
 )", 0) \
@@ -446,7 +463,7 @@ A value of `0` (default) preserves the legacy behaviour: implicit `operator new`
 Note, to avoid side effects it is recommended to set value greater then `max_untracked_memory`.
 )", 0) \
     DECLARE(UInt64, min_allocation_size_to_log_stack_trace, 0, R"(
-Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
+Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/reference/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
 
 The size compared against the threshold, and reported, is what one tracker call charges, which is not necessarily one allocation: a thread defers its small allocations and flushes them as a single charge, so the reported size can exceed the allocation at the top of the reported stack by up to `max_untracked_memory`. Keeping the threshold well above `max_untracked_memory` keeps that difference immaterial.
 
@@ -454,7 +471,7 @@ This is a diagnostic for a global tracked total that has grown far beyond the pr
 
 At most 10 traces are captured per server run, because capturing and symbolizing a stack is expensive and the trigger tends to repeat. Changing this setting at runtime, in either direction, does not raise that bound.
 
-Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/operations/system-tables/server_settings), since the trace could only be captured and discarded. A trace the collector processes before that table is attached, which happens late in startup, reaches the server log only.
+Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/reference/system-tables/server_settings), since the trace could only be captured and discarded. A trace the collector processes before that table is attached, which happens late in startup, reaches the server log only.
 
 A value of `0` (default) disables the diagnostic. Set it well above the largest allocation the server legitimately makes, otherwise ordinary large allocations are logged too and startup can spend the whole budget.
 )", 0) \
@@ -535,38 +552,9 @@ A value of `0` means all cores.
 The delay during which a dropped table can be restored using the [`UNDROP`](/reference/statements/undrop) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 )", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-[`database_catalog_unused_dir_hide_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
-removing all access rights. It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "immediately".
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previously "hidden"
-(see [database_catalog_unused_dir_hide_timeout_sec](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec))
-and this directory was not modified for last
-[`database_catalog_unused_dir_rm_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
-It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 30 days.
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-Sets scheduling period of the task.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 1 day.
-</Note>
-)", 0) \
+    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task revoked all access rights from an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task removed an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the scheduling period of the task. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     DECLARE(UInt64, database_catalog_shutdown_table_concurrency, 0, R"(The size of the threadpool used for shutting down tables when the server is stopping. Zero means the number of threads is equal to the number of cores.)", 0) \
@@ -642,9 +630,9 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
-    DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
+    DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Cache eviction policy for the mark cache (index of MergeTree family tables). Possible values: `LRU`, `SLRU`, `SIEVE`. See [`mark_cache_size`](#mark_cache_size) for cache capacity and [`mark_cache_size_ratio`](#mark_cache_size_ratio) for the protected queue size in SLRU policy.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
-Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family) family of tables).
+Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family/index) family of tables).
 
 <Note>
 This setting can be modified at runtime and will take effect immediately.
@@ -685,6 +673,10 @@ This setting can be modified at runtime and will take effect immediately.
 <Note>
 This setting can be modified at runtime and will take effect immediately.
 </Note>
+
+<Note>
+In ClickHouse Cloud, the maximum cache size depends on the pod size. The exact size can be checked in `system.server_settings`. As server settings cannot be changed from SQL or the console, contact support to configure a bigger size.
+</Note>
 )", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
@@ -697,7 +689,7 @@ This setting can be modified at runtime and will take effect immediately.
 )", 0) \
     DECLARE(UInt64, text_index_tokens_cache_max_entries, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES, "Size of cache for text index tokens in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_tokens_cache_size_ratio, DEFAULT_TEXT_INDEX_TOKENS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index tokens cache relative to the cache's total size.", 0) \
-    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Cache eviction policy for the text index header cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`text_index_header_cache_size`](#text_index_header_cache_size) and [`text_index_header_cache_max_entries`](#text_index_header_cache_max_entries) for cache capacity and [`text_index_header_cache_size_ratio`](#text_index_header_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, text_index_header_cache_size, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE, R"(Size of cache for text index headers. Zero means disabled.
 
 <Note>
@@ -735,11 +727,11 @@ reports the same quantity per entry, and `CurrentMetrics.ColumnsCacheBytes` its 
 rest of the server is short of memory, see `columns_cache_free_memory_ratio`; that value is published separately
 as `CurrentMetrics.ColumnsCacheSizeLimit`.
 
-:::note
+<Note>
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 )", 0) \
     DECLARE(Double, columns_cache_size_to_ram_ratio, 0.1, R"(
 The size of the columns cache as a fraction of the memory available to the server. It is used when `columns_cache_size`
@@ -778,7 +770,7 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
-    DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Secondary index mark cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
+    DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Cache eviction policy for the secondary index mark cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`index_mark_cache_size`](#index_mark_cache_size) for cache capacity and [`index_mark_cache_size_ratio`](#index_mark_cache_size_ratio) for the protected queue size in SLRU policy.)", 0) \
     DECLARE(UInt64, index_mark_cache_size, DEFAULT_INDEX_MARK_CACHE_MAX_SIZE, R"(
 Maximum size of cache for index marks.
 
@@ -792,7 +784,7 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, index_mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of index mark cache to fill during prewarm.)", 0) \
     DECLARE(UInt64, page_cache_history_window_ms, 1000, "Delay before freed memory can be used by userspace page cache.", 0) \
-    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Userspace page cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Cache eviction policy for the userspace page cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`page_cache_max_size`](#page_cache_max_size) for cache capacity and [`page_cache_size_ratio`](#page_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(Double, page_cache_size_ratio, DEFAULT_PAGE_CACHE_SIZE_RATIO, "The size of the protected queue in the userspace page cache relative to the cache's total size.", 0) \
     DECLARE(UInt64, page_cache_min_size, DEFAULT_PAGE_CACHE_MIN_SIZE, "Minimum size of the userspace page cache.", 0) \
     DECLARE(UInt64, page_cache_max_size, DEFAULT_PAGE_CACHE_MAX_SIZE, "Maximum size of the userspace page cache. Set to 0 to disable the cache. If greater than page_cache_min_size, the cache size will be continuously adjusted within this range, to use most of the available memory while keeping the total memory usage below the limit (max_server_memory_usage[_to_ram_ratio]).", 0) \
@@ -824,7 +816,7 @@ The cache can also be cleared manually, without changing this limit, with the [`
 This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
-    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Cache eviction policy for the query condition cache. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`query_condition_cache_size`](#query_condition_cache_size) for cache capacity and [`query_condition_cache_size_ratio`](#query_condition_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
 Maximum size of the query condition cache.
 <Note>
@@ -832,7 +824,7 @@ This setting can be modified at runtime and will take effect immediately.
 </Note>
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
-    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.", 0) \
+    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Cache eviction policy for the encryption header cache used by the ReaderExecutor read path. Possible values: `LRU`, `SLRU`, `SIEVE`. See [`encryption_header_cache_size`](#encryption_header_cache_size) for cache capacity and [`encryption_header_cache_size_ratio`](#encryption_header_cache_size_ratio) for the protected queue size in SLRU policy.", 0) \
     DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
 Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
 <Note>
@@ -1138,8 +1130,8 @@ Possible values:
 - `shortest_task_first` — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by `INSERT`s.
 )", 0) \
     DECLARE(UInt64, background_move_pool_size, 8, R"(The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background.)", 0) \
-    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family/index) tables in the background.)", 0) \
+    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family/index) tables in the background.)", 0) \
     DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/reference/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The cap on the number of threads used to execute lightweight periodic operations for replicated tables, Kafka streaming, DNS cache updates, and similar tasks. Threads are spawned lazily on demand up to this cap, so a server with light background load uses far fewer threads than this number.)", 0) \
     DECLARE(UInt64, background_schedule_pool_initial_size, 16, R"(Initial number of worker threads allocated for each background schedule pool. Each pool grows lazily up to its configured cap (`background_schedule_pool_size` and friends) when demand exceeds the current set of workers. Lower values reduce startup overhead and idle thread counts; higher values eliminate first-task scheduling latency on busy servers.)", 0) \
@@ -1216,7 +1208,7 @@ Default: `10485760` (10 MiB).
     DECLARE(Bool, http_allow_path_requests, true, R"(
 Allow the HTTP interface to route path-style requests (such as `/my_db/my_table.csv`) to the query handler.
 
-This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/operations/settings/settings#http_allow_database_as_path), [`http_allow_table_as_file`](/operations/settings/settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/operations/settings/settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
+This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/reference/settings/session-settings#http_allow_database_as_path), [`http_allow_table_as_file`](/reference/settings/session-settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/reference/settings/session-settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
 
 Enabled by default. Set it to `0` to restore the previous behavior, in which every path that is not a configured handler returns `404`.
 
@@ -1323,17 +1315,26 @@ The replica name in ZooKeeper.
     DECLARE(UInt64, http_connections_warn_limit, 500, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, http_connections_store_limit, 1000, R"(The maximum number of idle connections kept in the pool for reuse. Once this many connections are stored, further connections are reset after use instead of being kept. The limit does not bound the connections in use. Set to 0 to turn connection cache off. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, http_connections_hard_limit, 200000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
+    DECLARE(UInt64, amber_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. The limit applies to the Amber connections.)", 0) \
+    DECLARE(UInt64, amber_connections_warn_limit, 8000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the Amber connections.)", 0) \
+    DECLARE(UInt64, amber_connections_store_limit, 10000, R"(The maximum number of idle connections kept in the pool for reuse. Once this many connections are stored, further connections are reset after use instead of being kept. The limit does not bound the connections in use. Set to 0 to turn connection cache off. The limit applies to the Amber connections.)", 0) \
+    DECLARE(UInt64, amber_connections_hard_limit, 200000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the Amber connections.)", 0) \
     DECLARE(UInt64, disk_connections_rcvbuf, 204800, R"(The size of the SO_RCVBUF option for disk (S3, Azure, GCS) connections. Defaults to 204800 (200 KB): object storage is reached intra-region where the bandwidth-delay product is well below 100 KB, so a small cap delivers full throughput while avoiding the multi-MiB per-socket buffers kernel autotuning would otherwise allocate. Set to 0 to use kernel TCP autotuning for the receive buffer instead. Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, disk_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for disk (S3, Azure, GCS) connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, storage_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, storage_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
+    DECLARE(UInt64, amber_connections_rcvbuf, 204800, R"(The size of the SO_RCVBUF option for Amber connections. Defaults to 204800 (200 KB): object storage is reached intra-region where the bandwidth-delay product is well below 100 KB, so a small cap delivers full throughput while avoiding the multi-MiB per-socket buffers kernel autotuning would otherwise allocate. Set to 0 to use kernel TCP autotuning for the receive buffer instead. Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
+    DECLARE(UInt64, amber_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for Amber connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
+    DECLARE(UInt64, streaming_exchange_sndbuf, 0, R"(The size of the SO_SNDBUF option for streaming exchange sockets of multi-stage distributed queries. 0 = kernel default (TCP autotuning). A value greater than 0 caps the per-socket send buffer (clamped by net.core.wmem_max), at the cost of capping the stream at sndbuf/RTT on high-RTT links. Read per connection, so a config reload applies to new connections only.)", 0) \
+    DECLARE(UInt64, streaming_exchange_rcvbuf, 0, R"(The size of the SO_RCVBUF option for streaming exchange sockets of multi-stage distributed queries. 0 = kernel default (TCP autotuning). A value greater than 0 caps the per-socket receive buffer (clamped by net.core.rmem_max). Read per connection, so a config reload applies to new connections only.)", 0) \
     DECLARE(UInt64, global_profiler_real_time_period_ns, default_global_profiler_period_ns, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
     DECLARE(UInt64, global_profiler_cpu_time_period_ns, default_global_profiler_period_ns, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
-    DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
+    DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materialized views", 0) \
     DECLARE(Bool, message_queue_disable_insertion, false, "Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views", 0) \
+    DECLARE(UInt64, stream_kafka_locks_refresh_polls, 15, "Number of polls after which a Kafka consumer with offsets in Keeper re-checks which partitions it owns", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, R"(How many entries hash table statistics collected during aggregation is allowed to have)", 0) \
     DECLARE(String, merge_workload, "default", R"(
 Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
@@ -1423,22 +1424,20 @@ Comma-separated list of users to ignore an early memory limit check. If user is 
 If true, ClickHouse creates all configured `system.*_log` tables before the startup. It can be helpful if some startup scripts depend on these tables.
 )", 0) \
     DECLARE(Bool, use_shared_merge_tree_log_pipeline, false, R"(
-Only available on ClickHouse Cloud. When enabled, `system.*_log` tables are backed by `SharedMergeTree` via an S3-based pipeline.
-For each log `<log>`, the following objects are created automatically on startup:
+Only available on ClickHouse Cloud. When enabled, the system logs are written through a `SharedMergeTree` pipeline
+and the `system` database becomes a Shared database, so every replica sees the same log tables.
 
-- `system.<log>_s3` — an `S3`-backed table that is the direct flush target; each
-  `SYSTEM FLUSH LOGS` call writes a new partitioned file here.
-- `system.<log>_s3queue` — an `S3Queue` table (ordered mode) that picks up files from
-  `<log>_s3` and streams rows downstream. Each node processes only its own files via
-  `partition_regex`-based partitioning.
-- `system.<log>_mv` — a `MATERIALIZED VIEW` that routes rows from `<log>_s3queue` into
-  the final `SharedMergeTree` table.
-- `system.<log>` — the final `SharedMergeTree` table where rows accumulate and are queried.
+Each flush of a log writes a `Native` file with the `s3` (or `azureBlobStorage`) table function into the folder of the
+log's generation, the hash of its columns and keys. Per generation the pipeline keeps the queue `system._<log>_s3queue_<hash>`
+reading that folder, the materialized view `system._<log>_mv_<hash>` and the `SharedMergeTree` table `system.<log>_<hash>`.
+`system.<log>` is a `Merge` table over the generations. A new schema creates a new generation; settings, TTL and indices
+come from the `smt_settings`, `smt_ttl` and `smt_indices` keys of the log's configuration and are changed in place.
+The objects are created on the first flush of a log, or at startup with `prepare_system_log_tables_on_startup`.
+The sorting key of a table is the key of the log with `hostname` in front, so that the rows of a replica are read by the key.
+The `smt_order_by` and `smt_partition_by` keys of the log's configuration replace the keys of the table.
 
-On schema or settings change, the affected table is renamed to `<log>_0`, `<log>_1`, etc.
-and recreated, consistent with the existing `SystemLog` rotation behavior.
-
-Requires `<shared_log_pipeline><endpoint>` to be set in the server configuration.
+The local `system` database is renamed to `system_local` while the setting is enabled. Requires `shared_database_catalog`
+and `<shared_log_pipeline><endpoint>` in the server configuration.
 See also: `shared_log_pipeline.enable_sync_flush`, `shared_log_pipeline.flush_timeout_seconds`.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, config_reload_interval_ms, 2000, R"(
@@ -1508,11 +1507,14 @@ Threads for cleanup of shared merge tree parts killer threads. Only available in
     DECLARE(NonZeroUInt64, parts_killer_max_condemned_parts_per_batch, 100000, R"(
 Maximum number of condemned parts a SharedMergeTree table fetches from Keeper in a single cleanup cycle. Bounding the batch keeps the listing and multi-get within the Keeper operation timeout, so cleanup keeps making progress even when a table has accumulated a very large condemned-parts backlog. Must be greater than zero: a value of `0` would make Keeper return an empty listing every cycle, permanently stalling cleanup. Only available in ClickHouse Cloud
 )", 0) \
-    DECLARE(UInt64, snapshot_cleaner_period, 120, R"(
-Period to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
+    DECLARE(UInt64, snapshot_cleaner_period, 3600, R"(
+Period in seconds to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
 )", 0) \
     DECLARE(UInt64, snapshot_cleaner_pool_size, 128, R"(
 Threads for cleanup of shared merge tree snapshot cleaner threads. Only available in ClickHouse Cloud
+)", 0) \
+    DECLARE(UInt64, snapshot_cleaner_max_replicas, 3, R"(
+Maximum number of replicas that run the snapshot cleaner for each table under the snapshot registry. Every replica running a cleaner advertises it with the `snapshot_cleaner_enabled` replica flag; the replicas rank the advertising replicas by a rendezvous hash of the table and the replica name, and a replica processes a table only when it is among the top entries, so the cleanup of different tables spreads across the fleet while duplicated work stays bounded. Replicas whose cleaner is disabled (`snapshot_cleaner_period = 0`) never advertise and are never elected. `0` means no limit: every replica processes every table. Only available in ClickHouse Cloud
 )", 0) \
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
 Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
@@ -1536,10 +1538,22 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, the write-through cache write is skipped (the data is still written to object storage), so it neither blocks waiting for a slot nor creates an unbounded number of threads. Writes of temporary data do not use background threads and are not affected by the limit.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
+    DECLARE(UInt64, distributed_cache_temporary_data_max_files_per_server, 100000, R"(Maximum number of committed temporary files retained by one distributed cache server. The default is high because the limit is only a backstop that bounds the memory used to track the files; the capacity is mainly limited by `distributed_cache_temporary_data_max_bytes_per_server`. When the limit is reached, the server rejects publication of new committed temporary files. `0` means unlimited.)", 0) \
+    DECLARE(UInt64, distributed_cache_temporary_data_max_bytes_per_server, 1_TiB, R"(Maximum total size in bytes of committed temporary files retained by one distributed cache server. Committed temporary files are pinned in the file cache and cannot be evicted until they are released or expire, so this limit bounds how much of the cache they can occupy. The default is 1 TiB. When the limit is reached, the server rejects publication of new committed temporary files. `0` means unlimited.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_max_control_batch_ids, 1024, R"(Maximum committed temporary-data IDs sent by the client in one control request. Values above 65536 are limited to 65536 (the protocol limit).)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_ttl_seconds, 3600, R"(Lifetime of a committed temporary file in seconds.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_renewal_period_seconds, 900, R"(Period between committed temporary-data ownership renewals in seconds.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_background_retry_delay_milliseconds, 30000, R"(Delay before a background committed temporary-data retry in milliseconds.)", 0) \
+    DECLARE(UInt64, distributed_cache_temporary_data_confirmation_retry_delay_milliseconds, 500, R"(Delay before retrying committed temporary-data publication confirmation in milliseconds.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_cleanup_period_milliseconds, 1000, R"(Period between committed temporary-data expiry cleanups in milliseconds.)", 0) \
+    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_temporary_data_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL, R"(Only has an effect in ClickHouse Cloud. Behaviour of the distributed cache connections for temporary data when the connection pool limit is reached. Temporary data has no object storage to fall back to, so by default it opens a connection that bypasses the pool instead of failing. It applies to the temporary files of queries and of background operations (merges, backups). The short committed temporary-data control exchanges (confirmation, renewal, release) always open a new connection and do not use this setting. With `wait` it waits for a pooled connection for `distributed_cache_wait_connection_from_pool_milliseconds` and then fails. Can be changed without a restart.)", 0) \
+    DECLARE(UInt64, distributed_cache_temporary_data_max_connections_bypassing_pool, 5000, R"(Only has an effect in ClickHouse Cloud. Maximum number of connections per distributed cache server that temporary files may open bypassing the connection pool. When the limit is reached, temporary data waits for a pooled connection for `distributed_cache_wait_connection_from_pool_milliseconds` and then fails. `0` means unlimited. The short committed temporary-data control exchanges (confirmation, renewal, release) always open a new connection and are not counted. Can be changed without a restart.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_control_hello_timeout_milliseconds, 2000, R"(A committed temporary-data control extends the lifetime of a file at most to the time of the control connection hello + this timeout + the TTL, in milliseconds. The client waits for the response for the same time after the hello. The client uses its own value, read when a committed file is created (for background renewals, at startup). A different value on the client and on the distributed cache server does not reduce the lifetime of a file below the hello + the TTL.)", 0) \
     DECLARE(Bool, enable_read_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow reading from distributed cache. This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_read_through_distributed_cache` setting.)", 0) \
     DECLARE(NonZeroUInt64, distributed_cache_warmer_max_file_segment_size, 32_MiB, R"(Only has an effect in ClickHouse Cloud. The size of the ranges in which the cache warmer reads a fetched part into the distributed cache when the disk of the part has no local filesystem cache (with a local cache the warmer uses its `max_file_segment_size`).)", 0) \
     DECLARE(UInt64, distributed_cache_warmer_max_bytes_in_queue, 100_GiB, R"(Only has an effect in ClickHouse Cloud. The maximum total size of the ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_size`). Zero means unlimited.)", 0) \
     DECLARE(UInt64, distributed_cache_warmer_max_segments_in_queue, 100000, R"(Only has an effect in ClickHouse Cloud. The maximum number of ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_elements`). Zero means unlimited.)", 0) \
+    DECLARE(Bool, distributed_cache_warmer_skip_parts_produced_in_current_availability_zone, true, R"(Only has an effect in ClickHouse Cloud. When the cache warmer warms the distributed cache alone (the part's disk has no local filesystem cache, or the cache is disabled for reads), skip the parts that were produced by a replica in the current availability zone: written through the distributed cache, they are already in the cache of this zone. Parts of unknown origin are always warmed.)", 0) \
     DECLARE(Bool, enable_write_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache). This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_write_through_distributed_cache` setting.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
@@ -1615,7 +1629,7 @@ Disabled by default to avoid possible security issues which can be caused by bug
 ```
 )", 0) \
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
-    DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
+    DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materialized view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
     DECLARE(Bool, os_collect_psi_metrics, true, "Enable accounting PSI metrics from /proc/pressure/ files.", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
@@ -1627,6 +1641,12 @@ Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirt
 See [Controlling behavior on server CPU overload](/concepts/features/configuration/settings/server-overload) for more details.
 )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
+    DECLARE(UInt64, distributed_cache_stuck_request_no_progress_timeout_ms, 10000, R"(Distributed cache server closes a connection whose request exchanged no data for this many milliseconds, not counting time spent waiting for the client. The value 0 disables this limit; the stuck-request scan stops only when `distributed_cache_max_request_processing_time_ms` is 0 as well.)", 0) \
+    DECLARE(UInt64, distributed_cache_max_request_processing_time_ms, 60000, R"(Distributed cache server ends a request it has been processing for this many milliseconds since the request's last `StartRequest` or `ContinueRequest`, not counting time spent waiting for the client; a new read range starts a new budget. The request is ended as soon as the server can report it, and a request that never gets there has its connection closed `distributed_cache_stuck_request_scan_interval_ms` later. The value 0 means unbounded.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_stuck_request_scan_interval_ms, 5000, R"(Interval of the distributed cache server's stuck-request scan, in milliseconds.)", 0) \
+    DECLARE(Double, distributed_cache_slow_down_stuck_requests_ratio, 0.2, R"(Distributed cache server asks a client to slow down once at least this share of its in-flight requests is stuck; idle connections do not count. The value 0 never asks.)", 0) \
+    DECLARE(UInt64, distributed_cache_slow_down_min_stuck_requests, 10, R"(Distributed cache server asks a client to slow down only once at least this many of its requests are stuck, so that a client with a couple of requests in flight is not asked over a single one. The values 0 and 1 leave the decision to `distributed_cache_slow_down_stuck_requests_ratio` alone.)", 0) \
+    DECLARE(UInt64, distributed_cache_slow_down_window_ms, 10000, R"(How long a distributed cache server asks a client to stay away once too many of its requests are stuck, in milliseconds. Must be at least twice `distributed_cache_stuck_request_scan_interval_ms`, so that a window lapses only when a scan does not renew it; the value 0 is rejected.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
     DECLARE(Bool, tcp_with_proxy_allow_interserver_mode, true, R"(
@@ -1734,8 +1754,11 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
     DECLARE(Bool, enable_silk_runtime, false, R"(Enable experimental support for the silk fiber runtime: initialize the silk fiber scheduler at server startup, so that subsystems supporting it can run their jobs on fibers)", EXPERIMENTAL) \
     DECLARE(Bool, enable_gpu, false, R"(Take the GPU at the start of the server to run queries on it. The server refuses to start if it is built without GPU support or there is no CUDA device.)", EXPERIMENTAL) \
     DECLARE(UInt64, gpu_pinned_memory_pool_release_threshold, 1024UL * 1024 * 1024, R"(The maximum size of freed pinned host memory that the GPU's pool of pinned host memory keeps for reuse instead of returning it to the system.)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_expression_kernel_cache_size, 256UL * 1024 * 1024, R"(The maximum size, in bytes of the PTX, of the cache of the kernels that the GPU engine compiles for expressions. The kernels over the limit are unloaded from the device. The change takes effect without a restart.)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_expression_kernel_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(The maximum number of kernels in the cache of the kernels that the GPU engine compiles for expressions. The change takes effect without a restart.)", EXPERIMENTAL) \
     DECLARE(UInt64, gpu_memory_pool_release_threshold, std::numeric_limits<uint64_t>::max(), R"(The amount of freed device memory that the GPU's default memory pool keeps instead of returning it to the driver. With the default, the pool grows to the peak of the queries and stays there until the server shuts down.)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_iceberg_rest_catalog, false, R"(Enable the experimental Iceberg REST catalog server, configured in the `iceberg_rest_catalog` section. A change takes effect after a server restart.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. The only supported value is 'wasmtime'.", EXPERIMENTAL) \
@@ -1977,6 +2000,23 @@ Enabling this option is recommended but will lead to increased startup time for 
 ```
 )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
+    DECLARE(Bool, quick_startup, false, R"(
+Start up as fast as possible by skipping the optional work that the server does at startup:
+- `<mlock>` of the executable, as with `mlock_executable` = `false`;
+- remapping of the executable to huge pages, as with `remap_executable` = `false`;
+- the integrity check of the executable, as with `skip_binary_checksum_checks` = `true`;
+- the checks of the environment (such as the clock source, transparent huge pages, memory overcommit, kernel limits, delay accounting and disk readahead), which only produce warnings in `system.warnings`.
+
+The validation of the configuration is not skipped.
+
+The executable code is about 500 MiB, and both the `<mlock>` and the integrity check read all of it. On a cold page cache and a network disk, that takes several seconds, most of the startup time. It is useful where the server is often restarted, such as in tests, benchmarks and short-lived instances. The cost is that the code can be paged out under memory pressure, and a corrupted executable is not detected at startup.
+
+**Example**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+)", 0) \
     DECLARE(SeccompMode, seccomp, SeccompMode::Log, R"(
 What the Linux kernel does when the server makes a system call that it is not supposed to make.
 
@@ -2010,6 +2050,61 @@ The policy is only implemented for x86-64 and AArch64, since it is a list of arc
 
 ```xml
 <seccomp>log</seccomp>
+```
+)", 0) \
+    DECLARE(FilesystemIsolationMode, filesystem_isolation, FilesystemIsolationMode::Disabled, R"(
+Whether the server isolates itself from the filesystem of the host at startup, keeping visible only the paths it needs, like a container does. An attacker who manages to run code inside the server process then finds no shell or other program to run, and cannot read or modify the files of the host outside the directories of the server.
+
+At startup, before it starts any thread, the server moves itself into a new [mount namespace](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) whose root is an empty read-only `tmpfs`, bind-mounts into it, at their usual locations, only the paths it needs, and removes the original root with `pivot_root`. What stays visible:
+
+- The paths from the configuration that the server writes: `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, the directories of the local disks and of the metadata of the other disks in `storage_configuration`, the directories of the log files, of the pid file and of `core_path`, the storage directories of the embedded Keeper, `access_control_path`, the paths of all the `local_directory` entries in `user_directories`, `user_defined_path`, `workload_path`, `named_collections_storage.path`, `backups.allowed_path`, the working directory of every `distributed_cache_server` section and the cache directory of each. They are mounted read-write, but with `noexec`, so that nothing written there can be executed.
+- The paths from the configuration that the server only reads, mounted read-only: the directory of the configuration file, the directories of the included files and of the targets of the symbolic links among the configuration files, `users_config`, `user_scripts_path` (programs in it can be executed), `top_level_domains_path`, `google_protos_path`, the directories of the TLS certificates and keys in `openSSL`, `grpc`, `ldap_servers`, of the certificate and the key of every `distributed_cache_server` section and of the certificate chain of `distributed_cache_client`, the Kerberos keytab, and the `clickhouse-odbc-bridge` program next to the server's executable, with its dynamic loader and the shared libraries it needs, as the dynamic loader finds them. The locations of the logs of the bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) are writable.
+- The executable of the server and the shared libraries it is linked with, with the symbolic links next to them that name them (such as `libc.so.6`), and the directory of the heap profiles of jemalloc if its `prof_prefix` option is set.
+- What a program on Linux needs: `/proc` (with `/proc/sys`, `/proc/sysrq-trigger`, `/proc/bus`, `/proc/fs` and `/proc/irq` and the mounts inside them read-only, as in the containers of Docker), `/sys` (read-only), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, a private instance of `devpts` at `/dev/pts` with `/dev/ptmx` for the pseudoterminals of the web terminal and the SSH server, the network configuration in `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, the time zone database and the CA certificates (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`) with the targets of the links inside them, as in a CA directory given in `caConfig`, `/usr/lib/debug` for the symbols in stack traces, the socket of the service manager from the `NOTIFY_SOCKET` environment variable, and `/dev/log` if `logger.use_syslog` is enabled. If `/dev/log` is a symbolic link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target is visible, so that a socket recreated there by a restarted service is seen. A socket directly in `/dev` that the syslog daemon recreates when it restarts is not seen again until the server restarts, because the `/dev` of the host is not visible.
+- The credentials of the clouds, read-only: the secrets that container runtimes mount in `/run/secrets` and `/var/run/secrets`, such as the tokens of the service accounts that Kubernetes projects into a pod, the files named by the environment variables `AWS_WEB_IDENTITY_TOKEN_FILE` (set by EKS for the IAM roles of service accounts), `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` (EKS Pod Identity), `AWS_CONFIG_FILE`, `AWS_SHARED_CREDENTIALS_FILE` and `AZURE_FEDERATED_TOKEN_FILE` (the workload identity of Azure), and `~/.aws` if it is an accessible directory. The directories of these files and of the targets of the links to them are visible, so that a token that the kubelet rotates is seen, except for a file directly in `/` or in `/tmp`, which is visible on its own.
+- A private empty `/tmp`.
+- The paths listed in the `filesystem_isolation_paths` section of the configuration, with `<read_only>` and `<read_write>` elements.
+
+Symbolic links on the way to a path are recreated inside, and their targets are made visible as well. A directory that is a file's location in the configuration, such as that of a certificate, is mounted whole, so that a renewed file replaced by a new one is visible. If such a file is a symbolic link, as the certificates of Let's Encrypt are, the directories of the targets of the links are mounted as well. Writable directories that do not exist are created before the isolation, as the server would do anyway.
+
+Nothing else is visible, in particular no shell: [executable user defined functions](/sql-reference/functions/udf), executable dictionaries, the `executable` table function and the `Executable` table engine can run only programs that do not need anything outside the visible paths. To run a script, make its interpreter and the libraries it is linked with visible, for example:
+
+```xml
+<filesystem_isolation_paths>
+    <read_only>/bin</read_only>
+    <read_only>/usr/bin</read_only>
+    <read_only>/lib</read_only>
+    <read_only>/lib64</read_only>
+    <read_only>/usr/lib</read_only>
+</filesystem_isolation_paths>
+```
+
+or disable the isolation. The same applies to a file that a table engine, a table function or a dictionary refers to by an absolute path outside of the visible paths. Drivers of executable user defined functions (`allow_experimental_executable_udf_drivers`) are not supported: `CREATE FUNCTION` with a driver is refused, because the programs that drivers generate are in `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable. The `clickhouse-odbc-bridge` runs inside the isolation too, so the ODBC drivers and their configuration (`/etc/odbc.ini`, `/etc/odbcinst.ini`) have to be made visible to use the `odbc` table function and dictionaries.
+
+If the process has `CAP_SYS_ADMIN`, it creates only a mount namespace and keeps the capabilities it uses, such as `CAP_NET_BIND_SERVICE`, `CAP_IPC_LOCK`, `CAP_SYS_NICE` and `CAP_NET_ADMIN`, dropping those that would let it undo the isolation (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`, `CAP_SYS_PTRACE`, `CAP_DAC_READ_SEARCH`, `CAP_SETUID`, `CAP_SETGID`, `CAP_MKNOD`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO` and similar). Otherwise, it creates a user namespace as well, mapping only its own user and group to themselves, and loses all its capabilities, because they are not valid outside of the new user namespace: it can then no longer listen on a port below 1024, lock its executable in memory, raise the priority of threads, or collect the per-thread metrics of `taskstats`. A warning at startup names the lost capabilities. In both cases the server sets `PR_SET_NO_NEW_PRIVS`, and every mount is `nosuid`.
+
+Creating a user namespace without privileges is not always allowed: it is disabled by the `kernel.unprivileged_userns_clone` and `user.max_user_namespaces` sysctls on some systems, and Ubuntu since 24.04 allows it only to the programs with an AppArmor profile permitting it (see the `kernel.apparmor_restrict_unprivileged_userns` sysctl). Container runtimes such as Docker refuse it as well, unless the container has `CAP_SYS_ADMIN`. The server checks in a child process whether it can isolate itself before doing it, so a failure does not leave it in a namespace without its capabilities.
+
+The `/proc` of the host is visible inside, because a new one requires a new PID namespace. The watchdog process (`clickhouse-watchdog`) is forked after the isolation and runs inside it too. But through `/proc/<pid>/root`, `/proc/<pid>/cwd` and `/proc/<pid>/fd`, the server can reach the filesystem of the host as seen by any other process of the same user that runs outside of the isolation, so run nothing else under the user of the server: a dedicated user, as the packages create, is enough.
+
+The isolation is applied once, at startup, before the server starts any thread, and cannot be changed afterwards: a changed value or `filesystem_isolation_paths` in a reloaded configuration takes effect after a restart, and a path that comes from ZooKeeper through `from_zk` is not seen by it. It is applied before the [`seccomp`](#seccomp) filter, which refuses the system calls that would undo it.
+
+Possible values:
+
+- `disabled` - the server does not isolate the filesystem.
+- `best_effort` - the server isolates the filesystem if it is allowed to create the namespaces and to mount filesystems in them, and otherwise logs a warning with the reason and runs without the isolation.
+- `enforce` - the server isolates the filesystem, or does not start.
+
+A failure after the server has entered the new namespace, such as a path that cannot be mounted, stops the startup in both `best_effort` and `enforce` modes.
+
+`system.server_settings` reports the mode in force: `disabled` if the server runs without the isolation.
+
+The isolation is a facility of the Linux kernel. On other operating systems, `best_effort` logs a warning, and `enforce` does not let the server start.
+
+**Example**
+
+```xml
+<filesystem_isolation>best_effort</filesystem_isolation>
 ```
 )", 0) \
     DECLARE(UInt32, listen_backlog, 4096, R"(
@@ -2086,7 +2181,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, logger_use_syslog, false, R"(Also forward log output to syslog.)", 0, "logger.use_syslog") \
     DECLARE(String, logger_syslog_level, "trace", R"(Log level for logging to syslog.)", 0, "logger.syslog_level") \
     DECLARE(Bool, logger_async, true, R"(When `<true>` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG.)", 0, "logger.async") \
-    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queue_max_size") \
+    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queue_max_size") \
     DECLARE(String, logger_startup_level, "", R"(Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `<level>` setting.)", 0, "logger.startup_level") \
     DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
     DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \
@@ -2119,7 +2214,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
     DECLARE(String, openssl_client_cipher_suites, "", R"(Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `<cipherList>` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.)", 0, "openSSL.client.cipherSuites") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
-    DECLARE(Bool, openssl_client_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
+    DECLARE(Bool, openssl_client_extended_verification, true, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
     DECLARE(Bool, openssl_client_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1") \
     DECLARE(Bool, openssl_client_required_tls_v1_1, false, R"(Require a TLSv1.1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_1") \
     DECLARE(Bool, openssl_client_required_tls_v1_2, false, R"(Require a TLSv1.2 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_2") \
@@ -2317,7 +2412,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
-        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+        for (const auto & [alias, _] : ServerSettingsTraits::aliasesToSettings())
             known_keys.insert(String(alias));
     }
 
@@ -2390,6 +2485,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "masking_policies",
         "users_config",
         "user_directories",
+        "filesystem_isolation_paths",
         "ldap_servers",
         "kerberos",
         "jwt",
@@ -2634,6 +2730,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Startup
         "startup_scripts",
+#if CLICKHOUSE_CLOUD
+        "predefined_system_tables",
+#endif
         "fail_points_active",
 
         /// SSL and security
@@ -2642,6 +2741,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Silk fiber runtime
         "silk",
+
+        /// Amber
+        "amber",
 
         /// Testing
         "_functional_tests_helper_database_replicated_replace_args_macros",
@@ -2692,7 +2794,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// imported tag as an exemption: otherwise a dotted section would be stored raw as `my.payload`
     /// while its top-level key is `my\.payload`, and the valid, in-use key would be wrongly rejected
     /// with `UNKNOWN_ELEMENT_IN_CONFIG`.
-    auto escape_dom_name_as_config_key = [](const String & name) -> String
+    auto escape_dom_name_as_config_key = [](std::string_view name) -> String
     {
         String escaped;
         escaped.reserve(name.size());
@@ -2886,7 +2988,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// name passes), never rejects a valid config, so it fails open; tightening it is intentionally
         /// left to a full merge replay rather than a partial one that could refuse to start a valid
         /// config.
-        std::unordered_set<std::string> top_level_include_refs;
+        std::unordered_set<Poco::XML::XMLString> top_level_include_refs;
 
         /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
         /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
@@ -2996,7 +3098,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 auto * root = doc->documentElement();
                 if (!root)
                     return false;
-                const String root_name = root->nodeName();
+                const auto & root_name = root->nodeName();
                 if (root_name != "clickhouse" && root_name != "yandex")
                     return false;
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
@@ -3043,7 +3145,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             std::vector<std::pair<String, String>> identity_attrs;
                             for (const auto * attr = attrs->item(0); attr; attr = attr->nextSibling())
                             {
-                                const String & attr_name = attr->nodeName();
+                                const auto & attr_name = attr->nodeName();
                                 if (attr_name == "remove" || attr_name == "replace"
                                     || std::find(
                                            ConfigProcessor::SUBSTITUTION_ATTRS.begin(),
@@ -3078,7 +3180,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         {
                             /// Resolved later against each `<include_from>` source (a lookup table),
                             /// exactly as `doIncludesRecursive` resolves an `incl` reference.
-                            String ref = elem->getAttribute("incl");
+                            auto ref = elem->getAttribute("incl");
                             if (!ref.empty())
                                 top_level_include_refs.insert(std::move(ref));
                         }
@@ -3087,7 +3189,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             /// `from_env` is fully resolvable here: the processor wraps the environment
                             /// variable's value as `<from_env>VALUE</from_env>` and imports its
                             /// children, so parse it the same way and exempt those imported keys.
-                            const String env_name = elem->getAttribute("from_env");
+                            const auto & env_name = elem->getAttribute("from_env");
                             if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
                             {
                                 try
@@ -3316,8 +3418,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 }
                 /// Drop the nodes this fragment removed, preserving the order of the survivors
                 /// (appended nodes sit past `matchable_count` and are never erased here).
-                for (size_t i = matchable_count; i-- > 0;)
+                for (size_t i = matchable_count; i > 0;)
                 {
+                    --i;
                     if (erased[i])
                         merged_include_from_nodes.erase(merged_include_from_nodes.begin() + i);
                 }
@@ -3855,10 +3958,16 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"statistics_cache_size", {std::to_string(context->getStatisticsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->configuredMaxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"vector_similarity_index_cache_max_entries", {std::to_string(context->getVectorSimilarityIndexCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_tokens_cache_max_entries", {std::to_string(context->getTextIndexTokensCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_header_cache_max_entries", {std::to_string(context->getTextIndexHeaderCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_postings_cache_max_entries", {std::to_string(context->getTextIndexPostingsCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entries", {std::to_string(context->getQueryResultCache()->maxCount()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entry_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxEntrySizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
@@ -3878,8 +3987,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"s3queue_disable_streaming",
              {std::to_string(context->getServerSettingsCopy().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
             {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::No}},
+            {"stream_kafka_locks_refresh_polls",
+             {std::to_string(context->getKafkaLocksRefreshPolls()), ChangeableWithoutRestart::Yes}},
             {"enable_read_through_distributed_cache", {std::to_string(context->getReadThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
             {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
+            {"distributed_cache_temporary_data_pool_behaviour_on_limit",
+             {SettingFieldDistributedCachePoolBehaviourOnLimit(context->getDistributedCacheTemporaryDataPoolBehaviourOnLimit()).toString(), ChangeableWithoutRestart::Yes}},
+            {"distributed_cache_temporary_data_max_connections_bypassing_pool",
+             {std::to_string(context->getDistributedCacheTemporaryDataMaxConnectionsBypassingPool()), ChangeableWithoutRestart::Yes}},
 
             /// The server-wide throttlers, not `getRemoteReadThrottler()` and friends: those compose the
             /// reading request's own per-query limit, and (for the remote pair and the distributed-cache
@@ -3896,6 +4011,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {context->getServerWideDistributedCacheReadThrottler() ? std::to_string(context->getServerWideDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_write_bandwidth_for_server",
              {context->getServerWideDistributedCacheWriteThrottler() ? std::to_string(context->getServerWideDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+#if USE_GPU
+            {"gpu_expression_kernel_cache_size", {std::to_string(context->getGPUKernelCacheLimits().first), ChangeableWithoutRestart::Yes}},
+            {"gpu_expression_kernel_cache_elements_size", {std::to_string(context->getGPUKernelCacheLimits().second), ChangeableWithoutRestart::Yes}},
+#endif
 #if ENABLE_DISTRIBUTED_CACHE
             {"distributed_cache_write_pool_size",
              {std::to_string(WriteBufferFromDistributedCache::getBackgroundWritePoolSize()), ChangeableWithoutRestart::Yes}},
@@ -3936,12 +4055,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"format_parsing_thread_pool_queue_size",
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_iceberg_manifest_decode_thread_pool_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_iceberg_manifest_decode_thread_pool_free_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"iceberg_manifest_decode_thread_pool_queue_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_free_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_thread_pool_queue_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 
@@ -3960,6 +4079,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
             {"http_connections_sndbuf",
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
+            {"amber_connections_rcvbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::AMBER).rcvbuf), ChangeableWithoutRestart::Yes}},
+            {"amber_connections_sndbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::AMBER).sndbuf), ChangeableWithoutRestart::Yes}},
+            {"streaming_exchange_sndbuf",
+             {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().sndbuf), ChangeableWithoutRestart::Yes}},
+            {"streaming_exchange_rcvbuf",
+             {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().rcvbuf), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())
@@ -3980,9 +4107,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
 #if USE_AVRO
     if (context->getIcebergMetadataFilesCache())
+    {
         changeable_settings.insert(
             {"iceberg_metadata_files_cache_size",
              {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"iceberg_metadata_files_cache_max_entries",
+             {std::to_string(context->getIcebergMetadataFilesCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
     if (context->getPaimonMetadataFilesCache())
     {
         changeable_settings.insert(
@@ -3995,13 +4127,42 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())
+    {
         changeable_settings.insert(
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"parquet_metadata_cache_max_entries",
+             {std::to_string(context->getParquetMetadataCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
+#endif
+
+#if ENABLE_DISTRIBUTED_CACHE
+    /// Pushed to the connection registry at startup and on each reload whose values are valid.
+    if (const auto scan_settings = DistributedCacheServerConnectionRegistry::instance().getStuckRequestScanSettings())
+    {
+        changeable_settings.insert({"distributed_cache_stuck_request_no_progress_timeout_ms",
+            {std::to_string(scan_settings->no_progress_timeout_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_max_request_processing_time_ms",
+            {std::to_string(scan_settings->max_processing_time_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_stuck_request_scan_interval_ms",
+            {std::to_string(scan_settings->scan_interval_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_stuck_requests_ratio",
+            {fmt::format("{}", scan_settings->slow_down_stuck_requests_ratio), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_min_stuck_requests",
+            {std::to_string(scan_settings->slow_down_min_stuck_requests), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_window_ms",
+            {std::to_string(scan_settings->slow_down_window_ms), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 
     /// The seccomp filter is installed once at startup and cannot be changed afterwards, so a reloaded
     /// configuration that says otherwise does not describe the policy in force.
+    /// The filesystem is isolated once at startup and cannot be changed afterwards, so a reloaded configuration
+    /// does not describe the mode in force.
+    if (const auto filesystem_isolation_mode = getAppliedFilesystemIsolationMode())
+        changeable_settings.insert(
+            {"filesystem_isolation", {SettingFieldFilesystemIsolationMode(*filesystem_isolation_mode).toString(), ChangeableWithoutRestart::No}});
     if (const auto seccomp_mode = getInstalledSeccompMode())
         changeable_settings.insert(
             {"seccomp", {SettingFieldSeccompMode(*seccomp_mode).toString(), ChangeableWithoutRestart::No}});
