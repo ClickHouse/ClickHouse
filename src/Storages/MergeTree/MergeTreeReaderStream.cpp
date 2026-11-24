@@ -340,6 +340,8 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
+ReadRangesRegistry::ReadRanges ReadRangesRegistry::not_registered;
+
 ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
     : block(std::move(block_))
     , duplicated(duplicated_)
@@ -359,8 +361,7 @@ ReadRangesRegistry::~ReadRangesRegistry()
         std::lock_guard file_lock(read_ranges->mutex);
         bytes += read_ranges->merge();
     }
-    if (bytes)
-        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
+    (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
 }
 
 ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
@@ -369,8 +370,7 @@ ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String 
     std::lock_guard lock(mutex);
     if (auto it = read_ranges_by_path.find(key); it != read_ranges_by_path.end())
         return *it->second;
-    /// A file takes a unit of the limit as a range does.
-    if (!reserve(1))
+    if (!reserve(units_per_file))
         return not_registered;
     auto read_ranges = std::make_unique<ReadRanges>();
     return *read_ranges_by_path.emplace(key, std::move(read_ranges)).first->second;
@@ -446,20 +446,21 @@ size_t ReadRangesRegistry::ReadRanges::merge()
 
 void ReadRangesRegistry::registerRanges(Batch & batch, ReadRanges & file_ranges, CompressedBlockRanges & ranges)
 {
-    if (ranges.empty())
+    /// A file looked up once the counting stopped keeps nothing.
+    if (ranges.empty() || &file_ranges == &not_registered)
+    {
+        ranges.clear();
         return;
+    }
 
     /// Reserved before the ranges are kept, by how many more they can become at most: every range kept on its own.
     if (ranges.size() > batch.reserved && !reserve(ranges.size() - batch.reserved))
     {
         ranges.clear();
-        if (&file_ranges != &not_registered)
-        {
-            std::lock_guard lock(file_ranges.mutex);
-            CompressedBlockRanges().swap(file_ranges.united_ranges);
-            file_ranges.merged = 0;
-            file_ranges.merged_bytes = 0;
-        }
+        std::lock_guard lock(file_ranges.mutex);
+        CompressedBlockRanges().swap(file_ranges.united_ranges);
+        file_ranges.merged = 0;
+        file_ranges.merged_bytes = 0;
         return;
     }
     batch.reserved = std::max(batch.reserved, ranges.size());
@@ -469,6 +470,7 @@ void ReadRangesRegistry::registerRanges(Batch & batch, ReadRanges & file_ranges,
     batch.bytes += file_ranges.add(ranges);
     /// Merging can also leave fewer ranges, which go back with the rest of the reservation.
     const size_t ranges_after = file_ranges.united_ranges.size();
+    chassert(ranges_after <= ranges_before + batch.reserved);
     batch.reserved = batch.reserved + ranges_before - ranges_after;
 }
 
