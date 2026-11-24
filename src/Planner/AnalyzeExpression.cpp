@@ -180,7 +180,7 @@ public:
     void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isOrdinaryFunction())
+        if (!function_node || !function_node->isOrdinaryCall())
             return;
 
         /// Functions that are not registered in `FunctionFactory` (e.g. `exists`) are resolved by the
@@ -243,13 +243,13 @@ public:
         if (!function_node)
             return;
 
-        if (function_node->isWindowFunction())
+        if (function_node->isWindowCall())
             throw Exception(
                 ErrorCodes::ILLEGAL_AGGREGATION,
                 "Window function {} is found in a standalone expression",
                 function_node->formatASTForErrorMessage());
 
-        if (function_node->isAggregateFunction())
+        if (function_node->isAggregationCall())
             throw Exception(
                 ErrorCodes::ILLEGAL_AGGREGATION,
                 "Aggregate function {} is found in a standalone expression",
