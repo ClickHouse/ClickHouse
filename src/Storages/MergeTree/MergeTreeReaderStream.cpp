@@ -80,6 +80,10 @@ void MergeTreeReaderStream::init()
     if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
+    /// The reader bounds its reads at the right offset of its last mark, see `adjustRightMark`. Knowing it up front
+    /// lets a pipeline stage that reads before the bound is set, such as the encryption header, already use it.
+    const size_t right_offset = getRightOffset(getLastMark(all_mark_ranges));
+
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         ReadPipeline pipeline;
@@ -88,6 +92,8 @@ void MergeTreeReaderStream::init()
             read_settings,
             estimated_sum_mark_range_bytes,
             pipeline);
+        if (right_offset)
+            pipeline.setInitialReadUntilPosition(right_offset);
 
         return pipeline.build();
     };
@@ -111,7 +117,7 @@ void MergeTreeReaderStream::init()
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
-            [this, estimated_sum_mark_range_bytes, read_settings]()
+            [this, estimated_sum_mark_range_bytes, read_settings, right_offset]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
@@ -121,6 +127,8 @@ void MergeTreeReaderStream::init()
                     read_settings,
                     estimated_sum_mark_range_bytes,
                     pipeline);
+                if (right_offset)
+                    pipeline.setInitialReadUntilPosition(right_offset);
 
                 return pipeline.build();
             },
