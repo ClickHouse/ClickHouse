@@ -921,8 +921,10 @@ def test_filter_pushdown_boolean_column(started_cluster):
     """
     )
 
-    def ids(table, condition):
-        return node1.query(f"SELECT id FROM {table} WHERE {condition} ORDER BY id").split()
+    def ids(table, condition, settings=None):
+        return node1.query(
+            f"SELECT id FROM {table} WHERE {condition} ORDER BY id", settings=settings
+        ).split()
 
     for table in [inferred, "pg_boolean_filter"]:
         assert ids(table, "deleted = 0") == ["1", "4"]
@@ -930,7 +932,13 @@ def test_filter_pushdown_boolean_column(started_cluster):
         assert ids(table, "deleted != 1") == ["1", "4"]
         assert ids(table, "deleted IN (0, 1)") == ["1", "2", "4"]
         assert ids(table, "deleted NOT IN (1)") == ["1", "4"]
+        assert ids(table, "NOT (deleted = 1)") == ["1", "4"]
         assert ids(table, "deleted = 0 AND id > 1") == ["4"]
+        # A constant of a signed type.
+        assert ids(table, "deleted = toInt64(1)") == ["2"]
+        # A multi-column `IN`.
+        assert ids(table, "(deleted, id) IN ((0, 1), (1, 2))") == ["1", "2"]
+        assert ids(table, "(deleted, id) IN ((1, 2))") == ["2"]
 
     # The same numbers compared with a column that is a number in PostgreSQL and `UInt8` in the table.
     assert ids("pg_boolean_filter", "num = 1") == ["2", "4"]
@@ -938,6 +946,33 @@ def test_filter_pushdown_boolean_column(started_cluster):
     assert ids("pg_boolean_filter", "num IN (0, 1)") == ["1", "2", "4"]
     assert ids("pg_boolean_filter", "num IN (1, 2)") == ["2", "3", "4"]
 
+    # A column that is not `Nullable` reads a `NULL` of PostgreSQL as 0 (the row with id 3), so the
+    # filter has to select this row whenever it is true for 0, although the comparison with a `NULL`
+    # is not true in PostgreSQL. The structure is declared by the table, or inferred by the table
+    # function with `external_table_functions_use_nulls = 0`.
+    node1.query("DROP TABLE IF EXISTS pg_boolean_filter_not_null")
+    node1.query(
+        f"""
+        CREATE TABLE pg_boolean_filter_not_null (id Int32, deleted Bool, num UInt8)
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_boolean_filter', 'postgres', '{pg_pass}');
+    """
+    )
+    for table, settings in [
+        ("pg_boolean_filter_not_null", None),
+        (inferred, {"external_table_functions_use_nulls": 0}),
+    ]:
+        assert ids(table, "deleted = 0", settings) == ["1", "3", "4"]
+        assert ids(table, "deleted = 1", settings) == ["2"]
+        assert ids(table, "deleted != 1", settings) == ["1", "3", "4"]
+        assert ids(table, "deleted IN (0, 1)", settings) == ["1", "2", "3", "4"]
+        assert ids(table, "deleted NOT IN (1)", settings) == ["1", "3", "4"]
+        assert ids(table, "NOT (deleted = 1)", settings) == ["1", "3", "4"]
+        assert ids(table, "NOT (deleted = 0)", settings) == ["2"]
+        assert ids(table, "deleted = 0 AND id > 1", settings) == ["3", "4"]
+        assert ids(table, "deleted = 0 OR id = 2", settings) == ["1", "2", "3", "4"]
+        assert ids(table, "deleted = toInt64(0)", settings) == ["1", "3", "4"]
+
+    node1.query("DROP TABLE pg_boolean_filter_not_null")
     node1.query("DROP TABLE pg_boolean_filter")
     cursor.execute("DROP TABLE test_boolean_filter")
 
