@@ -14,11 +14,12 @@ echo '42' | ${CLICKHOUSE_CLIENT} -q "INSERT INTO t SELECT x + (SELECT sum(number
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM t"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t"
 
-# An interserver INSERT waits for the same header block on the initiator. The shard folds the CHECK
+# An interserver INSERT waits for the same header block on the initiator. The shard executes the CHECK
 # constraint's scalar subquery while analysing the bare INSERT the initiator sent it, so the same two
-# packets arrive first; an initiator that rejects them reports UNEXPECTED_PACKET_FROM_SERVER and hides
-# the shard's own diagnostic. `prefer_localhost_replica = 0` is what makes the write go over the wire.
+# packets arrive first; an initiator that rejects them reports UNEXPECTED_PACKET_FROM_SERVER instead of
+# writing the row. `prefer_localhost_replica = 0` is what makes the write go over the wire.
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_shard (v UInt64, CONSTRAINT c CHECK v >= (SELECT 1)) ENGINE = MergeTree ORDER BY tuple()"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), t_shard) SETTINGS prefer_localhost_replica = 0, distributed_foreground_insert = 1 VALUES (1)" 2>&1 |
-    grep -oF -e UNEXPECTED_PACKET_FROM_SERVER -e UNKNOWN_IDENTIFIER | head -n 1
+    grep -oF -e UNEXPECTED_PACKET_FROM_SERVER
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM t_shard"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_shard"

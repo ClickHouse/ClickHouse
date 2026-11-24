@@ -21,6 +21,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ConstraintsExpressions = VectorWithMemoryTracking<ExpressionActionsPtr>;
 
 class NamesAndTypesList;
+struct StorageID;
 
 struct ConstraintsDescription
 {
@@ -57,7 +58,7 @@ public:
 
     [[nodiscard]] const ComparisonGraph<ASTPtr> & getGraph() const;
 
-    [[nodiscard]] ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
+    [[nodiscard]] ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_, const StorageID & table_id) const;
 
     /// Rejects a constraint expression that changes the number of rows. `CheckConstraintsTransform` reads
     /// the constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked

@@ -32,7 +32,7 @@ CheckConstraintsTransform::CheckConstraintsTransform(
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
-    , expressions(constraints_.getExpressions(context_, header->getNamesAndTypesList()))
+    , expressions(constraints_.getExpressions(context_, header->getNamesAndTypesList(), table_id_))
     , context(std::move(context_))
 {
 }
