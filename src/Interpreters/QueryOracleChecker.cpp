@@ -2626,7 +2626,8 @@ bool QueryOracleChecker::checkDistinctViaGroupBy(const ASTSelectQuery & select, 
     /// arbitrary subset, is out of scope.
     if (select.groupBy() || select.having() || select.group_by_all || hasAggregates(select))
         return false;
-    if (select.limitLength() || select.limitBy() || select.limitOffset())
+    if (select.limitLength() || select.limitBy() || select.limitOffset()
+        || select.limitAfter() || select.limitUntil())
         return false;
     if (select.prewhere() || select.qualify())
         return false;
@@ -2723,6 +2724,14 @@ bool QueryOracleChecker::checkPrewhereEquivalence(const ASTSelectQuery & select,
     /// A WHERE that defines an alias used elsewhere would move that alias definition into PREWHERE,
     /// changing scoping; skip such queries.
     if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+        return false;
+    /// `stripOrderAndLimit` below deletes the range-limit clauses from both sides, so a limited
+    /// query would be validated as a different (unbounded) query than the one that ran; skip those.
+    /// An unordered window function is also permitted to renumber rows across the two executions.
+    if (select.limitLength() || select.limitBy() || select.limitOffset()
+        || select.limitAfter() || select.limitUntil())
+        return false;
+    if (hasWindowFunctionWithoutOrderByAnywhere(select))
         return false;
 
     /// Reference: the query as-is (WHERE p), ORDER BY / LIMIT / SETTINGS stripped.
@@ -2856,6 +2865,14 @@ bool QueryOracleChecker::checkSkipIndexEquivalence(const ASTSelectQuery & select
 
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
+    /// `stripOrderAndLimit` below deletes the range-limit clauses, so a limited query would be
+    /// validated as a different (unbounded) query than the one that ran; skip those. An unordered
+    /// window function is also permitted to renumber rows across the two executions.
+    if (select.limitLength() || select.limitBy() || select.limitOffset()
+        || select.limitAfter() || select.limitUntil())
+        return false;
+    if (hasWindowFunctionWithoutOrderByAnywhere(select))
+        return false;
 
     /// Strip ORDER BY / LIMIT / SETTINGS (the last so the query cannot override our overlay) and
     /// compare the row multiset.
@@ -2909,6 +2926,14 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
     if (!select.tables())
         return false;
     if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+    /// `stripOrderAndLimit` below deletes the range-limit clauses, so a limited query would be
+    /// validated as a different (unbounded) query than the one that ran; skip those. An unordered
+    /// window function is also permitted to renumber rows across the two executions.
+    if (select.limitLength() || select.limitBy() || select.limitOffset()
+        || select.limitAfter() || select.limitUntil())
+        return false;
+    if (hasWindowFunctionWithoutOrderByAnywhere(select))
         return false;
 
     const auto storage = resolveSingleTableStorage(select, context);
