@@ -313,6 +313,38 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+/// A `V4` file of one `minmax` or `basic` statistics with the bounds `min` and `max` in the `Field` encoding.
+String makeV4StatisticsFile(const String & type_name, StatisticsType type, const Field & min, const Field & max)
+{
+    String payload;
+    {
+        WriteBufferFromString buf(payload);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// row_count
+        if (type == StatisticsType::MinMax)
+        {
+            writeStringBinary(type_name, buf);
+        }
+        else
+        {
+            writeIntBinary(static_cast<UInt8>(1), buf); /// `BasicFeatureMask::NumericMinMax`
+        }
+        writeFieldBinary(min, buf);
+        writeFieldBinary(max, buf);
+        buf.finalize();
+    }
+
+    String file;
+    WriteBufferFromString buf(file);
+    writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+    writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(type)), buf);
+    writeStringBinary(type_name, buf);
+    writeIntBinary(static_cast<UInt64>(2), buf); /// rows
+    writeIntBinary(static_cast<UInt64>(payload.size()), buf);
+    writeString(payload, buf);
+    buf.finalize();
+    return file;
+}
+
 }
 
 TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
@@ -1410,37 +1442,6 @@ TEST(Statistics, DeserializeV4BoundsOfAnotherType)
 {
     tryRegisterAggregateFunctions();
 
-    auto make_v4_file = [](const String & type_name, StatisticsType type, const Field & min, const Field & max)
-    {
-        String payload;
-        {
-            WriteBufferFromString buf(payload);
-            writeIntBinary(static_cast<UInt64>(2), buf); /// row_count
-            if (type == StatisticsType::MinMax)
-            {
-                writeStringBinary(type_name, buf);
-            }
-            else
-            {
-                writeIntBinary(static_cast<UInt8>(1), buf); /// `BasicFeatureMask::NumericMinMax`
-            }
-            writeFieldBinary(min, buf);
-            writeFieldBinary(max, buf);
-            buf.finalize();
-        }
-
-        String file;
-        WriteBufferFromString buf(file);
-        writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
-        writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(type)), buf);
-        writeStringBinary(type_name, buf);
-        writeIntBinary(static_cast<UInt64>(2), buf); /// rows
-        writeIntBinary(static_cast<UInt64>(payload.size()), buf);
-        writeString(payload, buf);
-        buf.finalize();
-        return file;
-    };
-
     struct Case
     {
         const char * type_name;
@@ -1464,7 +1465,7 @@ TEST(Statistics, DeserializeV4BoundsOfAnotherType)
         auto data_type = DataTypeFactory::instance().get(test_case.type_name);
         for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
         {
-            const String file = make_v4_file(data_type->getName(), type, test_case.min, test_case.max);
+            const String file = makeV4StatisticsFile(data_type->getName(), type, test_case.min, test_case.max);
             ReadBufferFromString rb(file);
             auto loaded = ColumnStatistics::deserialize(rb, data_type);
             ASSERT_TRUE(loaded != nullptr);
@@ -1484,6 +1485,62 @@ TEST(Statistics, DeserializeV4BoundsOfAnotherType)
                     auto estimate = restored->getEstimate();
                     ASSERT_TRUE(estimate.estimated_min.has_value()) << test_case.type_name;
                     ASSERT_TRUE(estimate.estimated_max.has_value()) << test_case.type_name;
+                }
+            }
+        }
+    }
+}
+
+/// Exact bounds of a float column are both `NaN` (every value is `NaN`) or neither. Older versions could build a `NaN`
+/// maximum with a finite minimum from a sparse column, so such statistics are dropped when read.
+TEST(Statistics, DeserializeBoundsWithOneNaN)
+{
+    tryRegisterAggregateFunctions();
+
+    const Field nan(std::numeric_limits<Float64>::quiet_NaN());
+
+    struct Case
+    {
+        Field min;
+        Field max;
+        bool kept;
+    };
+
+    const std::vector<Case> cases{
+        {Field(1.0), nan, false},
+        {nan, Field(1.0), false},
+        {nan, nan, true},
+        {Field(1.0), Field(5.0), true},
+    };
+
+    for (const auto * type_name : {"Float64", "Float32"})
+    {
+        auto data_type = DataTypeFactory::instance().get(type_name);
+        for (const auto & test_case : cases)
+        {
+            for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
+            {
+                const String file = makeV4StatisticsFile(data_type->getName(), type, test_case.min, test_case.max);
+                ReadBufferFromString rb(file);
+                auto loaded = ColumnStatistics::deserialize(rb, data_type);
+                ASSERT_TRUE(loaded != nullptr);
+                EXPECT_EQ(loaded->getStats().contains(type), test_case.kept)
+                    << type_name << " " << statisticsTypeToString(type) << " " << test_case.min.dump() << " " << test_case.max.dump();
+
+                for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
+                {
+                    WriteBufferFromOwnString rewritten;
+                    loaded->serialize(rewritten, version);
+                    ReadBufferFromString rewritten_rb(rewritten.str());
+                    auto restored = ColumnStatistics::deserialize(rewritten_rb, data_type);
+                    ASSERT_TRUE(restored != nullptr);
+                    EXPECT_EQ(restored->getStats().contains(type), test_case.kept) << type_name;
+                    if (test_case.kept)
+                    {
+                        auto estimate = restored->getEstimate();
+                        ASSERT_TRUE(estimate.estimated_min.has_value()) << type_name;
+                        ASSERT_TRUE(estimate.estimated_max.has_value()) << type_name;
+                    }
                 }
             }
         }

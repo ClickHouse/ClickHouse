@@ -77,6 +77,9 @@ struct StatisticsUtils
     static void updateMin(Field & accumulator, const Field & value);
     static void updateMax(Field & accumulator, const Field & value);
 
+    /// Bounds accumulated by `updateMin` and `updateMax` are both `NaN` (every value is `NaN`) or neither.
+    static bool hasNaNInOneBoundOnly(const Field & min, const Field & max);
+
     /// Write the `min` and `max` bounds of a column with the binary serialization of its type `data_type`,
     /// as a byte telling which bounds are known (a bound is unknown, a `NULL` `Field`, until a non-`NULL`
     /// value is seen) followed by the known ones. The statistics of a part are always read with the type of
