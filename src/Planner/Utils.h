@@ -45,6 +45,11 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     SharedHeaders & query_plans_headers,
     ContextPtr context);
 
+/// Same as `ActionsDAG::addCast`, but casts a `SimpleAggregateFunction(f, T)` node through `T`: `CAST` relabels an `equals`
+/// type only between equal custom names, otherwise it converts every element and refuses `Variant`s with other alternatives.
+const ActionsDAG::Node & addCastThroughSimpleAggregateFunction(
+    ActionsDAG & dag, const ActionsDAG::Node & node, const DataTypePtr & type, const ContextPtr & context);
+
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
 

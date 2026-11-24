@@ -241,7 +241,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
         auto cast_to_super = [&result_type, &changed_types, &builder_context](auto & dag, const auto & nodes)
         {
             auto arg = nodes.at(0);
-            const auto & casted = dag.addCast(*arg, result_type, {}, builder_context.planner_context->getQueryContext());
+            const auto & casted = addCastThroughSimpleAggregateFunction(dag, *arg, result_type, builder_context.planner_context->getQueryContext());
             changed_types[arg->result_name] = &dag.addAlias(casted, arg->result_name);
             return arg;
         };
