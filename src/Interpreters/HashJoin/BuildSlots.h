@@ -50,8 +50,8 @@ public:
     void setReserve(size_t reserve_keys_) { reserve_keys = reserve_keys_; }
 
     /// Call under the lock of `slot`. On the first insert of `slot` into `map`, reserves the
-    /// slot's share of `reserve_keys` over the slot's buckets. Returns that share, or 0 when nothing was reserved.
-    /// The caller uses the returned share only for `HashJoinPreallocatedElementsInHashTables`.
+    /// slot's share of `reserve_keys` over the slot's buckets, and at least `min_keys_per_bucket` keys in each.
+    /// Returns the share of `reserve_keys`. The caller uses it only for `HashJoinPreallocatedElementsInHashTables`.
     template <typename Map>
     size_t reserveOnFirstInsert(Map & map, size_t slot)
     {
@@ -60,10 +60,11 @@ public:
             return 0;
         else
         {
-            if (!reserve_keys || reserved[slot])
+            if (reserved[slot])
                 return 0;
+            const size_t keys_per_bucket = std::max<size_t>(reserve_keys / Map::NUM_BUCKETS, min_keys_per_bucket);
             for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
-                map.impls[bucket].reserve(reserve_keys / Map::NUM_BUCKETS);
+                map.impls[bucket].reserve(keys_per_bucket);
             reserved[slot] = 1;
             return reserve_keys / slots.size();
         }
@@ -78,11 +79,18 @@ public:
         for (size_t slot = 0; slot < num_slots; ++slot)
             pending[slot] = per_slot[slot].size() != 0;
         size_t slots_left = std::ranges::count(pending, 1);
+        if (!slots_left)
+            return;
+
+        /// Where to look for a slot to wait for. It differs between the threads, so that they do not queue
+        /// for the same slot while the other slots become free.
+        size_t wait_from = std::hash<std::thread::id>()(std::this_thread::get_id()) % num_slots;
 
         while (slots_left > 0)
         {
             bool made_progress = false;
 
+            /// Take the slots that are free at the moment.
             for (size_t slot = 0; slot < num_slots; ++slot)
             {
                 if (!pending[slot])
@@ -96,11 +104,24 @@ public:
                 insert_slot(slot);
                 pending[slot] = 0;
                 --slots_left;
+                wait_from = (slot + 1) % num_slots;
             }
 
-            /// Yielding beats blocking: another slot of this block is probably free.
-            if (!made_progress)
-                std::this_thread::yield();
+            if (made_progress)
+                continue;
+
+            /// Every slot that is left is taken by another thread, so wait for one of them on its mutex.
+            /// Do not try again in a loop, not even with a yield in between: a thread that does it
+            /// takes the CPU time from the threads that insert.
+            size_t slot = wait_from;
+            while (!pending[slot])
+                slot = (slot + 1) % num_slots;
+
+            std::lock_guard lock(slots[slot].mutex);
+            insert_slot(slot);
+            pending[slot] = 0;
+            --slots_left;
+            wait_from = (slot + 1) % num_slots;
         }
     }
 
@@ -109,6 +130,9 @@ private:
     {
         std::mutex mutex;
     };
+
+    /// 256 cells, the initial size of a `TwoLevelHashTableGrower<>` bucket.
+    static constexpr size_t min_keys_per_bucket = 128;
 
     std::vector<Slot> slots;
 

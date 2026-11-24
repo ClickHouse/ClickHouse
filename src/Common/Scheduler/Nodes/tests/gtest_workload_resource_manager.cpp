@@ -13,6 +13,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
+#include <Common/CacheLine.h>
 #include <Common/EventRateMeter.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -876,7 +877,7 @@ public:
 private:
     UInt64 last_update_ns = 0;
     std::atomic<UInt64> consumed{0};
-    char padding[64] = {}; // to avoid false sharing
+    char padding[DB::CH_CACHE_LINE_SIZE] = {}; // to avoid false sharing
 };
 
 class ThreadMetricsGroup : public boost::noncopyable
