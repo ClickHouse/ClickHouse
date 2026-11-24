@@ -351,7 +351,7 @@ ObjectStorageQueueLockOwner ObjectStorageQueueMetadata::getLockOwner()
     std::lock_guard lock(lock_owner_mutex);
     if (lock_owner_id.empty())
         registerLockOwner();
-    return {.id = lock_owner_id, .path = getLockOwnerPath(lock_owner_id)};
+    return {.id = lock_owner_id, .path = getLockOwnerPath(lock_owner_id), .generation = lock_owner_generation};
 }
 
 void ObjectStorageQueueMetadata::registerLockOwner()
@@ -418,8 +418,9 @@ void ObjectStorageQueueMetadata::updateLockOwner()
         /// The cached file statuses belong to the lost locks. Drop them before a new owner
         /// is registered, so that it asks keeper and does not skip a file because of them.
         local_file_statuses.clear();
+        /// Under the mutex, so that a new owner is always seen together with the new generation.
+        ++lock_owner_generation;
     }
-    ++lock_owner_generation;
 
     LOG_WARNING(
         log, "Lock owner {} was removed as dead, because it was not updated for more than {} seconds. "

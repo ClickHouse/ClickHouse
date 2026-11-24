@@ -127,7 +127,6 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
     , shutdown_called(shutdown_called_)
     , log(logger_)
-    , lock_owner_generation(metadata->getLockOwnerGeneration())
     , lock_owner(metadata->getLockOwner())
 {
     if (configuration->isNamespaceWithGlobs())
@@ -179,7 +178,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isInvalidated() const
 {
-    return iterator_invalidated || metadata->getLockOwnerGeneration() != lock_owner_generation;
+    return iterator_invalidated || metadata->getLockOwnerGeneration() != lock_owner.generation;
 }
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()

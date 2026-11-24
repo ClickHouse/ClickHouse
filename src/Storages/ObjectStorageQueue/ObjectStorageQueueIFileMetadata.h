@@ -21,6 +21,8 @@ struct ObjectStorageQueueLockOwner
     std::string id;
     /// Path of the owner node in keeper.
     std::string path;
+    /// See `ObjectStorageQueueMetadata::getLockOwnerGeneration`.
+    size_t generation = 0;
 };
 
 /// A base class to work with single file metadata in keeper.
