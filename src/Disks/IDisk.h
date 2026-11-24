@@ -603,9 +603,6 @@ public:
     virtual bool supportsStat() const { return false; }
     virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
 
-    virtual bool supportsChmod() const { return false; }
-    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
-
     /// Was disk created to be used without storage configuration?
     bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
     UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
