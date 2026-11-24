@@ -1,0 +1,24 @@
+--- json_use_optimized_type_conversion = 0 ---
+rules only	JSON(SKIP x, SHARED REGEXP \'^d\')	['a','k']	['d','d2']	2
+skip rule removed	JSON(SHARED REGEXP \'^d\')	['a','k']	['d','d2']	2
+typed path added	JSON(a Int64, SKIP x, SHARED REGEXP \'^d\')	['k']	['d','d2']	1	2
+typed path removed	JSON(SHARED REGEXP \'^d\')	['k']	['d','d2']	3	Int64
+inserted	k	6
+inserted shared	d	6
+inserted shared	d2	6
+merged	k	6
+merged shared	d	6
+merged shared	d2	6
+merged values	6	12	['s']	['v']
+--- json_use_optimized_type_conversion = 1 ---
+rules only	JSON(SKIP x, SHARED REGEXP \'^d\')	['a','k']	['d','d2']	2
+skip rule removed	JSON(SHARED REGEXP \'^d\')	['a','k']	['d','d2']	2
+typed path added	JSON(a Int64, SKIP x, SHARED REGEXP \'^d\')	['k']	['d','d2']	1	2
+typed path removed	JSON(SHARED REGEXP \'^d\')	['k']	['d','d2']	3	Int64
+inserted	k	6
+inserted shared	d	6
+inserted shared	d2	6
+merged	k	6
+merged shared	d	6
+merged shared	d2	6
+merged values	6	12	['s']	['v']
