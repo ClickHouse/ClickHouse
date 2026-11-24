@@ -847,7 +847,8 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWit
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
     {
-        *memory = is_null[n];
+        /// Any nonzero byte of the null map means NULL: write 1, so that equal keys are serialized identically.
+        *memory = is_null[n] != 0;
         ++memory;
         if (is_null[n])
             return memory;
@@ -872,7 +873,7 @@ void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
     for (size_t i = 0; i < memories.size(); ++i)
     {
         const size_t row = start_row + i;
-        *memories[i] = is_null[row];
+        *memories[i] = is_null[row] != 0;
         ++memories[i];
         if (!is_null[row])
             memories[i] = self.serializeValueIntoMemory(row, memories[i], settings);

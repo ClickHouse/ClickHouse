@@ -13,6 +13,7 @@
 #include <absl/container/inlined_vector.h>
 
 #include <array>
+#include <cstring>
 
 #include "config.h"
 
@@ -546,8 +547,9 @@ public:
         this->nested_function->addBatchSinglePlaceNotNull(
             row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
 
+        /// Any nonzero byte of the null map means NULL, so there is a value only if there is a zero byte.
         if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, row_begin, row_end, 1))
+            if (row_begin < row_end && memchr(null_map + row_begin, 0, row_end - row_begin))
                 this->setFlag(place);
     }
 
