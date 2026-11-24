@@ -960,8 +960,7 @@ TEST_P(CoordinationTest, TestRequestBatchLogEntry)
     auto & storage = state_machine->getStorageUnsafe();
     ASSERT_TRUE(this->keeper_context->digestEnabled());
 
-    /// Each request gets a distinct xid, like real client requests. (The parsed batch cache is
-    /// keyed by the session id and xid of the first request in the entry.)
+    /// Each request gets a distinct xid, like real client requests.
     int64_t next_xid = 1;
     const auto make_request = [&](int64_t session_id, ZooKeeperRequestPtr request)
     {
@@ -1182,7 +1181,7 @@ TEST_P(CoordinationTest, TestRequestBatchLogEntry)
 
     /// 3. A batch owned by another server's dispatcher: the state is applied but no responses are
     ///    produced for its requests. Watch notifications are still delivered, because the watching
-    ///    session may be local. The first request is big enough for the parsed batch cache.
+    ///    session may be local.
     {
         SCOPED_TRACE("3. Batch owned by another server's dispatcher");
         const size_t big_data_size = 2 * this->keeper_context->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache];
@@ -1302,6 +1301,157 @@ TEST_P(CoordinationTest, TestRequestBatchLogEntry)
             EXPECT_EQ(close.session_id, 2);
             EXPECT_EQ(close.response->xid, CLOSE_XID);
             EXPECT_NE(dynamic_cast<const ZooKeeperCloseResponse *>(close.response.get()), nullptr);
+        }
+    }
+}
+
+/// Two log entries whose first requests have the same session id and xid (a client may reuse an
+/// xid) are each preprocessed and committed from their own bytes, on the leader and on a follower.
+TEST_P(CoordinationTest, TestParsedBatchCacheIsPerLogEntry)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+
+    for (const uint64_t log_entry_version : {0, 1})
+    {
+        SCOPED_TRACE(fmt::format("write_log_entry_version {}", log_entry_version));
+
+        const auto make_state_machine = [&](std::vector<KeeperResponseForSession> & responses_out, SnapshotsQueue & queue)
+        {
+            auto context = this->makeKeeperContext();
+            EXPECT_TRUE(context->digestEnabled());
+            context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
+            auto state_machine = std::make_shared<KeeperStateMachine>(
+                [&responses_out](KeeperResponseForSession response) { responses_out.push_back(std::move(response)); },
+                queue,
+                context,
+                nullptr);
+            state_machine->init();
+            return state_machine;
+        };
+
+        SnapshotsQueue snapshots_queue{1};
+        std::vector<KeeperResponseForSession> responses;
+        auto leader = make_state_machine(responses, snapshots_queue);
+        auto & storage = leader->getStorageUnsafe();
+
+        SnapshotsQueue follower_snapshots_queue{1};
+        std::vector<KeeperResponseForSession> follower_responses;
+        auto follower = make_state_machine(follower_responses, follower_snapshots_queue);
+        auto & follower_storage = follower->getStorageUnsafe();
+
+        const size_t big = 2 * this->keeper_context->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache];
+
+        const auto make_create_entry = [&](const std::string & path, const std::string & data, int64_t xid)
+        {
+            auto request = std::make_shared<ZooKeeperCreateRequest>();
+            request->path = path;
+            request->data = data;
+            request->xid = xid;
+            KeeperRequestBatch batch;
+            batch.requests.push_back(KeeperRequestForSession{.session_id = 1, .request = request});
+            auto buffers = KeeperStateMachine::serializeRequestBatch(batch, log_entry_version);
+            EXPECT_EQ(buffers.size(), 1);
+            return nuraft::cs_new<nuraft::log_entry>(1, buffers.at(0));
+        };
+
+        /// As the PreAppendLogLeader branch of `KeeperServer::callbackFunc`.
+        const auto leader_pre_append = [&](const LogEntryPtr & entry)
+        {
+            KeeperStateMachine::ZooKeeperLogSerializationVersion version{};
+            size_t patched_fields_offset = 0;
+            auto batch = leader->parseRequestBatch(entry->get_buf(), /*final=*/false, &version, &patched_fields_offset);
+            batch->first_zxid = leader->getNextZxid();
+            auto digest = leader->preprocessBatch(*batch, /*lock_mutex=*/true);
+            ASSERT_TRUE(digest.has_value());
+            batch->digest = *digest;
+            batch->committed_log_idx = static_cast<int64_t>(leader->last_commit_index());
+            KeeperStateMachine::patchSerializedRequestBatch(entry->get_buf(), version, patched_fields_offset, *batch);
+        };
+
+        /// As NuRaft calls the state machine.
+        const auto pre_commit = [](KeeperStateMachine & state_machine, uint64_t log_idx, const LogEntryPtr & entry)
+        {
+            auto data = entry->get_buf_ptr();
+            data->pos(0);
+            state_machine.pre_commit_ext(nuraft::state_machine::ext_op_params(log_idx, data, entry));
+        };
+        const auto commit = [](KeeperStateMachine & state_machine, uint64_t log_idx, const LogEntryPtr & entry)
+        {
+            auto data = entry->get_buf_ptr();
+            data->pos(0);
+            state_machine.commit_ext(nuraft::state_machine::ext_op_params(log_idx, data, entry));
+        };
+        const auto rollback = [](KeeperStateMachine & state_machine, uint64_t log_idx, const LogEntryPtr & entry)
+        {
+            auto data = entry->get_buf_ptr();
+            data->pos(0);
+            state_machine.rollback_ext(nuraft::state_machine::ext_op_params(log_idx, data, entry));
+        };
+
+        const std::string data_a(big, 'a');
+        const std::string data_b(big, 'b');
+        auto entry_1 = make_create_entry("/a", data_a, 7);
+        auto entry_2 = make_create_entry("/b", data_b, 7);
+
+        {
+            SCOPED_TRACE("Leader: both entries in flight");
+            leader_pre_append(entry_1);
+            pre_commit(*leader, 1, entry_1);
+            EXPECT_NE(entry_1->user_data, nullptr);
+
+            leader_pre_append(entry_2);
+            pre_commit(*leader, 2, entry_2);
+            EXPECT_NE(entry_2->user_data, nullptr);
+            EXPECT_NE(entry_2->user_data, entry_1->user_data);
+
+            commit(*leader, 1, entry_1);
+            EXPECT_EQ(entry_1->user_data, nullptr);
+            commit(*leader, 2, entry_2);
+            EXPECT_EQ(entry_2->user_data, nullptr);
+
+            EXPECT_EQ(committedNodeData(storage, "/a"), data_a);
+            EXPECT_EQ(committedNodeData(storage, "/b"), data_b);
+            ASSERT_EQ(responses.size(), 2);
+            EXPECT_EQ(responses[0].response->error, Error::ZOK);
+            EXPECT_EQ(responses[1].response->error, Error::ZOK);
+        }
+
+        {
+            SCOPED_TRACE("Follower: the first entry is committed before the second is pre-committed");
+            auto follower_entry_1 = nuraft::cs_new<nuraft::log_entry>(1, nuraft::buffer::clone(entry_1->get_buf()));
+            auto follower_entry_2 = nuraft::cs_new<nuraft::log_entry>(1, nuraft::buffer::clone(entry_2->get_buf()));
+            pre_commit(*follower, 1, follower_entry_1);
+            commit(*follower, 1, follower_entry_1);
+            pre_commit(*follower, 2, follower_entry_2);
+            commit(*follower, 2, follower_entry_2);
+            EXPECT_EQ(committedNodeData(follower_storage, "/b"), data_b);
+            EXPECT_EQ(follower->getNodesDigest().value, leader->getNodesDigest().value);
+        }
+
+        {
+            SCOPED_TRACE("Entries smaller than min_request_size_for_cache are not cached");
+            auto small_entry = make_create_entry("/small", "small", 8);
+            leader_pre_append(small_entry);
+            pre_commit(*leader, 3, small_entry);
+            EXPECT_EQ(small_entry->user_data, nullptr);
+            commit(*leader, 3, small_entry);
+            EXPECT_EQ(committedNodeData(storage, "/small"), "small");
+        }
+
+        {
+            SCOPED_TRACE("Rollback drops the parsed batch");
+            const int64_t next_zxid = leader->getNextZxid();
+            auto entry_3 = make_create_entry("/c", std::string(big, 'c'), 7);
+            leader_pre_append(entry_3);
+            pre_commit(*leader, 4, entry_3);
+            EXPECT_NE(entry_3->user_data, nullptr);
+            rollback(*leader, 4, entry_3);
+            EXPECT_EQ(entry_3->user_data, nullptr);
+            EXPECT_EQ(uncommittedNodeData(storage, "/c"), "<NO NODE>");
+            EXPECT_EQ(leader->getNextZxid(), next_zxid);
         }
     }
 }

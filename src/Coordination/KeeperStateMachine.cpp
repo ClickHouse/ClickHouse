@@ -249,7 +249,7 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 
         if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
         {
-            auto batch = parseRequestBatch(entry->get_buf(), /*final=*/false);
+            auto batch = parseRequestBatch(entry->get_buf(), /*final=*/false, nullptr, nullptr, entry.get());
             assignZxidToLegacyEntry(*batch, log_idx);
             batch->log_idx = log_idx;
 
@@ -600,8 +600,7 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
             KeeperRequestBatchPtr batch;
             try
             {
-                /// `final=true` keeps this scan out of `parsed_batch_cache`: the entries are parsed
-                /// again during the real preprocessing pass and we must not disturb that.
+                /// No `entry` is passed, so this scan neither reads nor drops a parse kept in the entry.
                 batch = parseRequestBatch(entry->get_buf(), /*final=*/true);
             }
             catch (...)
@@ -804,18 +803,19 @@ union XidHelper
     int64_t xid;
 };
 
-/// Requests with these xids don't go through the parsed request cache.
-constexpr std::array non_cacheable_xids{
-    Coordination::WATCH_XID,
-    Coordination::PING_XID,
-    Coordination::AUTH_XID,
-    Coordination::CLOSE_XID,
-    Coordination::CLOSE_XID_64,
-};
-
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
+{
+    return preCommitImpl(log_idx, data, nullptr);
+}
+
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit_ext(const nuraft::state_machine::ext_op_params & params)
+{
+    return preCommitImpl(params.log_idx, *params.data, params.entry.get());
+}
+
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::preCommitImpl(uint64_t log_idx, nuraft::buffer & data, nuraft::log_entry * entry)
 {
     LockMemoryExceptionInThread blocker{VariableContext::Global};
 
@@ -842,7 +842,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     if (!keeper_context->localLogsPreprocessed())
         return result;
 
-    auto batch = parseRequestBatch(data, /*final=*/false);
+    auto batch = parseRequestBatch(data, /*final=*/false, nullptr, nullptr, entry);
     assignZxidToLegacyEntry(*batch, log_idx);
     batch->log_idx = log_idx;
 
@@ -925,21 +925,17 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::serializeRequestInOldFormat(cons
     return write_buf.getBuffer();
 }
 
-bool KeeperStateMachine::shouldCacheParsedEntry(int64_t session_id, int64_t xid, size_t entry_size) const
+bool KeeperStateMachine::shouldCacheParsedEntry(size_t entry_size) const
 {
-    return min_request_size_to_cache != 0 && session_id != -1
-        && session_id != keeper_internal_ttl_garbage_collector_session_id
-        && session_id != keeper_internal_container_garbage_collector_session_id
-        && entry_size >= min_request_size_to_cache
-        && std::all_of(
-            non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+    return min_request_size_to_cache != 0 && entry_size >= min_request_size_to_cache;
 }
 
 KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
     nuraft::buffer & data,
     bool final,
     ZooKeeperLogSerializationVersion * serialization_version,
-    size_t * patched_fields_offset)
+    size_t * patched_fields_offset,
+    nuraft::log_entry * entry)
 {
     ReadBufferFromNuraftBuffer buffer(data);
     int64_t session_id = 0;
@@ -1016,27 +1012,19 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
         *serialization_version = version;
 
     const int64_t xid = xid_helper.xid;
-    const bool should_cache = shouldCacheParsedEntry(session_id, xid, data.size());
+    const bool should_cache = entry && shouldCacheParsedEntry(data.size());
 
-    if (should_cache)
+    if (should_cache && entry->user_data)
     {
-        std::lock_guard lock(request_cache_mutex);
-        if (auto xid_to_batch_it = parsed_batch_cache.find(session_id); xid_to_batch_it != parsed_batch_cache.end())
-        {
-            auto & xid_to_batch = xid_to_batch_it->second;
-            if (auto batch_it = xid_to_batch.find(xid); batch_it != xid_to_batch.end())
-            {
-                auto batch = batch_it->second;
-                chassert(batch->requests.size() == 1);
-                /// Reapply the patchable fields on every parse: the leader may have patched the
-                /// buffer in place since a previous parse cached the entry.
-                batch->first_zxid = zxid;
-                batch->digest = digest;
-                if (final)
-                    xid_to_batch.erase(batch_it);
-                return batch;
-            }
-        }
+        auto batch = std::static_pointer_cast<KeeperRequestBatch>(entry->user_data);
+        chassert(batch->requests.size() == 1);
+        /// Reapply the patchable fields on every parse: the leader may have patched the
+        /// buffer in place since a previous parse cached the entry.
+        batch->first_zxid = zxid;
+        batch->digest = digest;
+        if (final)
+            entry->user_data.reset();
+        return batch;
     }
 
     buffer.seek(buffer_position, SEEK_SET);
@@ -1058,10 +1046,7 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
         request_for_session.request->tracing_context = std::move(tracing_context);
 
     if (should_cache && !final)
-    {
-        std::lock_guard lock(request_cache_mutex);
-        parsed_batch_cache[session_id].emplace(xid, batch);
-    }
+        entry->user_data = batch;
 
     return batch;
 }
@@ -1147,7 +1132,11 @@ void KeeperStateMachine::patchSerializedRequestBatch(
 }
 
 KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
-    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * patched_fields_offset)
+    nuraft::buffer & data,
+    bool final,
+    ZooKeeperLogSerializationVersion * serialization_version,
+    size_t * patched_fields_offset,
+    nuraft::log_entry * entry)
 {
     ReadBufferFromNuraftBuffer buffer(data);
 
@@ -1159,7 +1148,7 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
         /// Legacy format: the entry is a single request, and `marker` is its session id.
         /// For legacy versions `patched_fields_offset` is the request end position; which
         /// patchable fields follow it is determined by `serialization_version`.
-        return parseRequestInOldFormat(data, final, serialization_version, patched_fields_offset);
+        return parseRequestInOldFormat(data, final, serialization_version, patched_fields_offset, entry);
     }
 
     const auto batch_version = static_cast<uint64_t>(marker - BATCH_ENTRY_MARKER_BASE);
@@ -1215,31 +1204,16 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
         batch.digest = digest;
     };
 
-    /// The batch cache is keyed by (session_id, xid) of the first request.
-    int64_t first_session_id = 0;
-    int64_t first_xid = 0;
-    readIntBinary(first_session_id, buffer);
-    readIntBinary(first_xid, buffer);
-    buffer.seek(header_size, SEEK_SET);
+    const bool should_cache = entry && shouldCacheParsedEntry(data.size());
 
-    const bool should_cache = shouldCacheParsedEntry(first_session_id, first_xid, data.size());
-
-    if (should_cache)
+    if (should_cache && entry->user_data)
     {
-        std::lock_guard lock(request_cache_mutex);
-        if (auto xid_to_batch_it = parsed_batch_cache.find(first_session_id); xid_to_batch_it != parsed_batch_cache.end())
-        {
-            auto & xid_to_batch = xid_to_batch_it->second;
-            if (auto batch_it = xid_to_batch.find(first_xid); batch_it != xid_to_batch.end())
-            {
-                auto batch = batch_it->second;
-                chassert(batch->requests.size() == request_count);
-                update_patched_fields(*batch);
-                if (final)
-                    xid_to_batch.erase(batch_it);
-                return batch;
-            }
-        }
+        auto batch = std::static_pointer_cast<KeeperRequestBatch>(entry->user_data);
+        chassert(batch->requests.size() == request_count);
+        update_patched_fields(*batch);
+        if (final)
+            entry->user_data.reset();
+        return batch;
     }
 
     auto batch = std::make_shared<KeeperRequestBatch>();
@@ -1299,10 +1273,7 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
     update_patched_fields(*batch);
 
     if (should_cache && !final)
-    {
-        std::lock_guard lock(request_cache_mutex);
-        parsed_batch_cache[first_session_id].emplace(first_xid, batch);
-    }
+        entry->user_data = batch;
 
     return batch;
 }
@@ -1423,7 +1394,17 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    auto batch = parseRequestBatch(data, true);
+    return commitImpl(log_idx, data, nullptr);
+}
+
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const nuraft::state_machine::ext_op_params & params)
+{
+    return commitImpl(params.log_idx, *params.data, params.entry.get());
+}
+
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commitImpl(uint64_t log_idx, nuraft::buffer & data, nuraft::log_entry * entry)
+{
+    auto batch = parseRequestBatch(data, true, nullptr, nullptr, entry);
     assignZxidToLegacyEntry(*batch, log_idx);
     batch->log_idx = log_idx;
 
@@ -1496,29 +1477,21 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             }
             else
             {
-                if (op_num == Coordination::OpNum::Close)
+                KEEPER_STORAGE_LOCK_SHARED(lock);
+                ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+                KeeperResponsesForSessions responses_for_sessions = storage->processOneRequest(
+                    request_for_session.request, request_for_session.session_id, batch->getZxid(request_idx), produce_responses);
+                for (auto & response_for_session : responses_for_sessions)
                 {
-                    std::lock_guard cache_lock(request_cache_mutex);
-                    parsed_batch_cache.erase(request_for_session.session_id);
+                    if (response_for_session.response->xid != Coordination::WATCH_XID)
+                        response_for_session.request = request_for_session.request;
+
+                    if (response_callback)
+                        response_callback(std::move(response_for_session));
                 }
 
-                {
-                    KEEPER_STORAGE_LOCK_SHARED(lock);
-                    ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
-                    KeeperResponsesForSessions responses_for_sessions = storage->processOneRequest(
-                        request_for_session.request, request_for_session.session_id, batch->getZxid(request_idx), produce_responses);
-                    for (auto & response_for_session : responses_for_sessions)
-                    {
-                        if (response_for_session.response->xid != Coordination::WATCH_XID)
-                            response_for_session.request = request_for_session.request;
-
-                        if (response_callback)
-                            response_callback(std::move(response_for_session));
-                    }
-
-                    if (is_last_in_batch)
-                        storage->endProcessBatch(*batch);
-                }
+                if (is_last_in_batch)
+                    storage->endProcessBatch(*batch);
             }
 
             ProfileEvents::increment(ProfileEvents::KeeperCommits);
@@ -1780,11 +1753,21 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
 
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
+    rollbackImpl(log_idx, data, nullptr);
+}
+
+void KeeperStateMachine::rollback_ext(const nuraft::state_machine::ext_op_params & params)
+{
+    rollbackImpl(params.log_idx, *params.data, params.entry.get());
+}
+
+void KeeperStateMachine::rollbackImpl(uint64_t log_idx, nuraft::buffer & data, nuraft::log_entry * entry)
+{
     /// Don't rollback anything until the first commit because nothing was preprocessed
     if (!keeper_context->localLogsPreprocessed())
         return;
 
-    auto batch = parseRequestBatch(data, true);
+    auto batch = parseRequestBatch(data, true, nullptr, nullptr, entry);
     assignZxidToLegacyEntry(*batch, log_idx);
     rollbackRequestBatch(*batch, false);
 }
