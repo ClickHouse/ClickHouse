@@ -142,7 +142,7 @@
 #include <delta_kernel_ffi.hpp>
 namespace DB
 {
-    void tracingCallback(struct ffi::Event event);
+    void tracingCallback(struct ::Event event);
 }
 #endif
 
@@ -942,23 +942,23 @@ BlockIO InterpreterSystemQuery::execute()
         {
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
             const auto & level_str = query.delta_kernel_tracing_level;
-            ffi::Level level = {};
+            ::Level level = {};
 
             if (level_str == "ERROR")
-                level = ffi::Level::ERROR;
+                level = ::Level::ERROR;
             else if (level_str == "WARN")
-                level = ffi::Level::WARN;
+                level = ::Level::WARN;
             else if (level_str == "INFO")
-                level = ffi::Level::INFO;
+                level = ::Level::INFO;
             else if (level_str == "DEBUG")
-                level = ffi::Level::DEBUG;
+                level = ::Level::DEBUG;
             else if (level_str == "TRACE")
-                level = ffi::Level::TRACE;
+                level = ::Level::TRACE;
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
 
             /// Reload tracing with the new level (can be called multiple times)
-            bool success = ffi::enable_event_tracing(tracingCallback, level);
+            bool success = ::enable_event_tracing(tracingCallback, level);
 
             if (success)
                 LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
