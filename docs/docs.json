@@ -105,8 +105,10 @@
                 ]
               },
               {
-                "href": "https://clickhouse.com/docs/cloud/clickhouse-private",
-                "item": "Private"
+                "item": "Private",
+                "pages": [
+                  "products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
+                ]
               },
               {
                 "href": "#",
