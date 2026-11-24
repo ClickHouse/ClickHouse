@@ -2690,6 +2690,11 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                 LOG_TRACE(log, "Will check if mutation {} is done", mutation.entry->znode_name);
                 candidates.emplace_back(mutation.entry);
             }
+            else
+            {
+                /// `mutation_pointer` means that every mutation up to it is done, so mutations are finalized in order.
+                break;
+            }
         }
     }
 
@@ -2711,8 +2716,9 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     std::vector<const ReplicatedMergeTreeMutationEntry *> finished;
     for (const auto & candidate : candidates)
     {
-        if (merge_pred->isMutationFinished(candidate->znode_name, candidate->block_numbers, candidate->checked_partitions_cache))
-            finished.push_back(candidate.get());
+        if (!merge_pred->isMutationFinished(candidate->znode_name, candidate->block_numbers, candidate->checked_partitions_cache))
+            break;
+        finished.push_back(candidate.get());
     }
 
     if (!finished.empty())
@@ -2749,10 +2755,6 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
         }
     }
 
-    /// Mutations may finish in non sequential order because we may fetch
-    /// already mutated parts from other replicas. So, because we updated
-    /// mutation pointer we have to recheck all previous mutations, they may be
-    /// also finished.
     return !finished.empty();
 }
 
