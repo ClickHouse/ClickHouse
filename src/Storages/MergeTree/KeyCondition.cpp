@@ -3825,14 +3825,36 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *mapping.set_transform;
             bool dag_cast_is_exact = true;
-            if (!applyDeterministicDagToColumn(
-                    set_column,
-                    set_element_type,
-                    set_transforming_dag.input_name,
-                    set_transforming_dag,
-                    transformed_set_column,
-                    transformed_set_type,
-                    dag_cast_is_exact))
+            ColumnPtr transform_input_column;
+            DataTypePtr transform_input_type;
+            if (!convertColumnForDeterministicDag(
+                    set_column, set_element_type, set_transforming_dag,
+                    transform_input_column, transform_input_type, dag_cast_is_exact))
+                return false;
+
+            /// A matching float zero may have the opposite sign from the retained
+            /// set element. A key transform that distinguishes the signs cannot
+            /// safely prune on just the transformed retained value.
+            if (membership_compares_carriers)
+            {
+                bool contains_float_zero = false;
+                for (size_t row = 0; row < transform_input_column->size(); ++row)
+                {
+                    if (anyFieldSatisfies((*transform_input_column)[row], isFloatZeroField))
+                    {
+                        contains_float_zero = true;
+                        break;
+                    }
+                }
+                if (contains_float_zero
+                    && !deterministicTransformMapsFloatZerosAlike(
+                        set_transforming_dag, transform_input_type, set_transforming_dag.input_name))
+                    return false;
+            }
+
+            if (!executeDeterministicDag(
+                    set_transforming_dag, transform_input_column, transform_input_type,
+                    set_transforming_dag.input_name, transformed_set_column, transformed_set_type))
                 return false;
 
             if (!dag_cast_is_exact)

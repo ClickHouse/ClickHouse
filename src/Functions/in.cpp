@@ -132,6 +132,82 @@ namespace
     return isNumber(left) && isNumber(right) && !left->equals(*right);
 }
 
+[[nodiscard]] bool hasProbeCarrierAgainstNumericKey(const DataTypePtr & probe_type, const DataTypePtr & key_type)
+{
+    const auto probe = removeNullable(removeLowCardinality(probe_type));
+    const auto key = removeNullable(removeLowCardinality(key_type));
+    if (isDynamic(probe) || isVariant(probe))
+        return isNumber(key);
+    if (const auto * probe_array = typeid_cast<const DataTypeArray *>(probe.get()))
+    {
+        if (const auto * key_array = typeid_cast<const DataTypeArray *>(key.get()))
+            return hasProbeCarrierAgainstNumericKey(probe_array->getNestedType(), key_array->getNestedType());
+    }
+    if (const auto * probe_tuple = typeid_cast<const DataTypeTuple *>(probe.get()))
+    {
+        if (const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get());
+            key_tuple && probe_tuple->getElements().size() == key_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < probe_tuple->getElements().size(); ++i)
+                if (hasProbeCarrierAgainstNumericKey(probe_tuple->getElements()[i], key_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * probe_map = typeid_cast<const DataTypeMap *>(probe.get()))
+    {
+        if (const auto * key_map = typeid_cast<const DataTypeMap *>(key.get()))
+            return hasProbeCarrierAgainstNumericKey(probe_map->getKeyType(), key_map->getKeyType())
+                || hasProbeCarrierAgainstNumericKey(probe_map->getValueType(), key_map->getValueType());
+    }
+    return false;
+}
+
+[[nodiscard]] bool hasCompoundStringConversionLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasCompoundStringConversionLeaf(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasCompoundStringConversionLeaf(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasCompoundStringConversionLeaf(left_map->getKeyType(), right_map->getKeyType())
+                || hasCompoundStringConversionLeaf(left_map->getValueType(), right_map->getValueType());
+    }
+    const auto text_convertible = [](const DataTypePtr & type)
+    {
+        return isNumber(type) || isBool(type) || isEnum(type)
+            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type)
+            || isUUID(type) || isIPv4(type) || isIPv6(type);
+    };
+    return (isStringOrFixedString(left) && text_convertible(right))
+        || (text_convertible(left) && isStringOrFixedString(right));
+}
+
+[[nodiscard]] bool matchesSetFieldConversion(
+    const IColumn & left, const IColumn & source, size_t row, const DataTypePtr & left_type)
+{
+    const auto converted = tryConvertFieldToType(source[row], *left_type, nullptr, {}, /*strict=*/true);
+    if (converted.isNull())
+        return false;
+    auto converted_column = left_type->createColumn();
+    converted_column->insert(converted);
+    return left.compareAt(row, 0, *converted_column, 1) == 0;
+}
+
 [[nodiscard]] bool hasCompoundCarrierForIn(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -482,6 +558,16 @@ public:
                 values[row] = extracted && accurateEqualsCompoundFields((*maps)[row], (*extracted)[0], map_type, active_type);
                 continue;
             }
+            if (active_type && hasCompoundStringConversionLeaf(map_type, active_type))
+            {
+                values[row] = matchesSetFieldConversion(*maps, *sources, row, map_type);
+                continue;
+            }
+            if (isMap(source_type) && hasCompoundStringConversionLeaf(map_type, source_type))
+            {
+                values[row] = matchesSetFieldConversion(*maps, *sources, row, map_type);
+                continue;
+            }
             auto converted = tryConvertColumnToTypeOrNull(
                 *source_row, arguments[1].type, map_type, {}, /*strict=*/true);
             if (!converted)
@@ -557,6 +643,11 @@ public:
 
             if (isStringOrFixedString(source_type) || isArray(source_type))
             {
+                if (isArray(source_type) && hasCompoundStringConversionLeaf(left_type, source_type))
+                {
+                    values[row] = matchesSetFieldConversion(*left_values, *sources, row, left_type);
+                    continue;
+                }
                 auto source_row = sources->cut(row, 1);
                 auto converted = tryConvertColumnToTypeOrNull(
                     *source_row, arguments[1].type, left_type, {}, /*strict=*/true);
@@ -599,6 +690,8 @@ public:
                 values[row] = extracted_source
                     && accurateEqualsCompoundFields((*left_row)[0], (*extracted_source)[0], left_type, active_type);
             }
+            else if (hasCompoundStringConversionLeaf(left_type, active_type))
+                values[row] = matchesSetFieldConversion(*left_values, *sources, row, left_type);
             else
             {
                 auto converted_source = tryConvertColumnToTypeOrNull(
@@ -877,7 +970,7 @@ public:
             /// could miss a match. Leave it to the ordinary unknown-result handling.
             const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
             const bool mixed_string_domain = hasMixedStringDomain(left_type, key_type);
-            if ((isDynamic(left_type) || isVariant(left_type)) && isNumber(key_type) && !only_null_key)
+            if (hasProbeCarrierAgainstNumericKey(left_type, key_type) && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing a {} probe with a numeric prepared set of {} in function {}",

@@ -651,20 +651,20 @@ bool hasCompoundCarrierForIn(const DataTypePtr & left_type, const DataTypePtr & 
     return false;
 }
 
-bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
+bool hasCompoundStringConversionLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
     const auto right = removeNullable(removeLowCardinality(right_type));
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
     {
         if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
-            return hasCompoundStringToNumericLeaf(left_array->getNestedType(), right_array->getNestedType(), true);
+            return hasCompoundStringConversionLeaf(left_array->getNestedType(), right_array->getNestedType(), true);
     }
     if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
     {
         if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
-            return hasCompoundStringToNumericLeaf(left_map->getKeyType(), right_map->getKeyType(), true)
-                || hasCompoundStringToNumericLeaf(left_map->getValueType(), right_map->getValueType(), true);
+            return hasCompoundStringConversionLeaf(left_map->getKeyType(), right_map->getKeyType(), true)
+                || hasCompoundStringConversionLeaf(left_map->getValueType(), right_map->getValueType(), true);
     }
     if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
     {
@@ -672,12 +672,18 @@ bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTyp
             right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
         {
             for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
-                if (hasCompoundStringToNumericLeaf(left_tuple->getElements()[i], right_tuple->getElements()[i], true))
+                if (hasCompoundStringConversionLeaf(left_tuple->getElements()[i], right_tuple->getElements()[i], true))
                     return true;
         }
     }
-    return nested && (((isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right))
-        || (isStringOrFixedString(left) && (isNumber(right) || isBool(right) || isEnum(right))));
+    const auto source_is_text_convertible = [](const DataTypePtr & type)
+    {
+        return isNumber(type) || isBool(type) || isEnum(type)
+            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type)
+            || isUUID(type) || isIPv4(type) || isIPv6(type);
+    };
+    return nested && ((source_is_text_convertible(left) && isStringOrFixedString(right))
+        || (isStringOrFixedString(left) && source_is_text_convertible(right)));
 }
 
 ASTPtr makeExactCompoundNumericInComparison(
@@ -816,7 +822,7 @@ ASTPtr makeComplexNonConstantInReplacement(
         const auto source_bare_type = removeNullable(removeLowCardinality(source_type));
         ASTPtr match;
         if (hasCompoundCarrierForIn(left_operand_type, source_type)
-            || hasCompoundStringToNumericLeaf(left_operand_type, source_type))
+            || hasCompoundStringConversionLeaf(left_operand_type, source_type))
         {
             match = makeASTFunction(
                 isMap(left_bare_type) ? "__mapValueEqualsForIn" : "__arrayValueEqualsForIn",
@@ -1944,14 +1950,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             return needs_complex_candidate_rewrite(type)
                                 || needsExactCompoundNumericInComparison(left_argument_type, type)
                                 || hasCompoundCarrierForIn(left_argument_type, type)
-                                || hasCompoundStringToNumericLeaf(left_argument_type, type);
+                                || hasCompoundStringConversionLeaf(left_argument_type, type);
                         });
                     const bool compare_complex_array_sources = use_standard_null_semantics && right_argument_is_array && left_is_complex
                         && right_array_type
                         && (needs_complex_candidate_rewrite(right_array_type->getNestedType())
                             || needsExactCompoundNumericInComparison(left_argument_type, right_array_type->getNestedType())
                             || hasCompoundCarrierForIn(left_argument_type, right_array_type->getNestedType())
-                            || hasCompoundStringToNumericLeaf(left_argument_type, right_array_type->getNestedType()));
+                            || hasCompoundStringConversionLeaf(left_argument_type, right_array_type->getNestedType()));
                     const bool choose_carrier_array_shape = use_standard_null_semantics && right_argument_is_array && left_is_complex
                         && isArray(left_bare_type) && right_array_type
                         && typeid_cast<const DataTypeArray *>(left_bare_type.get())->getNumberOfDimensions()

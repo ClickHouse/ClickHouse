@@ -8,3 +8,17 @@ SELECT ['1'] IN [toFloat64(1)],
 SELECT count()
 FROM (SELECT map('a', '1') AS m)
 WHERE m IN materialize(map('a', toFloat64(1)));
+
+SELECT
+    map('a', '2000-01-01') IN map('a', toDate('2000-01-01')),
+    map('a', '2000-01-01') IN materialize(map('a', toDate('2000-01-01')));
+
+SELECT
+    map('a', '10957') IN map('a', toDate('2000-01-01')),
+    map('a', '10957') IN materialize(map('a', toDate('2000-01-01')));
+
+SELECT count() FROM (SELECT map('a', '2000-01-01') AS m)
+WHERE m IN map('a', toDate('2000-01-01'));
+
+SELECT count() FROM (SELECT map('a', '2000-01-01') AS m)
+WHERE m IN materialize(map('a', toDate('2000-01-01')));
