@@ -15,6 +15,10 @@ rules-only alter	Parts: 1 | Granules: 1
 rules-only alter	Granules: 24/24
 rules-only alter	Granules: 1/24
 rules and timezone alter	0
+folded index	1
+folded index	1
+folded and direct index	1
+folded and direct index	1
 materialized	JSON	4
 materialized subcolumn	6
 subcolumn key	1

@@ -126,6 +126,22 @@ ALTER TABLE index_04839 MODIFY COLUMN j JSON(a DateTime('Asia/Tokyo'), SHARED RE
 SELECT 'rules and timezone alter', id FROM index_04839 WHERE toString(j) = '{"a":"2020-01-01 09:00:00"}';
 DROP TABLE index_04839;
 
+-- A skip index that reads the column inside a folded constant would keep granules built from the old type name.
+CREATE TABLE index_04839 (id UInt64, j JSON, INDEX ix concat(toTypeName(j), toString(id)) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO index_04839 SELECT number, '{"a":1}' FROM numbers(24);
+ALTER TABLE index_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'folded index', count() FROM index_04839 WHERE id = 7 SETTINGS use_skip_indexes = 1;
+SELECT 'folded index', count() FROM index_04839 WHERE id = 7 SETTINGS use_skip_indexes = 0;
+DROP TABLE index_04839;
+-- The same when the index also reads the column directly; dropping the index in the same ALTER is allowed.
+CREATE TABLE index_04839 (id UInt64, j JSON, INDEX ix concat(toTypeName(j), toString(j)) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO index_04839 SELECT number, toJSONString(map('a', number)) FROM numbers(24);
+ALTER TABLE index_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'folded and direct index', count() FROM index_04839 WHERE toString(j) = '{"a":7}' SETTINGS use_skip_indexes = 1;
+SELECT 'folded and direct index', count() FROM index_04839 WHERE toString(j) = '{"a":7}' SETTINGS use_skip_indexes = 0;
+ALTER TABLE index_04839 DROP INDEX ix, MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$');
+DROP TABLE index_04839;
+
 -- A rules-only ALTER rewrites no data, so it is refused when a key or a projection is computed from the whole column.
 CREATE TABLE key_04839 (id UInt64, j JSON) ENGINE = MergeTree ORDER BY (dynamicType(CAST(j, 'Dynamic')), id);
 ALTER TABLE key_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }

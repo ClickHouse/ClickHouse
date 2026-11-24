@@ -6284,8 +6284,17 @@ bool queryTreeReadsColumn(const IQueryTreeNode & node, const String & column)
     return std::ranges::any_of(node.getChildren(), [&](const auto & child) { return child && queryTreeReadsColumn(*child, column); });
 }
 
+bool queryTreeReadsColumnInConstant(const IQueryTreeNode & node, const String & column)
+{
+    if (const auto * constant_node = node.as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+        return queryTreeReadsColumn(*constant_node->getSourceExpression(), column);
+    return std::ranges::any_of(node.getChildren(), [&](const auto & child) { return child && queryTreeReadsColumnInConstant(*child, column); });
+}
+
 /// Whether an expression reads the whole `column`, directly, through an ALIAS column or inside a folded constant.
-bool expressionReadsColumn(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context, const String & column)
+/// With only_in_constants, only a read inside a folded constant counts.
+bool expressionReadsColumn(
+    const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context, const String & column, bool only_in_constants = false)
 {
     if (!ast)
         return false;
@@ -6296,7 +6305,7 @@ bool expressionReadsColumn(const ASTPtr & ast, const ColumnsDescription & column
     auto table_node = std::make_shared<TableNode>(storage, analysis_context);
     QueryAnalyzer analyzer(/*only_analyze=*/ true);
     analyzer.resolve(expression, table_node, analysis_context);
-    return queryTreeReadsColumn(*expression, column);
+    return only_in_constants ? queryTreeReadsColumnInConstant(*expression, column) : queryTreeReadsColumn(*expression, column);
 }
 
 }
@@ -7514,6 +7523,18 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         "ALTER of column {} is forbidden because the MATERIALIZED column {} is computed from it. Drop the column first",
                         backQuoteIfNeed(command.column_name),
                         backQuoteIfNeed(column.name));
+
+            /// Old granules are checked only against columns left after constant folding, so a folded `toTypeName(j)` is missed.
+            for (const auto & index : old_metadata.getSecondaryIndices())
+                if (new_metadata.getSecondaryIndices().has(index.name)
+                    && expressionReadsColumn(
+                        index.expression_list_ast, old_metadata.getColumns(), local_context, command.column_name, /*only_in_constants=*/ true))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of column {} is forbidden because the skip index {} reads it in an expression folded into a constant. "
+                        "Drop the index first",
+                        backQuoteIfNeed(command.column_name),
+                        backQuoteIfNeed(index.name));
 
             for (const auto & projection : old_metadata.getProjections())
                 if (new_metadata.getProjections().has(projection.name) && usesColumnInExpression(*projection.query_ast, command.column_name))
