@@ -153,6 +153,8 @@ public:
     /// `tryAddJoinRuntimeFilter`.
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
+    void setRuntimeFilterKeepsMatchingRows() { runtime_filter_keeps_matching_rows = true; }
+
     /// Planning only; retain this decision when physical join construction is deferred.
     void invalidateAutoFingerprintProbeEstimate();
 
@@ -313,6 +315,14 @@ protected:
     /// (`join_runtime_filter_min_probe_rows`). Travels with the step for the same reason `optimized`
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
+
+    /// The runtime filter pass of this host added a filter that passes mostly the rows which match.
+    /// Not serialized: a host adds its own.
+    bool runtime_filter_keeps_matching_rows = false;
+
+    /// The sender estimated the right side below `min_rows_for_packed_string_keys_in_hash_join`. Set only on a step taken
+    /// over the wire, which has no row estimate. A host with no row estimate of its own follows it.
+    bool sender_estimated_small_right_side = false;
 
     /// Whether the runtime filter pass added runtime filters for this join. Travels with the step, so that
     /// the physical step built from a copy also knows that its plan carries runtime filter identities.

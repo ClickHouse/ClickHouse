@@ -176,7 +176,7 @@ private:
     const UInt64 fingerprint_mode = 0;
     const bool enable_robin_hood_hash_for_joins = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
-    /// The planner turns it off for a small right side, see `min_rows_for_packed_string_keys_in_hash_join`.
+    /// The planner turns it off for a join that is faster with exact keys, see `shouldPackStringJoinKeys` in `PlannerJoins.cpp`.
     bool enable_packed_string_keys_in_hash_join = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
@@ -185,6 +185,8 @@ private:
     /// Decision by the planner whether to enable row store tranformation or not.
     NameSet row_store_candidate_columns;
     std::unordered_map<String, Float64> right_columns_avg_bytes;
+    /// Right columns that an expression computes, whose average size can differ from the one in `right_columns_avg_bytes`.
+    NameSet right_columns_computed;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -368,12 +370,16 @@ public:
     const NameSet & getRowStoreCandidateColumns() const { return row_store_candidate_columns; }
     bool isRowStoreEnabled() const { return !row_store_candidate_columns.empty(); }
     void setRightColumnAvgBytes(const String & name, Float64 avg_bytes) { right_columns_avg_bytes[name] = avg_bytes; }
+    void setRightColumnComputed(const String & name) { right_columns_computed.insert(name); }
     Float64 getRightColumnAvgBytes(const String & name) const
     {
         if (auto it = right_columns_avg_bytes.find(name); it != right_columns_avg_bytes.end())
             return it->second;
         return 0;
     }
+    /// The average size in bytes of the only key of the hash table, with the 8-byte offset of a `ColumnString`.
+    /// 0 is unknown, also for a join with `OR`, with several keys, or on a key that an expression computes.
+    Float64 getRightHashKeyAvgBytes() const;
 
     const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {

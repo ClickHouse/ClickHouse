@@ -33,7 +33,7 @@ namespace DB
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, "Preferred block size in bytes for spill files used by external `ORDER BY` and `DISTINCT`.", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, "If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, "The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.", 0) \
-    DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.", 0) \
+    DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., "If memory usage after remerge does not reduced by this ratio, remerge will be disabled.", 0) \
     DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.", 0) \
     \
@@ -133,7 +133,7 @@ namespace DB
     DECLARE(Bool, enable_robin_hood_hash_for_joins, false, R"(Allow the hash tables of a hash join that splits its hash table into parts to switch to the Robin Hood mode when they become large.)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
     DECLARE(Bool, enable_packed_string_keys_in_hash_join, false, "Store the single `String` key of a hash join in 16 bytes: inline up to 15 bytes, as a 127-bit `SipHash` for longer keys. Off by default, so a plan without the name compares the keys exactly.", 0) \
-    DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 0, "The minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. 0 means no minimum.", 0) \
+    DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 0, "The minimum estimated number of rows in the right side of a join that would hash every left key, for `enable_packed_string_keys_in_hash_join` to apply. 0 packs the keys of every join.", 0) \
     DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 3.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
     DECLARE(UInt64, min_string_column_bytes_for_hash_join_row_store, 8_MiB, "Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.", 0) \

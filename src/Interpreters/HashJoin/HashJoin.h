@@ -31,6 +31,7 @@
 #include <Common/HashTable/PartitionedFixedHashTable.h>
 #include <Interpreters/HashJoin/NativeFingerprintJoinMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
