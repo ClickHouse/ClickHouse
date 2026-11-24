@@ -44,6 +44,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
@@ -134,6 +135,12 @@ static constexpr size_t MAX_LIST_RETRIES = 5;
 
 namespace DB::Iceberg
 {
+
+void useUTCForORCTimestamps(FormatSettings & settings)
+{
+    settings.orc.reader_time_zone_name = "UTC";
+    settings.orc.writer_time_zone_name = "UTC";
+}
 
 using namespace DB;
 
@@ -2489,34 +2496,42 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
     return std::make_shared<DataTypeInt32>();
 }
 
-void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, const SortDescription & result_sort_description, ContextPtr context)
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context)
 {
-    std::vector<String> initial_column_names;
-    std::unordered_set<String> initial_column_names_set;
-    for (const auto & column_name : block.getNames())
-    {
-        initial_column_names.push_back(column_name);
-        initial_column_names_set.insert(column_name);
-    }
-    /// A struct field in the key, e.g. `t.a`, is a subcolumn of a block column.
+    Block source_block;
     for (const auto & required_column : sort_description.expression->getRequiredColumns())
-        if (!block.has(required_column))
-            if (auto subcolumn = block.findSubcolumnByName(required_column))
-                block.insert(std::move(*subcolumn));
-    ASTPtr combined_expr_list = sort_description.expression_list_ast;
+    {
+        if (block.has(required_column))
+            source_block.insert(block.getByName(required_column));
+        /// A struct field in the key, e.g. `t.a`, is a subcolumn of a block column.
+        else if (auto subcolumn = block.findSubcolumnByName(required_column))
+            source_block.insert(std::move(*subcolumn));
+    }
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, block.getNamesAndTypesList());
-    auto analyzer = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
-    analyzer->execute(block);
+    const auto & keys = sort_description.expression_list_ast->children;
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        String sort_column_name = sort_description.column_names[i];
+        const bool is_identifier = keys[i]->as<ASTIdentifier>();
+        if (!is_identifier || !block.has(sort_column_name))
+        {
+            /// Each key is evaluated alone on its own inputs, so a column named like the key is never taken for it.
+            /// A computed key is not named like a source column, which a later identity key may denote.
+            ASTPtr key_ast = keys[i];
+            auto syntax_result = TreeRewriter(context).analyze(key_ast, source_block.getNamesAndTypesList());
+            Block key_block;
+            for (const auto & column_name : syntax_result->requiredSourceColumns())
+                key_block.insert(source_block.getByName(column_name));
+            ExpressionAnalyzer(key_ast, syntax_result, context).getActions(false)->execute(key_block);
 
-    ColumnsWithTypeAndName reordered_columns;
-    for (const auto & column_name : initial_column_names)
-        reordered_columns.push_back(block.getByName(column_name));
-    for (const auto & column : block.getColumnsWithTypeAndName())
-        if (!initial_column_names_set.contains(column.name))
-            reordered_columns.push_back(column);
-
-    block = Block(reordered_columns);
+            auto key_column = key_block.getByName(sort_column_name);
+            while (block.has(key_column.name) || (!is_identifier && source_block.has(key_column.name)))
+                key_column.name = "_" + key_column.name;
+            sort_column_name = key_column.name;
+            block.insert(std::move(key_column));
+        }
+        result_sort_description[i].column_name = sort_column_name;
+    }
     sortBlock(block, result_sort_description);
 }
 

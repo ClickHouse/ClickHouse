@@ -32,6 +32,10 @@
     the values over the row groups does not depend on it, because every burst of
     `rare_model` falls inside a single `max_block_size` block and every block
     becomes one row group.
+
+    The last queries search for a large `IN` set in a column with 10000 distinct
+    values: over 16 files, where each file's reader compares the set with the
+    dictionary of its row group, and over the 32 row groups of one file.
 -->
 <test>
     <fill_query><![CDATA[
@@ -65,6 +69,29 @@
                  max_insert_block_size = 1000000
     ]]></fill_query>
 
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_dictionary_filter_files_{{_partition_id}}.parquet', Parquet)
+        PARTITION BY part
+        SELECT intHash64(number % 10000) AS k, intDiv(number, 1000000) AS part
+        FROM numbers(16000000)
+        SETTINGS output_format_parquet_row_group_size = 1000000,
+                 output_format_parquet_write_bloom_filter = 0,
+                 engine_file_truncate_on_insert = 1,
+                 max_block_size = 1000000,
+                 max_insert_block_size = 1000000
+    ]]></fill_query>
+
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_dictionary_filter_row_groups.parquet', Parquet)
+        SELECT intHash64(number % 10000) AS k
+        FROM numbers(8000000)
+        SETTINGS output_format_parquet_row_group_size = 250000,
+                 output_format_parquet_write_bloom_filter = 0,
+                 engine_file_truncate_on_insert = 1,
+                 max_block_size = 250000,
+                 max_insert_block_size = 250000
+    ]]></fill_query>
+
     <!-- 30 of the 300 row groups contain the value. -->
     <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter.parquet', Parquet) WHERE model = 'rare_model' SETTINGS max_threads = 1 FORMAT Null]]></query>
 
@@ -82,4 +109,20 @@
 
     <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id = 9223372036854775807 SETTINGS max_threads = 1 FORMAT Null]]></query>
     <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_ids.parquet', Parquet) WHERE id IN (1, 2, 3, 4, 9223372036854775807) SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- No file holds any of the 500000 values: every row group is skipped. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_files_*.parquet', Parquet) WHERE k IN (SELECT intHash64(number + 10000) FROM numbers(500000)) SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- Counterweight: the set holds every value, nothing is skipped. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_files_*.parquet', Parquet) WHERE k IN (SELECT intHash64(if(number < 10000, number, number + 10000)) FROM numbers(500000)) SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- A set smaller than the bloom filter's cap. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_files_*.parquet', Parquet) WHERE k IN (SELECT intHash64(number + 10000) FROM numbers(50)) SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- Ten such sets on one column share one sort of each row group's dictionary. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_files_*.parquet', Parquet) WHERE k IN (SELECT intHash64(number + 10000) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10050) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10100) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10150) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10200) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10250) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10300) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10350) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10400) FROM numbers(50)) OR k IN (SELECT intHash64(number + 10450) FROM numbers(50)) SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- One file, every row group skipped. The row groups are filtered in parallel by the parsing threads,
+         so `max_parsing_threads = 1` keeps the number independent of the runner's cores. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter_row_groups.parquet', Parquet) WHERE k IN (SELECT intHash64(number + 10000) FROM numbers(500000)) SETTINGS max_threads = 1, max_parsing_threads = 1 FORMAT Null]]></query>
 </test>
