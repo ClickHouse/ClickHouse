@@ -68,7 +68,8 @@ static void processFile(const fs::path & file_path, const String & dst_path, boo
     RE2::FullMatch(pathToGenericString(file_path), EXTRACT_PATH_PATTERN, &remote_path);
     bool is_directory = fs::is_directory(file_path);
 
-    writeText(pathToString(file_path.filename()), metadata_buf);
+    /// `loadFiles` of the web disk reads the name with `readEscapedString`.
+    writeEscapedString(pathToString(file_path.filename()), metadata_buf);
     writeChar('\t', metadata_buf);
     writeBoolText(is_directory, metadata_buf);
     if (!is_directory)
