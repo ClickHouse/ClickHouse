@@ -823,6 +823,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
+    StorageMetadataPtr /*metadata_snapshot*/,
     const StorageID & table_id,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
