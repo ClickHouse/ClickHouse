@@ -1698,6 +1698,20 @@ std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(P
     return result;
 }
 
+std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergFieldIds(Poco::JSON::Array::Ptr schema)
+{
+    std::unordered_set<Int64> result;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        if (current_object->has(Iceberg::f_type))
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var &) { result.insert(field_id); });
+    }
+    return result;
+}
+
 std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema)
 {
     std::unordered_set<Int64> result;

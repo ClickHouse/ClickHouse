@@ -151,6 +151,9 @@ public:
     /// Nullable in the ClickHouse type, so a writer emitting Iceberg `required` must consult this.
     static std::unordered_set<String> collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema);
 
+    /// All field ids, nested ones included.
+    static std::unordered_set<Int64> collectIcebergFieldIds(Poco::JSON::Array::Ptr schema);
+
     /// Field ids (including nested ones) whose Iceberg type is `time`.
     static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
 

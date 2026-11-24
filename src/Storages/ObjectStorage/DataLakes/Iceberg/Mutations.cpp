@@ -1056,16 +1056,20 @@ void mutate(
 
 /// Iceberg (`TableMetadata.Builder.build`) requires each source column of the default partition spec and of the default
 /// sort order to be in `schema`; a `void` partition field, which format version 1 keeps for a removed field, needs none.
-static std::optional<String> findFieldWithoutSourceColumn(const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & schema)
+/// Only a source column that this `ALTER` removes is refused, a table that already lacks one stays alterable.
+static std::optional<String> findFieldWithoutSourceColumn(
+    const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & previous_schema, const Poco::JSON::Object::Ptr & schema)
 {
-    const auto columns = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schema->getArray(Iceberg::f_fields));
+    const auto previous_columns = IcebergSchemaProcessor::collectIcebergFieldIds(previous_schema->getArray(Iceberg::f_fields));
+    const auto columns = IcebergSchemaProcessor::collectIcebergFieldIds(schema->getArray(Iceberg::f_fields));
+    auto is_removed = [&](Int64 id) { return previous_columns.contains(id) && !columns.contains(id); };
     auto find_missing_source_id = [&](const Poco::JSON::Object::Ptr & field) -> std::optional<Int64>
     {
-        if (field->has(Iceberg::f_source_id) && !columns.contains(field->getValue<Int64>(Iceberg::f_source_id)))
+        if (field->has(Iceberg::f_source_id) && is_removed(field->getValue<Int64>(Iceberg::f_source_id)))
             return field->getValue<Int64>(Iceberg::f_source_id);
         if (const auto source_ids = field->getArray(Iceberg::f_source_ids))
             for (UInt32 i = 0; i < source_ids->size(); ++i)
-                if (!columns.contains(source_ids->getElement<Int64>(i)))
+                if (is_removed(source_ids->getElement<Int64>(i)))
                     return source_ids->getElement<Int64>(i);
         return std::nullopt;
     };
@@ -1168,21 +1172,22 @@ void alter(
         setFormatVersion1SchemaAndPartitionSpec(metadata);
 
         const auto new_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
+        Poco::JSON::Object::Ptr previous_schema;
         Poco::JSON::Object::Ptr new_schema;
         auto schemas = metadata->getArray(Iceberg::f_schemas);
         for (UInt32 schema_index = 0; schema_index < schemas->size(); ++schema_index)
         {
-            if (schemas->getObject(schema_index)->getValue<Int32>(Iceberg::f_schema_id) == new_schema_id)
-            {
+            const auto schema_id = schemas->getObject(schema_index)->getValue<Int32>(Iceberg::f_schema_id);
+            if (schema_id == previous_schema_id)
+                previous_schema = schemas->getObject(schema_index);
+            if (schema_id == new_schema_id)
                 new_schema = schemas->getObject(schema_index);
-                break;
-            }
         }
         if (new_schema)
         {
             auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true);
-            if (!violation)
-                violation = findFieldWithoutSourceColumn(metadata, new_schema);
+            if (!violation && previous_schema)
+                violation = findFieldWithoutSourceColumn(metadata, previous_schema, new_schema);
             if (violation)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
         }

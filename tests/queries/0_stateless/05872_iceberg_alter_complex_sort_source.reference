@@ -1,0 +1,11 @@
+sorted by array, add: ok
+sorted by array, drop source: (BAD_ARGUMENTS)
+1	[2]	3
+sorted by tuple, add: ok
+sorted by tuple, drop source: (BAD_ARGUMENTS)
+sorted by tuple, drop other: ok
+sorted by map, add: ok
+partitioned by tuple, add: ok
+partitioned by tuple, drop source: (BAD_ARGUMENTS)
+unknown sort source-id, add: ok
+1	2
