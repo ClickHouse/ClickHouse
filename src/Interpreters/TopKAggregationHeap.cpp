@@ -197,6 +197,12 @@ void TopKAggregationHeapBase::initBoundary()
     updateBoundaryChoice();
 }
 
+bool TopKAggregationHeapBase::shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const
+{
+    return is_composite ? sourceAboveBoundaryComposite<true>(source_columns, source_row)
+                        : sourceAboveBoundary<true>(*source_columns[0], source_row);
+}
+
 int TopKAggregationHeapBase::compareRanked(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const
 {
     if (!is_composite)

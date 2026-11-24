@@ -126,8 +126,7 @@ struct TopKAggregationHeapBase
         chassert(!frozen);
         chassert(hasBoundary());
         if (has_collators) [[unlikely]]
-            return is_composite ? sourceAboveBoundaryComposite<true>(source_columns, source_row)
-                                : sourceAboveBoundary<true>(*source_columns[0], source_row);
+            return shouldSkipCollated(source_columns, source_row);
         if (is_composite)
             return sourceAboveBoundaryComposite<false>(source_columns, source_row);
         return sourceAboveBoundary<false>(*source_columns[0], source_row);
@@ -400,6 +399,9 @@ private:
     /// them is a valid bound on its own, since the stream has already seen `k` keys not worse
     /// than it.
     void publishBoundary();
+
+    /// `NO_INLINE` keeps the locale comparison out of the aggregation loops, which inline `shouldSkip`.
+    [[nodiscard]] NO_INLINE bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
 
     template <bool with_collation>
     [[nodiscard]] bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
