@@ -2,6 +2,8 @@
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace DB
@@ -11,6 +13,8 @@ static const auto FINISH_PRODUCER_NUM_TRIES = 50;
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
+    extern const int CANNOT_CONNECT_RABBITMQ;
     extern const int LOGICAL_ERROR;
 }
 
@@ -31,6 +35,12 @@ void RabbitMQProducer::initialize()
     publisher = publisher_pool->acquire();
 }
 
+void RabbitMQProducer::start(const ContextPtr & context)
+{
+    query_status = context->getProcessListElementSafe();
+    AsynchronousMessageProducer::start(context);
+}
+
 void RabbitMQProducer::stopProducingTask()
 {
     payloads.finish();
@@ -42,6 +52,12 @@ void RabbitMQProducer::finishImpl()
         publisher_pool->release(std::move(publisher));
     else
         publisher->disconnect();
+    if (stopped_by_shutdown)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
+    if (query_status)
+        query_status->throwIfKilled();
+    if (!publish_error.empty())
+        throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "{}", publish_error);
 }
 
 void RabbitMQProducer::produce(const String & message, size_t, const Columns &, size_t)
@@ -51,7 +67,11 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
     payload.id = ++payload_counter;
     LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
+    {
+        /// The producing task has stopped and closed the queue: `finish` throws its error.
+        finish();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
+    }
 }
 
 void RabbitMQProducer::cancel() noexcept
@@ -70,8 +90,28 @@ void RabbitMQProducer::startProducingTaskLoop()
 {
     LOG_TRACE(log, "Starting producer loop");
 
-    while ((!payloads.isFinishedAndEmpty() || publisher->hasPendingDeliveries()) && !shutdown_called.load())
-        publisher->publishStep(payloads);
+    while (!payloads.isFinishedAndEmpty() || publisher->hasPendingDeliveries())
+    {
+        if (shutdown_called.load())
+        {
+            stopped_by_shutdown = true;
+            break;
+        }
+
+        if (query_status && query_status->isKilled())
+            break;
+        publish_error = publisher->publishStep(payloads);
+        if (!publish_error.empty())
+            break;
+    }
+
+    if (stopped_by_shutdown || !publish_error.empty() || (query_status && query_status->isKilled()))
+    {
+        /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
+        /// The publisher is not reused: `can_reuse_publisher` stays false, so `finishImpl` disconnects it.
+        payloads.finish();
+        return;
+    }
 
     size_t try_num = 0;
     while (++try_num <= FINISH_PRODUCER_NUM_TRIES)
