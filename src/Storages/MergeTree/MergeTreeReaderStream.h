@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <base/defines.h>
 #include <Common/MapWithMemoryTracking.h>
-#include <Common/Stopwatch.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <mutex>
@@ -51,7 +50,6 @@ public:
     /// What a reader counted from its files since the last `registerReadRanges`, added to the statistics at once.
     struct Batch
     {
-        Stopwatch watch;
         size_t bytes = 0;
         /// Reserved from the limit and not taken by the ranges yet, released by `commit`.
         size_t reserved = 0;
