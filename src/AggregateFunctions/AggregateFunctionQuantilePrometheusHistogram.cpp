@@ -251,9 +251,9 @@ public:
                 argument_types_[2]->getName(), getName());
     }
 
-    String getName() const override { return "timeSeriesQuantilePrometheusHistogram"; }
+    [[nodiscard]] String getName() const override { return "timeSeriesQuantilePrometheusHistogram"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -483,7 +483,7 @@ GROUP BY g ORDER BY g;
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantilePrometheusHistogram = {26, 11};
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantilePrometheusHistogram = {26, 12};
     FunctionDocumentation documentation_timeSeriesQuantilePrometheusHistogram = {description_timeSeriesQuantilePrometheusHistogram, syntax_timeSeriesQuantilePrometheusHistogram, arguments_timeSeriesQuantilePrometheusHistogram, {}, returned_value_quantilePrometheusHistogram, examples_timeSeriesQuantilePrometheusHistogram, introduced_in_timeSeriesQuantilePrometheusHistogram, category_quantilePrometheusHistogram};
 
     factory.registerFunction("timeSeriesQuantilePrometheusHistogram", {createAggregateFunctionTimeSeriesQuantilePrometheusHistogram, documentation_timeSeriesQuantilePrometheusHistogram});
