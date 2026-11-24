@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <array>
+#include <condition_variable>
+#include <mutex>
 #include <optional>
+#include <unordered_map>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
@@ -104,6 +107,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_startup[];
     extern const char object_storage_queue_pause_after_commit[];
     extern const char object_storage_queue_pause_in_direct_select[];
+    extern const char object_storage_queue_fail_after_committing_select_lock[];
 }
 
 namespace ServerSetting
@@ -177,6 +181,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_IS_DROPPED;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
+    extern const int DEADLOCK_AVOIDED;
 }
 
 namespace
@@ -695,6 +700,33 @@ bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & conte
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context_, format_settings);
 }
 
+/// The committing SELECT locks of one query, shared by all its reading steps and pipelines. The query takes the locks
+/// of all queues it reads at once and never waits while it holds one, so queries cannot wait for each other in a cycle.
+class StorageObjectStorageQueue::CommittingSelectLocks : public ICustomResourceHolder
+{
+public:
+    explicit CommittingSelectLocks(String query_id_) : query_id(std::move(query_id_)) {}
+    ~CommittingSelectLocks() override;
+
+    /// Returns the locks of the query and adds `storage` to them. A queue read twice in one query is rejected:
+    /// both reads would take files and move the processed pointer on their own.
+    static std::shared_ptr<CommittingSelectLocks> add(std::shared_ptr<StorageObjectStorageQueue> storage, const ContextPtr & context);
+
+    /// Locks all queues added so far. Waits only while the query holds none of them.
+    void lock(const ContextPtr & context);
+
+private:
+    static std::mutex mutex;
+    static std::condition_variable cv;
+    static std::unordered_map<String, std::weak_ptr<CommittingSelectLocks>> queries TSA_GUARDED_BY(mutex);
+
+    const String query_id;
+    /// The first `num_locked` queues are locked by this query. Both are guarded by `mutex`
+    /// (not annotated: the analysis does not see `std::unique_lock` needed for waiting).
+    std::vector<std::shared_ptr<StorageObjectStorageQueue>> queues;
+    size_t num_locked = 0;
+};
+
 class ReadFromObjectStorageQueue : public SourceStepWithFilter
 {
 public:
@@ -711,7 +743,8 @@ public:
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageObjectStorageQueue> storage_,
         size_t max_block_size_,
-        bool commit_once_processed_)
+        bool commit_once_processed_,
+        std::shared_ptr<StorageObjectStorageQueue::CommittingSelectLocks> committing_select_locks_)
         : SourceStepWithFilter(
             std::move(sample_block),
             column_names_,
@@ -722,6 +755,7 @@ public:
         , storage(std::move(storage_))
         , max_block_size(max_block_size_)
         , commit_once_processed(commit_once_processed_)
+        , committing_select_locks(std::move(committing_select_locks_))
     {
     }
 
@@ -730,6 +764,8 @@ private:
     const std::shared_ptr<StorageObjectStorageQueue> storage;
     const size_t max_block_size;
     const bool commit_once_processed;
+    /// Set for a committing read of an ordered queue without buckets.
+    const std::shared_ptr<StorageObjectStorageQueue::CommittingSelectLocks> committing_select_locks;
 
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> iterator;
 
@@ -790,6 +826,15 @@ void StorageObjectStorageQueue::read(
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
 
+    /// Added while the plan is built, so that the query locks all queues it reads before building any pipeline.
+    std::shared_ptr<CommittingSelectLocks> committing_select_locks;
+    if (do_commit_on_select)
+    {
+        auto metadata = tryGetFilesMetadata();
+        if (metadata && metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED && !metadata->useBucketsForProcessing())
+            committing_select_locks = CommittingSelectLocks::add(this_ptr, local_context);
+    }
+
     auto read_from_format_info = prepareReadingFromFormat(
         column_names,
         storage_snapshot,
@@ -807,7 +852,8 @@ void StorageObjectStorageQueue::read(
         read_from_format_info,
         std::move(this_ptr),
         max_block_size,
-        do_commit_on_select);
+        do_commit_on_select,
+        std::move(committing_select_locks));
 
     query_plan.addStep(std::move(reading));
 }
@@ -822,16 +868,16 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 
     size_t processing_threads_num = metadata->getTableMetadata().processing_threads_num;
 
-    if (commit_once_processed
-        && metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED
-        && !metadata->useBucketsForProcessing())
+    if (committing_select_locks)
     {
+        committing_select_locks->lock(context);
+        /// The step keeps the locks too, so they are released even if the pipeline does not get them.
+        fiu_do_on(FailPoints::object_storage_queue_fail_after_committing_select_lock, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failed after locking the queue for a committing SELECT");
+        });
         QueryPlanResourceHolder resources;
-        if (auto lock = storage->lockCommittingSelect(context))
-        {
-            resources.custom_resources.push_back(std::move(lock));
-            pipeline.addResources(resources);
-        }
+        resources.custom_resources.push_back(committing_select_locks);
+        pipeline.addResources(resources);
     }
 
     createIterator(nullptr);
@@ -2078,47 +2124,70 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         shutdown_called);
 }
 
-namespace
-{
-class CommittingSelectLockHolder : public ICustomResourceHolder
-{
-public:
-    explicit CommittingSelectLockHolder(std::function<void()> release_) : release(std::move(release_)) {}
-    ~CommittingSelectLockHolder() override { release(); }
+std::mutex StorageObjectStorageQueue::CommittingSelectLocks::mutex;
+std::condition_variable StorageObjectStorageQueue::CommittingSelectLocks::cv;
+[[clang::no_destroy]] std::unordered_map<String, std::weak_ptr<StorageObjectStorageQueue::CommittingSelectLocks>>
+    StorageObjectStorageQueue::CommittingSelectLocks::queries;
 
-private:
-    std::function<void()> release;
-};
+StorageObjectStorageQueue::CommittingSelectLocks::~CommittingSelectLocks()
+{
+    {
+        std::lock_guard guard(mutex);
+        for (size_t i = 0; i < num_locked; ++i)
+            queues[i]->committing_select_locked = false;
+        /// The entry may already belong to a newer object of the same query.
+        if (auto it = queries.find(query_id); it != queries.end() && it->second.expired())
+            queries.erase(it);
+    }
+    cv.notify_all();
 }
 
-std::shared_ptr<ICustomResourceHolder> StorageObjectStorageQueue::lockCommittingSelect(const ContextPtr & local_context)
+std::shared_ptr<StorageObjectStorageQueue::CommittingSelectLocks>
+StorageObjectStorageQueue::CommittingSelectLocks::add(std::shared_ptr<StorageObjectStorageQueue> storage, const ContextPtr & context)
 {
-    auto state = committing_select_lock;
-    const String query_id{local_context->getCurrentQueryId()};
-    std::unique_lock lock(state->mutex);
-    /// The same query may read the table several times; waiting for itself would never end.
-    if (state->locked && state->owner_query_id == query_id)
-        return nullptr;
-    while (state->locked)
+    String query_id{context->getCurrentQueryId()};
+    /// Declared before the lock: if this is the last reference, its destructor takes the mutex.
+    std::shared_ptr<CommittingSelectLocks> locks;
+    std::lock_guard guard(mutex);
+    if (auto it = queries.find(query_id); it != queries.end())
+        locks = it->second.lock();
+    if (!locks)
     {
-        if (shutdown_called)
-            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is shutting down", getStorageID());
-        if (local_context->isCurrentQueryKilled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while waiting for another committing SELECT");
-        state->cv.wait_for(lock, std::chrono::milliseconds(100));
+        locks = std::make_shared<CommittingSelectLocks>(query_id);
+        queries[query_id] = locks;
     }
-    state->locked = true;
-    state->owner_query_id = query_id;
+    if (std::ranges::find(locks->queues, storage) != locks->queues.end())
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+            "Cannot read {} more than once in one query with commit_on_select=1", storage->getStorageID().getNameForLogs());
+    locks->queues.push_back(std::move(storage));
+    return locks;
+}
 
-    return std::make_shared<CommittingSelectLockHolder>([state]
+void StorageObjectStorageQueue::CommittingSelectLocks::lock(const ContextPtr & context)
+{
+    std::unique_lock guard(mutex);
+    while (true)
     {
-        {
-            std::lock_guard release_lock(state->mutex);
-            state->locked = false;
-            state->owner_query_id.clear();
-        }
-        state->cv.notify_one();
-    });
+        bool all_free = true;
+        for (size_t i = num_locked; i < queues.size(); ++i)
+            all_free = all_free && !queues[i]->committing_select_locked;
+        if (all_free)
+            break;
+        /// Waiting while holding a queue could deadlock with a query that waits for this queue.
+        if (num_locked)
+            throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+                "Cannot wait for another committing SELECT on a queue while holding a lock of another queue");
+        for (const auto & queue : queues)
+            if (queue->shutdown_called)
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is shutting down", queue->getStorageID());
+        if (context->isCurrentQueryKilled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while waiting for another committing SELECT");
+        cv.wait_for(guard, std::chrono::milliseconds(100));
+    }
+    /// Nothing below throws, so the destructor releases exactly the queues locked here.
+    for (size_t i = num_locked; i < queues.size(); ++i)
+        queues[i]->committing_select_locked = true;
+    num_locked = queues.size();
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings(const ObjectStorageQueueTableMetadata * table_metadata_) const

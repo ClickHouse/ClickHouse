@@ -2,8 +2,6 @@
 
 #include "config.h"
 #include <chrono>
-#include <condition_variable>
-#include <mutex>
 #include <optional>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -24,7 +22,6 @@
 
 namespace DB
 {
-class ICustomResourceHolder;
 class ObjectStorageQueueMetadata;
 struct ObjectStorageQueueSettings;
 
@@ -196,14 +193,11 @@ private:
     std::vector<UInt64> streaming_task_reschedule_intervals_ms;
     ObjectStorageQueueBatchSizeOverride max_files_override;
 
-    struct CommittingSelectLock
-    {
-        std::mutex mutex;
-        std::condition_variable cv;
-        bool locked = false;
-        String owner_query_id;
-    };
-    const std::shared_ptr<CommittingSelectLock> committing_select_lock = std::make_shared<CommittingSelectLock>();
+    /// Every committing SELECT has its own file iterator and commits the processed pointer on its own.
+    /// With a single pointer (ordered mode without buckets) such queries must not run at the same time.
+    class CommittingSelectLocks;
+    /// Set while a committing SELECT reads this queue. Guarded by the mutex of CommittingSelectLocks.
+    bool committing_select_locked = false;
 
     LoggerPtr log;
 
@@ -221,11 +215,6 @@ private:
     std::shared_ptr<ObjectStorageQueueMetadata> tryGetFilesMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
-
-    /// Every committing SELECT has its own file iterator and commits the processed pointer on its own.
-    /// With a single pointer (ordered mode without buckets) such queries must not run at the same time.
-    /// Returns a holder that keeps the lock until the query pipeline is destroyed.
-    std::shared_ptr<ICustomResourceHolder> lockCommittingSelect(const ContextPtr & local_context);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
