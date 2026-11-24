@@ -92,10 +92,18 @@ std::optional<Field> SchemaConverter::getAbsentFieldDefault(const String & field
     return column_mapper->getIcebergInitialDefault(field, path, type);
 }
 
+void SchemaConverter::checkHasColumns()
+{
+    if (file_metadata.schema.size() < 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file has no columns");
+    if (file_metadata.schema.at(0).num_children <= 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Schema root has no children");
+}
+
 void SchemaConverter::prepareForReading()
 {
     chassert(sample_block);
-    checkSchema();
+    checkHasColumns();
 
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
@@ -166,7 +174,7 @@ void SchemaConverter::prepareForReading()
 NamesAndTypesList SchemaConverter::inferSchema()
 {
     chassert(!sample_block);
-    checkSchema();
+    checkHasColumns();
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
     NamesAndTypesList res;
     for (size_t i = 0; i < top_level_columns; ++i)
@@ -920,16 +928,58 @@ static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> &
     return idx;
 }
 
-void SchemaConverter::checkSchema()
+void checkSchemaTree(const parq::FileMetaData & file_metadata)
 {
-    if (file_metadata.schema.size() < 2)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file has no columns");
-    if (file_metadata.schema.at(0).num_children <= 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Schema root has no children");
-    /// `num_children` comes from the file. After this check, each subtree is inside `schema`.
+    /// A file without a schema is rejected later, by `SchemaConverter::checkHasColumns`.
     /// Elements after the tree are ignored, as in Arrow.
-    if (!subtreeEnd(file_metadata.schema, 0).has_value())
+    if (!file_metadata.schema.empty() && !subtreeEnd(file_metadata.schema, 0).has_value())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Parquet schema tree: the numbers of children do not match the {} schema elements in the file", file_metadata.schema.size());
+}
+
+bool schemaHasLeaf(const parq::FileMetaData & file_metadata, std::string_view path)
+{
+    const auto & schema = file_metadata.schema;
+    if (schema.size() < 2 || schema[0].num_children <= 0)
+        return false;
+    /// Only the groups whose path is a prefix of `path` are entered, so the stack is not deeper
+    /// than `path` has components, and each element is visited or skipped once.
+    struct Group
+    {
+        size_t remaining_children;
+        /// The length of the prefix of `path` that the path of the group and the '.' after it match.
+        size_t matched;
+    };
+    VectorWithMemoryTracking<Group> stack{{size_t(schema[0].num_children), 0}};
+    size_t idx = 1;
+    while (!stack.empty())
+    {
+        Group & group = stack.back();
+        if (group.remaining_children == 0)
+        {
+            stack.pop_back();
+            continue;
+        }
+        group.remaining_children -= 1;
+        const parq::SchemaElement & element = schema.at(idx);
+        const std::string_view rest = path.substr(group.matched);
+        if (rest.starts_with(element.name))
+        {
+            if (isPrimitiveNode(element))
+            {
+                if (rest.size() == element.name.size())
+                    return true;
+            }
+            else if (rest.size() > element.name.size() && rest[element.name.size()] == '.')
+            {
+                const size_t matched = group.matched + element.name.size() + 1;
+                stack.push_back({size_t(element.num_children), matched});
+                idx += 1;
+                continue;
+            }
+        }
+        idx = subtreeEnd(schema, idx).value();
+    }
+    return false;
 }
 
 bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)

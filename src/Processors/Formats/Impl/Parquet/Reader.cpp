@@ -437,6 +437,7 @@ std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher
     deserializeFileMetaDataWithoutColumnChunks(
         footer->metadata, footer->serialized.data(), footer->serialized.size(), footer->column_chunk_offsets);
     checkSchemaElementEnums(footer->metadata);
+    checkSchemaTree(footer->metadata);
     return footer;
 }
 
@@ -1186,35 +1187,6 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     {
         all_spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
 
-        /// Collect all leaf column paths from the Parquet schema.
-        /// Used below to guard covering.bbox injection: a bbox path from GeoParquet metadata
-        /// might not exist in the actual file schema (stale/malformed metadata). Without this
-        /// check, SchemaConverter throws THERE_IS_NO_COLUMN for the injected column when
-        /// input_format_parquet_allow_missing_columns = 0, turning a readable file into an exception.
-        UnorderedSetWithMemoryTracking<String> schema_leaf_paths;
-        {
-            const auto & schema = file_metadata().schema;
-            if (schema.size() >= 2 && schema.at(0).num_children > 0)
-            {
-                size_t schema_idx = 1;
-                std::function<void(const String &)> dfs = [&](const String & parent)
-                {
-                    if (schema_idx >= schema.size())
-                        return;
-                    const auto & elem = schema.at(schema_idx++);
-                    String path = parent.empty() ? String(elem.name) : parent + "." + elem.name;
-                    bool is_primitive = !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
-                    if (is_primitive)
-                        schema_leaf_paths.insert(path);
-                    else
-                        for (int i = 0; i < elem.num_children; ++i)
-                            dfs(path);
-                };
-                for (int i = 0; i < schema.at(0).num_children; ++i)
-                    dfs({});
-            }
-        }
-
         auto float64 = std::make_shared<DataTypeFloat64>();
         for (const auto & sf : all_spatial_filters)
         {
@@ -1233,13 +1205,13 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                 &bbox_cov.xmin_column, &bbox_cov.ymin_column,
                 &bbox_cov.xmax_column, &bbox_cov.ymax_column};
 
-            /// Skip injection if any bbox column is absent from the actual file schema. Checked
-            /// against raw parquet-side paths, matching `schema_leaf_paths` (built from the file's
-            /// own schema). Falls back to geostats pruning; avoids THERE_IS_NO_COLUMN when
+            /// Skip injection if any bbox column is absent from the actual file schema (stale or
+            /// malformed GeoParquet metadata). Checked against raw parquet-side paths. Falls back to
+            /// geostats pruning; avoids THERE_IS_NO_COLUMN when
             /// input_format_parquet_allow_missing_columns = 0 with stale metadata.
             bool all_bbox_in_schema = true;
             for (const String * col : raw_bbox_col_ptrs)
-                if (!schema_leaf_paths.contains(*col))
+                if (!schemaHasLeaf(file_metadata(), *col))
                 { all_bbox_in_schema = false; break; }
             if (!all_bbox_in_schema)
             {

@@ -15,6 +15,14 @@ class ColumnMapper;
 namespace DB::Parquet
 {
 
+/// Checks that the schema tree, as described by the `num_children` fields from the file, fits in
+/// `FileMetaData::schema`. `Reader::readFileFooter` calls it, and the code that walks the schema
+/// (`SchemaConverter`, `schemaHasLeaf`) relies on it for bounds.
+void checkSchemaTree(const parq::FileMetaData & file_metadata);
+
+/// Whether the schema has a primitive column with this path, the names of its elements joined with '.'.
+bool schemaHasLeaf(const parq::FileMetaData & file_metadata, std::string_view path);
+
 /// Converting parquet schema to clickhouse schema + information for decoding.
 /// Used both for schema inference and for reading.
 struct SchemaConverter
@@ -164,9 +172,7 @@ private:
     };
     VectorWithMemoryTracking<TupleInArray> tuples_in_arrays;
 
-    /// Checks that the file has columns and that the schema tree fits in `FileMetaData::schema`.
-    /// The traversal below relies on it for bounds.
-    void checkSchema();
+    void checkHasColumns();
 
     void processSubtree(TraversalNode & node);
 

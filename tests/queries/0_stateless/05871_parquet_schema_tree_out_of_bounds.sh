@@ -6,7 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -euo pipefail
 
 # The `num_children` fields of a Parquet schema come from the file. A schema tree that needs more
-# elements than the file has must be rejected, not read past the end of the schema.
+# elements than the file has must be rejected, not read past the end of the schema. A filter is
+# checked too: with a filter, the reader looks at the schema before `SchemaConverter` does.
 
 WORK_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$WORK_DIR"
@@ -27,13 +28,24 @@ import sys
 
 work = pathlib.Path(sys.argv[1])
 
-def write_patched(base, name, original, replacement):
+def write_patched(base, name, original, replacement, added_elements=0):
     data = (work / (base + '.parquet')).read_bytes()
     footer_size = struct.unpack('<I', data[-8:-4])[0]
     footer_start = len(data) - 8 - footer_size
     footer = data[footer_start:-8]
     assert footer.count(original) == 1, (base, name)
     patched = footer.replace(original, replacement)
+    if added_elements:
+        # The footer starts with `version` (field 1) and the header of the `schema` list (field 2)
+        # of 4 structs. A list of 15 or more elements has its size in a varint after the header.
+        assert patched.startswith(bytes.fromhex('15 04 19 4c')), (base, name)
+        size = 4 + added_elements
+        varint = b''
+        while size >= 0x80:
+            varint += bytes([size & 0x7f | 0x80])
+            size >>= 7
+        varint += bytes([size])
+        patched = bytes.fromhex('15 04 19 fc') + varint + patched[4:]
     path = work / (base + '_' + name + '.parquet')
     path.write_bytes(data[:footer_start] + patched + struct.pack('<I', len(patched)) + b'PAR1')
 
@@ -53,6 +65,9 @@ write_patched('tuple', 'nested_first_child', leaf(b'a'), group_with_one_child(b'
 v_header = bytes.fromhex('18 01') + b'v'
 for name, num_children in (('extra_child', '06'), ('huge_num_children', 'fe ff ff ff 0f'), ('negative_num_children', '01')):
     write_patched('variant', name, v_header + bytes.fromhex('15 04'), v_header + bytes.fromhex('15 ' + num_children))
+
+# A valid tree that is too deep: 100000 groups with one child each, above the leaf `a`.
+write_patched('tuple', 'deep', leaf(b'a'), group_with_one_child(b'g') * 100000 + leaf(b'a'), added_elements=100000)
 PY
 
 expect_error() {
@@ -75,4 +90,10 @@ for file in variant_nested_first_child tuple_nested_first_child variant_extra_ch
     [[ $file == tuple_* ]] && type='Tuple(a String, b String)'
     expect_error INCORRECT_DATA "DESCRIBE file('$path', Parquet)"
     expect_error INCORRECT_DATA "SELECT v FROM file('$path', Parquet, 'v $type')"
+    expect_error INCORRECT_DATA "SELECT v FROM file('$path', Parquet, 'v $type') WHERE toString(v) != ''"
 done
+
+echo tuple_deep
+path="$WORK_DIR/tuple_deep.parquet"
+expect_error TOO_DEEP_RECURSION "DESCRIBE file('$path', Parquet)"
+expect_error TOO_DEEP_RECURSION "SELECT v FROM file('$path', Parquet, 'v Tuple(a String, b String)') WHERE toString(v) != ''"
