@@ -1,0 +1,32 @@
+<test>
+    <!--
+        Joins on one dense integer key, whose hash table becomes a range table (`enable_join_fixed_hash_table_conversion`).
+        90000 keys prefetch with an L2 cache of 1 or 2 MiB, 200000 keys on any. The LEFT JOINs probe 10% and 45% of their keys
+        inside the range, so they stop prefetching after the first rows of a block.
+    -->
+    <settings>
+        <join_algorithm>hash</join_algorithm>
+        <hash_join_layout>serial</hash_join_layout>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+    </settings>
+
+    <create_query>CREATE TABLE range_join_build_90k (k UInt32, v UInt32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE range_join_build_200k (k UInt32, v UInt32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE range_join_probe (k90k UInt32, k200k UInt32, k_out UInt32) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO range_join_build_90k SELECT number + 1, number FROM numbers(90000)</fill_query>
+    <fill_query>INSERT INTO range_join_build_200k SELECT number + 1, number FROM numbers(200000)</fill_query>
+    <fill_query>INSERT INTO range_join_probe SELECT intHash32(number) % 90000 + 1, intHash32(number) % 200000 + 1, intHash32(number) % 900000 + 1 FROM numbers_mt(150000000)</fill_query>
+
+    <query>SELECT sum(b.v) FROM range_join_probe AS p INNER JOIN range_join_build_90k AS b ON p.k90k = b.k FORMAT Null</query>
+    <query>SELECT count(), sum(b.v) FROM range_join_probe AS p RIGHT JOIN range_join_build_90k AS b ON p.k90k = b.k FORMAT Null</query>
+    <query>SELECT sum(b.v) FROM range_join_probe AS p INNER JOIN range_join_build_200k AS b ON p.k200k = b.k FORMAT Null</query>
+    <query>SELECT sum(b.v) FROM range_join_probe AS p LEFT JOIN range_join_build_90k AS b ON p.k_out = b.k FORMAT Null</query>
+    <query>SELECT sum(b.v) FROM range_join_probe AS p LEFT JOIN range_join_build_90k AS b ON p.k200k = b.k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS range_join_build_90k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS range_join_build_200k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS range_join_probe</drop_query>
+</test>

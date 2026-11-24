@@ -64,9 +64,19 @@ private:
     /// `fast_path` compiles out the per-row null-map and join-mask checks for the common case of
     /// non-nullable keys and no ON-section condition (the checks are done at runtime otherwise).
     /// With `flag_per_row`, `tables` holds one table per `ON` disjunct and the used flags are per right row.
-    /// Without it, there is one table.
-    template <HashJoin::Type TYPE, bool need_filter, bool fast_path, bool flag_per_row, typename AddedColumns>
+    /// Without it, there is one table. `prefetch_range` is set only by `joinRightColumnsWithRangePrefetch`.
+    template <HashJoin::Type TYPE, bool need_filter, bool fast_path, bool flag_per_row, bool prefetch_range = false, typename AddedColumns>
     static size_t joinRightColumns(
+        Tables tables,
+        AddedColumns & added_columns,
+        JoinStuff::JoinUsedFlags & used_flags,
+        const ScatteredBlock::Selector::Range & selector);
+
+    /// `joinRightColumns` of one table for a block whose probe prefetches the range table, see
+    /// `HashJoinTable::rangeProbePrefetches`. Out of line, so that the copies that do not prefetch keep their code.
+    /// It checks every row for a `NULL` key or a masked row, so one copy serves both values of `fast_path`.
+    template <HashJoin::Type TYPE, bool need_filter, typename AddedColumns>
+    static NO_INLINE size_t joinRightColumnsWithRangePrefetch(
         Tables tables,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,

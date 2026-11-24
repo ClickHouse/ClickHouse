@@ -237,6 +237,13 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     chassert(tables.size() == 1);
     if (selector.isContinuousRange())
     {
+        if constexpr (HashJoinTable::range_prefetch_supported<TYPE, MapsTemplate>)
+        {
+            if (tables[0]->rangeProbePrefetches<TYPE, MapsTemplate>(
+                    added_columns.join_on_keys.at(0), selector.getRange(), added_columns.enable_prefetch))
+                return joinRightColumnsWithRangePrefetch<TYPE, need_filter>(tables, added_columns, used_flags, selector.getRange());
+        }
+
         if (fast_path)
             return joinRightColumns<TYPE, need_filter, /*fast_path=*/true, /*flag_per_row=*/false>(
                 tables, added_columns, used_flags, selector.getRange());
@@ -246,6 +253,18 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     }
     /// The probe always runs on a whole block as one continuous range; only the build scatters rows by index.
     UNREACHABLE();
+}
+
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
+template <HashJoin::Type TYPE, bool need_filter, typename AddedColumns>
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithRangePrefetch(
+    Tables tables,
+    AddedColumns & added_columns,
+    JoinStuff::JoinUsedFlags & used_flags,
+    const ScatteredBlock::Selector::Range & selector)
+{
+    return joinRightColumns<TYPE, need_filter, /*fast_path=*/false, /*flag_per_row=*/false, /*prefetch_range=*/true>(
+        tables, added_columns, used_flags, selector);
 }
 
 template <bool need_filter>
@@ -385,7 +404,7 @@ void processMatch(
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <HashJoin::Type TYPE, bool need_filter, bool fast_path, bool flag_per_row, typename AddedColumns>
+template <HashJoin::Type TYPE, bool need_filter, bool fast_path, bool flag_per_row, bool prefetch_range, typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     Tables tables,
     AddedColumns & added_columns,
@@ -462,7 +481,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     else
     {
         IColumn::Offset current_offset = 0;
-        tables[0]->probe<TYPE, MapsTemplate, fast_path>(
+        tables[0]->probe<TYPE, MapsTemplate, fast_path, prefetch_range>(
             added_columns.join_on_keys.at(0),
             selector,
             added_columns.enable_prefetch,

@@ -126,6 +126,14 @@ public:
     [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const key_type & key, size_t hash_value) const { return flat.find(key, hash_value); }
     [[nodiscard]] bool ALWAYS_INLINE has(const key_type & key) const { return flat.has(key); }
 
+    /// The cell of a key is the cell with that index. Like `find`, it takes a key of the table.
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
+    {
+        __builtin_prefetch(flat.data() + keyHolderGetKey(key_holder));
+        keyHolderDiscardKey(key_holder);
+    }
+
     [[nodiscard]] size_t size() const { return flat.size(); }
     [[nodiscard]] bool empty() const { return flat.empty(); }
     [[nodiscard]] size_t getBufferSizeInBytes() const { return flat.getBufferSizeInBytes(); }
