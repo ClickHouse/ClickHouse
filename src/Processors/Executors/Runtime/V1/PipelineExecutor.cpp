@@ -594,7 +594,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
 {
     if (concurrency_control)
     {
-        return allocateCPUSlots(num_threads, lazy_allocation,
+        return allocateCPUSlots(num_threads, lazy_allocation, /*always_lease=*/ false,
             {
                 .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
                 .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },

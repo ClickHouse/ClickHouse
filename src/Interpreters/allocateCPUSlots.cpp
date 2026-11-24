@@ -19,7 +19,7 @@ namespace Setting
     extern const SettingsString workload;
 }
 
-SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, CPUSlotPreemptionCallbacks callbacks)
+SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, bool always_lease, CPUSlotPreemptionCallbacks callbacks)
 {
     // The first thread is called master thread.
     // It is NOT the thread that handles async tasks (unless query has max_threads=1).
@@ -81,7 +81,7 @@ SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, CPU
         return std::make_shared<GrantedAllocation>(num_threads);
 
     /// Allocate CPU slots through resource scheduler
-    if (!query_context->getCPUSlotPreemption())
+    if (!always_lease && !query_context->getCPUSlotPreemption())
         return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
 
     const auto & settings = query_context->getSettingsRef();

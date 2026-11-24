@@ -72,6 +72,8 @@
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/allocateCPUSlots.h>
+#include <Common/Scheduler/CurrentCPULease.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -170,6 +172,10 @@ namespace
 /// Calls `process_part(part_index)` for the parts [0, num_parts) on the calling thread and on up to `num_threads - 1` threads more,
 /// one per CPU slot granted to the query (see `allocateCPUSlots`), so the analysis of indexes competes for CPU with the queries.
 /// The workload scheduler grants slots asynchronously, so the calling thread starts a thread for every slot granted meanwhile.
+/// No thread waits for a slot: the calling thread can hold the only slot of its workload (a thread of the pipeline executor
+/// in `mergeTreeAnalyzeIndexes`), and nothing would stop the wait of a cancelled query. So the workload scheduler always provides
+/// CPU leases (the calling thread gets one without a wait), and they are not renewed, so no thread is preempted.
+/// The CPU time of a thread is reported to the workload when its slot is released.
 /// The parts are taken in order, and no more parts are taken once `process_part` returns false.
 /// If `process_part` throws, the other parts are abandoned and the exception is rethrown.
 template <typename ProcessPart>
@@ -186,7 +192,7 @@ void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concu
     }
 
     SlotAllocationPtr cpu_slots = use_concurrency_control
-        ? allocateCPUSlots(num_threads, /*lazy_allocation=*/ false)
+        ? allocateCPUSlots(num_threads, /*lazy_allocation=*/ false, /*always_lease=*/ true)
         : std::make_shared<GrantedAllocation>(num_threads);
 
     std::atomic<size_t> next_part_index = 0;
@@ -199,6 +205,12 @@ void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concu
         if (lease)
             lease->startConsumption();
 
+        /// Published for `CPULeaseParkGuard`, which gives the slot away while the thread waits for a read (e.g. from object storage).
+        ISlotLease * previous_lease = getCurrentCPULease();
+        if (lease && lease->isParkingEnabled())
+            setCurrentCPULease(lease);
+        SCOPE_EXIT({ setCurrentCPULease(previous_lease); });
+
         while (!stopped.load(std::memory_order_relaxed) && !pool.isFinished())
         {
             before_part();
@@ -208,10 +220,6 @@ void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concu
 
             if (!process_part(part_index))
                 stopped.store(true, std::memory_order_relaxed);
-
-            /// May wait while the thread is preempted. Only a worker thread is downscaled, the master thread waits for a grant.
-            if (lease && !lease->renew())
-                return;
         }
     };
 

@@ -18,8 +18,10 @@ struct CPUSlotPreemptionCallbacks
 /// Allocates CPU slots for `num_threads` threads of the current query: from the workload scheduler if a CPU resource
 /// is defined (`CREATE RESOURCE ... (MASTER THREAD | WORKER THREAD)`), from `ConcurrencyControl` otherwise.
 /// The first acquired slot is the one of the master thread: it is never downscaled, and `acquire` provides it without a wait,
-/// unless a separate `MASTER THREAD` resource is defined without preemption.
+/// unless a `MASTER THREAD` resource is defined without preemption.
 /// With `lazy_allocation` only the slot of the master thread is requested, the others are requested by `setMax`.
-SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, CPUSlotPreemptionCallbacks callbacks = {});
+/// With `always_lease` the workload scheduler provides CPU leases even if `cpu_slot_preemption` is disabled:
+/// `acquire` never waits for a lease, and a lease that is not renewed is not preempted.
+SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool lazy_allocation, bool always_lease, CPUSlotPreemptionCallbacks callbacks = {});
 
 }
