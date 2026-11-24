@@ -13,6 +13,7 @@
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -267,7 +268,8 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
         UInt64 different = base ^ i;
 
         for (size_t j = 0; j < block_size; ++j)
-            different |= (permutation[i + j] - base) ^ j;
+            /// A value below `base` wraps, which is what makes `different` non-zero for it.
+            different |= common::subIgnoreOverflow(permutation[i + j], base) ^ j;
 
         if (different)
             return false;
