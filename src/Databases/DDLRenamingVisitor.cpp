@@ -138,11 +138,15 @@ namespace
         ASTs res;
         if (!function.arguments)
             return res;
-        for (auto argument : function.arguments->children)
+        const auto & arguments = function.arguments->children;
+        /// Only the named collection form `remote(collection, key = value, ...)` has `key = value` as its second argument,
+        /// elsewhere `equals` is an expression such as a sharding key.
+        const auto * second = arguments.size() >= 2 ? arguments[1]->as<ASTFunction>() : nullptr;
+        const bool named_collection = (function.name == "remote" || function.name == "remoteSecure") && second && second->name == "equals";
+        for (auto argument : arguments)
         {
-            /// A named collection override `key = value`.
-            if (const auto * pair = argument->as<ASTFunction>(); pair && pair->name == "equals" && pair->arguments
-                && pair->arguments->children.size() == 2)
+            const auto * pair = argument->as<ASTFunction>();
+            if (named_collection && pair && pair->name == "equals" && pair->arguments && pair->arguments->children.size() == 2)
                 argument = pair->arguments->children[1];
             const auto * nested = argument->as<ASTFunction>();
             if (!dynamic_cast<const ASTIdentifier *>(argument.get())

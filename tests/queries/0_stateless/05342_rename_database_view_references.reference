@@ -22,12 +22,14 @@ _ext.merge_v: 5
 _ext.param_call_v: 5
 _ext.literal_arg_v: 5
 _ext.remote_local_v: 2
+_ext.remote_key_v: 2
+_ext.remote_nc_v: 2
 occurrences of the old name: 0
 _dst.rt: 5
 _ext.rt: 2
 _dst.union_rmv: 10
 _ext.prt: 5
-CREATE VIEW _ext.remote_v (`a` UInt64) AS SELECT a FROM _dst.sample UNION ALL SELECT a FROM remote('127.0.0.2', merge('_src', '^sample$')) UNION ALL SELECT a FROM remote('127.0.0.2', _src.sample) UNION ALL SELECT a FROM remoteSecure('127.0.0.2', view(SELECT a FROM _src.sample)) UNION ALL SELECT a FROM cluster('test_shard_localhost', merge('_src', '^sample$')) UNION ALL SELECT a FROM clusterAllReplicas('test_shard_localhost', view(SELECT a FROM _src.sample))
+CREATE VIEW _ext.remote_v (`a` UInt64) AS SELECT a FROM _dst.sample UNION ALL SELECT a FROM remote('127.0.0.2', merge('_src', '^sample$')) UNION ALL SELECT a FROM remote('127.0.0.2', _src.sample) UNION ALL SELECT a FROM remoteSecure('127.0.0.2', view(SELECT a FROM _src.sample)) UNION ALL SELECT a FROM cluster('test_shard_localhost', merge('_src', '^sample$')) UNION ALL SELECT a FROM clusterAllReplicas('test_shard_localhost', view(SELECT a FROM _src.sample)) UNION ALL SELECT a FROM remote(_nc, database = merge('_src', '^sample$'))
 unchanged: _dst.unrelated_v
 unchanged: _ext.unrelated_v
 -- after a reload
@@ -53,4 +55,6 @@ _ext.merge_v: 10
 _ext.param_call_v: 10
 _ext.literal_arg_v: 10
 _ext.remote_local_v: 4
+_ext.remote_key_v: 4
+_ext.remote_nc_v: 4
 ['_dst.inline_mv','_dst.qualified_mv','_dst.to_mv','_dst.union_mv','_ext.cte_mv','_ext.mv']
