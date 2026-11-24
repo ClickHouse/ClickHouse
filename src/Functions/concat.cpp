@@ -215,6 +215,10 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
+    /// The function built for a single argument is the `toString` created from the context, which captures its settings.
+    /// The adaptors for `Dynamic` and `Variant` arguments hash this resolver instead of the function it builds.
+    void updateHash(SipHash & hash) const override { to_string->updateHash(hash); }
+
     /// A single argument is converted by the `toString` created from the context, which captures this setting.
     [[nodiscard]] std::optional<bool> getFixedStringToStringStripTrailingZeros() const override
     {
