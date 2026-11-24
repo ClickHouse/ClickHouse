@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
@@ -23,7 +24,6 @@
 #include <functional>
 #include <optional>
 #include <list>
-#include <Poco/Timespan.h>
 
 
 namespace DB
@@ -128,13 +128,6 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
-    /// A storage that reads this table over the replicas of `cluster_for_parallel_replicas` for the query of `context`,
-    /// or nullptr to read the table itself.
-    virtual StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) const
-    {
-        return nullptr;
-    }
-
     /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
     /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
     /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
@@ -220,16 +213,12 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
-    /// Returns true if the storage compresses each stream of a column with its own codec, so codecs can be declared for subcolumns.
-    virtual bool supportsSubcolumnCodecs() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
     /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
-    /// Same, for the functions of a `Map` that read only its keys or only its values (`mapKeys(m)` -> reading `m.keys`).
-    virtual bool supportsOptimizationToMapKeysAndValuesSubcolumns() const { return supportsOptimizationToSubcolumns(); }
     /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
     /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
     virtual bool hasBucketedMapSerialization() const { return false; }
@@ -310,12 +299,6 @@ public:
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
-    }
-
-    /// Same as above, but publishes an already built object instead of deep-copying it.
-    void setInMemoryMetadata(std::unique_ptr<const StorageInMemoryMetadata> && metadata_)
-    {
-        metadata.set(std::move(metadata_));
     }
 
     void setInMemoryMetadataComment(const String & comment)
@@ -777,7 +760,7 @@ public:
     {
         /// Number of entries left to check.
         /// It decreases after each call to checkDataNext().
-        [[nodiscard]] virtual size_t size() const = 0;
+        virtual size_t size() const = 0;
         virtual ~DataValidationTasksBase() = default;
     };
 
@@ -830,11 +813,6 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
-    /// Returns true if the table can store its own unreplicated data on disk.
-    /// Such a table cannot be created in a `Replicated` database while
-    /// `database_replicated_allow_only_replicated_engine` is enabled.
-    virtual bool hasUnreplicatedTableDataOnDisk() const { return storesDataOnDisk() && !supportsReplication(); }
-
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
@@ -859,11 +837,6 @@ public:
     /// Does takes underlying Storage (if any) into account.
     /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
-
-    virtual std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
-    {
-        return totalRows(query_context);
-    }
 
     /// Same as above but also take partition predicate into account.
     /// Passed context pointer must not be `nullptr`.

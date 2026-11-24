@@ -6,7 +6,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -112,7 +111,6 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
         return;
     }
 
-    options.explicit_request_settings = getExplicitRequestSettings();
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
@@ -179,9 +177,9 @@ void StorageObjectStorageConfiguration::initialize(
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
     {
-        const auto storage_settings = configuration_to_initialize.getDataLakeSettings();
-        disk_name = (*storage_settings)[DataLakeStorageSetting::disk].changed
-            ? (*storage_settings)[DataLakeStorageSetting::disk].value
+        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
+        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
+            ? storage_settings[DataLakeStorageSetting::disk].value
             : "";
     }
     if (engine_args.empty() && table_id)
@@ -271,28 +269,6 @@ String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescrip
     auto columns_str = columns.getAllPhysical().toString();
     hash.update(columns_str.data(), columns_str.size());
     return getSipHash128AsHexString(hash);
-}
-
-StorageObjectStorageConfiguration::Paths StorageObjectStorageConfiguration::getPaths() const
-{
-    SharedLockGuard lock(paths_mutex);
-    return getPathsImpl();
-}
-
-void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
-{
-    std::lock_guard lock(paths_mutex);
-    setPathsImpl(paths);
-}
-
-void StorageObjectStorageConfiguration::addPath(const Path & path)
-{
-    std::lock_guard lock(paths_mutex);
-    auto paths = getPathsImpl();
-    if (std::ranges::find(paths, path.path, &Path::path) != paths.end())
-        return;
-    paths.push_back(path);
-    setPathsImpl(paths);
 }
 
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
@@ -416,7 +392,7 @@ String StorageObjectStorageConfiguration::getURIForAccessCheck(const String & wr
 {
     /// The URI as the user typed it, which passed the source access check, e.g. `http://host/bucket/data/{_partition_id}.tsv`,
     /// and the path inside the storage that it names, e.g. `data/{_partition_id}.tsv`.
-    const String granted_uri(getRawURI());
+    const String & granted_uri = getRawURI();
     const String granted_path = getRawPath().path;
 
     /// When the URI is the path itself, e.g. for `azureBlobStorage`, the path is used as is: parsing it as a URI

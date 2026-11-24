@@ -1,5 +1,7 @@
 -- Issue #78166: WHERE over UNION where each branch wraps a const in materialize
 
+SET enable_analyzer = 1;
+
 SELECT uniq(id) FROM (
     SELECT 'online' AS event_type, 'i' AS id FROM numbers(100)
     UNION ALL

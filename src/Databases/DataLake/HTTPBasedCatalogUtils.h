@@ -2,7 +2,6 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Common/SecretString.h>
 #include <functional>
 #include <chrono>
 #include <optional>
@@ -14,10 +13,10 @@ namespace DataLake
 
 struct AccessToken
 {
-    DB::SecretString token;
+    std::string token;
     std::optional<std::chrono::system_clock::time_point> expires_at;
 
-    [[nodiscard]] bool isExpired() const
+    bool isExpired() const
     {
         if (!expires_at.has_value())
             return false;
@@ -56,7 +55,7 @@ auto requestWithTokenRefresh(bool enable_refresh, Func && make_request)
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & endpoint,
     DB::ContextPtr context,
-    std::string_view bearer_token,
+    const std::string & bearer_token,
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
@@ -65,7 +64,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & endpoint,
     DB::ContextPtr context,
-    std::string_view bearer_token,
+    const std::string & bearer_token,
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
@@ -75,6 +74,6 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
 /// `createWithBearerToken` synthesizes, applying the same `http_forbid_headers` and
 /// control-character checks as a user-supplied `auth_header`. Throws BAD_ARGUMENTS on a forbidden
 /// or malformed token; an empty token is a no-op (no header is sent).
-void validateBearerToken(const DB::ContextPtr & context, std::string_view bearer_token);
+void validateBearerToken(const DB::ContextPtr & context, const std::string & bearer_token);
 
 }

@@ -158,18 +158,14 @@ Chunk NATSSource::generateImpl()
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
-    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());
-    auto create_format = [&]
-    {
-        return FormatFactory::instance().getInput(
-            storage.getFormatName(),
-            empty_buf,
-            non_virtual_header,
-            context,
-            max_block_size,
-            std::nullopt,
-            parser_shared_resources);
-    };
+    auto input_format = FormatFactory::instance().getInput(
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
     std::optional<String> exception_message;
     size_t total_rows = 0;
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -192,9 +188,7 @@ Chunk NATSSource::generateImpl()
         throw std::move(e);
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), on_error);
-
-    const Field table_name = storage.getStorageID().getTableName();
+    StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
     while (true)
     {
@@ -269,7 +263,7 @@ Chunk NATSSource::generateImpl()
         {
             auto subject = consumer->getSubject();
             virtual_columns[0]->insertMany(subject, new_rows);
-            virtual_columns[1]->insertMany(table_name, new_rows);
+            virtual_columns[1]->insertMany(storage.getStorageID().getTableName(), new_rows);
             if (handle_error_mode == StreamingHandleErrorMode::STREAM)
             {
                 if (exception_message)
@@ -280,10 +274,8 @@ Chunk NATSSource::generateImpl()
                 }
                 else
                 {
-                    /// A good message can hold many rows, so these two columns need one
-                    /// NULL per row, same as `_subject` and `_table` above.
-                    virtual_columns[2]->insertManyDefaults(new_rows);
-                    virtual_columns[3]->insertManyDefaults(new_rows);
+                    virtual_columns[2]->insertDefault();
+                    virtual_columns[3]->insertDefault();
                 }
             }
 

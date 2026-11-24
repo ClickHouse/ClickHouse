@@ -91,12 +91,12 @@ public:
             src_scale = getDecimalScale(*argument_types_.front());
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return String(magic_enum::enum_name(kind));
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

@@ -20,27 +20,6 @@ extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
-
-/// 999:59:59, the largest `Time` value.
-constexpr Int128 max_time_seconds = 999 * 3600 + 59 * 60 + 59;
-
-/// An integer token is a number of seconds; out-of-range values saturate to the `Time` range.
-template <typename ReturnType>
-ReturnType readTimeSecondsText(time_t & x, ReadBuffer & istr)
-{
-    Int128 seconds = 0;
-    if constexpr (std::is_same_v<ReturnType, void>)
-        readIntText128Saturating(seconds, istr);
-    else if (!readIntText128Saturating<bool>(seconds, istr))
-        return false;
-    x = static_cast<time_t>(std::clamp(seconds, -max_time_seconds, max_time_seconds));
-    return ReturnType(true);
-}
-
-}
-
 inline void readTimeText(
     time_t & x,
     ReadBuffer & istr,
@@ -131,7 +110,7 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     }
     else /// Just 493808 or 0493808
     {
-        readTimeSecondsText<void>(x, istr);
+        readIntText(x, istr);
     }
     /// It's important to do this at the end - for exception safety.
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -147,7 +126,7 @@ bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & 
     }
     else
     {
-        if (!readTimeSecondsText<bool>(x, istr))
+        if (!tryReadIntText(x, istr))
             return false;
     }
 
@@ -173,7 +152,7 @@ void SerializationTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     }
     else
     {
-        readTimeSecondsText<void>(x, istr);
+        readIntText(x, istr);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -189,7 +168,7 @@ bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & is
     }
     else
     {
-        if (!readTimeSecondsText<bool>(x, istr))
+        if (!tryReadIntText(x, istr))
             return false;
     }
 

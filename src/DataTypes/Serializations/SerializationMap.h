@@ -15,10 +15,6 @@ class SerializationMap final : public SimpleTextSerialization
 private:
     SerializationPtr key_serialization;
     SerializationPtr value_serialization;
-    /// Used only for the defaults of null keys and values. Not part of the pool key: the key of the nested serialization
-    /// already determines the defaults of these types.
-    DataTypePtr key_type;
-    DataTypePtr value_type;
 
     /// 'nested' is an Array(Tuple(key_type, value_type))
     SerializationPtr nested_serialization;
@@ -35,8 +31,6 @@ private:
     SerializationMap(
         const SerializationPtr & key_serialization_,
         const SerializationPtr & value_serialization_,
-        const DataTypePtr & key_type_,
-        const DataTypePtr & value_type_,
         const SerializationPtr & nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
 
@@ -45,8 +39,6 @@ public:
     static SerializationPtr create(
         const SerializationPtr & key_serialization_,
         const SerializationPtr & value_serialization_,
-        const DataTypePtr & key_type_,
-        const DataTypePtr & value_type_,
         const SerializationPtr & nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
 

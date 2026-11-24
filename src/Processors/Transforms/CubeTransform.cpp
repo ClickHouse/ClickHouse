@@ -53,7 +53,7 @@ Chunk CubeTransform::generate()
         current_chunk = merge(std::move(chunks), !use_nulls, false);
     }
 
-    finalizeChunk(gen_chunk, aggregates_mask, finalized_header);
+    finalizeChunk(gen_chunk, aggregates_mask);
     if (!gen_chunk.empty())
         gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), grouping_set++));
     return gen_chunk;
