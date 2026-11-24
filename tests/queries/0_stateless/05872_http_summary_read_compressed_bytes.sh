@@ -26,13 +26,19 @@ function check()
     local read_compressed_bytes
     read_compressed_bytes=$(echo "$summary" | grep -o '"read_compressed_bytes":"[0-9]*"' | grep -o '[0-9]\+')
 
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
-    ${CLICKHOUSE_CLIENT} -q "
-        SELECT
-            $read_compressed_bytes > 0,
-            $read_compressed_bytes = sum(ProfileEvents['ReadCompressedBytes'])
-        FROM system.query_log
-        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND initial_query_id = '${query_id}'"
+    # The query is logged after the response is sent, so one `SYSTEM FLUSH LOGS` right after can miss it.
+    local logged=0
+    for _ in $(seq 1 60); do
+        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+        logged=$(${CLICKHOUSE_CLIENT} -q "
+            SELECT sum(ProfileEvents['ReadCompressedBytes'])
+            FROM system.query_log
+            WHERE event_date >= yesterday() AND type = 'QueryFinish' AND initial_query_id = '${query_id}'")
+        [ "$logged" = "$read_compressed_bytes" ] && break
+        sleep 0.5
+    done
+
+    echo -e "$(( read_compressed_bytes > 0 ))\t$(( logged == read_compressed_bytes ))"
 }
 
 check "t"

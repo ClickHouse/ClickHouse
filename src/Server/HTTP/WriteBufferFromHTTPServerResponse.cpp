@@ -175,7 +175,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Co
     else if (process_list_elem)
         accumulated_progress.memory_usage = process_list_elem->getInfo().memory_usage;
 
-    /// The last call comes after the query has finished (see `flushQueryProgress`), so the summary has the final value.
+    /// The last call is made after the query has finished (see `flushQueryProgress`).
     if (process_list_elem)
         read_compressed_bytes = process_list_elem->getProfileEventWithRemote(ProfileEvents::ReadCompressedBytes);
 
