@@ -7,6 +7,8 @@
 #include <Interpreters/castColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -17,7 +19,6 @@
 #include <Functions/IFunction.h>
 
 #include <algorithm>
-#include <map>
 #include <unordered_set>
 
 namespace ProfileEvents
@@ -722,8 +723,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
             Block header;
             Columns current;
-            std::vector<std::pair<size_t, IColumn::Versions>> versions_before;
-            std::map<size_t, NameAndTypePair> parent_of;
+            VectorWithMemoryTracking<std::pair<size_t, IColumn::Versions>> versions_before;
+            MapWithMemoryTracking<size_t, NameAndTypePair> parent_of;
             for (const auto & column_for_patch : columns_for_patches[i])
             {
                 if (column_for_patch.order != order)
@@ -785,7 +786,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             applyPatches(header, read_columns, result.patch_versions_block, /*min_version=*/ {}, patch_max_version, selected,
                 {order}, result.columns_for_patches);
 
-            std::map<String, ColumnPtr> parent_null_maps;
+            MapWithMemoryTracking<String, ColumnPtr> parent_null_maps;
             for (const auto & [pos, parent] : parent_of)
             {
                 if (parent_null_maps.contains(parent.name))
