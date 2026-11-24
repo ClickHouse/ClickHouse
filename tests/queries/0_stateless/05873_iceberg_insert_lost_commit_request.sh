@@ -26,7 +26,7 @@ manifests_before=$(count_files '*.avro')
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT iceberg_writes_lose_metadata_commit_request"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (2)" 2>&1 \
-    | grep -q 'The outcome of the commit of the insert into the Iceberg table .* is unknown' && echo "outcome unknown"
+    | grep -q 'The outcome of the insert commit of the Iceberg table .* is unknown' && echo "outcome unknown"
 
 echo "data files: $(count_files '*.parquet')"
 echo "manifest files kept: $(( $(count_files '*.avro') > manifests_before ))"
