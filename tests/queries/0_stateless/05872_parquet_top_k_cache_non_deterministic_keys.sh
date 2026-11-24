@@ -47,7 +47,7 @@ SETTINGS="max_threads = 1, use_query_condition_cache = 1, use_query_condition_ca
 
 for table in t_file t_s3 t_merge_tree; do
     echo "-- ${table}"
-    QUERY="SELECT k, joinGet('lookup', 'val', v) AS g, count() FROM ${table} GROUP BY k, g ORDER BY k, g LIMIT 2 SETTINGS ${SETTINGS}"
+    QUERY="SELECT k, joinGet('${CLICKHOUSE_DATABASE}.lookup', 'val', v) AS g, count() FROM ${table} GROUP BY k, g ORDER BY k, g LIMIT 2 SETTINGS ${SETTINGS}"
     ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE lookup; INSERT INTO lookup SELECT number, number FROM numbers(1000)"
     ${CLICKHOUSE_CLIENT} --query "${QUERY}"
     ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE lookup; INSERT INTO lookup SELECT number, 0 FROM numbers(1000)"
