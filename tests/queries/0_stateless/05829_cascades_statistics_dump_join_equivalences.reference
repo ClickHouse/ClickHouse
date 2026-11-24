@@ -1,0 +1,6 @@
+cascades	20	190	570	50
+reads_estimated_rows 20,100
+key_columns_with_stats __table1.k,__table2.k
+equal_columns_members __table1.k,__table2.k
+max_equal_columns_lines_per_group 1
+plain	20	190	570	50
