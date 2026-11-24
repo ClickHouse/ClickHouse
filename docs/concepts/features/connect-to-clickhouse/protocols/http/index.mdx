@@ -698,6 +698,7 @@ The possible header fields are:
 | `written_bytes`      | Volume of data written in bytes.|
 | `elapsed_ns`         | Query runtime in nanoseconds.|
 | `memory_usage`       | Memory in bytes used by the query. (**Available from v25.11**) |
+| `read_compressed_bytes` | Compressed bytes read by the whole query (from disks and the network), including its parts executed on remote servers: the sum of the `ReadCompressedBytes` profile event. (**Available from v26.12**) |
 
 Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 

@@ -307,6 +307,9 @@ public:
     /// Returns the sum of the profile events reported by the remote servers, if any were reported.
     std::optional<ProfileEvents::Counters::Snapshot> getRemoteProfileEvents() const;
 
+    /// Returns the value of a profile event for the whole query: the local counter plus what the remote servers reported.
+    ProfileEvents::Count getProfileEventWithRemote(ProfileEvents::Event event) const;
+
     /// Adds the profile events of a nested query charged to the quotas on its own (see `excluded_profile_events`).
     void addExcludedProfileEvents(const ProfileEvents::Counters::Snapshot & snapshot);
 

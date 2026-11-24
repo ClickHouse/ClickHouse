@@ -24,6 +24,11 @@
 #include <string>
 #include <string_view>
 
+namespace ProfileEvents
+{
+    extern const Event ReadCompressedBytes;
+}
+
 namespace DB
 {
 
@@ -55,7 +60,9 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
         return;
 
     WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer, mode);
+    auto values = accumulated_progress.getValues();
+    values.read_compressed_bytes = read_compressed_bytes;
+    values.writeJSON(progress_string_writer, mode == Progress::DisplayMode::Verbose);
     progress_string_writer.finalize();
 
     socketSendBytes(header_name, strlen(header_name));
@@ -160,17 +167,17 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Co
     if (headers_finished_sending)
         return;
 
+    QueryStatusPtr process_list_elem = context->getProcessListElement();
+
+    /// When the query is finished the memory_usage will be in progress and it will match the query_log
     if (progress.memory_usage)
-    {
-        /// When the query is finished the memory_usage will be in progress and it will match the query_log
         accumulated_progress.memory_usage = 0;
-    }
-    else
-    {
-        QueryStatusPtr process_list_elem = context->getProcessListElement();
-        if (process_list_elem)
-            accumulated_progress.memory_usage = process_list_elem->getInfo().memory_usage;
-    }
+    else if (process_list_elem)
+        accumulated_progress.memory_usage = process_list_elem->getInfo().memory_usage;
+
+    /// The last call comes after the query has finished (see `flushQueryProgress`), so the summary has the final value.
+    if (process_list_elem)
+        read_compressed_bytes = process_list_elem->getProfileEventWithRemote(ProfileEvents::ReadCompressedBytes);
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
     if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))

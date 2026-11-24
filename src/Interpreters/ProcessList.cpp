@@ -1122,6 +1122,16 @@ std::optional<ProfileEvents::Counters::Snapshot> QueryStatus::getRemoteProfileEv
 }
 
 
+ProfileEvents::Count QueryStatus::getProfileEventWithRemote(ProfileEvents::Event event) const
+{
+    ProfileEvents::Count res = thread_group ? thread_group->performance_counters[event] : 0;
+    std::lock_guard lock(remote_profile_events_mutex);
+    if (remote_profile_events)
+        res += (*remote_profile_events)[event];
+    return res;
+}
+
+
 void QueryStatus::addExcludedProfileEvents(const ProfileEvents::Counters::Snapshot & snapshot)
 {
     std::lock_guard lock(excluded_profile_events_mutex);

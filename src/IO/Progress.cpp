@@ -113,6 +113,7 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
     write("\"result_bytes\"", result_bytes);
     write("\"elapsed_ns\"", elapsed_ns);
     write("\"memory_usage\"", memory_usage);
+    write("\"read_compressed_bytes\"", read_compressed_bytes);
     writeCString("}", out);
 }
 

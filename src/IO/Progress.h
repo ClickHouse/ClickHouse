@@ -31,6 +31,8 @@ struct ProgressValues
 
     Int64 memory_usage = 0;
 
+    UInt64 read_compressed_bytes = 0;
+
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
     void writeJSON(WriteBuffer & out, bool write_zero_values) const;
