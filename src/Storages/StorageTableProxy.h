@@ -179,6 +179,11 @@ public:
         auto storage = getNested();
         const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
         auto nested_snapshot = storage->getStorageSnapshot(nested_metadata, context);
+        /// Reapply the table expression modifiers (e.g. `STREAM ... WATERMARK`, which adds `_time_attribute`),
+        /// the same way the analyzer extended the snapshot of the proxy.
+        if (query_info.table_expression_modifiers)
+            nested_snapshot = nested_snapshot->clone(
+                extendMetadataWithModifiers(nested_snapshot->metadata, *query_info.table_expression_modifiers), nested_snapshot->data);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                       processed_stage, max_block_size, num_streams);
     }

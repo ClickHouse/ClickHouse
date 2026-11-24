@@ -18,7 +18,9 @@ SETTINGS
     part_minmax_index_columns = 'with_block_number_offset';
 CREATE TABLE tgt (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_log (k UInt64) ENGINE = Log;
+CREATE TABLE src_ts (k UInt64, ts DateTime) ENGINE = MergeTree ORDER BY k;
 INSERT INTO src VALUES (1), (2), (3);
+INSERT INTO src_ts VALUES (1, '2020-01-01 00:00:10'), (2, '2020-01-01 00:00:20'), (3, '2020-01-01 00:00:30');
 INSERT INTO t_log VALUES (1);
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
@@ -28,6 +30,8 @@ USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT 'cold engine', engine FROM system.tables WHERE database = currentDatabase() AND name = 'src';
 SELECT 'stream', count(), sum(k) FROM src STREAM BOUNDED;
 SELECT count() FROM t_log STREAM BOUNDED; -- { serverError ILLEGAL_STREAM }
+SELECT 'cold watermark', count(), min(_time_attribute), max(_time_attribute) FROM src_ts STREAM BOUNDED WATERMARK FOR ts AS ts;
+SELECT 'loaded watermark', count(), min(_time_attribute), max(_time_attribute) FROM src_ts STREAM BOUNDED WATERMARK FOR ts AS ts;
 
 CREATE MATERIALIZED VIEW mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO tgt EMPTY AS SELECT k FROM src;
 

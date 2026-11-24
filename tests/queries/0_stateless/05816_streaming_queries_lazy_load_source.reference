@@ -1,3 +1,5 @@
 cold engine	TableProxy
 stream	3	6
+cold watermark	3	2020-01-01 00:00:10	2020-01-01 00:00:30
+loaded watermark	3	2020-01-01 00:00:10	2020-01-01 00:00:30
 refresh	[1,2,3]
