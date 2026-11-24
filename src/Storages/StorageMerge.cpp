@@ -114,6 +114,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
@@ -222,6 +223,18 @@ std::optional<std::pair<String, String>> tryGetSubcolumnOfAliasColumn(const Colu
 bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
 {
     return tryGetSubcolumnOfAliasColumn(storage_columns, name).has_value();
+}
+
+/// A child's column name is resolved in the scope of its table expression, where it must not be qualified
+/// by the table alias: `__table1.x` is the subcolumn `x` of the column `__table1` of a table aliased `__table1`.
+ContextPtr getColumnNameResolutionContext(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn])
+        return context;
+
+    auto resolution_context = Context::createCopy(context);
+    resolution_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", false);
+    return resolution_context;
 }
 
 }
@@ -1487,6 +1500,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             }
 
             SelectQueryInfo modified_query_info;
+            ContextPtr column_name_resolution_context = modified_context;
 
             /// Try to reuse cached modified_query_info for tables with the same column structure.
             /// Skip caching for:
@@ -1553,8 +1567,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             }
             else
             {
-                modified_query_info
-                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+                column_name_resolution_context = getColumnNameResolutionContext(modified_context);
+                modified_query_info = getModifiedQueryInfo(
+                    modified_context, column_name_resolution_context, table, nested_storage_snapshot, real_column_names,
+                    column_names_as_aliases, is_smallest_column_requested, aliases);
 
                 if (can_cache)
                 {
@@ -1630,6 +1646,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 current_streams);
 
             child.plan.addInterpreterContext(modified_context);
+            if (column_name_resolution_context != modified_context)
+                child.plan.addInterpreterContext(column_name_resolution_context);
 
             /// Bucket numbers depend on the aggregation key types, and the merging step merges the children's buckets as they are.
             if (child.plan.isInitialized() && common_processed_stage == QueryProcessingStage::WithMergeableState && query_info.need_aggregate)
@@ -1868,6 +1886,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 }
 
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & modified_context,
+    const ContextPtr & column_name_resolution_context,
     const StorageWithLockAndName & storage_with_lock_and_name,
     const StorageSnapshotPtr & storage_snapshot_,
     Names required_column_names,
@@ -2023,7 +2042,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             if (num_alias_identifiers > 0)
             {
                 QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-                query_analysis_pass.run(resolved_aliases, modified_context);
+                query_analysis_pass.run(resolved_aliases, column_name_resolution_context);
 
                 size_t num_resolved = resolved_aliases->as<ListNode &>().getNodes().size();
                 if (num_resolved != num_alias_identifiers)
@@ -2854,8 +2873,11 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
         /// One pass and one step for all aliases: one per alias is quadratic in their number.
         QueryTreeNodePtr resolved_aliases = std::move(alias_identifiers);
+        auto column_name_resolution_context = getColumnNameResolutionContext(local_context);
+        if (column_name_resolution_context != local_context)
+            child.plan.addInterpreterContext(column_name_resolution_context);
         QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-        query_analysis_pass.run(resolved_aliases, local_context);
+        query_analysis_pass.run(resolved_aliases, column_name_resolution_context);
 
         auto & resolved_nodes = resolved_aliases->as<ListNode &>().getNodes();
         if (resolved_nodes.size() != aliases.size())
