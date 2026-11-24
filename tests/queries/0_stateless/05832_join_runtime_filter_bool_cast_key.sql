@@ -197,9 +197,10 @@ SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, u
     enable_join_seal_gated_reading = 0, log_comment = '05832_date32_overflow';
 
 -- Casts that keep the values still prune: a time zone change, with a `bloom_filter` index, and a `Decimal` precision change.
+-- The `bloom_filter` index is probed only with the exact values of the runtime filter, so their limit is pinned.
 SELECT 'datetime_time_zone', count() FROM probe_time AS p JOIN build_tokyo AS b ON CAST(p.t AS DateTime('Asia/Tokyo')) = b.t
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
-    enable_join_seal_gated_reading = 0, log_comment = '05832_datetime_time_zone';
+    enable_join_seal_gated_reading = 0, join_runtime_filter_exact_values_limit = 10000, log_comment = '05832_datetime_time_zone';
 SELECT 'decimal_precision', count() FROM probe_dec AS p JOIN build_dec AS b ON CAST(p.d AS Decimal(18, 2)) = b.d
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0,
     log_comment = '05832_decimal_precision';

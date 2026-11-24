@@ -1,4 +1,6 @@
 SET enable_json_type = 1;
+-- The paths split between dynamic paths and shared data as the optimized conversion does, so pin it against the settings randomization.
+SET json_use_optimized_type_conversion = 1;
 set output_format_native_write_json_as_string = 0;
 
 drop table if exists test;
