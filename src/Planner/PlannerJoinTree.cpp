@@ -976,8 +976,10 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     auto filter_query_tree = buildFilterQueryTree(
         row_policy_filter->expression,
         table_expression_query_info.table_expression,
-        Context::createCopyForStoredDefinition(query_context),
-        planner_context->isViewSourceInSubqueries());
+        query_context,
+        planner_context->isViewSourceInSubqueries(),
+        /*check_access_rights=*/ false,
+        /*allow_compound_table_identifier_qualification=*/ false);
 
     return buildFilterInfo(
         std::move(filter_query_tree),

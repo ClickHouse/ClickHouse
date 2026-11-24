@@ -232,7 +232,14 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     query_node.getJoinTreeNode() = std::make_shared<TableNode>(storage, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager);
+    /// Mutation commands are stored SQL: read table names in them as written.
+    addQueryTreePasses(
+        query_tree_pass_manager,
+        /*only_analyze=*/ false,
+        /*positional_arguments_already_resolved=*/ false,
+        /*replaced_storage=*/ nullptr,
+        /*view_source_in_subqueries=*/ false,
+        /*allow_compound_table_identifier_qualification=*/ false);
     query_tree_pass_manager.run(query_tree);
 
     return query_tree;
@@ -303,9 +310,6 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void(const Progress & value)> check_operation_is_not_cancelled,
     std::function<void()> on_exception)
 {
-    /// Read table names in the commands as written, like `MutationsInterpreter` does.
-    context = Context::createCopyForStoredDefinition(context);
-
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
     static constexpr IsStorageTouched some_rows = {.any_rows_affected = true, .all_rows_affected = false};
@@ -373,7 +377,8 @@ IsStorageTouched isStorageTouchedByMutations(
         return no_rows;
 
     auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
-    InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
+    InterpreterSelectQueryAnalyzer interpreter(
+        select_query_tree, context, SelectQueryOptions().ignoreLimits().allowCompoundTableIdentifierQualification(false));
     BlockIO io = interpreter.execute();
 
     PullingAsyncPipelineExecutor executor(io.pipeline);

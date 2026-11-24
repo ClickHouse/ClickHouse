@@ -584,17 +584,19 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
 
     auto inner_query_ast = metadata_snapshot->getSelectQuery().inner_query;
 
-    /// A stored view body reads table names as written; the query of a table function such as `view` does not.
-    ContextPtr resolve_context = getStorageID().database_name == ITableFunction::getDatabaseName()
-        ? context
-        : Context::createCopyForStoredDefinition(context);
-
     QueryTreeNodePtr inner_query_tree;
     try
     {
-        inner_query_tree = buildQueryTree(inner_query_ast->clone(), resolve_context);
-        QueryTreePassManager pass_manager(resolve_context);
-        addQueryTreePasses(pass_manager);
+        inner_query_tree = buildQueryTree(inner_query_ast->clone(), context);
+        QueryTreePassManager pass_manager(context);
+        /// A stored view body reads table names as written; the query of a table function such as `view` does not.
+        addQueryTreePasses(
+            pass_manager,
+            /*only_analyze=*/ false,
+            /*positional_arguments_already_resolved=*/ false,
+            /*replaced_storage=*/ nullptr,
+            /*view_source_in_subqueries=*/ false,
+            /*allow_compound_table_identifier_qualification=*/ getStorageID().database_name == ITableFunction::getDatabaseName());
         pass_manager.runOnlyResolve(inner_query_tree);
         /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
         if (containsCorrelatedSubquery(inner_query_tree))

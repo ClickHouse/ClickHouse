@@ -3104,6 +3104,13 @@ def test_namespace_two_part_name_resolution(started_cluster):
             )
             assert "ACCESS_DENIED" in err, f"nested SETTINGS, outer {outer}: {err}"
             assert f"ON {X}.{P}" in err, f"the missing grant must be on the database table: {err}"
+        # the same for a table name directly on the right of IN
+        node.query(f"ALTER ROW POLICY {policy} ON default.{T2} USING symbol IN {X}.{P}")
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; SELECT count() FROM default.{T2}", settings=on, user=policy_user
+        )
+        assert "ACCESS_DENIED" in err, f"IN table must read the database table: {err}"
+        assert f"ON {X}.{P}" in err, f"the missing grant must be on the database table: {err}"
 
         # an `ALIAS` column reads `X.J` as the database table; the catalog table is not a `Join` table
         # (the second column does the same through a lambda)

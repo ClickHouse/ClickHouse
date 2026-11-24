@@ -7050,11 +7050,14 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
         /// Resolve the row policy filter expression against result_node's columns.
         /// A row policy is a stored definition: read table names in it as written.
-        auto filter_context = Context::createCopyForStoredDefinition(scope.context);
-        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), filter_context);
+        auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
         QueryAnalyzer filter_analyzer(
-            this->only_analyze, /*positional_arguments_already_resolved_=*/ false, replaced_storage, view_source_in_subqueries);
-        filter_analyzer.resolve(filter_node, result_node, filter_context);
+            this->only_analyze,
+            /*positional_arguments_already_resolved_=*/ false,
+            replaced_storage,
+            view_source_in_subqueries,
+            /*allow_compound_table_identifier_qualification_=*/ false);
+        filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
         auto result_columns = result_node->as<QueryNode>()
