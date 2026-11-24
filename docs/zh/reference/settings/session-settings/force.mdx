@@ -101,6 +101,8 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 如果 `force_primary_key=1`，ClickHouse 会检查查询是否包含可用于限制数据范围的主键条件。如果没有合适的条件，则会抛出异常。不过，它不会检查该条件是否会减少需要读取的数据量。有关 MergeTree 表中数据范围的更多信息，请参见 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)。
 
+该检查仅针对表本身的主键。只有当查询同时按该投影自身的键限制数据范围时，才会使用该投影来处理查询；否则将跳过该投影，改为读取原表。如果通过 [force&#95;optimize&#95;projection](/zh/reference/settings/session-settings/force-optimize#force_optimize_projection) 强制使用某个投影，但查询未用到该投影的键，则查询会抛出异常。
+
 ## force_read_through_distributed_cache {#force_read_through_distributed_cache}
 
 <CloudOnlyBadge />
