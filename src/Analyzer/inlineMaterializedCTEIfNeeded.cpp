@@ -182,8 +182,8 @@ bool canPushFilterIntoSubquery(const QueryTreeNodePtr & subquery, size_t column_
     {
         if (const auto * function_node = node->as<FunctionNode>())
         {
-            has_aggregate_function |= function_node->isAggregateFunction();
-            has_window_function |= function_node->isWindowFunction();
+            has_aggregate_function |= function_node->isAggregationCall();
+            has_window_function |= function_node->isWindowCall();
         }
     };
 

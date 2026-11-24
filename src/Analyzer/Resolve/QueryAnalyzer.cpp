@@ -233,7 +233,7 @@ bool isCTEWorthMaterializingAutomatically(const QueryTreeNodePtr & cte_node)
 
         if (const auto * function_node = node->as<FunctionNode>())
         {
-            if (function_node->isWindowFunction() || aggregate_function_factory.isAggregateFunctionName(function_node->getFunctionName()))
+            if (function_node->isWindowCall() || aggregate_function_factory.isAggregateFunctionName(function_node->getFunctionName()))
                 return true;
         }
 
