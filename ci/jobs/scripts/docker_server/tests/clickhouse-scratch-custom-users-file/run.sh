@@ -106,24 +106,54 @@ cat > "$config/symlink-users-path.xml" <<'XML'
 XML
 chmod a+r "$config/symlink-users-path.xml"
 
-cid="$(
-  docker run -d \
-    -e CLICKHOUSE_PASSWORD="$password" \
-    -v "$volume":/mounted \
-    -v "$config/symlink-users-path.xml":/etc/clickhouse-server/config.d/symlink-users-path.xml:ro \
-    --name "$(cname)" \
-    "$image"
-)"
-# A server that started anyway keeps running, and `docker wait` does not return.
-if ! exit_code="$(timeout 120 docker wait "$cid")"; then
-  echo "the container is still running instead of refusing the users file path through a symbolic link and \`..\`" >&2
-  exit 1
-fi
-if [ "$exit_code" = 0 ]; then
-  echo "the container exited with code 0 instead of refusing the users file path" >&2
-  exit 1
-fi
-if ! docker logs "$cid" 2>&1 | grep -F 'after a symbolic link' > /dev/null; then
-  echo "the container failed for another reason than the users file path through a symbolic link" >&2
-  exit 1
-fi
+# Start with the docker arguments ($1) and check that the container refuses the user setup with a message
+# containing $2, before any server accepts connections.
+checkRefused() {
+  local docker_args="$1" message="$2"
+  # shellcheck disable=SC2086 # `docker_args` is a list of options.
+  cid="$(
+    docker run -d \
+      -e CLICKHOUSE_PASSWORD="$password" \
+      $docker_args \
+      --name "$(cname)" \
+      "$image"
+  )"
+  # A server that started anyway keeps running, and `docker wait` does not return.
+  if ! exit_code="$(timeout 120 docker wait "$cid")"; then
+    echo "the container is still running instead of refusing the user setup ($message)" >&2
+    exit 1
+  fi
+  if [ "$exit_code" = 0 ]; then
+    echo "the container exited with code 0 instead of refusing the user setup ($message)" >&2
+    exit 1
+  fi
+  if ! docker logs "$cid" 2>&1 | grep -F "$message" > /dev/null; then
+    echo "the container failed for another reason than: $message" >&2
+    exit 1
+  fi
+  docker rm -vf "$cid" > /dev/null
+  cid=
+}
+
+checkRefused "-v $volume:/mounted -v $config/symlink-users-path.xml:/etc/clickhouse-server/config.d/symlink-users-path.xml:ro" \
+  'after a symbolic link'
+
+# A users file path that refers to a property from ZooKeeper: the server expands `${macros.users_file}` only after it
+# resolves the ZooKeeper includes, so the file is not known to `clickhouse docker-init`, and writing the generated user
+# next to the default would leave the file from ZooKeeper without the password. No ZooKeeper is needed: the container
+# must refuse it before starting any server.
+cat > "$config/zk-users-path.xml" <<'XML'
+<clickhouse>
+    <macros>
+        <users_file from_zk="/users_file" replace="replace">users.xml</users_file>
+    </macros>
+    <user_directories>
+        <users_xml>
+            <path>${macros.users_file}</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
+XML
+chmod a+r "$config/zk-users-path.xml"
+checkRefused "-v $config/zk-users-path.xml:/etc/clickhouse-server/config.d/zk-users-path.xml:ro" \
+  'refers to other properties'

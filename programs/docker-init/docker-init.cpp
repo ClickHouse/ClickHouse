@@ -390,23 +390,6 @@ void appendConfigProperties(
     }
 }
 
-/// Extract a single value from a ClickHouse config key via `clickhouse extract-from-config`.
-/// Returns an empty string if the key is absent (--try flag suppresses errors).
-std::string extractConfigValue(const std::string & config_file, const std::string & key, bool use_users = false)
-{
-    std::vector<std::string> args = {
-        g_clickhouse_binary, "extract-from-config",
-        "--config-file", config_file,
-        "--key", key,
-        "--try",
-    };
-    if (use_users)
-        args.emplace_back("--users");
-
-    auto [code, lines] = captureCommand(args);
-    return (code == 0 && !lines.empty()) ? lines[0] : std::string{};
-}
-
 /// Extract multiple values from a ClickHouse config key (wildcard patterns return multiple lines).
 std::vector<std::string> extractConfigValues(const std::string & config_file, const std::string & key)
 {
@@ -424,11 +407,15 @@ std::vector<std::string> extractConfigValues(const std::string & config_file, co
 std::string getEffectiveConfigValue(
     const std::vector<std::string> & server_args, const std::string & config_file, const std::string & key)
 {
+    /// One configuration of both, as the server has it: the properties of the arguments in a layer over the loaded file,
+    /// so that `${...}` references are expanded the same way, e.g. `<path>${macros.data_path}</path>` with
+    /// `-- --macros.data_path=/mnt/clickhouse/`.
+    DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
     Poco::AutoPtr<Poco::Util::LayeredConfiguration> config = new Poco::Util::LayeredConfiguration;
-    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, 0);
-    if (config->has(key))
-        return config->getString(key);
-    return extractConfigValue(config_file, key);
+    config->add(loaded.configuration, /* priority = */ 0);
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, /* priority = */ -100);
+    return config->getString(key, "");
 }
 
 /// Recursively chown a path. Logs warnings but does not abort on failure.
@@ -561,11 +548,23 @@ std::string getUsersConfigFile(const std::string & config_file, const std::vecto
     argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *layered, /* priority = */ -100);
     const auto & config = *layered;
 
+    /// A selector can refer to another property (`${macros.users_file}`), which the server reads only after it resolves
+    /// the elements included from ZooKeeper, and those can be anywhere: its value is not known without ZooKeeper.
+    auto get_selector = [&](const std::string & key)
+    {
+        std::string raw = config.getRawString(key, "");
+        if (loaded.has_zk_includes && raw.find("${") != std::string::npos)
+            throw Poco::Exception("the users configuration file is selected by `" + key + "` = `" + raw
+                + "`, which refers to other properties, and the configuration has elements included from ZooKeeper "
+                "(`from_zk`), so it cannot be found without ZooKeeper");
+        return config.getString(key, "");
+    };
+
     /// Every users configuration file the server loads: `users_config` (or the main configuration itself without
     /// `user_directories`), and the storages of the `users_xml` type in `user_directories` under any of their names,
     /// possibly repeated (`users_xml[1]`), as `AccessControl::addStoragesFromUserDirectoriesConfig` reads them.
     std::vector<std::string> users_files;
-    if (std::string path = config.getString("users_config", ""); !path.empty())
+    if (std::string path = get_selector("users_config"); !path.empty())
         users_files.push_back(resolve(path));
     else if (!config.has("user_directories"))
         users_files.push_back(config_file);
@@ -576,7 +575,7 @@ std::string getUsersConfigFile(const std::string & config_file, const std::vecto
     {
         std::string type = storage.substr(0, storage.find('['));
         if (type == "users_xml" || type == "users.xml" || type == "users_config")
-            users_files.push_back(resolve(config.getString("user_directories." + storage + ".path")));
+            users_files.push_back(resolve(get_selector("user_directories." + storage + ".path")));
     }
 
     /// The same file referenced twice (e.g. the legacy `users_config` and the `users_xml` storage both naming
@@ -1206,8 +1205,10 @@ bool initClickHouseDB(
 
 } // anonymous namespace
 
-int mainEntryClickHouseDockerInit(int argc, char ** argv);
-int mainEntryClickHouseDockerInit(int argc, char ** argv)
+namespace
+{
+
+int mainImpl(int argc, char ** argv)
 {
     g_clickhouse_binary = (argc > 0 && argv[0][0] != '\0') ? argv[0] : "clickhouse";
 
@@ -1592,4 +1593,21 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     execvp(exec_argv[0], exec_argv.data());
     std::cerr << "docker-init: failed to exec clickhouse server: " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
     return 1;
+}
+
+}
+
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
+int mainEntryClickHouseDockerInit(int argc, char ** argv)
+{
+    /// Fail closed on any error reading the configuration: a server must not start with the requested setup undone.
+    try
+    {
+        return mainImpl(argc, argv);
+    }
+    catch (...)
+    {
+        std::cerr << "docker-init: error: " << DB::getCurrentExceptionMessage(false) << "\n";
+        return 1;
+    }
 }
