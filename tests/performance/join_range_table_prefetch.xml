@@ -2,7 +2,8 @@
     <!--
         Joins on one dense integer key, whose hash table becomes a range table (`enable_join_fixed_hash_table_conversion`).
         90000 keys prefetch with an L2 cache of 1 or 2 MiB, 200000 keys with one of up to 6 MiB. The LEFT JOINs probe 10% and
-        45% of their keys inside the range, so they do not prefetch.
+        45% of their keys inside the range, `k_hot` repeats 1024 keys and `k_near` probes the first 16384 keys, so they do not
+        prefetch.
     -->
     <settings>
         <join_algorithm>hash</join_algorithm>
@@ -17,18 +18,23 @@
     <create_query>CREATE TABLE range_join_build_90k (k UInt32, v UInt32) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE range_join_build_200k (k UInt32, v UInt32) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE range_join_probe (k90k UInt32, k200k UInt32, k_out UInt32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE range_join_probe_cached (k_hot UInt32, k_near UInt32) ENGINE = Memory</create_query>
 
     <fill_query>INSERT INTO range_join_build_90k SELECT number + 1, number FROM numbers(90000)</fill_query>
     <fill_query>INSERT INTO range_join_build_200k SELECT number + 1, number FROM numbers(200000)</fill_query>
     <fill_query>INSERT INTO range_join_probe SELECT intHash32(number) % 90000 + 1, intHash32(number) % 200000 + 1, intHash32(number) % 900000 + 1 FROM numbers_mt(150000000)</fill_query>
+    <fill_query>INSERT INTO range_join_probe_cached SELECT intHash32(number) % 1024 * 87 + 1, intHash32(number) % 16384 + 1 FROM numbers_mt(30000000)</fill_query>
 
     <query>SELECT sum(b.v) FROM range_join_probe AS p INNER JOIN range_join_build_90k AS b ON p.k90k = b.k FORMAT Null</query>
     <query>SELECT count(), sum(b.v) FROM range_join_probe AS p RIGHT JOIN range_join_build_90k AS b ON p.k90k = b.k FORMAT Null</query>
     <query>SELECT sum(b.v) FROM range_join_probe AS p INNER JOIN range_join_build_200k AS b ON p.k200k = b.k FORMAT Null</query>
     <query>SELECT sum(b.v) FROM range_join_probe AS p LEFT JOIN range_join_build_90k AS b ON p.k_out = b.k FORMAT Null</query>
     <query>SELECT sum(b.v) FROM range_join_probe AS p LEFT JOIN range_join_build_90k AS b ON p.k200k = b.k FORMAT Null</query>
+    <query>SELECT count() FROM range_join_probe_cached AS p INNER JOIN range_join_build_90k AS b ON p.k_hot = b.k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM range_join_probe_cached AS p INNER JOIN range_join_build_90k AS b ON p.k_near = b.k FORMAT Null SETTINGS max_threads = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS range_join_build_90k</drop_query>
     <drop_query>DROP TABLE IF EXISTS range_join_build_200k</drop_query>
     <drop_query>DROP TABLE IF EXISTS range_join_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS range_join_probe_cached</drop_query>
 </test>

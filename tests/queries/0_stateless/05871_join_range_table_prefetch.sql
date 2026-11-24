@@ -1,7 +1,8 @@
 -- Hash join range tables whose probe prefetches. 200000 keys pass the size rule on an L2 cache of up to 3 MiB, and about 96-98%
 -- of the probe keys are in the range, so most blocks prefetch. Half of the `kh` keys are outside the range, so the `left half`
--- blocks do not prefetch. Blocks of 1001 rows split the sample into strata of unequal size. Each query runs on the range table
--- and on the hash table.
+-- blocks do not prefetch. Blocks of 1001 rows split the sample into strata of unequal size. The `inner hot` probe repeats 1024
+-- keys and the `inner near` probe looks up the first 16384 keys, so their blocks do not prefetch either. Each query runs on the
+-- range table and on the hash table.
 
 SET join_algorithm = 'hash', hash_join_layout = 'serial', max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0;
 SET query_plan_join_swap_table = false, query_plan_optimize_join_order_randomize = 0;
@@ -46,6 +47,8 @@ SELECT 'key64', count(), sum(b.v) FROM rt_probe AS p INNER JOIN rt_build64 AS b 
 SELECT 'left key64', count(), sum(b.v) FROM rt_probe AS p LEFT JOIN rt_build64 AS b ON p.k64 = b.k;
 SELECT 'left half', count(), sum(b.v) FROM rt_probe AS p LEFT JOIN rt_build AS b ON p.kh = b.k;
 SELECT 'inner blocks', count(), sum(b.v) FROM (SELECT toUInt32(intHash32(number) % 200000 + 1) AS k FROM numbers(300000)) AS p INNER JOIN rt_build AS b ON p.k = b.k SETTINGS max_block_size = 1001;
+SELECT 'inner hot', count(), sum(b.v) FROM (SELECT toUInt32(intHash32(number) % 1024 * 195 + 1) AS k FROM numbers(300000)) AS p INNER JOIN rt_build AS b ON p.k = b.k;
+SELECT 'inner near', count(), sum(b.v) FROM (SELECT toUInt32(intHash32(number) % 16384 + 1) AS k FROM numbers(300000)) AS p INNER JOIN rt_build AS b ON p.k = b.k;
 
 SET enable_join_fixed_hash_table_conversion = 0;
 SELECT 'hash';
@@ -68,6 +71,8 @@ SELECT 'key64', count(), sum(b.v) FROM rt_probe AS p INNER JOIN rt_build64 AS b 
 SELECT 'left key64', count(), sum(b.v) FROM rt_probe AS p LEFT JOIN rt_build64 AS b ON p.k64 = b.k;
 SELECT 'left half', count(), sum(b.v) FROM rt_probe AS p LEFT JOIN rt_build AS b ON p.kh = b.k;
 SELECT 'inner blocks', count(), sum(b.v) FROM (SELECT toUInt32(intHash32(number) % 200000 + 1) AS k FROM numbers(300000)) AS p INNER JOIN rt_build AS b ON p.k = b.k SETTINGS max_block_size = 1001;
+SELECT 'inner hot', count(), sum(b.v) FROM (SELECT toUInt32(intHash32(number) % 1024 * 195 + 1) AS k FROM numbers(300000)) AS p INNER JOIN rt_build AS b ON p.k = b.k;
+SELECT 'inner near', count(), sum(b.v) FROM (SELECT toUInt32(intHash32(number) % 16384 + 1) AS k FROM numbers(300000)) AS p INNER JOIN rt_build AS b ON p.k = b.k;
 
 DROP TABLE rt_build;
 DROP TABLE rt_build_dup;
