@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <limits>
 
 
 namespace DB
@@ -818,6 +819,10 @@ UInt64 readListOffsets(IntRleDecoder & rle, ColumnPtr & result, size_t num_value
     auto & offsets = column->getData();
     rle.next(offsets.data(), num_values, not_null);
     UInt64 total = lengthsToEndOffsets(offsets.data(), num_values, column_id);
+    /// The child batches are allocated for `total` values before their streams are read, so a corrupted file
+    /// must not make us allocate for an absurd number of elements. Same limit as for the ORC vector batches in the reference implementation.
+    if (total > std::numeric_limits<Int32>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many elements ({}) in the lists of ORC column {}", total, column_id);
     result = std::move(column);
     return total;
 }
