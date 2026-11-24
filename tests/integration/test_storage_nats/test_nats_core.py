@@ -1763,6 +1763,36 @@ def test_nats_stream_error_mode_multirow_message(nats_cluster):
     assert instance.query("SELECT length(err) > 0 FROM test.dst WHERE a = 0") == "1\n"
 
 
+def test_nats_stream_error_mode_enum_type_default(nats_cluster):
+    """The row of a broken message gets the type default: the smallest element of an Enum without 0."""
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, e Enum8('a' = 1, 'b' = 2))
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'stream_enum',
+                     nats_format = 'JSONEachRow',
+                     nats_handle_error_mode = 'stream';
+        CREATE TABLE test.dst (a UInt64, e Enum8('a' = 1, 'b' = 2), failed UInt8)
+            ENGINE = MergeTree ORDER BY a;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.mv TO test.dst AS
+            SELECT a, e, isNotNull(_error) AS failed FROM test.nats;
+        """
+    )
+    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
+
+    asyncio.run(publish_messages(nats_cluster, "stream_enum", ['{"a":1,"e":"b"}', "not json"]))
+
+    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.dst", 2)
+    assert instance.query("SELECT a, e, failed FROM test.dst ORDER BY a") == "0\ta\t1\n1\tb\t0\n"
+
+
 def test_nats_wait_for_flush_interval_reads_all_consumers(nats_cluster):
     table_name = "test_serial_consumers"
     subject = "serial_consumers"

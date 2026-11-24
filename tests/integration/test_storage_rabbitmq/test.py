@@ -3684,6 +3684,41 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster, db, unique):
     assert broken_messages == expected
 
 
+def test_rabbitmq_handle_error_mode_stream_enum_type_default(rabbitmq_cluster, db, unique):
+    # The row of a message that fails to parse gets the type default: the smallest element of an Enum without 0.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbit (key UInt64, e Enum8('a' = 1, 'b' = 2))
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_exchange_name = '{unique}_enum',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n',
+                     rabbitmq_handle_error_mode = 'stream';
+
+        CREATE TABLE {db}.data (key UInt64, e Enum8('a' = 1, 'b' = 2), failed UInt8)
+             ENGINE = MergeTree()
+             ORDER BY key;
+
+        CREATE MATERIALIZED VIEW {db}.view TO {db}.data AS
+                SELECT key, e, isNotNull(_error) AS failed FROM {db}.rabbit;
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    for message in [json.dumps({"key": 1, "e": "b"}), "not json"]:
+        channel.basic_publish(exchange=f"{unique}_enum", routing_key="", body=message)
+    connection.close()
+
+    check_expected_result_polling(2, f"SELECT count() FROM {db}.data")
+    assert instance.query(f"SELECT key, e, failed FROM {db}.data ORDER BY key") == "0\ta\t1\n1\tb\t0\n"
+
+
 def test_attach_broken_table(rabbitmq_cluster, db, unique):
     table_name = f"rabbit_queue_{uuid.uuid4().hex}"
     instance.query(
