@@ -137,13 +137,20 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     NullOutput sink;
                     readEscapedStringInto<NullOutput,false>(sink, *in);
                 }
+                else if (seen_columns[it->getMapped()])
+                {
+                    if (!format_settings.skip_duplicated_fields)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Duplicate field found while parsing TSKV format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                            name_ref);
+
+                    NullOutput sink;
+                    readEscapedStringInto<NullOutput, false>(sink, *in);
+                }
                 else
                 {
                     index = it->getMapped();
-
-                    if (seen_columns[index])
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing TSKV format: {}", name_ref);
-
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
@@ -263,6 +270,7 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     }
 
     NamesAndTypesList names_and_types;
+    NameSet row_field_names;
     std::string_view name_ref;
     String name_buf;
     String value;
@@ -279,6 +287,8 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
             /// the backslash. A decoded escape always changes the byte count, and the one escape branch
             /// that does not keeps the backslash in the value, which never infers a number.
             const bool had_escape = (in.count() - bytes_before) != value.size();
+            if (format_settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+                continue;
 
             auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
             if (had_escape && type && isNumber(removeNullable(recursiveRemoveLowCardinality(type))))
@@ -311,7 +321,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("TSKV");
 

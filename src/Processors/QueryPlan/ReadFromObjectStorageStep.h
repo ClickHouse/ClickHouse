@@ -60,6 +60,8 @@ public:
     /// threshold of the TopN filter, so the read must neither consult nor write the TopK cache entries.
     void disableTopKQueryConditionCache() { allow_top_k_query_condition_cache = false; }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 #if CLICKHOUSE_CLOUD
@@ -94,8 +96,8 @@ public:
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
-    /// Registers a JOIN runtime filter on `column_name` that every row of this read passes.
-    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+    /// Registers a JOIN runtime filter on `descriptor.key_column_name` that every row of this read passes.
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor);
 
 private:
     /// What the main read keeps besides `required_names` when columns are split off.
@@ -155,7 +157,7 @@ private:
     /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
     bool isReadPinnedToListedGeneration() const;
 
-    bool sortingKeyIsComputableFromSourceHeader() const;
+    [[nodiscard]] bool sortingKeyIsComputableFromSourceHeader() const;
     Pipe buildInOrderPipe(
         const ContextPtr & local_context,
         const FormatFilterInfoPtr & format_filter_info,

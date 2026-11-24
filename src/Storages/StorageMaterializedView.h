@@ -13,7 +13,6 @@
 namespace DB
 {
 
-class IDatabase;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
@@ -47,6 +46,7 @@ public:
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
+    bool isInsertOrderSensitive() const override { return getTargetTable()->isInsertOrderSensitive(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     bool supportsSubcolumnCodecs() const override { return has_inner_table && getTargetTable()->supportsSubcolumnCodecs(); }
     /// readImpl forwards the already-analyzed query tree straight to the target table, so the
@@ -105,15 +105,6 @@ public:
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
     StorageID getTargetTableId() const;
-
-    /// Throws if `table_id` is the source of an incremental refreshable view: the view's cursor would be applied to another table.
-    /// With `is_drop_database`, views from the same database are ignored, because they are dropped first.
-    static void checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & local_context, bool is_drop_database);
-
-    /// Runs `checkTableIsNotIncrementalRefreshSource` for every attached and detached table of `database`.
-    /// Detached tables are included, because `DROP DATABASE` and `RENAME DATABASE` free their names too.
-    static void checkDatabaseHasNoIncrementalRefreshSources(
-        const IDatabase & database, const String & database_name, const ContextPtr & local_context, bool is_drop_database);
 
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;

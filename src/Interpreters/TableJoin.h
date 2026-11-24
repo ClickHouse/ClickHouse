@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -80,7 +81,7 @@ public:
                 nullsafe_compare_key_indexes.insert(key_names_left.size() - 1);
         }
 
-        std::pair<String, String> condColumnNames() const
+        [[nodiscard]] std::pair<String, String> condColumnNames() const
         {
             std::pair<String, String> res;
 
@@ -98,13 +99,13 @@ public:
             return res;
         }
 
-        size_t keysCount() const
+        [[nodiscard]] size_t keysCount() const
         {
             chassert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 
-        String formatDebug(bool short_format = false) const
+        [[nodiscard]] String formatDebug(bool short_format = false) const
         {
             const auto & [left_cond, right_cond] = condColumnNames();
 
@@ -119,13 +120,13 @@ public:
                  fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
 
-        bool isEmpty() const
+        [[nodiscard]] bool isEmpty() const
         {
             return key_names_left.empty() && key_names_right.empty() && !on_filter_condition_left && !on_filter_condition_right
                 && analyzer_left_filter_condition_column_name.empty() && analyzer_right_filter_condition_column_name.empty();
         }
 
-        String formatPretty(const ExplainFormatSettings & settings) const;
+        [[nodiscard]] String formatPretty(const ExplainFormatSettings & settings) const;
     };
 
     using Clauses = std::vector<JoinOnClause>;
@@ -174,7 +175,7 @@ private:
     const bool enable_join_key_only_hash_tables = false;
     const bool enable_robin_hood_hash_for_joins = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
-    /// The planner turns it off for a small right side, see `min_rows_for_packed_string_keys_in_hash_join`.
+    /// The planner turns it off for a join that is faster with exact keys, see `shouldPackStringJoinKeys` in `PlannerJoins.cpp`.
     bool enable_packed_string_keys_in_hash_join = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
@@ -183,6 +184,8 @@ private:
     /// Decision by the planner whether to enable row store tranformation or not.
     NameSet row_store_candidate_columns;
     std::unordered_map<String, Float64> right_columns_avg_bytes;
+    /// Right columns that an expression computes, whose average size can differ from the one in `right_columns_avg_bytes`.
+    NameSet right_columns_computed;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -365,16 +368,20 @@ public:
     const NameSet & getRowStoreCandidateColumns() const { return row_store_candidate_columns; }
     bool isRowStoreEnabled() const { return !row_store_candidate_columns.empty(); }
     void setRightColumnAvgBytes(const String & name, Float64 avg_bytes) { right_columns_avg_bytes[name] = avg_bytes; }
+    void setRightColumnComputed(const String & name) { right_columns_computed.insert(name); }
     Float64 getRightColumnAvgBytes(const String & name) const
     {
         if (auto it = right_columns_avg_bytes.find(name); it != right_columns_avg_bytes.end())
             return it->second;
         return 0;
     }
+    /// The average size in bytes of the only key of the hash table, with the 8-byte offset of a `ColumnString`.
+    /// 0 is unknown, also for a join with `OR`, with several keys, or on a key that an expression computes.
+    Float64 getRightHashKeyAvgBytes() const;
 
-    const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
+    const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {
-        static const std::vector<SharedRuntimeFilterDescriptor> empty;
+        static const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> empty;
         return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
     }
 

@@ -49,7 +49,7 @@
 namespace DB
 {
 
-inline const String kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
+[[clang::no_destroy]] inline const String kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
 inline const String kYAMLRegExpTree = "yamlregexptree";
 
 namespace ErrorCodes
@@ -103,8 +103,6 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 
     factory.registerSource(kYAMLRegExpTree, create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # YAMLRegExpTree dictionary source
 
 <CloudNotSupportedBadge/>
