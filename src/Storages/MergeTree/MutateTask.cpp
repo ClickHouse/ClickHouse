@@ -1449,6 +1449,15 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
+/// Types in the mutation header are built from the results of the mutation expressions (e.g. `_CAST(..., 'Array(Float32)')`),
+/// so they lack the custom serialization that a `Quantized` codec attaches to the type in storage. Writing the part
+/// with such a type would silently drop the streams of that serialization (e.g. `v.quantized`), so the type in storage
+/// is kept when it describes the same type as the one in the header.
+static bool isSameTypeAsInStorage(const DataTypePtr & header_type, const DataTypePtr & storage_type)
+{
+    return header_type == storage_type || (header_type->equals(*storage_type) && header_type->getName() == storage_type->getName());
+}
+
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -1698,7 +1707,21 @@ getColumnsForNewDataPart(
 
     /// In compact parts we read all columns, because they all stored in a single file
     if (!isWidePart(source_part) || !isPerFilePartStorage(source_part->getDataPartStorage()))
-        return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
+    {
+        std::unordered_map<String, DataTypePtr> storage_columns_name_to_type;
+        for (const auto & column : storage_columns)
+            storage_columns_name_to_type.emplace(column.name, column.type);
+
+        auto new_columns = updated_header.getNamesAndTypesList();
+        for (auto & column : new_columns)
+        {
+            auto storage_it = storage_columns_name_to_type.find(column.name);
+            if (storage_it != storage_columns_name_to_type.end() && isSameTypeAsInStorage(column.type, storage_it->second))
+                column = NameAndTypePair{column.name, storage_it->second};
+        }
+
+        return {std::move(new_columns), new_serialization_infos, {}};
+    }
 
     const auto & source_columns = source_part->getColumns();
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
@@ -1725,7 +1748,7 @@ getColumnsForNewDataPart(
 
             /// `NameAndTypePair` holds the type in storage in a separate field that assigning `type` does not update.
             auto updated_type = updated_header.getByName(it->name).type;
-            if (updated_type != it->type)
+            if (!isSameTypeAsInStorage(updated_type, it->type))
                 *it = NameAndTypePair{it->name, updated_type};
 
             if (fill_columns_substreams)
@@ -4433,14 +4456,16 @@ private:
             /// must NOT be written to the main part – only the projection needs them.
             /// Filter the writer's column list to the columns that actually belong to
             /// the new part.
+            /// Take the types from the column list of the new part: they keep the custom serialization
+            /// of the type in storage (e.g. of a `Quantized` codec), which the header types lack.
             NamesAndTypesList columns_for_writer;
             {
-                NameSet new_part_columns_set;
+                std::unordered_map<String, NameAndTypePair> new_part_columns;
                 for (const auto & col : ctx->new_data_part->getColumns())
-                    new_part_columns_set.insert(col.name);
+                    new_part_columns.emplace(col.name, col);
                 for (const auto & col : ctx->updated_header.getNamesAndTypesList())
-                    if (new_part_columns_set.contains(col.name))
-                        columns_for_writer.push_back(col);
+                    if (auto part_col = new_part_columns.find(col.name); part_col != new_part_columns.end())
+                        columns_for_writer.push_back(part_col->second);
             }
 
             if (!ctx->recalculate_ttl_only)
