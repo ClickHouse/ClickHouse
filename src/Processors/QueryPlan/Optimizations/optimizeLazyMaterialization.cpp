@@ -555,7 +555,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// `tryExecuteFunctionsAfterSorting` may lift expressions that don't depend on
     /// sort columns above Sort, placing ExpressionSteps between Limit and Sort.
     /// Collect their DAGs so we can reapply them after the lazy join.
-    std::list<ActionsDAG> above_sort_dags;
+    ListWithMemoryTracking<ActionsDAG> above_sort_dags;
     auto * sorting_node = root.children.front();
     while (auto * above_expr = typeid_cast<ExpressionStep *>(sorting_node->step.get()))
     {
@@ -982,7 +982,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         /// `findInOutputs` collapses duplicate names through a map, which would bind
         /// several expected positions with the same name to the same output node.
         const auto & outputs = projection_dag.getOutputs();
-        std::unordered_map<std::string, std::list<size_t>> name_to_output_position;
+        UnorderedMapWithMemoryTracking<std::string, ListWithMemoryTracking<size_t>> name_to_output_position;
         for (size_t i = 0; i < outputs.size(); ++i)
             name_to_output_position[outputs[i]->result_name].push_back(i);
 
