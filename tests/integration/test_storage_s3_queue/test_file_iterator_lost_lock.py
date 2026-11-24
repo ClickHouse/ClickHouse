@@ -568,8 +568,6 @@ def test_lock_owner_considered_dead_cannot_commit(started_cluster):
         sleep_per_row=3,
         settings={
             "processing_threads_num": 1,
-            # The server takes the next file before it commits the first one.
-            "max_processed_files_before_commit": 10,
             # The cleanup must not remove the owner by itself.
             "lock_owner_timeout_seconds": 3600,
             "cleanup_interval_min_ms": 100,
@@ -595,11 +593,6 @@ def test_lock_owner_considered_dead_cannot_commit(started_cluster):
         timeout=60,
     )
 
-    # The removed owner also could not take the next file.
-    assert node.contains_in_log(
-        f"as processing: lock owner {owner_id} was considered dead"
-    )
-
     def has_new_owner():
         owners = zk.get_children(f"{keeper_path}/owners")
         return owners and owner_id not in owners
@@ -623,3 +616,49 @@ def test_lock_owner_considered_dead_cannot_commit(started_cluster):
         f"WHERE table = '{table_name}' AND status = 'Processed' "
         f"GROUP BY file_name HAVING count() > 1"
     )
+
+
+def test_lock_owner_considered_dead_cannot_take_locks(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_dead_owner_take_{uuid.uuid4().hex[:8]}"
+    keeper_path, dst_table_name = create_slow_queue(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files=1,
+        sleep_per_row=0.1,
+        settings={
+            "processing_threads_num": 1,
+            # Neither the cleanup nor the heartbeat may find out about the owner here.
+            "lock_owner_timeout_seconds": 3600,
+            # A table without new files must keep polling often.
+            "polling_max_timeout_ms": 1000,
+            "polling_backoff_ms": 100,
+            "s3queue_loading_retries": 10,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    # The first file is committed, so the table holds no locks and only polls.
+    assert 1 == wait_for_processed_files_in_log(node, table_name, 1)
+
+    owners = zk.get_children(f"{keeper_path}/owners")
+    assert len(owners) == 1
+    owner_id = owners[0]
+
+    # Remove the owner while the server does not look at it, and add a new file.
+    zk.delete(f"{keeper_path}/owners/{owner_id}")
+    generate_random_files(
+        started_cluster, f"{table_name}_data", 1, start_ind=1, row_num=1
+    )
+
+    # The removed owner cannot take the file. The server finds this out
+    # and processes the file as a new owner.
+    assert 2 == wait_for_processed_files_in_log(node, table_name, 2)
+    assert node.contains_in_log(
+        f"as processing: lock owner {owner_id} was considered dead"
+    )
+    assert owner_id not in zk.get_children(f"{keeper_path}/owners")

@@ -415,6 +415,9 @@ void ObjectStorageQueueMetadata::updateLockOwner()
         if (lock_owner_id != owner_id)
             return;
         lock_owner_id.clear();
+        /// The cached file statuses belong to the lost locks. Drop them before a new owner
+        /// is registered, so that it asks keeper and does not skip a file because of them.
+        local_file_statuses.clear();
     }
     ++lock_owner_generation;
 
@@ -1938,6 +1941,8 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
         int32_t version;
         /// Set if the node is removed because its owner is dead.
         String dead_lock_owner_id;
+        /// The lock data, it is unique for every lock which was taken.
+        String data;
     };
     std::vector<NodeToRemove> nodes_to_remove;
     Strings get_batch;
@@ -1962,7 +1967,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
             const auto owner_id_of_lock = getLockOwnerIDFromLock(response[i].data);
             if (!owner_id_of_lock.empty() && alive_lock_owners && !alive_lock_owners->contains(owner_id_of_lock))
             {
-                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, owner_id_of_lock});
+                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, owner_id_of_lock, response[i].data});
                 continue;
             }
 
@@ -1974,7 +1979,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
                 get_batch[i], response[i].stat.mtime, ttl_seconds, current_time);
 
             if (ttl_seconds && response[i].stat.mtime / 1000 + ttl_seconds < current_time)
-                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, {}});
+                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, {}, response[i].data});
         }
         get_batch.clear();
     };
@@ -2014,6 +2019,24 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper();
+
+            /// The first attempt could have removed the node without a response, and another owner
+            /// could have taken the same lock since then, with the same version. Do not remove it.
+            if (zk_retries.isRetry())
+            {
+                std::string data;
+                if (!zk_client->tryGet(node, data))
+                {
+                    code = Coordination::Error::ZNONODE;
+                    return;
+                }
+                if (data != node_to_remove.data)
+                {
+                    code = Coordination::Error::ZBADVERSION;
+                    return;
+                }
+            }
+
             if (!has_dead_owner)
             {
                 code = zk_client->tryRemove(node, node_to_remove.version);
