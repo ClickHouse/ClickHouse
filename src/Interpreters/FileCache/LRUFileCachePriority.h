@@ -310,7 +310,7 @@ private:
     void setEvictionPos(EvictionCursor cursor, LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
     /// Advance every cursor that points at `it` (which is about to be removed/spliced out).
     void moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
-    void moveEvictionPosIfEqualImpl(LRUQueue::iterator it) TSA_REQUIRES(eviction_pos_mutex);
+    void moveEvictionPosIfEqualImpl(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &) TSA_REQUIRES(eviction_pos_mutex);
 
     /// Moves the entry of `increase` to the queue tail, unless the entry was removed from the queue in the meantime.
     /// Returns whether the entry was moved.

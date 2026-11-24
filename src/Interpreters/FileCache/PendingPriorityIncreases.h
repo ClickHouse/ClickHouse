@@ -33,12 +33,11 @@ public:
     ~PendingPriorityIncreases();
 
     /// Returns false, without moving from `increase`, if the buffer of the calling thread is full.
-    /// Calls `on_half_full` if it is set and this increase filled the buffer to half. The first call allocates
-    /// buffers of `buffer_size` increases each, so a queue without hits has none.
+    /// Calls `on_half_full` if it is set and this increase filled the buffer to half.
     [[nodiscard]] bool tryAdd(PendingPriorityIncrease & increase, size_t buffer_size, const std::function<void()> & on_half_full);
 
-    /// Moves up to `max_increases` increases to the end of `increases`, as many as it has room for. Increases of
-    /// one thread keep their order. Pops at most the buffers' capacity, so a call ends while hits keep adding.
+    /// Moves up to `max_increases` increases to the end of `increases`. Increases of one thread keep their order.
+    /// Takes at most one buffer size from each buffer, so a call ends while hits keep adding.
     void pop(PriorityIncreases & increases, size_t max_increases);
 
     /// Same, for all the increases in the buffer which the calling thread adds to.

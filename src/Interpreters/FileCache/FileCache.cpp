@@ -56,6 +56,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadErrors;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
+    extern const Event FilesystemCacheFailToIncreasePriorityBecauseOfCacheResize;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
@@ -1311,7 +1312,10 @@ bool FileCache::tryIncreasePriority(Priority::Iterator & iterator, bool is_space
     /// (see the comment on `dynamic_resize_lock`). Policies which cannot resize never take it.
     std::shared_lock lock(dynamic_resize_lock, std::defer_lock);
     if (supports_dynamic_resize && !lock.try_lock())
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToIncreasePriorityBecauseOfCacheResize);
         return false;
+    }
     return main_priority->tryIncreasePriority(iterator, is_space_reservation_complete, cache_state_guard);
 }
 

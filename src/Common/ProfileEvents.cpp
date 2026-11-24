@@ -1090,9 +1090,10 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \
     M(FileSegmentIncreasePriorityMicroseconds, "File segment increase priority time", ValueType::Microseconds) \
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time", ValueType::Microseconds) \
-    M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock", ValueType::Number) \
+    M(FileSegmentFailToIncreasePriority, "Number of times the priority of a file segment was not increased because the priority queue was locked", ValueType::Number) \
     M(FilesystemCacheFailToReserveSpaceBecauseOfLockContention, "Number of times space reservation was skipped due to a high contention on the cache lock", ValueType::Number) \
     M(FilesystemCacheFailToReserveSpaceBecauseOfCacheResize, "Number of times space reservation was skipped due to the cache is being resized", ValueType::Number) \
+    M(FilesystemCacheFailToIncreasePriorityBecauseOfCacheResize, "Number of times the priority of a file segment was not increased because the cache was being resized", ValueType::Number) \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold", ValueType::Number) \
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job", ValueType::Number) \

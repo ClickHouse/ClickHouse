@@ -867,14 +867,14 @@ bool LRUFileCachePriority::tryIncreasePriority(
     return true;
 }
 
-bool LRUFileCachePriority::applyPriorityIncrease(const PendingPriorityIncrease & increase, const CachePriorityGuard::WriteLock &)
+bool LRUFileCachePriority::applyPriorityIncrease(const PendingPriorityIncrease & increase, const CachePriorityGuard::WriteLock & lock)
 {
     /// The iterator is valid while the entry is in the queue, and `remove` sets `Removed` under the write lock.
     const auto entry = increase.entry.lock();
     if (!entry || entry->getState() == Entry::State::Removed)
         return false;
 
-    moveEvictionPosIfEqualImpl(increase.iterator);
+    moveEvictionPosIfEqualImpl(increase.iterator, lock);
     queue.splice(queue.end(), queue, increase.iterator);
     return true;
 }
@@ -1149,13 +1149,13 @@ void LRUFileCachePriority::setEvictionPos(EvictionCursor cursor, LRUQueue::itera
     evictionPos(cursor) = it;
 }
 
-void LRUFileCachePriority::moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
+void LRUFileCachePriority::moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock & lock)
 {
     std::lock_guard lk(eviction_pos_mutex);
-    moveEvictionPosIfEqualImpl(it);
+    moveEvictionPosIfEqualImpl(it, lock);
 }
 
-void LRUFileCachePriority::moveEvictionPosIfEqualImpl(LRUQueue::iterator it)
+void LRUFileCachePriority::moveEvictionPosIfEqualImpl(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
 {
     for (auto * pos : {&reserve_eviction_pos, &background_eviction_pos, &promotion_eviction_pos})
     {

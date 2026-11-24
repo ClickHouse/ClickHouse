@@ -427,7 +427,7 @@ public:
         batch_priority_increase_max_batch_size.store(settings.max_batch_size, std::memory_order_relaxed);
     }
 
-    /// Hook fired when pending priority increases should be applied. Set once on startup. Wrappers propagate it down.
+    /// Called when a buffer of pending priority increases becomes half full. Set once on startup. Wrappers propagate it down.
     virtual void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) { apply_priority_increases_notifier = notifier; }
 
     /// Remove up to `max_batch` invalidated entries (driven by `FileCache`'s cleanup task), each
@@ -437,7 +437,7 @@ public:
 
     virtual void applyAllPendingPriorityIncreases() = 0;
 
-    /// The number of priority increases recorded and not applied yet. Repeated hits of a thread on one entry make one.
+    /// The number of priority increases recorded and not applied yet.
     virtual size_t getPendingPriorityIncreasesApprox() const = 0;
 
     struct UsageStat
