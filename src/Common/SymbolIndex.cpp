@@ -5,9 +5,9 @@
 #include <base/sort.h>
 #if defined(__ELF__)
 #include <Common/CompactSymbols.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #endif
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
@@ -1514,7 +1514,12 @@ const SymbolIndex & SymbolIndex::instance()
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
     /// Intentionally leaked: an exception can be logged with its stack trace at any point of the shutdown,
     /// after the destructors of the objects with static storage duration have run.
-    static const SymbolIndex & instance = *new SymbolIndex;
+    static const SymbolIndex & instance = []() -> const SymbolIndex &
+    {
+        /// Lives as long as the process, not the query that first needs it.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
+        return *new SymbolIndex;
+    }();
     /// Published only after the constructor has finished, which is what lets `instanceIfInitialized`
     /// hand out the object without touching the static's guard.
     initialized_instance.store(&instance, std::memory_order_release);

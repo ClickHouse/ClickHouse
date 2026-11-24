@@ -71,8 +71,9 @@ private:
 class QueryPlanLogCapture
 {
 public:
-    /// Whether this query should have its plan captured.
-    static bool canCapturePlan(const ContextPtr & context, const ASTPtr & ast, bool internal);
+    /// Whether this query should have its plan captured. `query` is the text of the query as the
+    /// client sent it, before `query_masking_rules` were applied.
+    static bool canCapturePlan(const ContextPtr & context, const ASTPtr & ast, std::string_view query, bool internal);
 
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);

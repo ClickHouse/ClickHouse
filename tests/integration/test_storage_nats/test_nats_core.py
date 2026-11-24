@@ -4,6 +4,7 @@ import logging
 import random
 import threading
 import time
+import uuid
 
 import pytest
 from google.protobuf.internal.encoder import _VarintBytes
@@ -529,6 +530,48 @@ def test_nats_insert(nats_cluster):
 
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
+
+
+@pytest.mark.parametrize("ddl", ["DROP", "DETACH"])
+def test_nats_insert_racing_drop(nats_cluster, ddl):
+    # The table shutdown stops the event loop that sends the producer's messages, so the INSERT must fail, not wait forever.
+    table = f"test.nats_racing_{ddl.lower()}"
+    instance.query(
+        f"""
+        CREATE TABLE {table} (key UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'insert_racing_{ddl.lower()}',
+                     nats_format = 'TSV';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, table)
+
+    query_id = f"nats_insert_racing_{ddl.lower()}_{uuid.uuid4().hex}"
+    result = {}
+
+    def insert():
+        result["error"] = instance.query_and_get_error(
+            f"INSERT INTO {table} SELECT number FROM numbers(50000000)", query_id=query_id, timeout=120
+        )
+        result["end"] = time.monotonic()
+
+    thread = threading.Thread(target=insert, daemon=True)
+    thread.start()
+
+    deadline = time.monotonic() + 60
+    written_rows = f"SELECT sum(written_rows) FROM system.processes WHERE query_id = '{query_id}'"
+    while instance.query(written_rows).strip() == "0":
+        assert time.monotonic() < deadline, "the INSERT did not start"
+        time.sleep(0.1)
+
+    instance.query(f"{ddl} TABLE {table}")
+    ddl_end = time.monotonic()
+    thread.join(timeout=60)
+    assert not thread.is_alive(), f"the INSERT hangs after {ddl} TABLE"
+    assert "Table is detached" in result["error"] and "(ABORTED)" in result["error"], result["error"]
+    # A flush onto the stopped event loop would wait for its 10 s timeout.
+    assert result["end"] - ddl_end < 9, result["end"] - ddl_end
 
 
 def test_nats_insert_materialized_column(nats_cluster):
