@@ -345,6 +345,31 @@ String makeV4StatisticsFile(const String & type_name, StatisticsType type, const
     return file;
 }
 
+/// The same file in V5, with the bounds written with the serialization of the column type.
+String makeV5StatisticsFile(const DataTypePtr & data_type, StatisticsType type, const Field & min, const Field & max)
+{
+    String payload;
+    {
+        WriteBufferFromString buf(payload);
+        writeIntBinary(static_cast<UInt64>(2), buf); /// row_count
+        if (type == StatisticsType::Basic)
+            writeIntBinary(static_cast<UInt8>(1), buf); /// `BasicFeatureMask::NumericMinMax`
+        StatisticsUtils::serializeBounds(min, max, *data_type, buf);
+        buf.finalize();
+    }
+
+    String file;
+    WriteBufferFromString buf(file);
+    writeIntBinary(static_cast<UInt16>(5), buf); /// StatisticsFileVersion::V5
+    writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(type)), buf);
+    writeStringBinary(data_type->getName(), buf);
+    writeIntBinary(static_cast<UInt64>(2), buf); /// rows
+    writeIntBinary(static_cast<UInt64>(payload.size()), buf);
+    writeString(payload, buf);
+    buf.finalize();
+    return file;
+}
+
 }
 
 TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
@@ -1520,26 +1545,32 @@ TEST(Statistics, DeserializeBoundsWithOneNaN)
         {
             for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
             {
-                const String file = makeV4StatisticsFile(data_type->getName(), type, test_case.min, test_case.max);
-                ReadBufferFromString rb(file);
-                auto loaded = ColumnStatistics::deserialize(rb, data_type);
-                ASSERT_TRUE(loaded != nullptr);
-                EXPECT_EQ(loaded->getStats().contains(type), test_case.kept)
-                    << type_name << " " << statisticsTypeToString(type) << " " << test_case.min.dump() << " " << test_case.max.dump();
-
-                for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
+                for (auto input_version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
                 {
-                    WriteBufferFromOwnString rewritten;
-                    loaded->serialize(rewritten, version);
-                    ReadBufferFromString rewritten_rb(rewritten.str());
-                    auto restored = ColumnStatistics::deserialize(rewritten_rb, data_type);
-                    ASSERT_TRUE(restored != nullptr);
-                    EXPECT_EQ(restored->getStats().contains(type), test_case.kept) << type_name;
-                    if (test_case.kept)
+                    const String file = input_version == StatisticsFileVersion::V4
+                        ? makeV4StatisticsFile(data_type->getName(), type, test_case.min, test_case.max)
+                        : makeV5StatisticsFile(data_type, type, test_case.min, test_case.max);
+                    ReadBufferFromString rb(file);
+                    auto loaded = ColumnStatistics::deserialize(rb, data_type);
+                    ASSERT_TRUE(loaded != nullptr);
+                    EXPECT_EQ(loaded->getStats().contains(type), test_case.kept)
+                        << type_name << " " << statisticsTypeToString(type) << " " << test_case.min.dump() << " "
+                        << test_case.max.dump() << " " << static_cast<int>(input_version);
+
+                    for (auto version : {StatisticsFileVersion::V4, StatisticsFileVersion::V5})
                     {
-                        auto estimate = restored->getEstimate();
-                        ASSERT_TRUE(estimate.estimated_min.has_value()) << type_name;
-                        ASSERT_TRUE(estimate.estimated_max.has_value()) << type_name;
+                        WriteBufferFromOwnString rewritten;
+                        loaded->serialize(rewritten, version);
+                        ReadBufferFromString rewritten_rb(rewritten.str());
+                        auto restored = ColumnStatistics::deserialize(rewritten_rb, data_type);
+                        ASSERT_TRUE(restored != nullptr);
+                        EXPECT_EQ(restored->getStats().contains(type), test_case.kept) << type_name;
+                        if (test_case.kept)
+                        {
+                            auto estimate = restored->getEstimate();
+                            ASSERT_TRUE(estimate.estimated_min.has_value()) << type_name;
+                            ASSERT_TRUE(estimate.estimated_max.has_value()) << type_name;
+                        }
                     }
                 }
             }

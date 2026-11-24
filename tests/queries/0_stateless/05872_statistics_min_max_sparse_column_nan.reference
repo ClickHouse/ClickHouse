@@ -1,10 +1,12 @@
 1	5	1	5	3
 1	5	1	5	3
-1	1
-nan	nan
-5	5
+1	5	3
+1	5	3
+1	1	1
+nan	nan	nan
+5	5	5
 
-1	1
-5	5
+1	1	1
+5	5	5
 nan	nan	nan	nan	2
 nan	nan	nan	nan	2
