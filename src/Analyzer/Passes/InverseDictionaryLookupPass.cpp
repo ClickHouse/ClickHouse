@@ -1414,7 +1414,7 @@ private:
     /// and `PREWHERE` of the query that reads the source: after aggregation the key column is not
     /// available, and on the side of an outer join extended with defaults the source column holds the
     /// default value. A direct `dictGet` call is not restricted: its key expression is evaluated in place.
-    bool canLookThroughColumn(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool canLookThroughColumn(const QueryTreeNodePtr & node) const
     {
         const auto * column_node = node->as<ColumnNode>();
         if (!column_node)
