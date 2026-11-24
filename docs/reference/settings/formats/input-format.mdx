@@ -1105,6 +1105,23 @@ escaped/whole-text formats are unaffected: there a large unquoted `DateTime64` n
 
 Path of the file used to record errors while reading text formats (CSV, TSV).
 
+## input_format_skip_duplicated_fields {#input_format_skip_duplicated_fields}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "New setting to skip the repeated occurrences of a field in a row of input data instead of throwing an exception."}]}]}/>
+
+Enables or disables skipping the repeated occurrences of a field within one row of input data.
+
+When enabled, a field that appears more than once in a row keeps its first value and its other occurrences are skipped, instead of throwing the `Duplicate field found` exception. Schema inference then infers the type of such a field from its first value.
+
+Supported formats:
+
+- `JSONEachRow` and the formats that read JSON objects the same way (`JSONStringsEachRow`, `JSONObjectEachRow`, the rows of `JSON`), including the nested fields read with `input_format_import_nested_json`
+- `BSONEachRow`
+- `TSKV`
+- `Form`
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
