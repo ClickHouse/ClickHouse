@@ -276,6 +276,13 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+
+    /// The arguments are passed to the nested function at the same positions, and a bare `NULL` is not converted,
+    /// so the nested function decides which of them may be a bare `NULL` (example: `sumSparkbarDistinct(NULL, variant)`).
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNullThroughCombinators() const override
+    {
+        return nested_function->getArgumentsThatCanBeOnlyNullThroughCombinators();
+    }
 };
 
 }
