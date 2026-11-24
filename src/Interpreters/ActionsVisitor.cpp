@@ -676,7 +676,8 @@ bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTyp
                     return true;
         }
     }
-    return nested && (isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right);
+    return nested && (((isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right))
+        || (isStringOrFixedString(left) && (isNumber(right) || isBool(right) || isEnum(right))));
 }
 
 ASTPtr makeExactCompoundNumericInComparison(

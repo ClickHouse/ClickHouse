@@ -850,6 +850,11 @@ public:
             /// could miss a match. Leave it to the ordinary unknown-result handling.
             const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
             const bool mixed_string_domain = hasMixedStringDomain(left_type, key_type);
+            if ((isDynamic(left_type) || isVariant(left_type)) && isNumber(key_type) && !only_null_key)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing a {} probe with a numeric prepared set of {} in function {}",
+                    left_arg.type->getName(), set_types[0]->getName(), getName());
             if (!isDynamic(left_type) && !isVariant(left_type)
                 && (isDynamic(key_type) || isVariant(key_type) || hasCompoundCarrierForIn(left_type, key_type))
                 && !only_null_key)

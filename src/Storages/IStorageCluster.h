@@ -146,7 +146,7 @@ private:
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
-    void createExtension(const ActionsDAG::Node * predicate);
+    void createExtension(const ActionsDAG::Node * predicate, bool use_filter = true);
     ContextPtr updateSettings(const Settings & settings);
 };
 

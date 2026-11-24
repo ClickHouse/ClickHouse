@@ -1462,7 +1462,8 @@ static bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const 
                     return true;
         }
     }
-    return nested && (isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right);
+    return nested && (((isNumber(left) || isBool(left) || isEnum(left)) && isStringOrFixedString(right))
+        || (isStringOrFixedString(left) && (isNumber(right) || isBool(right) || isEnum(right))));
 }
 
 static QueryTreeNodePtr buildCompoundCarrierInComparison(
@@ -3750,13 +3751,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 in_first_argument->getResultType()->getName(), non_const_set_candidate->getResultType()->getName());
                         if (rhs_array && lhs_array
                             && rhs_array->getNumberOfDimensions() == lhs_array->getNumberOfDimensions()
-                            && !isCompoundCarrierForIn(in_first_argument->getResultType(), rhs_array->getNestedType())
+                            && !isDynamic(removeNullable(removeLowCardinality(rhs_array->getNestedType())))
+                            && !isVariant(removeNullable(removeLowCardinality(rhs_array->getNestedType())))
                             && !(isIncompatibleNullableScalarForComplexIn(rhs_array->getNestedType())
                                 && !tryGetLeastSupertype(DataTypes{in_first_argument->getResultType(), non_const_set_candidate->getResultType()})))
                         {
                             auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                            if (hasCompoundStringToNumericLeaf(
-                                in_first_argument->getResultType(), non_const_set_candidate->getResultType()))
+                            if (isCompoundCarrierForIn(
+                                    in_first_argument->getResultType(), non_const_set_candidate->getResultType())
+                                || hasCompoundStringToNumericLeaf(
+                                    in_first_argument->getResultType(), non_const_set_candidate->getResultType()))
                             {
                                 node = buildCompoundCarrierInComparison(
                                     fn_args[0], fn_args[1], in_first_argument->getResultType());

@@ -45,7 +45,25 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_QUOTED_STRING;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_READ_MAP_FROM_TEXT;
+    extern const int DECIMAL_OVERFLOW;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TYPE_MISMATCH;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace
@@ -540,9 +558,33 @@ ColumnPtr tryConvertColumnToTypeOrNull(
     {
         return convertColumnToTypeOrNull(value, from, to, format_settings, strict, convert_inexact_floats);
     }
-    catch (...) // Ok: try-pattern that intentionally maps any conversion failure to a null result
+    catch (const Exception & e)
     {
-        return {};
+        /// Only an invalid value or type means nonmembership. Allocation failures,
+        /// cancellation, and other execution errors must reach the caller.
+        const int code = e.code();
+        if (code == ErrorCodes::ARGUMENT_OUT_OF_BOUND
+            || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || code == ErrorCodes::CANNOT_CONVERT_TYPE
+            || code == ErrorCodes::CANNOT_PARSE_BOOL
+            || code == ErrorCodes::CANNOT_PARSE_DATE
+            || code == ErrorCodes::CANNOT_PARSE_DATETIME
+            || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+            || code == ErrorCodes::CANNOT_PARSE_IPV4
+            || code == ErrorCodes::CANNOT_PARSE_IPV6
+            || code == ErrorCodes::CANNOT_PARSE_NUMBER
+            || code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
+            || code == ErrorCodes::CANNOT_PARSE_TEXT
+            || code == ErrorCodes::CANNOT_PARSE_UUID
+            || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
+            || code == ErrorCodes::CANNOT_READ_MAP_FROM_TEXT
+            || code == ErrorCodes::DECIMAL_OVERFLOW
+            || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+            || code == ErrorCodes::TYPE_MISMATCH
+            || code == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE
+            || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
+            return {};
+        throw;
     }
 }
 
