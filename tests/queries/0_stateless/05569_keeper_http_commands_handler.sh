@@ -49,6 +49,7 @@ READY=000
 for _ in $(seq 1 10); do
     PORT_BASE=$((WIN_LOW + RANDOM % WIN_SLOTS * 4))
     rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"; : > "${TMP_DIR}/keeper.log"
+    # The last token is shorter than a four-letter word and must not be read past the list's end.
     cat > "${TMP_DIR}/keeper_config.xml" <<EOF
 <clickhouse><listen_host>127.0.0.1</listen_host>
     <logger><level>information</level><console>0</console>
@@ -56,6 +57,7 @@ for _ in $(seq 1 10); do
     <keeper_server>
         <server_id>1</server_id><tcp_port>$((PORT_BASE + 1))</tcp_port>
         <http_control><port>${PORT_BASE}</port></http_control>
+        <four_letter_word_allow_list>ruok,stat,conf,srvr,isro,envi,a</four_letter_word_allow_list>
         <log_storage_path>${TMP_DIR}/coordination/log</log_storage_path>
         <snapshot_storage_path>${TMP_DIR}/coordination/snapshots</snapshot_storage_path>
         <coordination_settings><force_sync>false</force_sync>
@@ -116,3 +118,8 @@ probe_body 'get at the given cwd' "/api/v1/commands?cwd=%2F${NODE}&command=get%2
 # A four-letter word the keeper knows runs in the keeper; one it does not know goes to the client.
 probe_body 'ruok' '/api/v1/commands?command=ruok'
 probe_status 'unknown four letter word' '/api/v1/commands?command=flwc%20ruok'
+
+# A known four-letter word that is not in the allow list is refused, as on the TCP port.
+probe_body 'four letter word not in the allow list' '/api/v1/commands?command=mntr'
+# Only the exact word is a four-letter word; with more text it is a keeper client command.
+probe_status 'four letter word with more text' '/api/v1/commands?command=ruok%3B'

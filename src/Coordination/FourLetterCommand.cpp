@@ -82,10 +82,19 @@ String IFourLetterCommand::toName(int32_t code)
 
 int32_t IFourLetterCommand::toCode(std::string_view name)
 {
+    chassert(name.size() == sizeof(int32_t));
     int32_t res = 0;
     std::memcpy(&res, name.data(), sizeof(int32_t));
     /// keep consistent with Coordination::read method by changing big endian to little endian.
     return std::byteswap(res);
+}
+
+std::optional<int32_t> IFourLetterCommand::tryToCode(std::string_view name)
+{
+    name = trimWhitespace(name);
+    if (name.size() != sizeof(int32_t))
+        return std::nullopt;
+    return toCode(name);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -270,8 +279,8 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             return;
         }
 
-        if (auto code = IFourLetterCommand::toCode(token); commands.contains(code))
-            allow_list.push_back(code);
+        if (auto code = IFourLetterCommand::tryToCode(token); code && commands.contains(*code))
+            allow_list.push_back(*code);
         else
             LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
     }

@@ -377,9 +377,19 @@ try
     Poco::JSON::Object response_json;
     response.setContentType("application/json");
 
-    if (FourLetterCommandFactory::instance().isKnown(DB::IFourLetterCommand::toCode(command)))
+    const auto four_letter_code = IFourLetterCommand::tryToCode(command);
+    const bool is_four_letter_word = four_letter_code && FourLetterCommandFactory::instance().isKnown(*four_letter_code);
+
+    if (is_four_letter_word && !FourLetterCommandFactory::instance().isEnabled(*four_letter_code))
     {
-        auto command_ptr = FourLetterCommandFactory::instance().get(DB::IFourLetterCommand::toCode(command));
+        const auto name = IFourLetterCommand::toName(*four_letter_code);
+        LOG_WARNING(log, "Not enabled four letter command {}", name);
+        response_json.set("message", fmt::format("Four letter word command {} is not in four_letter_word_allow_list", name));
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN, "Four letter word command is not enabled");
+    }
+    else if (is_four_letter_word)
+    {
+        auto command_ptr = FourLetterCommandFactory::instance().get(*four_letter_code);
         LOG_DEBUG(log, "Received four letter command {}", command_ptr->name());
 
         try
