@@ -1,3 +1,4 @@
+SET enable_analyzer=1;
 
 CREATE TABLE default (a Int64 DEFAULT 1) Engine=Memory();
 -- This case is failing with old analyzer, because "_subquery" name prefix has a special treatment.

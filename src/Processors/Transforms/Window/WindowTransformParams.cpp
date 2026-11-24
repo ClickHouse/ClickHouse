@@ -1,12 +1,11 @@
 #include <Processors/Transforms/Window/WindowTransformParams.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/convertFieldToType.h>
 
-#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
@@ -130,7 +129,7 @@ bool isRangeOffsetFrame(const WindowFrame & frame)
 }
 
 /// Null for every frame but RANGE OFFSET, which has exactly one ORDER BY key.
-RangeOffsetComparator chooseRangeOffsetComparator(const Block & header, const WindowFrame & frame, const SortDescription & order_by, const VectorWithMemoryTracking<size_t> & order_by_indices)
+RangeOffsetComparator chooseRangeOffsetComparator(const Block & header, const WindowFrame & frame, const SortDescription & order_by, const std::vector<size_t> & order_by_indices)
 {
     if (!isRangeOffsetFrame(frame))
         return nullptr;
@@ -154,20 +153,20 @@ Block materializeHeader(Block header)
     return header;
 }
 
-VectorWithMemoryTracking<size_t> findPositions(const Block & header, const SortDescription & description)
+std::vector<size_t> findPositions(const Block & header, const SortDescription & description)
 {
     return description
         | std::views::transform([&](const SortColumnDescription & column) { return header.getPositionByName(column.column_name); })
-        | std::ranges::to<VectorWithMemoryTracking<size_t>>();
+        | std::ranges::to<std::vector<size_t>>();
 }
 
-VectorWithMemoryTracking<bool> markColumnsToMaterialize(
+std::vector<bool> markColumnsToMaterialize(
     const Block & header,
     const SortDescription & partition_by,
     const SortDescription & order_by,
-    const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
+    const std::vector<WindowFunctionDescription> & functions)
 {
-    VectorWithMemoryTracking<bool> should_materialize(header.columns(), false);
+    std::vector<bool> should_materialize(header.columns(), false);
 
     /// Compared across blocks to find the partition end.
     for (const auto & column : partition_by)
@@ -185,12 +184,12 @@ VectorWithMemoryTracking<bool> markColumnsToMaterialize(
     return should_materialize;
 }
 
-WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
+WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vector<WindowFunctionDescription> & functions)
 {
     if (!frame.is_default || functions.size() != 1)
         return frame;
 
-    const auto window_function = asGeneralWindowFunction(functions[0].aggregate_function);
+    const auto * window_function = dynamic_cast<const IWindowFunction *>(functions[0].aggregate_function.get());
     if (!window_function)
         return frame;
 
@@ -224,7 +223,7 @@ WindowDescription prepareDescriptionForExecution(
     const Block & header,
     const WindowDescription & description,
     const WindowFrame & frame,
-    const VectorWithMemoryTracking<size_t> & order_by_indices)
+    const std::vector<size_t> & order_by_indices)
 {
     WindowDescription prepared = description;
     prepared.frame = frame;
@@ -235,33 +234,12 @@ WindowDescription prepareDescriptionForExecution(
     return prepared;
 }
 
-WindowFunctionRequirements collectRequirements(const WindowDescription & description, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
-{
-    WindowFunctionRequirements requirements;
-    for (const auto & function : functions)
-    {
-        if (auto general = asGeneralWindowFunction(function.aggregate_function))
-            requirements = unionOf(requirements, general->getRequirements(description));
-        else
-            requirements = unionOf(requirements, WindowFunctionRequirements{.frame_start = true, .frame_end = true});
-    }
-
-    return requirements;
-}
-
-bool needsPeerGroupIndexes(const WindowDescription & description, const WindowFunctionRequirements & requirements)
-{
-    const bool functions_read_peer_groups = requirements.peers_start || requirements.peers_end;
-    const bool frame_reads_peer_groups = (requirements.frame_start || requirements.frame_end) && description.frame.type != WindowFrame::FrameType::ROWS;
-    return functions_read_peer_groups || frame_reads_peer_groups;
-}
-
 }
 
 WindowTransformParams WindowTransformParams::create(
     const Block & input_header,
     const WindowDescription & window_description,
-    const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
+    const std::vector<WindowFunctionDescription> & functions)
 {
     auto header = materializeHeader(input_header);
     auto partition_by_indices = findPositions(header, window_description.partition_by);
@@ -270,8 +248,6 @@ WindowTransformParams WindowTransformParams::create(
     auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
-    auto requirements = collectRequirements(description, functions);
-    auto needs_peer_group_indexes = needsPeerGroupIndexes(description, requirements);
 
     return WindowTransformParams{
         std::move(header),
@@ -280,9 +256,20 @@ WindowTransformParams WindowTransformParams::create(
         std::move(order_by_indices),
         std::move(should_materialize),
         std::move(range_offset_comparator),
-        std::move(requirements),
-        std::move(needs_peer_group_indexes),
     };
+}
+
+bool WindowTransformParams::arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const
+{
+    if (window_description.frame.type == WindowFrame::FrameType::ROWS)
+        return false;
+
+    // For RANGE and GROUPS frames, rows that compare equal on the ORDER BY key are peers; without ORDER BY all rows are.
+    for (const size_t key : order_by_indices)
+        if (lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1) != 0)
+            return false;
+
+    return true;
 }
 
 }

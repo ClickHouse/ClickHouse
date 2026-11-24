@@ -7,29 +7,14 @@ namespace DB
 
 class Block;
 
-enum class MergeTreeIndexGranularityType
-{
-    ADAPTIVE = 0,
-    CONSTANT = 1,
-};
-
 /// Class that contains information about index granularity in rows of IMergeTreeDataPart
 class MergeTreeIndexGranularity
 {
-protected:
-    virtual void writeDataImpl(WriteBuffer & out) const = 0;
-    virtual void readDataImpl(ReadBuffer & in) = 0;
-
 public:
-    friend std::shared_ptr<MergeTreeIndexGranularity> readIndexGranularity(ReadBuffer & in);
-    friend void writeIndexGranularity(std::shared_ptr<MergeTreeIndexGranularity> index_granularity, WriteBuffer & out);
-
     MergeTreeIndexGranularity() = default;
     MergeTreeIndexGranularity(const MergeTreeIndexGranularity &) = default;
     MergeTreeIndexGranularity & operator=(const MergeTreeIndexGranularity &) = default;
     virtual ~MergeTreeIndexGranularity() = default;
-
-    virtual MergeTreeIndexGranularityType getType() const = 0;
 
     /// Returns granularity if it is constant for whole part (except last granule).
     virtual std::optional<size_t> getConstantGranularity() const = 0;
@@ -138,8 +123,5 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     const MergeTreeSettings & settings,
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules);
-
-MergeTreeIndexGranularityPtr readIndexGranularity(ReadBuffer & in);
-void writeIndexGranularity(MergeTreeIndexGranularityPtr index_granularity, WriteBuffer & out);
 
 }

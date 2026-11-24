@@ -17,6 +17,9 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="10485760" />
 
+- Type: unsigned int
+- Default value: 1 MiB
+
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
 ## min_compress_block_size {#min_compress_block_size}
@@ -50,23 +53,6 @@ Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. I
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
-
-## min_marks_per_part_to_load_statistics {#min_marks_per_part_to_load_statistics}
-
-<SettingsInfoBlock type="UInt64" default_value="64" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "64"},{"label": "New setting to skip loading statistics when the primary key leaves only a small read."}]}]}/>
-
-The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be loaded for pruning parts and for ordering the conditions of `PREWHERE`.
-
-Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
-
-Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
-
-Possible values:
-
-- 0 — Load statistics regardless of the size of the read.
-- Positive integer — The number of marks per data part.
 
 ## min_os_cpu_wait_time_ratio_to_throw {#min_os_cpu_wait_time_ratio_to_throw}
 
@@ -109,18 +95,6 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 
-## min_rows_for_packed_string_keys_in_hash_join {#min_rows_for_packed_string_keys_in_hash_join}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}]}]}/>
-
-The minimum number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. A join whose right side is estimated at fewer rows compares its `String` keys exactly. The hash table of a small right side stays in the CPU cache, so packed keys save little there. Hashing the keys of 16 bytes or more costs more than that.
-
-The estimate is the number of right rows seen in an earlier run of the same join, when `collect_hash_table_stats_during_joins` keeps such statistics. Otherwise it is the row estimate of the query optimizer. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate uses packed keys.
-
-0 means no minimum.
-
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 
 <SettingsInfoBlock type="Double" default_value="3" />
@@ -128,14 +102,6 @@ The estimate is the number of right rows seen in an earlier run of the same join
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "3"},{"label": "Lowered the minimum estimated ratio of join output rows to build-side rows that enables the hash join row store."}]}]}/>
 
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
-
-## min_string_column_bytes_for_hash_join_row_store {#min_string_column_bytes_for_hash_join_row_store}
-
-<SettingsInfoBlock type="UInt64" default_value="8388608" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8388608"},{"label": "New setting to control the minimum estimated size of a build-side `String` column to store it in the hash join row store."}]}]}/>
-
-Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means `String` columns are not stored in the row store.
 
 ## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
 

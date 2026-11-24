@@ -108,7 +108,6 @@ private:
 
     char * getMemoryData() { return use_stack_memory ? stack_memory : memory.data(); }
     const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
-    void setOwnMemoryBuffer(size_t size, size_t offset);
 
     size_t offsetFromCheckpointInOwnMemory() const;
 

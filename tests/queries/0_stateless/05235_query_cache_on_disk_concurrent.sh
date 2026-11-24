@@ -35,7 +35,7 @@ ${CLICKHOUSE_CLIENT} --query "
         'all rounds but the first were served from disk', sum(ProfileEvents['QueryCacheOnDiskHits']) >= $((rounds * clients - clients)),
         'the entry was written once', sum(ProfileEvents['QueryCacheOnDiskWrittenBytes'] > 0),
         'no errors or warnings logged', (SELECT count() FROM system.text_log
-                                           WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'QueryResultCacheOnDisk' AND level IN ('Fatal', 'Critical', 'Error', 'Warning') AND has(ids, query_id))
+                                           WHERE logger_name = 'QueryResultCacheOnDisk' AND level IN ('Fatal', 'Critical', 'Error', 'Warning') AND has(ids, query_id))
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND has(ids, query_id)
     FORMAT TSV"

@@ -15,6 +15,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -68,6 +69,8 @@ namespace Setting
 
 namespace QueryPlanOptimizations
 {
+
+static String dumpStatsForLogs(const RelationStats & stats);
 
 struct RuntimeHashStatisticsContext
 {
@@ -191,7 +194,7 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -218,8 +221,12 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_extimation = estimateReadRowsCount(
+            *node.children[0], RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+            .estimated_rows;
+        auto rhs_extimation = estimateReadRowsCount(
+            *node.children[1], RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+            .estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
             rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
@@ -431,6 +438,19 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
 
+static String dumpStatsForLogs(const RelationStats & stats)
+{
+    return fmt::format("{}: {} rows, columns: [{}]",
+        stats.table_name.empty() ? "<unknown>" : stats.table_name,
+        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
+        fmt::join(stats.column_stats | std::views::transform(
+            [](const auto & p)
+            {
+                return fmt::format("{}: {}", p.first, p.second.num_distinct_values);
+            }), ", "));
+}
+
+
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 constexpr bool isInnerOrCross(JoinKind kind)
@@ -638,7 +658,8 @@ static size_t addChildQueryGraph(
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(*node);
+    RelationStats stats = estimateReadRowsCount(
+        *node, RelationStatsOptions{.find_single_node_read = &graph.context->optimization_settings.find_single_node_read});
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
@@ -658,7 +679,7 @@ static size_t addChildQueryGraph(
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
-        node->step->getName(), dumpRelationStatsForLogs(stats));
+        node->step->getName(), dumpStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;
 }
@@ -695,14 +716,12 @@ static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
     return true;
 }
 
-/// Whether an outer join of the join graph pads a column of this type with NULL. Only a join that changes
-/// no column types is flattened into the graph (see `addChildQueryGraph`), so whatever `join_use_nulls`
-/// it ran with, it pads a `Nullable` column with NULL and any other column with the type default: `0`,
-/// `''`, `[]`, or an internal NULL of `Variant`/`Dynamic`, which another such key matches rather than
-/// rejects. A subquery's join may also have run with a `join_use_nulls` other than the query's.
+/// An outer join pads an unmatched row with a top-level NULL only for a type its nullability
+/// conversion can wrap. `Array`/`Map` are padded with the type default (`[]`, `map()`) instead, and
+/// `Variant`/`Dynamic` with an internal NULL: both match another such key rather than rejecting it.
 static bool nullExtensionIsNull(const DataTypePtr & type)
 {
-    return isNullableOrLowCardinalityNullable(type);
+    return isNullableOrLowCardinalityNullable(type) || JoinCommon::canBecomeNullable(type);
 }
 
 /// Relations R such that `node` evaluates to NULL when all of R's columns are NULL ("strict" on R).
@@ -904,11 +923,14 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     /// clause is the conjunction of the `join_expression` conjuncts, so a relation is rejecting for
     /// the operator as soon as any conjunct rejects on it -- hence the union.
     ///
-    /// Null-rejection only counts on columns that an outer join pads with a real SQL NULL, the
-    /// `Nullable` ones (see `nullExtensionIsNull`). Any other column is padded with a type default
-    /// (`0`/`''`), which a "null-rejecting" predicate like `t2.id = t3.id` still matches; trusting it
-    /// would unlock unsound assoc/asscom reorderings, e.g. `(t1 LEFT JOIN t2) LEFT JOIN t3` becoming
-    /// `t1 LEFT JOIN (t2 LEFT JOIN t3)`, which changes the result.
+    /// Null-rejection is only meaningful when an unmatched outer-join row is padded with a real SQL
+    /// NULL, i.e. under `join_use_nulls = 1`. With `join_use_nulls = 0` (the default) the padded value
+    /// is a type default (`0`/`''`), so a "null-rejecting" predicate like `t2.id = t3.id` still
+    /// matches the padded `0`; trusting null-rejection then unlocks unsound assoc/asscom reorderings
+    /// -- e.g. `(t1 LEFT JOIN t2) LEFT JOIN t3` becoming `t1 LEFT JOIN (t2 LEFT JOIN t3)`, which
+    /// changes the result. So we claim no null-rejection unless `join_use_nulls` is on, which makes
+    /// the detectors fall back to the conservative (correct) outer-join reordering in that case.
+    const bool trust_null_rejection = query_graph.context->optimization_settings.join_use_nulls;
     BitSet cda_nr_rels;
     for (const auto * old_node : join_expression)
     {
@@ -920,7 +942,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
         /// Collect all sources from join expressions
         join_expression_sources |= edge.getSourceRelations();
-        cda_nr_rels |= predicateNullRejectingRelations(new_node, query_graph.expression_actions);
+        if (trust_null_rejection)
+            cda_nr_rels |= predicateNullRejectingRelations(new_node, query_graph.expression_actions);
 
         /// ON-clause predicates of an outer join must be applied exactly at the step
         /// that joins the null-supplying side, in its ON clause.
@@ -1194,7 +1217,6 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
-    Strings relations_estimated_from_data_lake_metadata;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
@@ -1206,23 +1228,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .estimated_rows = rel.estimated_rows,
             .source = rel.source,
             .imprecise_estimate = rel.imprecise_estimate,
-            .composite = rel.composite,
-            .column_stats = rel.column_stats};
+            .composite = rel.composite};
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
-        else if (rel.source == RowEstimateSource::DataLakeMetadata && rel.imprecise_estimate && rel.column_stats.empty())
-            relations_estimated_from_data_lake_metadata.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
     }
-
-    /// `ALTER TABLE ... MATERIALIZE STATISTICS` does not apply to data lake tables, so they get their own message.
-    if (!relations_estimated_from_data_lake_metadata.empty())
-        LOG_DEBUG(
-            getLogger("optimizeJoin"),
-            "Join order optimization uses imprecise row count estimates derived from data lake metadata "
-            "(for example Iceberg manifest files) for the following relation(s): {}. They have no column statistics "
-            "for join reordering, so the chosen join order may be suboptimal",
-            fmt::join(relations_estimated_from_data_lake_metadata, ", "));
 
     /// The listed names can be aliases or subquery labels, so no concrete `ALTER` command is suggested.
     if (!relations_without_statistics.empty())
@@ -1530,10 +1540,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     if (mapped_it == join_expression_map.end())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", output_node->result_name);
                     dag_outputs.push_back(mapped_it->second);
-                    /// Include COLUMN Const nodes (like `__join_result_dummy`) in actions_after_join.
-                    /// These are `fromNone` and will be placed in left_dag, ensuring the left pre-join
-                    /// always produces at least one output column (so blocks have correct row count).
-                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN)
+                    /// The join returns only the dummy constant (it keeps the row count of its blocks); other constants are
+                    /// computed after the join, which pads a returned column with defaults for the rows without a match.
+                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN
+                        && JoinStepLogical::isDummyResultColumn(*mapped_it->second))
                         actions_after_join.push_back(mapped_it->second);
                 }
             }
@@ -1578,8 +1588,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .name = join_step->getReadableRelationName(),
                 .estimated_rows = entry->estimated_rows,
                 .imprecise_estimate = imprecise_estimate,
-                .composite = true,
-                .column_stats = entry->column_stats};
+                .composite = true};
 
             join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 

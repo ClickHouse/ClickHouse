@@ -26,8 +26,6 @@
 namespace DB
 {
 
-class ColumnsDescription;
-
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
 
@@ -98,16 +96,6 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 /// their expressions are not entered, because a grant on the alias name is sufficient to use it.
 NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression);
 
-/// Names of the columns and subcolumns of a table that the current user can read with `SELECT`, for a trivial query like
-/// `SELECT count() FROM table`, which is allowed if at least one of them is readable. Besides the columns, it includes
-/// subcolumns with a grant on their exact name, on the table itself or on a table of its `Alias` chain (`storage` may be
-/// null). Each name is checked like a query that reads it, on the table and on every hop of the `Alias` chain.
-NameSet getColumnsSelectableByTrivialQuery(
-    const StoragePtr & storage,
-    const StorageID & storage_id,
-    const ColumnsDescription & columns,
-    const ContextPtr & query_context);
-
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
@@ -153,7 +141,8 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
 /// Remove query plan steps that don't affect the number of rows in the result.
 /// Returns true if the query always returns at least 1 row.
-bool optimizePlanForExists(QueryPlan & query_plan);
+/// `is_correlated` means the remaining plan is decorrelated rather than executed as is.
+bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated);
 
 /// Create ExpressionStep that projects only used columns
 QueryPlanStepPtr projectOnlyUsedColumns(

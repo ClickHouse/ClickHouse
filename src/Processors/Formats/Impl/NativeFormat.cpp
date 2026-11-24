@@ -70,7 +70,6 @@ private:
             0,
             settings_,
             settings_.defaults_for_omitted_fields ? &block_missing_values_ : nullptr,
-            /*type_cache_=*/ nullptr,
             ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     }
 

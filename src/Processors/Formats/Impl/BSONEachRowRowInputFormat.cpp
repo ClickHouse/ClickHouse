@@ -523,10 +523,7 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
                             "Cannot insert BSON Null value into non-nullable column with type {}",
                             data_type->getName());
 
-        if (!data_type->isDefaultInsertTrivial())
-            data_type->insertDefaultInto(column);
-        else
-            column.insertDefault();
+        column.insertDefault();
         return false;
     }
 
