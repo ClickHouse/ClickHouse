@@ -578,7 +578,11 @@ void SettingsConstraints::checkOrClamp(const Settings & current_settings, Settin
     bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
     /// With `CLAMP_ON_VIOLATION_THROW_ON_INVALID` the surviving list is stored on the query node as the settings
     /// set explicitly on that node, so a change equal to the current value must stay in the list.
-    bool ignore_unchanged_settings = has_compatibility_setting || reaction == CLAMP_ON_VIOLATION_THROW_ON_INVALID;
+    /// The same holds for `THROW_ON_VIOLATION`: a setting passed explicitly (a client option, an HTTP parameter)
+    /// must be marked as changed even if its value equals the current one, because some logic tells an explicit
+    /// value from the default by the `changed` flag (for example `group_by_overflow_mode`).
+    bool ignore_unchanged_settings = has_compatibility_setting || reaction == CLAMP_ON_VIOLATION_THROW_ON_INVALID
+        || reaction == THROW_ON_VIOLATION;
     std::erase_if(changes, [&](SettingChange & change)
     {
         return !checkImpl(current_settings, change, reaction, source, ignore_unchanged_settings);
