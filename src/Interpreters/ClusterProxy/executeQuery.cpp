@@ -130,6 +130,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsUInt64 distributed_group_by_top_k;
 }
 
 namespace DistributedSetting
@@ -180,6 +181,15 @@ void stripDatabaseSetting(Settings & settings)
 
 void stripInitiatorOnlySettings(Settings & settings)
 {
+    /// Not propagated to the next layer of distribution: it applies only to the servers the initiator queries directly,
+    /// which have the initiator's sort above them. The initiator sets it for those reads (`enableGroupByTopK`) after
+    /// this strip.
+    if (settings[Setting::distributed_group_by_top_k].changed || settings[Setting::distributed_group_by_top_k] != 0)
+    {
+        settings[Setting::distributed_group_by_top_k] = 0;
+        settings[Setting::distributed_group_by_top_k].changed = false;
+    }
+
     /// All of the settings below are interpreted only at the initiator: they either shape the
     /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
     /// `additional_result_filter`) or shape how the result is serialised to the user
@@ -354,6 +364,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "query_result_previews", "query_result_previews_min_interval_ms", "query_result_previews_min_rows",
     "query_result_previews_min_bytes", "query_result_previews_max_result_rows",
     "query_result_previews_max_result_bytes",
+    "distributed_group_by_top_k",
 };
 
 bool isInitiatorOnlySettingName(std::string_view name)
@@ -1784,7 +1795,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     String formatted_query;
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
-        const auto & query_tree = analyzer.getQueryTree();
+        auto query_tree = analyzer.getQueryTree()->clone();
+        removeGroupingFunctionSpecializations(query_tree, /*keep_ordinary=*/ true);
         auto select_ast = query_tree->toAST();
 
         auto new_query_ast = query_ast.clone();

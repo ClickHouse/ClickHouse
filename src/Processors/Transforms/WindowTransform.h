@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Interpreters/WindowDescription.h>
+
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/Common/WindowFunctionRequirements.h>
 #include <WindowFunctions/IAggregateWindowFunction.h>
-#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
 
 #include <Processors/Transforms/Window/Frame.h>
 #include <Processors/Transforms/Window/Partition.h>
@@ -19,6 +20,7 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/DequeWithMemoryTracking.h>
+
 #include <Core/Block.h>
 
 #include <optional>

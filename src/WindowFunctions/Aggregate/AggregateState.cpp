@@ -3,13 +3,9 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
-
 #include <Columns/IColumn.h>
 
 #include <Common/Arena.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -20,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -31,30 +26,13 @@ constexpr size_t arena_replace_bytes = 16 << 20;
 /// The most units a single finalization is charged: at least 64 finalizations per cancellation check.
 constexpr Int64 max_finalization_units = CancellationBudget::units_per_check / 64;
 
-std::function<void()> makeTimeLimitCheck(const String & function_name)
-{
-    QueryStatusPtr query_status;
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        query_status = query_context->getProcessListElementSafe();
-
-    if (!query_status)
-        return {};
-
-    return [query_status, function_name]
-    {
-        if (!query_status->checkTimeLimit())
-            throw Exception(
-                ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in window function {}", function_name);
-    };
-}
-
 }
 
 AggregateState::AggregateState(AggregateFunctionPtr function_)
     : function(std::move(function_))
     , place(function->sizeOfData(), function->alignOfData())
     , is_state(function->isState())
-    , check_cancellation(makeTimeLimitCheck(function->getName()))
+    , check_cancellation(makeCancellationCheck(function->getName()))
     , budget(check_cancellation)
 {
     if (function->allocatesMemoryInArena())

@@ -110,6 +110,7 @@ private:
 
     size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
+    size_t bytes_kept_by_remerge = 0;
 
     LoggerPtr log = getLogger("MergeSortingTransform");
 
@@ -118,6 +119,8 @@ private:
 
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
+
+    bool isSpillDue() const;
 
     /// Prepare the same sorted run for pipeline-driven or synchronous spilling.
     std::shared_ptr<BufferingToFileSink> prepareSpill();
