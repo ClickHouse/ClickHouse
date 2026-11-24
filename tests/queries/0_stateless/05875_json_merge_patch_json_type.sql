@@ -79,6 +79,21 @@ FROM t_map, (SELECT arrayJoin(['{"m":{"y":2}}', '{"m":{"x":null}}', '{"u":{"a":9
 ORDER BY id, p;
 SELECT id, JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM t_map ORDER BY id;
 
+SELECT 'round-trip settings';
+SELECT JSONAllPathsWithTypes(JSONMergePatch(c, '{"m":{"y":2}}'))['n'] FROM (SELECT CAST('{"m":{"x":1},"n":42}', 'JSON(m Map(String, UInt8))') AS c) SETTINGS output_format_json_quote_64bit_integers = 1;
+SELECT JSONAllPathsWithTypes(JSONMergePatch('{"a":1}'::JSON, '{"k":5}'::JSON))['k'] SETTINGS output_format_json_quote_64bit_integers = 1;
+
+SELECT 'stored types of untouched paths';
+SET input_format_try_infer_dates = 0, input_format_try_infer_datetimes = 0;
+DROP TABLE IF EXISTS t_types;
+CREATE TABLE t_types (c JSON(m Map(String, UInt8))) ENGINE = Memory;
+INSERT INTO t_types VALUES ('{"d":"2020-01-01","k":1,"m":{"x":1}}');
+SET input_format_try_infer_dates = 1, input_format_try_infer_datetimes = 1;
+SELECT p, JSONAllPathsWithTypes(JSONMergePatch(c, p))['d'] FROM t_types,
+    (SELECT arrayJoin(['{"k":2}', '{"k":null}', '{"n":{"o":1}}', '{"m":{"y":2}}', '{"k":1,"k":2}']) AS p) AS patches ORDER BY p;
+SELECT JSONAllPathsWithTypes(JSONMergePatch(c, '{"k":2}'))['d'] FROM t_types;
+DROP TABLE t_types;
+
 SELECT 'SKIP rules';
 SELECT p, JSONMergePatch(c, p) AS r, toString(r) = toString(CAST(JSONMergePatch(c::String, p), toTypeName(c)))
 FROM (SELECT CAST('{"a":1,"s":{"x":1},"r1":2,"k":{"q":1}}', 'JSON(SKIP s, SKIP REGEXP \'r.*\')') AS c) AS src,
@@ -91,6 +106,16 @@ FROM (SELECT CAST('{"a":1,"b":{"c":2}}', 'JSON(max_dynamic_paths = 0)') AS c) AS
     (SELECT arrayJoin(['{"a":null,"n":1}', '{"b":{"c":3,"d":4}}']) AS p) AS patches
 ORDER BY p;
 
+SELECT 'parsing limit on dynamic paths';
+DROP TABLE IF EXISTS t_limit;
+CREATE TABLE t_limit (c JSON) ENGINE = Memory;
+INSERT INTO t_limit VALUES ('{"z":0}');
+SELECT length(JSONDynamicPaths(r)), length(JSONSharedDataPaths(r)), toString(r)
+FROM (SELECT JSONMergePatch(c, '{"a":1,"b":2,"c":3}') AS r FROM t_limit) SETTINGS max_dynamic_subcolumns_in_json_type_parsing = 1;
+SELECT length(JSONDynamicPaths(x)), length(JSONSharedDataPaths(x)), toString(x)
+FROM (SELECT arrayJoin([r, r]) AS x FROM (SELECT JSONMergePatch(c, '{"a":1,"b":2,"c":3}') AS r FROM t_limit)) SETTINGS max_dynamic_subcolumns_in_json_type_parsing = 1;
+DROP TABLE t_limit;
+
 SELECT 'escaped dots in keys';
 SELECT JSONMergePatch(c, '{"a.b":5}') AS r, toString(r) = toString(JSONMergePatch(c::String, '{"a.b":5}')::JSON)
 FROM (SELECT '{"a.b":1,"a":{"b":2}}'::JSON AS c) SETTINGS json_type_escape_dots_in_keys = 1;
@@ -100,6 +125,7 @@ SELECT JSONMergePatch(c, '{"a":{"b":"x"}}') AS r, JSONMergePatch(c, '{"c":1}') A
     toString(r2) = toString(CAST(JSONMergePatch(c::String, '{"c":1}'), toTypeName(c)))
 FROM (SELECT CAST('{"a":5,"a":{"b":"y"}}', 'JSON(a UInt32, `a.b` String)') AS c)
 SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 1;
+SELECT p, JSONMergePatch(c, p) FROM (SELECT '{"k0":0,"k0":{"x":0}}'::JSON AS c) AS src, (SELECT arrayJoin(['{"k0":null}', '{"k0":5}', '{"k0":{"y":1}}']) AS p) AS patches ORDER BY p;
 
 SELECT 'many rows';
 DROP TABLE IF EXISTS t_many;

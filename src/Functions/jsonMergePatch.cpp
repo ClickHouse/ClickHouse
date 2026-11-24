@@ -2,6 +2,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnStringHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
@@ -209,6 +210,7 @@ namespace
             : type(type_)
             , typed_paths(assert_cast<const DataTypeObject &>(*type_).getTypedPaths())
             , convert_settings(convert_settings_)
+            , round_trip_format_settings(getJSONRoundTripFormatSettings(format_settings))
             , escape_dots_in_keys(format_settings.json.json_type_escape_dots_in_keys)
             , descend_into_typed_paths(format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
         {
@@ -427,9 +429,12 @@ namespace
 
             const auto [shared_paths, shared_values] = object.getSharedDataPathsAndValues();
             const auto & shared_offsets = object.getSharedDataOffsets();
+            const size_t max_dynamic_paths_upper_bound = std::max(
+                std::min(object.getMaxDynamicPathsUpperBound(), values.getMaxDynamicPathsUpperBound()), object.getDynamicPaths().size());
+            const size_t max_dynamic_paths = std::min(object.getMaxDynamicPaths(), max_dynamic_paths_upper_bound);
             size_t num_new_dynamic_paths = 0;
-            if (shared_paths->empty() && object.getMaxDynamicPaths() > object.getDynamicPaths().size())
-                num_new_dynamic_paths = std::min(new_paths.size(), object.getMaxDynamicPaths() - object.getDynamicPaths().size());
+            if (shared_paths->empty() && max_dynamic_paths > object.getDynamicPaths().size())
+                num_new_dynamic_paths = std::min(new_paths.size(), max_dynamic_paths - object.getDynamicPaths().size());
 
             for (size_t k = 0; k < num_new_dynamic_paths; ++k)
             {
@@ -584,19 +589,35 @@ namespace
                 result_dynamic_paths.emplace(std::move(new_path), std::move(it->second));
             }
 
+            auto result_shared_data = new_shared_data ? std::move(new_shared_data) : IColumn::mutate(shared_data);
+            /// Non-empty shared data locks the dynamic paths: a path added later could already be in the shared data.
+            const size_t result_max_dynamic_paths
+                = assert_cast<const ColumnArray &>(*result_shared_data).getData().empty() ? max_dynamic_paths : result_dynamic_paths.size();
+
             return ColumnObject::create(
                 std::move(result_typed_paths),
                 std::move(result_dynamic_paths),
-                new_shared_data ? std::move(new_shared_data) : IColumn::mutate(shared_data),
-                object.getMaxDynamicPaths(),
-                object.getMaxDynamicPathsUpperBound(),
+                std::move(result_shared_data),
+                result_max_dynamic_paths,
+                max_dynamic_paths_upper_bound,
                 object.getGlobalMaxDynamicPaths(),
                 object.getMaxDynamicTypes());
         }
 
-        [[nodiscard]] ColumnPtr castToString(const ColumnPtr & column, const DataTypePtr & from) const
+        /// Writes each row as JSON text that is parsed back into the same values.
+        [[nodiscard]] ColumnPtr serializeToText(const IColumn & column, const DataTypePtr & from) const
         {
-            return castColumnTo(column, from, std::make_shared<DataTypeString>(), convert_settings);
+            auto texts = ColumnString::create();
+            ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*texts, column.size());
+            auto & write_buffer = write_helper.getWriteBuffer();
+            const auto serialization = from->getDefaultSerialization();
+            for (size_t i = 0; i < column.size(); ++i)
+            {
+                serialization->serializeTextJSON(column, i, write_buffer, round_trip_format_settings);
+                write_helper.finishRow();
+            }
+            write_helper.finalize();
+            return texts;
         }
 
     private:
@@ -691,7 +712,7 @@ namespace
             if (num_fallback_rows == 0)
                 return result;
 
-            const auto texts_column = castToString(column->filter(filter, num_fallback_rows), type);
+            const auto texts_column = serializeToText(*column->filter(filter, num_fallback_rows), type);
             const auto & texts = assert_cast<const ColumnString &>(*texts_column);
             result->reserve(num_fallback_rows);
             size_t next_text = 0;
@@ -713,6 +734,7 @@ namespace
         const DataTypePtr type;
         const DataTypeObject::TypedPathsMap & typed_paths;
         const FunctionConvertSettingsPtr convert_settings;
+        const FormatSettings round_trip_format_settings;
         const bool escape_dots_in_keys;
         const bool descend_into_typed_paths;
     };
@@ -823,9 +845,9 @@ namespace
                 if (isObject(arguments[i].type))
                 {
                     if (const auto * patches_const = typeid_cast<const ColumnConst *>(patches.get()))
-                        patches = ColumnConst::create(patcher.castToString(patches_const->getDataColumnPtr(), arguments[i].type), input_rows_count);
+                        patches = ColumnConst::create(patcher.serializeToText(patches_const->getDataColumn(), arguments[i].type), input_rows_count);
                     else
-                        patches = patcher.castToString(patches, arguments[i].type);
+                        patches = patcher.serializeToText(*patches, arguments[i].type);
                 }
                 result = patcher.apply(result, patches, input_rows_count);
             }
@@ -846,7 +868,7 @@ REGISTER_FUNCTION(JSONMergePatch)
 Returns the merged JSON object string which is formed by merging multiple JSON objects.
 
 If the first argument has the `JSON` type, the result has the same type.
-Its paths are updated in place, without converting the value to text.
+Most patches update the stored paths directly, without converting the value to text.
 A `null` value in a patch removes the path.
 A patch of the `JSON` type is applied as its text.
     )";
