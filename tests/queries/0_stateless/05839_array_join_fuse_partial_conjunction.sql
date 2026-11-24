@@ -21,6 +21,13 @@ WHERE explain LIKE '%Filter column:%rand%' AND explain NOT LIKE '%a3%';
 SELECT count() FROM (EXPLAIN SELECT arrayJoin(A) AS a FROM t_aj_partial WHERE a = 'a3' AND rand() >= 0)
 WHERE explain LIKE '%Element filter column%';
 
+SELECT '-- a function that is not cheap but cannot throw goes into the step too';
+SELECT count() FROM (EXPLAIN SELECT a FROM t_aj_partial ARRAY JOIN A AS a WHERE startsWith(a, 'a3') AND rand() >= 0)
+WHERE explain LIKE '%Element filter column%';
+SELECT count() FROM (EXPLAIN SELECT a FROM t_aj_partial ARRAY JOIN A AS a WHERE rand() >= 0 AND endsWith(a, '3'))
+WHERE explain LIKE '%Element filter column%';
+SELECT groupArray(id) FROM (SELECT id FROM t_aj_partial ARRAY JOIN A AS a WHERE startsWith(a, 'a3') AND (rand() % 1 + id) % 2 = 0 ORDER BY id);
+
 SELECT '-- two arrays: each step gets its conjunct';
 SELECT count() FROM (EXPLAIN SELECT a, b FROM t_aj_partial ARRAY JOIN A AS a ARRAY JOIN B AS b WHERE a = 'a3' AND b = 'b1' AND rand() >= 0)
 WHERE explain LIKE '%Element filter column%';
@@ -61,4 +68,13 @@ SELECT count() FROM (EXPLAIN SELECT a FROM t_aj_partial_throw ARRAY JOIN A AS a 
 WHERE explain LIKE '%Element filter column%';
 SELECT a FROM t_aj_partial_throw ARRAY JOIN A AS a WHERE (a != 0 OR rand() < 0) AND intDiv(2, a) > 0
 ORDER BY a SETTINGS short_circuit_function_evaluation = 'enable';
+
+SELECT '-- a function with side effects above must see all the rows: no fusion';
+SELECT count() FROM (EXPLAIN SELECT a FROM t_aj_partial_throw ARRAY JOIN A AS a WHERE sleepEachRow(toFloat64(randConstant(a) % 1) + 0.01) + rand() % 1 = 0 AND a = 1)
+WHERE explain LIKE '%Element filter column%';
+-- sleepEachRow asks for 40 ms for the four rows of the block, and the limit is 20 ms
+SELECT count() FROM t_aj_partial_throw ARRAY JOIN A AS a WHERE sleepEachRow(toFloat64(randConstant(a) % 1) + 0.01) + rand() % 1 = 0 AND a = 1
+SETTINGS function_sleep_max_microseconds_per_block = 20000, max_block_size = 65505; -- { serverError TOO_SLOW }
+SELECT count() FROM (EXPLAIN SELECT a FROM t_aj_partial_throw ARRAY JOIN A AS a WHERE a = 1 AND arrayExists(x -> sleepEachRow(toFloat64(randConstant(x) % 1) + 0.001) + rand() % 1 = 0, [a]))
+WHERE explain LIKE '%Element filter column%';
 DROP TABLE t_aj_partial_throw;
