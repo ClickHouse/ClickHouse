@@ -11,16 +11,9 @@
 #include <filesystem>
 #include <IO/ByteRangeSet.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
-
-namespace ProfileEvents
-{
-    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
-}
 
 namespace DB
 {
@@ -434,7 +427,6 @@ void ReadRangesRegistry::commit(const Batch & batch)
         block->read_ranges.fetch_sub(batch.reserved, std::memory_order_relaxed);
     if (batch.bytes)
         (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(batch.bytes, std::memory_order_relaxed);
-    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, batch.watch.elapsedNanoseconds());
 }
 
 bool ReadRangesRegistry::stopped() const
