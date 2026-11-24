@@ -55,6 +55,15 @@ low cardinality
 default reads a column
 1	10	100
 2	20	200
+default reads an omitted column
+1	7	8	7
+2	7	8	7
+1	0	7	8	7
+2	0	7	8	7
+1
+2
+1
+2
 default removed
 1	(0,0)	0
 1	0

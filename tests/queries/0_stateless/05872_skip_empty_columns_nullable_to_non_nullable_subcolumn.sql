@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_compact;
 DROP TABLE IF EXISTS t_wide;
 DROP TABLE IF EXISTS t_lc;
 DROP TABLE IF EXISTS t_default_reads_column;
+DROP TABLE IF EXISTS t_default_reads_omitted;
 DROP TABLE IF EXISTS t_remove_default;
 DROP TABLE IF EXISTS t_mutation;
 DROP TABLE IF EXISTS t_patch_v2;
@@ -91,6 +92,24 @@ SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT 'default reads a column';
 SELECT c0, x.a, x.b FROM t_default_reads_column ORDER BY c0;
 
+-- A DEFAULT that reads a column the part also omits: its inserted value, not its current DEFAULT, whether it is selected or not.
+
+CREATE TABLE t_default_reads_omitted (c0 UInt64, y UInt64, x Nullable(Tuple(a UInt64, b UInt64))) ENGINE = MergeTree ORDER BY c0
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+    enable_block_number_column = 0, enable_block_offset_column = 0;
+SYSTEM STOP MERGES t_default_reads_omitted;
+INSERT INTO t_default_reads_omitted VALUES (1, 0, NULL), (2, 0, NULL);
+ALTER TABLE t_default_reads_omitted MODIFY COLUMN y UInt64 DEFAULT 100;
+ALTER TABLE t_default_reads_omitted ADD COLUMN z UInt64 DEFAULT y + 7;
+ALTER TABLE t_default_reads_omitted MODIFY COLUMN x Tuple(a UInt64, b UInt64) DEFAULT tuple(y + 7, y + 8)
+SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'default reads an omitted column';
+SELECT c0, x.a, x.b, z FROM t_default_reads_omitted ORDER BY c0;
+SELECT c0, y, x.a, x.b, z FROM t_default_reads_omitted ORDER BY c0;
+SELECT c0 FROM t_default_reads_omitted WHERE x.a = 7 ORDER BY c0;
+SELECT c0 FROM t_default_reads_omitted WHERE z = 7 ORDER BY c0;
+
 -- Without a DEFAULT the rows read as the type default.
 
 CREATE TABLE t_remove_default (c0 UInt64, x Nullable(Tuple(a UInt64, b UInt64))) ENGINE = MergeTree ORDER BY c0
@@ -153,6 +172,7 @@ DROP TABLE t_compact;
 DROP TABLE t_wide;
 DROP TABLE t_lc;
 DROP TABLE t_default_reads_column;
+DROP TABLE t_default_reads_omitted;
 DROP TABLE t_remove_default;
 DROP TABLE t_mutation;
 DROP TABLE t_patch_v2;

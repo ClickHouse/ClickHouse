@@ -24,6 +24,13 @@ NameSet injectRequiredColumns(
 bool isSubcolumnReadFromConvertedColumn(
     const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part);
 
+/// The write-time type of a column the part omits, if the column is read as the default of that type, otherwise nullptr.
+DataTypePtr tryGetFrozenColumnType(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    const NameAndTypePair & column,
+    const String & name_in_part);
+
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
 /// Otherwise they are computed by their default expressions.
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);

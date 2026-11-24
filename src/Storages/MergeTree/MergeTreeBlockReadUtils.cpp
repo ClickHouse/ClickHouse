@@ -20,6 +20,8 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -143,6 +145,15 @@ bool injectRequiredColumnsRecursively(
             add_column(column_name);
             return true;
         }
+        else if (!(alter_conversions
+                   && (alter_conversions->isColumnDropped(column_name_in_part, share_nested)
+                       || alter_conversions->isColumnDropped(column_in_storage->getNameInStorage(), share_nested)))
+            && tryGetFrozenColumnType(data_part_info_for_reader, storage_snapshot, *column_in_storage, column_name_in_part))
+        {
+            /// Filled by the reader from the part's marker, which is not a physical column and gives no row count.
+            add_column(column_name);
+            return false;
+        }
     }
 
     /// Column doesn't have default value and don't exist in part
@@ -183,6 +194,24 @@ bool isSubcolumnReadFromConvertedColumn(
     const auto & metadata = storage_snapshot->metadata;
     return !std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
         && !std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name);
+}
+
+DataTypePtr tryGetFrozenColumnType(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    const NameAndTypePair & column,
+    const String & name_in_part)
+{
+    const auto * missing = data_part_info_for_reader.getSerializationInfos().getMissingColumnInfo(name_in_part);
+    if (!missing || missing->type_name.empty())
+        return nullptr;
+
+    auto type = DataTypeFactory::instance().get(missing->type_name);
+    /// The conversion replaces the omitted values, all NULL, with the DEFAULT: such a subcolumn is filled like one the part lacks.
+    if (column.isSubcolumn() && isSubcolumnReadFromConvertedColumn(storage_snapshot, column, type))
+        return nullptr;
+
+    return type;
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)

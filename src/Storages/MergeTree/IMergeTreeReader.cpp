@@ -619,18 +619,13 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
         bool frozen = false;
-        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        if (auto frozen_type = tryGetFrozenColumnType(*data_part_info_for_read, storage_snapshot, required_column, name_pair.first))
         {
-            auto frozen_type = DataTypeFactory::instance().get(missing->type_name);
-            /// The conversion replaces the omitted values, all NULL, with the DEFAULT: such a subcolumn is filled like one the part lacks.
-            if (name_pair.second.empty() || !isSubcolumnReadFromConvertedColumn(storage_snapshot, required_column, frozen_type))
-            {
-                type_in_part = std::move(frozen_type);
-                requested_type_in_part = name_pair.second.empty()
-                    ? type_in_part
-                    : type_in_part->getSubcolumnType(name_pair.second);
-                frozen = true;
-            }
+            type_in_part = std::move(frozen_type);
+            requested_type_in_part = name_pair.second.empty()
+                ? type_in_part
+                : type_in_part->getSubcolumnType(name_pair.second);
+            frozen = true;
         }
 
         NameAndTypePair missed_column{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
