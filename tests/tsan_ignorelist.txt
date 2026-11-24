@@ -18,3 +18,7 @@ fun:rd_kafka_broker_set_nodename
 # SQLite's own PRNG mutex, which the reader in `unixOpen` does not take. Two concurrent SQLite
 # queries, one opening a database and one writing, are enough to report it.
 fun:*unixOpen*
+# OpenLDAP's `tls_init` (libraries/libldap/tls2.c) increments two counters without a lock on every
+# TLS connection. Only its first call initializes anything, and `LDAPClient` makes that call under
+# `ldap_global_mutex` before any connection.
+fun:tls_init
