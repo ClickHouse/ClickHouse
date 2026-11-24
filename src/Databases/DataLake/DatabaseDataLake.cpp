@@ -165,6 +165,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -1578,6 +1579,20 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     }
 
     return result_storage;
+}
+
+void DatabaseDataLake::createTable(
+    ContextPtr /*context_*/,
+    const String & name,
+    const StoragePtr & table,
+    const ASTPtr & /*query*/)
+{
+    /// Tables are read back from the catalog, so only data lake tables can be created here.
+    if (!table->isDataLake())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot create table {} with engine {} in database {}: a {} database can hold only data lake tables",
+            backQuoteIfNeed(name), table->getName(), backQuoteIfNeed(getDatabaseName()), getEngineName());
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT
