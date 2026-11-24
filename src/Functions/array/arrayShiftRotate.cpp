@@ -165,11 +165,31 @@ public:
                 if (!elem_type->isNullable() && default_argument.type->isNullable())
                 {
                     auto materialized_default_column = default_argument.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    const auto nested_default_type = removeNullable(default_argument.type);
                     if (const auto * nullable_default_column = checkAndGetColumn<ColumnNullable>(materialized_default_column.get()))
-                        materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+                    {
+                        if (nested_default_type->isDefaultInsertTrivial())
+                            materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+                        else
+                        {
+                            /// The default of an `Enum` is its first value, not the column zero.
+                            const auto & nested_default_column = nullable_default_column->getNestedColumn();
+                            const auto & null_map = nullable_default_column->getNullMapData();
+                            auto filled_default_column = nested_default_column.cloneEmpty();
+                            filled_default_column->reserve(nested_default_column.size());
+                            for (size_t row = 0; row < nested_default_column.size(); ++row)
+                            {
+                                if (null_map[row])
+                                    nested_default_type->insertDefaultInto(*filled_default_column);
+                                else
+                                    filled_default_column->insertFrom(nested_default_column, row);
+                            }
+                            materialized_default_column = std::move(filled_default_column);
+                        }
+                    }
 
                     default_argument.column = std::move(materialized_default_column);
-                    default_argument.type = removeNullable(default_argument.type);
+                    default_argument.type = nested_default_type;
                 }
 
                 default_column = castColumn(default_argument, elem_type);
