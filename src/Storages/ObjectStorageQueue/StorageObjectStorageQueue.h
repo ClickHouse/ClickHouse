@@ -33,6 +33,8 @@ public:
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
+        ObjectStorageQueueTableMetadata::Source source,
+        bool strict_metadata_check,
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
@@ -64,7 +66,7 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    ObjectStorageQueueSettings getSettings() const;
+    ObjectStorageQueueSettings getSettings(const ObjectStorageQueueTableMetadata * table_metadata = nullptr) const;
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
