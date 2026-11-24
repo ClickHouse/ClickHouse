@@ -208,14 +208,14 @@ SELECT '-- mismatches';
 SELECT tbl, call, col, id, r, e FROM res WHERE r != e ORDER BY ALL FORMAT TSVRaw;
 "
 
-# A constant JSON document with non-constant keys is serialized once, not once per row.
+# A constant JSON document with non-constant keys is serialized once, not once per row (256 copies go over the memory limit).
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- constant JSON argument';
 WITH concat('{\"a\":7,\"d\":[1,2,3],\"pad\":\"', repeat('x', 1000000), '\"}') AS s, s::JSON AS j
 SELECT count(), countIf(JSONExtractInt(j, materialize(['a', 'd', 'zz'][number % 3 + 1])) != JSONExtractInt(s, materialize(['a', 'd', 'zz'][number % 3 + 1]))),
     countIf(JSONExtractInt(j, 'd', materialize(number % 5)) != JSONExtractInt(s, 'd', materialize(number % 5))),
     sum(JSONExtractInt(j, 'd', materialize(number % 5)))
-FROM numbers(256) SETTINGS max_execution_time = 10;
+FROM numbers(256) SETTINGS max_execution_time = 10, max_memory_usage = '100M';
 "
 
 # A path of plain constant keys reads the subcolumn of the path, so the other paths of the row are not written. The
