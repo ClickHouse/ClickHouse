@@ -4,3 +4,5 @@ declared zone	[28800,28800]
 values	0
 query parameter	0
 query parameter inferred	0
+string path to date time	0	32400
+string path to date time	1	32400

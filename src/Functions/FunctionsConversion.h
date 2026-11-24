@@ -143,7 +143,7 @@ struct FunctionConvertSettings
     const bool cast_keep_nullable;
     const bool json_use_optimized_type_conversion;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
     /// `format_settings` has too many members to hash one by one; this hashes the session settings it
     /// was derived from instead (see `getFormatSettingsHash`).
     const UInt64 format_settings_hash;
