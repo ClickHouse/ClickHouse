@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -107,7 +108,8 @@ public:
         return arguments[0];
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & source_elem = arguments[0];
         const ColumnWithTypeAndName & offset_elem = arguments[1];
@@ -164,8 +166,7 @@ public:
 
                 if (!src)
                 {
-                    for (Int64 i = 0; i < size; ++i)
-                        result_column->insertDefault();
+                    result_type->insertManyDefaultsInto(*result_column, static_cast<size_t>(size));
                 }
                 else if (is_const)
                 {
@@ -214,7 +215,7 @@ public:
             else if (has_defaults)
                 result_column->insertFrom(*default_column_cast, default_is_constant ? 0 : row);
             else
-                result_column->insertDefault();
+                result_type->insertDefaultInto(*result_column);
         }
 
         return result_column;
