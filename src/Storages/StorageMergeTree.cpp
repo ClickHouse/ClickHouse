@@ -1733,7 +1733,7 @@ struct MutationVersionsByPartition
     }
 
     /// The smallest version above `data_version` of a mutation that affects `partition_id`, if any.
-    std::optional<UInt64> firstAffecting(const String & partition_id, Int64 data_version) const
+    [[nodiscard]] std::optional<UInt64> firstAffecting(const String & partition_id, Int64 data_version) const
     {
         std::optional<UInt64> result;
         auto take_first_above = [&](const std::vector<UInt64> & versions)
