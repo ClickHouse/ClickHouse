@@ -394,6 +394,7 @@
     \
     M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.", ValueType::Number) \
     M(ReplicatedPartFailedFetches, "Number of times a data part was failed to download from replica of a ReplicatedMergeTree table.", ValueType::Number) \
+    M(ReplicatedPartFetchesNoSourceReplica, "Number of times a fetch of a data part could not start because no active replica of a ReplicatedMergeTree table had the part or a covering part (yet). It is usually transient: the part is not published yet, or it was merged into a bigger part that is fetched instead.", ValueType::Number) \
     M(ObsoleteReplicatedParts, "Number of times a data part was covered by another data part that has been fetched from a replica (so, we have marked a covered data part as obsolete and no longer needed).", ValueType::Number) \
     M(ReplicatedPartMerges, "Number of times data parts of ReplicatedMergeTree tables were successfully merged.", ValueType::Number) \
     M(ReplicatedPartFetchesOfMerged, "Number of times we prefer to download already merged part from replica of ReplicatedMergeTree table instead of performing a merge ourself (usually we prefer doing a merge ourself to save network traffic). This happens when we have not all source parts to perform a merge or when the data part is old enough.", ValueType::Number) \
