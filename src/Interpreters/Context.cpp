@@ -1728,6 +1728,7 @@ ContextData::ContextData(const ContextData &o) :
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
+    invoker_roles_info(o.invoker_roles_info),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     totals_without_storage_access(o.totals_without_storage_access),
@@ -2731,6 +2732,13 @@ std::vector<UUID> Context::getEnabledRoles() const
 std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
 {
     return getAccess()->getRolesInfo();
+}
+
+std::shared_ptr<const EnabledRolesInfo> Context::getInvokerRolesInfo() const
+{
+    if (invoker_roles_info)
+        return invoker_roles_info;
+    return getRolesInfo();
 }
 
 namespace

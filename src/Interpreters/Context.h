@@ -683,6 +683,10 @@ protected:
     /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its
     /// privileges. Plan-based local reads stay allowed.
     bool is_sql_security_overridden_body = false;
+    /// The roles of the user who invoked the innermost `SQL SECURITY DEFINER` / `NONE` view or materialized view whose query
+    /// this context belongs to. Unset outside of such a query, then the invoker is the current user.
+    /// See `currentInvokerRoles` and `enabledInvokerRoles`.
+    std::shared_ptr<const EnabledRolesInfo> invoker_roles_info;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -1052,6 +1056,9 @@ public:
     std::vector<UUID> getExternalRoles() const;
     std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
+    /// The roles of the invoker of the innermost `SQL SECURITY DEFINER` / `NONE` view, or of the current user outside of one.
+    std::shared_ptr<const EnabledRolesInfo> getInvokerRolesInfo() const;
+    void setInvokerRolesInfo(std::shared_ptr<const EnabledRolesInfo> value) { invoker_roles_info = std::move(value); }
 
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);
     void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
