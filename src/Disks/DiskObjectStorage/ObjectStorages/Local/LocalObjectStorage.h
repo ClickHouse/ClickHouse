@@ -6,6 +6,8 @@
 
 #include <shared_mutex>
 
+#include <filesystem>
+
 
 namespace Poco
 {
@@ -100,7 +102,12 @@ public:
     bool isRemote() const override { return false; }
 
     /// With `object_storage_write_atomically` the data is written to a temporary file which is then renamed.
+    /// Not on Windows, where `writeObject` refuses atomic and conditional writes.
+#if defined(OS_WINDOWS)
+    bool supportsAtomicWrite() const override { return false; }
+#else
     bool supportsAtomicWrite() const override { return true; }
+#endif
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
@@ -111,7 +118,7 @@ private:
     void removeObjects(const StoredObjects &  objects) const;
 
     void throwIfReadonly() const;
-    String resolvePathRelativelyToKeyPrefix(const String & path) const;
+    std::filesystem::path resolvePathRelativelyToKeyPrefix(const String & path) const;
 
     LocalObjectStorageSettings settings;
     LoggerPtr log;
@@ -124,5 +131,5 @@ private:
     mutable SharedMutex directories_mutex;
 };
 
-String resolvePathRelativelyToBase(const String & path, const String & base_path);
+std::filesystem::path resolvePathRelativelyToBase(const String & path, const String & base_path);
 }

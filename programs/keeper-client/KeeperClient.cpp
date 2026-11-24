@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <KeeperClient.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
@@ -10,6 +11,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/getUserHomePath.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Parsers/TokenIterator.h>
@@ -415,10 +417,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     suggest.setCompletionsCallback(
         [&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
 
-    String home_path;
-    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-    if (home_path_cstr)
-        home_path = home_path_cstr;
+    const String home_path = getUserHomePath();
 
     if (config().has("history-file"))
         history_file = config().getString("history-file");
@@ -564,8 +563,13 @@ void KeeperClient::runInteractiveReplxx()
         .word_break_characters = WORD_BREAK_CHARACTERS,
         .highlighter = {},
     };
-    ReplxxLineReader lr(std::move(reader_options));
-    lr.enableBracketedPaste();
+    /// See `ReplxxLineReader::canRenderTo`.
+    std::unique_ptr<LineReader> lr;
+    if (ReplxxLineReader::canRenderTo(STDOUT_FILENO))
+        lr = std::make_unique<ReplxxLineReader>(std::move(reader_options));
+    else
+        lr = std::make_unique<LineReader>(history_file, /* multiline */ false, query_extenders, query_delimiters);
+    lr->enableBracketedPaste();
 
     while (true)
     {
@@ -573,9 +577,9 @@ void KeeperClient::runInteractiveReplxx()
         if (waiting_confirmation)
             prompt = "[y/n] ";
         else
-            prompt = cwd.string() + " :) ";
+            prompt = cwd + " :) ";
 
-        auto input = lr.readLine(prompt, ":-] ");
+        auto input = lr->readLine(prompt, ":-] ");
         if (input.empty())
             break;
 

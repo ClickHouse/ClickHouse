@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/StringUtils.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/AccessEntityIO.h>
@@ -90,7 +91,7 @@ namespace
         String file_contents = serializeAccessEntity(entity);
 
         /// First we save *.tmp file and then we rename if everything's ok.
-        auto tmp_file_path = std::filesystem::path{file_path}.replace_extension(".tmp");
+        auto tmp_file_path = pathFromString(file_path).replace_extension(".tmp");
         bool succeeded = false;
         SCOPE_EXIT(
         {
@@ -99,7 +100,7 @@ namespace
         });
 
         /// Write the file.
-        WriteBufferFromFile out{tmp_file_path.string()};
+        WriteBufferFromFile out{pathToGenericString(tmp_file_path)};
         out.write(file_contents.data(), file_contents.size());
         if (fsync)
             out.sync();
@@ -107,8 +108,8 @@ namespace
 
         /// Rename. `directory_sync` syncs in its destructor, which only logs a failure:
         /// after the rename, an exception would tell the callers that nothing has changed.
-        auto directory_sync = openDirectoryForSync(std::filesystem::path{file_path}.parent_path().string(), fsync);
-        std::filesystem::rename(tmp_file_path, file_path);
+        auto directory_sync = openDirectoryForSync(pathToString(pathFromString(file_path).parent_path()), fsync);
+        std::filesystem::rename(tmp_file_path, pathFromString(file_path));
         succeeded = true;
     }
 
@@ -116,10 +117,10 @@ namespace
     /// Converts a path to an absolute path and append it with a separator.
     String makeDirectoryPathCanonical(const String & directory_path)
     {
-        auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
+        auto canonical_directory_path = std::filesystem::weakly_canonical(pathFromString(directory_path));
         if (canonical_directory_path.has_filename())
             canonical_directory_path += std::filesystem::path::preferred_separator;
-        return canonical_directory_path;
+        return pathToGenericString(canonical_directory_path);
     }
 
 
@@ -213,13 +214,14 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
     backup_allowed = allow_backup_;
 
     std::error_code create_dir_error_code;
-    std::filesystem::create_directories(directory_path, create_dir_error_code);
+    const auto directory = pathFromString(directory_path);
+    std::filesystem::create_directories(directory, create_dir_error_code);
 
-    if (!std::filesystem::exists(directory_path) || !std::filesystem::is_directory(directory_path) || create_dir_error_code)
+    if (!std::filesystem::exists(directory) || !std::filesystem::is_directory(directory) || create_dir_error_code)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
                         directory_path, create_dir_error_code.message());
 
-    bool should_rebuild_lists = std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path));
+    bool should_rebuild_lists = std::filesystem::exists(pathFromString(getNeedRebuildListsMarkFilePath(directory_path)));
     LOG_DEBUG(getLogger(), "File need_rebuild_lists.mark {} in {}", should_rebuild_lists ? "found" : "not found", directory_path);
 
     /// The lists guarded by a mark which survived a restart still have to be written durably.
@@ -291,7 +293,7 @@ bool DiskAccessStorage::readLists()
     for (auto type : collections::range(AccessEntityType::MAX))
     {
         auto file_path = getListFilePath(directory_path, type);
-        if (!std::filesystem::exists(file_path))
+        if (!std::filesystem::exists(pathFromString(file_path)))
         {
             LOG_WARNING(getLogger(), "File {} doesn't exist", file_path);
             return false;
@@ -354,7 +356,7 @@ void DiskAccessStorage::writeLists()
     /// The list files were successfully written.
     if (!has_stale_files_on_disk)
     {
-        (void)std::filesystem::remove(getNeedRebuildListsMarkFilePath(directory_path));
+        (void)std::filesystem::remove(pathFromString(getNeedRebuildListsMarkFilePath(directory_path)));
         LOG_TRACE(getLogger(), "Successfully wrote .list files, removed need_rebuild_lists.mark");
     }
 
@@ -443,14 +445,14 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     std::vector<std::filesystem::path> files_to_remove;
 
     /// Iterate through the access directory: load <uuid>.sql files, find stale files for removal.
-    for (const auto & directory_entry : std::filesystem::directory_iterator(directory_path))
+    for (const auto & directory_entry : std::filesystem::directory_iterator(pathFromString(directory_path)))
     {
         if (!directory_entry.is_regular_file())
             continue;
 
         const auto & path = directory_entry.path();
         UUID id;
-        if (!tryParseUUID(path.stem(), id))
+        if (!tryParseUUID(pathToGenericString(path.stem()), id))
             continue; /// Not an access-entity file (e.g. `users.list`, `need_rebuild_lists.mark`).
 
         if (path.extension() == ".tmp")
@@ -471,7 +473,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
         std::error_code mtime_ec;
         auto mtime = std::filesystem::last_write_time(path, mtime_ec);
         if (mtime_ec)
-            LOG_WARNING(getLogger(), "Failed to stat {}: {}", path.string(), mtime_ec.message());
+            LOG_WARNING(getLogger(), "Failed to stat {}: {}", pathToGenericString(path), mtime_ec.message());
 
         auto key = std::make_pair(entity->getType(), entity->getName());
         auto it = loaded_entities.find(key);
@@ -490,7 +492,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
             {
                 LOG_WARNING(getLogger(), "Duplicate {} {} on disk; keeping newer file {}, removing older {}",
                     AccessEntityTypeInfo::get(entity->getType()).name, entity->getName(),
-                    path.string(), it->second.path.string());
+                    pathToGenericString(path), pathToGenericString(it->second.path));
                 files_to_remove.push_back(it->second.path);
                 it->second = LoadedEntity{id, entity, path, mtime};
             }
@@ -498,7 +500,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
             {
                 LOG_WARNING(getLogger(), "Duplicate {} {} on disk; keeping newer file {}, removing older {}",
                     AccessEntityTypeInfo::get(entity->getType()).name, entity->getName(),
-                    it->second.path.string(), path.string());
+                    pathToGenericString(it->second.path), pathToGenericString(path));
                 files_to_remove.push_back(path);
             }
         }
@@ -532,7 +534,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
             std::filesystem::remove(p, ec);
             if (ec)
             {
-                LOG_WARNING(getLogger(), "Failed to remove file {}: {}", p.string(), ec.message());
+                LOG_WARNING(getLogger(), "Failed to remove file {}: {}", pathToGenericString(p), ec.message());
                 stale_files_removed = false;
             }
         }
@@ -542,7 +544,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
             /// Disk is now consistent: list files are persisted, orphan tmps and older
             /// duplicates are gone. Clear the flag and drop the marker that writeLists()
             /// preserved while we did the cleanup.
-            (void)std::filesystem::remove(getNeedRebuildListsMarkFilePath(directory_path));
+            (void)std::filesystem::remove(pathFromString(getNeedRebuildListsMarkFilePath(directory_path)));
             has_stale_files_on_disk = false;
         }
     }
@@ -855,7 +857,7 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
     LOG_TRACE(getLogger(), "Deleting file {} for entity with id {}", file_path, id);
     /// Synced by the destructor, see `writeEntityFile`.
     auto directory_sync = openDirectoryForSync(directory_path, shouldFsyncMetadata());
-    if (!std::filesystem::remove(file_path))
+    if (!std::filesystem::remove(pathFromString(file_path)))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
 }
 

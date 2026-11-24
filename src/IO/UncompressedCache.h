@@ -38,7 +38,13 @@ struct ServerOwnedCacheEntryAllocator
     void deallocate(T * p, size_t n) noexcept
     {
         MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+#if defined(__cpp_sized_deallocation)
         ::operator delete(p, n * sizeof(T));
+#else
+        /// Windows has no sized `operator delete`, see `AllocationInterceptors.cpp`.
+        (void)n;
+        ::operator delete(p);
+#endif
     }
 
     template <typename U>

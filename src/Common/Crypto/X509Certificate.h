@@ -52,8 +52,8 @@ public:
     [[nodiscard]] std::string signatureAlgorithm() const;
     [[nodiscard]] std::string issuerName() const;
     [[nodiscard]] std::string subjectName() const;
-    [[nodiscard]] std::string issuerName(uint nid) const;
-    [[nodiscard]] std::string subjectName(uint nid) const;
+    [[nodiscard]] std::string issuerName(unsigned nid) const;
+    [[nodiscard]] std::string subjectName(unsigned nid) const;
     [[nodiscard]] std::string commonName() const;
     [[nodiscard]] std::string publicKeyAlgorithm() const;
     [[nodiscard]] std::string validFrom() const;

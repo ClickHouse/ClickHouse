@@ -2149,7 +2149,7 @@ void Reader::initializePrefetches()
                 const size_t file_size = prefetcher.getFileSize();
                 const size_t data_page_offset = size_t(column.meta->meta_data.data_page_offset);
                 if (data_page_offset <= file_size && column.data_pages_bytes < file_size - data_page_offset)
-                    data_pages_extra_bytes = std::min(100ul, file_size - data_page_offset - column.data_pages_bytes);
+                    data_pages_extra_bytes = std::min(100uz, file_size - data_page_offset - column.data_pages_bytes);
             }
 
             column.data_pages_prefetch = prefetcher.registerRange(

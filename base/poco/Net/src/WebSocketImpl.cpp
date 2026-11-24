@@ -12,7 +12,11 @@
 //
 
 
+// The ClickHouse build defines NOMINMAX for every translation unit (see cmake/target.cmake),
+// so only define it here if it is not already set, to avoid a macro redefinition warning.
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include "Poco/Net/WebSocketImpl.h"
 #include "Poco/Net/NetException.h"
 #include "Poco/Net/WebSocket.h"

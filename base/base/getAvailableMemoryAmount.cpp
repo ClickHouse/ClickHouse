@@ -3,9 +3,13 @@
 #include <base/getAvailableMemoryAmount.h>
 #include <base/getPageSize.h>
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#else
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
+#endif
 #if defined(BSD)
 #include <sys/sysctl.h>
 #include <sys/vmmeter.h>
@@ -14,7 +18,15 @@
 
 uint64_t getAvailableMemoryAmountOrZero()
 {
-#if defined(_SC_PHYS_PAGES) // linux
+#if defined(OS_WINDOWS)
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (!GlobalMemoryStatusEx(&status))
+        return 0;
+    /// Genuinely the free amount, unlike the Linux branch below, which reports the total. That
+    /// makes this the stricter of the two, which is the safe direction for a memory limit.
+    return status.ullAvailPhys;
+#elif defined(_SC_PHYS_PAGES) // linux
     return getPageSize() * sysconf(_SC_PHYS_PAGES);
 #elif defined(OS_FREEBSD)
     struct vmtotal vmt;

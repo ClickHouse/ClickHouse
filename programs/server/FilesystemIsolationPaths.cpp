@@ -24,7 +24,9 @@
 #include <set>
 #include <string_view>
 
+#if !defined(OS_WINDOWS)
 #include <pwd.h>
+#endif
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -938,6 +940,8 @@ private:
         if (const char * value = std::getenv("HOME")) // NOLINT(concurrency-mt-unsafe)
             home = value;
 
+        /// There is no user database on Windows, and the filesystem is not isolated there anyway.
+#if !defined(OS_WINDOWS)
         if (home.empty())
         {
             passwd entry{};
@@ -946,6 +950,7 @@ private:
             if (getpwuid_r(getuid(), &entry, buffer.data(), buffer.size(), &result) == 0 && result && result->pw_dir)
                 home = result->pw_dir;
         }
+#endif
 
         return Poco::trim(home);
     }

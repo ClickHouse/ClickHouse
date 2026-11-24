@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Poco/Logger.h>
 #include <optional>
 
@@ -236,7 +237,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&storage))
             {
                 auto disk = disk_storage->getDisk();
-                auto path = fs::path(storage.getRelativePath()) / name;
+                const String path = pathToString(pathFromString(storage.getRelativePath()) / pathFromString(name));
                 if (disk->existsFile(path))
                 {
                     size_t size = disk->getFileSize(path);

@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <base/pathToString.h>
 #include <memory>
 #include <optional>
 #include <unordered_set>

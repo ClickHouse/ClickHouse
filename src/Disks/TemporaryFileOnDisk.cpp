@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/UUID.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/WriteHelpers.h>
@@ -38,7 +39,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
     if (!disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk is not specified");
 
-    disk->createDirectories((fs::path("") / prefix).parent_path());
+    disk->createDirectories(pathToGenericString((fs::path("") / prefix).parent_path()));
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 
@@ -49,7 +50,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
 
 String TemporaryFileOnDisk::getAbsolutePath() const
 {
-    return std::filesystem::path(disk->getPath()) / relative_path;
+    return pathToGenericString(pathFromString(disk->getPath()) / pathFromString(relative_path));
 }
 
 TemporaryFileOnDisk::~TemporaryFileOnDisk()

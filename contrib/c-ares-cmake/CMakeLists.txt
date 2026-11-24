@@ -36,6 +36,11 @@ SET(SRCS
     "${LIBRARY_DIR}/src/lib/ares_sysconfig.c"
     "${LIBRARY_DIR}/src/lib/ares_sysconfig_files.c"
     "${LIBRARY_DIR}/src/lib/ares_sysconfig_mac.c"
+    # Windows takes its resolver configuration from the registry and the IP Helper API rather
+    # than from `/etc/resolv.conf`, and drives its event loop with `WSAEventSelect`.
+    $<$<BOOL:${OS_WINDOWS}>:${LIBRARY_DIR}/src/lib/ares_sysconfig_win.c>
+    $<$<BOOL:${OS_WINDOWS}>:${LIBRARY_DIR}/src/lib/event/ares_event_win32.c>
+    $<$<BOOL:${OS_WINDOWS}>:${LIBRARY_DIR}/src/lib/windows_port.c>
     "${LIBRARY_DIR}/src/lib/ares_timeout.c"
     "${LIBRARY_DIR}/src/lib/ares_update_servers.c"
     "${LIBRARY_DIR}/src/lib/ares_version.c"
@@ -94,6 +99,12 @@ SET(SRCS
 add_library(_c-ares STATIC ${SRCS})
 target_compile_definitions(_c-ares PRIVATE HAVE_CONFIG_H=1)
 
+# `ares.h` declares every entry point `__declspec(dllimport)` on Windows unless this says the
+# library is static, which it is here. PUBLIC, because it is the callers' declarations that matter.
+if (OS_WINDOWS)
+    target_compile_definitions(_c-ares PUBLIC CARES_STATICLIB)
+endif ()
+
 target_include_directories(_c-ares SYSTEM PUBLIC
     "${LIBRARY_DIR}/src/lib/include"
     "${LIBRARY_DIR}/src/lib"
@@ -114,6 +125,12 @@ elseif (OS_FREEBSD)
     target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/freebsd")
 elseif (OS_SUNOS)
     target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/solaris")
+elseif (OS_WINDOWS)
+    target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/windows")
+    # `iphlpapi` provides `GetAdaptersAddresses`/`GetNetworkParams`, from which c-ares reads
+    # the configured DNS servers and the search domain list - the job `/etc/resolv.conf` does
+    # elsewhere. `ws2_32` is Winsock.
+    target_link_libraries(_c-ares PRIVATE iphlpapi ws2_32)
 elseif (OS_WASM)
     # Emscripten's libc is musl-derived, so the Linux configuration is the closest fit. There are
     # no sockets in a WebAssembly sandbox, so none of this resolver is ever reached at run time -

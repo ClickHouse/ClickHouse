@@ -4,8 +4,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketImpl.h>
 
-#include <sys/socket.h>
-#include <cerrno>
+#include <Common/Socket.h>
 
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
@@ -16,16 +15,13 @@
 namespace DB
 {
 
-SocketState getSocketState(int fd)
+SocketState getSocketState(Socket socket)
 {
-    if (fd < 0)
+    if (!socket.isValid())
         return SocketState::Closed;
 
     char c = 0;
-    ssize_t res = 0;
-    do
-        res = ::recv(fd, &c, 1, MSG_PEEK | MSG_DONTWAIT);
-    while (res < 0 && errno == EINTR);
+    const Int64 res = socket.peek(&c, 1);
 
     if (res > 0)
         return SocketState::DataPending;    /// Bytes are waiting to be read; the peer is alive.
@@ -33,7 +29,7 @@ SocketState getSocketState(int fd)
         return SocketState::Closed;         /// Orderly shutdown: the peer sent a FIN, the next read would return EOF.
 
     /// res < 0
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
+    if (Socket::isWouldBlock(Socket::lastError()))
         return SocketState::Idle;           /// Nothing to read and no FIN: a healthy idle connection.
     return SocketState::Closed;             /// Any other error (e.g. ECONNRESET): treat as closed/broken.
 }
@@ -128,12 +124,12 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
         }
     }
 #endif
-    return getSocketState(socket.impl()->sockfd());
+    return getSocketState(Socket(socket.impl()->sockfd()));
 }
 
-bool isSocketPeerClosed(int fd)
+bool isSocketPeerClosed(Socket socket)
 {
-    return getSocketState(fd) == SocketState::Closed;
+    return getSocketState(socket) == SocketState::Closed;
 }
 
 bool isSocketPeerClosed(const Poco::Net::StreamSocket & socket)
