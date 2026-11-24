@@ -81,7 +81,7 @@ struct NodeBase
 
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
-    const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
 
     Node * clone(Arena * arena) const
     {
@@ -251,14 +251,14 @@ public:
     {
     }
 
-    String getName() const override { return "sequenceNextNode"; }
+    [[nodiscard]] String getName() const override { return "sequenceNextNode"; }
 
-    bool isVersioned() const override { return versioned; }
+    [[nodiscard]] bool isVersioned() const override { return versioned; }
 
     /// An unversioned type keeps the version 0 layout of persisted states.
-    size_t getDefaultVersion() const override { return 0; }
+    [[nodiscard]] size_t getDefaultVersion() const override { return 0; }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         if constexpr (versioned)
             return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
@@ -266,14 +266,14 @@ public:
             return IAggregateFunction::getStateType();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         if (versioned && revision >= DBMS_MIN_REVISION_WITH_SEQUENCE_NEXT_NODE_FULL_TIMESTAMPS)
             return 1;
         return 0;
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
@@ -589,7 +589,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 };
 
 

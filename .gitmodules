@@ -36,7 +36,7 @@
 	url = https://github.com/ClickHouse/jemalloc
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
-	url = https://github.com/protocolbuffers/protobuf.git
+	url = https://github.com/ClickHouse/protobuf
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
@@ -190,7 +190,7 @@
 	url = https://github.com/ClickHouse/azure-sdk-for-cpp
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
-	url = https://github.com/zlib-ng/minizip-ng
+	url = https://github.com/ClickHouse/minizip-ng
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash

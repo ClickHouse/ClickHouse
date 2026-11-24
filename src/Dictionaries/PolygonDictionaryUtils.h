@@ -294,7 +294,7 @@ private:
     static Coord toRatio(Coord v, Coord lo, Coord hi) { return (v - lo) / (hi - lo); }
 
     /// `find` accepts no point when a side of the bounding box is zero.
-    bool hasZeroSide() const { return min_x == max_x || min_y == max_y; }
+    [[nodiscard]] bool hasZeroSide() const { return min_x == max_x || min_y == max_y; }
 
     /// The child index along one side that `find` picks for `v` in the `level`-th divided cell of its path (the root is 1).
     static size_t routedBin(Coord v, Coord lo, Coord hi, size_t level)
