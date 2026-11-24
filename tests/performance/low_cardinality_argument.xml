@@ -23,6 +23,9 @@
     <create_query>
         CREATE TABLE test_lc_fixed_nullable (x UInt64, lc LowCardinality(Nullable(FixedString(16)))) ENGINE = MergeTree order by x
     </create_query>
+    <create_query>
+        CREATE TABLE test_lc_mixed (x UInt64, lc LowCardinality(String)) ENGINE = MergeTree order by x SETTINGS min_bytes_for_wide_part = 0
+    </create_query>
 
     <fill_query>INSERT INTO test_lc SELECT number, number % 10 ? NULL : toString(number % 10000) FROM numbers(1e7)</fill_query>
     <!-- The queries over test_lc_agg and test_lc_runs take a time that depends on the number of parts, so both servers get one part. -->
@@ -39,6 +42,9 @@
     <fill_query>OPTIMIZE TABLE test_lc_fixed FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
     <fill_query>INSERT INTO test_lc_fixed_nullable SELECT x, if(x % 10 = 0, NULL, lc) FROM test_lc_fixed</fill_query>
     <fill_query>OPTIMIZE TABLE test_lc_fixed_nullable FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>INSERT INTO test_lc_mixed SELECT number, toString(number % 8000) FROM numbers(262144) WHERE number % 128 != 0</fill_query>
+    <fill_query>INSERT INTO test_lc_mixed SELECT number * 128, toLowCardinality(repeat(repeat('x', 1024), 4096)) FROM numbers(2048)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_lc_mixed FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
     
     <query>SELECT isNullable(lc) FROM test_lc FORMAT Null</query>
     <query>SELECT isConstant(lc) FROM test_lc FORMAT Null</query>
@@ -63,6 +69,8 @@
     <query>SELECT sum(length(lc)) FROM test_lc_fixed SETTINGS max_block_size = 470</query>
     <query>SELECT countIf(lc IN (SELECT lc FROM test_lc_fixed WHERE x > 1000000000)) FROM test_lc_fixed SETTINGS max_block_size = 470</query>
     <query>SELECT countIf(lc IN (SELECT lc FROM test_lc_fixed_nullable WHERE x > 1000000000)) FROM test_lc_fixed_nullable SETTINGS transform_null_in = 1, max_block_size = 470</query>
+    <!-- One 4 MiB value among 8000 short ones, used by every 128-row block: a cheap function must keep the whole-dictionary path, although the dictionary average is only 536 bytes. -->
+    <query>SELECT countIf(empty(lc)) FROM test_lc_mixed SETTINGS max_block_size = 128</query>
 
     <drop_query>DROP TABLE IF EXISTS test_lc</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_agg</drop_query>
@@ -72,4 +80,5 @@
     <drop_query>DROP TABLE IF EXISTS test_lc_long</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_fixed</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_fixed_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_lc_mixed</drop_query>
 </test>
