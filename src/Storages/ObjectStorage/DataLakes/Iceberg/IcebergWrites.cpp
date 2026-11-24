@@ -125,12 +125,15 @@ namespace ErrorCodes
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int INCORRECT_DATA;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int CANNOT_WRITE_TO_FILE;
 }
 
 namespace FailPoints
 {
     extern const char iceberg_writes_cleanup[];
     extern const char iceberg_writes_pause_before_commit[];
+    extern const char iceberg_writes_lose_metadata_commit_response[];
+    extern const char iceberg_writes_lose_metadata_commit_request[];
 }
 
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
@@ -139,6 +142,17 @@ static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 // Clang analyzer wrongly thinks the avro GenericDatum value can be uninitialized.
 namespace
 {
+
+bool hasSnapshot(const Poco::JSON::Object::Ptr & metadata, Int64 snapshot_id)
+{
+    if (!metadata->has(Iceberg::f_snapshots))
+        return false;
+    auto snapshots = metadata->getArray(Iceberg::f_snapshots);
+    for (UInt32 i = 0; i < snapshots->size(); ++i)
+        if (snapshots->getObject(i)->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == snapshot_id)
+            return true;
+    return false;
+}
 
 bool canDumpIcebergStats(const Field & field, DataTypePtr type)
 {
@@ -1541,7 +1555,7 @@ IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
     /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
-    if (!committed)
+    if (!committed && !commit_outcome_unknown)
         removeDataFilesAndManifests();
 }
 
@@ -2018,38 +2032,133 @@ bool IcebergStorageSink::initializeMetadata()
             });
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_writes_pause_before_commit);
 
+            /// There are three cases:
+            /// 1. Without a catalog: write `v<N>.metadata.json`, which is the commit, and update the version hint.
+            /// 2. With a catalog that writes the metadata file itself (REST): update the catalog.
+            /// 3. With a catalog that does not write the metadata file (Glue): write `<N>-<uuid>.metadata.json` and update the catalog.
+            ///
+            /// A failed write of the metadata file or a failed update of the catalog does not mean that it did not happen.
+            /// Even a later GET/HEAD of the attempted file does not prove it: the write request may be stuck in a slow proxy
+            /// while the GET/HEAD request goes through a fast one.
+            ///
+            /// `commit_outcome_unknown` marks this uncertainty: while it is set, neither `cleanup` nor the destructor removes
+            /// the data files and the manifests, although the commit was not confirmed. Such situations are rare, so we only
+            /// check for the positive outcome:
+            /// 1. The attempted file exists (GET/HEAD succeeds), but that alone does not mean that it is our write.
+            /// 2. If it holds our snapshot `snapshot_id`, it is our write, and the commit succeeded.
+            ///
+            /// Overall, the Iceberg commit protocol is complex and may leave garbage behind.
+            const auto read_latest_metadata = [&]
+            {
+                const auto latest = getLatestMetadataFileAndVersionWithCatalog(
+                    object_storage,
+                    catalog,
+                    table_id.getTableName(),
+                    persistent_table_components.table_path,
+                    *data_lake_settings,
+                    persistent_table_components.metadata_cache,
+                    context,
+                    log.get(),
+                    persistent_table_components.table_uuid,
+                    persistent_table_components.metadata_compression_method,
+                    /* ignore_metadata_pointer_overrides */ true);
+                return getMetadataJSONObject(
+                    latest.path, object_storage, nullptr, context, log, latest.compression_method, std::nullopt);
+            };
+
             LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
             const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-            if (!catalog_writes_metadata_file)
+            bool commit_succeeded = false;
+            if (!catalog) /// Without a catalog the write of the metadata file is the commit.
             {
-                if (!writeMetadataFileAndVersionHint(
-                        persistent_table_components.path_resolver,
-                        metadata_info,
-                        json_representation,
-                        hint_path,
-                        object_storage,
-                        context,
-                        (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint]))
+                /// The request was lost, so nothing was written, but the writer cannot know it.
+                bool request_lost = false;
+                fiu_do_on(FailPoints::iceberg_writes_lose_metadata_commit_request, { request_lost = true; });
+                /// The name of the metadata file is the commit lock. Throws only if nothing was written.
+                commit_succeeded = !request_lost
+                    && writeMetadataFile(resolver, metadata_info, json_representation, object_storage, context);
+                /// The write landed, but its response was lost.
+                fiu_do_on(FailPoints::iceberg_writes_lose_metadata_commit_response, { commit_succeeded = false; });
+
+                if (!commit_succeeded)
                 {
-                    LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
-                    cleanup(true);
-                    return false;
+                    /// From here on the outcome is unknown, and the files are kept: `exists` and reading the metadata file may throw.
+                    commit_outcome_unknown = true;
+
+                    const auto attempted_path = resolver.resolve(metadata_info.path);
+                    if (!object_storage->exists(StoredObject(attempted_path)))
+                        throw Exception(
+                            ErrorCodes::CANNOT_WRITE_TO_FILE,
+                            "The outcome of the commit of the insert into the Iceberg table {} is unknown: the write of {} was not "
+                            "confirmed, and the file may still appear. Keeping the files of the commit, "
+                            "`ALTER TABLE ... EXECUTE remove_orphan_files` removes them if it does not",
+                            table_id.getNameForLogs(),
+                            attempted_path);
+
+                    commit_succeeded = hasSnapshot(
+                        getMetadataJSONObject(
+                            attempted_path, object_storage, nullptr, context, log, metadata_info.compression_method, std::nullopt),
+                        snapshot_id);
+                    if (commit_succeeded)
+                        LOG_INFO(log, "Commit of snapshot {} reported a failure, but {} holds it", snapshot_id, attempted_path);
                 }
-                LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
+            }
+            else
+            {
+                /// A catalog that does not write the metadata file itself (Glue) needs it before the update.
+                const bool metadata_file_written = catalog_writes_metadata_file
+                    || writeMetadataFile(resolver, metadata_info, json_representation, object_storage, context);
+                if (metadata_file_written)
+                {
+                    /// From here on the outcome is unknown, and the files are kept.
+                    commit_outcome_unknown = true;
+
+                    auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
+                    const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                    commit_succeeded = catalog->updateMetadata(
+                        namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata);
+
+                    if (!commit_succeeded)
+                    {
+                        /// The catalog keeps no file per attempt: its pointer tells whether one landed.
+                        commit_succeeded = hasSnapshot(read_latest_metadata(), snapshot_id);
+                        if (commit_succeeded)
+                            LOG_INFO(log, "Commit of snapshot {} reported a failure, but the catalog holds it", snapshot_id);
+                        else if (!catalog_writes_metadata_file)
+                            removeRejectedMetadataFile(resolver, metadata_info, object_storage);
+                    }
+                }
             }
 
-            if (catalog)
+            if (!commit_succeeded)
             {
-                auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
+                /// The attempt was refused.
+                commit_outcome_unknown = false;
+                LOG_DEBUG(log, "Failed to commit metadata {}, retrying", metadata_info.path);
+                cleanup(true);
+                return false;
+            }
+            committed = true;
+            commit_outcome_unknown = false;
+            LOG_DEBUG(log, "Metadata file {} committed", metadata_info.path);
 
-                const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
-                {
-                    if (!catalog_writes_metadata_file)
-                        removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
-                    cleanup(true);
-                    return false;
-                }
+            /// The version hint is not a part of the commit: if writing it fails, the next writer advances it.
+            if (!catalog_writes_metadata_file
+                && !tryWriteVersionHintFile(
+                    resolver,
+                    metadata_info,
+                    hint_path,
+                    object_storage,
+                    context,
+                    /* create */ (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint],
+                    /* assert_version_exactly */ false))
+            {
+                LOG_WARNING(
+                    log,
+                    "Committed {}, but could not advance `version-hint.text` to version {}: readers that use it see an older version "
+                    "until the next commit",
+                    metadata_info.path,
+                    metadata_info.version);
             }
         }
 
@@ -2058,8 +2167,9 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
-        cleanup(false);
+        /// The snapshot that references the files is published, or may be.
+        if (!committed && !commit_outcome_unknown)
+            cleanup(false);
         throw;
     }
     return true;
