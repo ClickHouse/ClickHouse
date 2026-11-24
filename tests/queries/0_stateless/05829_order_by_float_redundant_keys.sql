@@ -18,5 +18,6 @@ SELECT countIf(explain LIKE '%reinterpretAsUInt64%') FROM (EXPLAIN SYNTAX run_qu
 -- A kept positional key loses the aliases that the projection loses, so a remote server does not find two definitions of them.
 SET enable_positional_arguments = 1;
 SELECT count() FROM (SELECT n, negate(abs(n) AS a) AS m FROM remote('127.0.0.2', values('n Float64', 0.0, -0.0)) ORDER BY n, 2);
+-- `-0.0` and `0.0` are one key of `GROUP BY`, so there is one group and the total.
 SELECT count() FROM (SELECT n, negate(abs(n) AS a) AS m FROM remote('127.0.0.2', values('n Float64', 0.0, -0.0)) GROUP BY n WITH ROLLUP ORDER BY n, 2);
 SELECT count() FROM (SELECT n, negate(abs(n) AS a) AS m FROM remote('127.0.0.{2,3}', values('n Float64', 0.0, -0.0)) ORDER BY n, 2 LIMIT 1 WITH TIES);

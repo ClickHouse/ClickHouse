@@ -38,7 +38,7 @@ SELECT 'Tuple(UInt128)', count_radix, count_radix = count_ordinary FROM
         (SELECT uniqExact(x) FROM (SELECT tuple(toUInt128(number % 200000) * 1000003) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 0) AS count_ordinary
 );
 
--- Floats are compared by their bits in both cases: -0.0 and 0.0 are two values, as are NaNs with other bits.
+-- Floats are compared the same way in both cases: -0.0 and 0.0 are one value, while NaNs with other bits are different values.
 SELECT 'Tuple(Float64, UInt8)', count_radix, count_radix = count_ordinary FROM
 (
     SELECT
@@ -149,7 +149,7 @@ SELECT 'runs of Tuple(String, Nullable(UInt32))', count_radix, count_radix = cou
         (SELECT uniqExact(x) FROM (SELECT (toString(intDiv(number, 300)), if(intDiv(number, 600) % 3 = 0, NULL, toUInt32(intDiv(number, 1000)))) AS x FROM numbers_mt(1000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 0) AS count_ordinary
 );
 
--- The rows of a run are compared by their bits: -0.0 and 0.0 are two values, as are NaNs with other bits.
+-- The rows of a run are compared the same way: -0.0 and 0.0 are one value, while NaNs with other bits are different values.
 SELECT 'runs of Tuple(String, Float64)', count_radix, count_radix = count_ordinary FROM
 (
     SELECT
