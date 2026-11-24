@@ -309,18 +309,47 @@ std::vector<std::string> getOverriddenConfigChildren(const std::vector<std::stri
     return children;
 }
 
+/// Whether an element included from ZooKeeper (`from_zk`) under `element` can change the configuration under the
+/// top-level elements `names`: the root, an `<include>` directly under it (its contents are spliced into the root),
+/// `include_from` (the file of the `incl` substitutions), or one of `names` and anything inside it. Others, e.g.
+/// `<macros from_zk="..."/>` for `protocols`, cannot.
+bool hasZooKeeperIncludeAffecting(
+    const Poco::XML::Element & element, bool is_root, bool in_selector, const std::vector<std::string> & names)
+{
+    if ((is_root || in_selector) && element.hasAttribute("from_zk"))
+        return true;
+    for (const Poco::XML::Node * child = element.firstChild(); child; child = child->nextSibling())
+    {
+        if (child->nodeType() != Poco::XML::Node::ELEMENT_NODE)
+            continue;
+        const Poco::XML::XMLString & name = child->nodeName();
+        bool child_in_selector = in_selector
+            || (is_root
+                && (name == "include" || name == "include_from"
+                    || std::find(names.begin(), names.end(), std::string(name.begin(), name.end())) != names.end()));
+        if (hasZooKeeperIncludeAffecting(
+                *static_cast<const Poco::XML::Element *>(child), /* is_root = */ false, child_in_selector, names))
+            return true;
+    }
+    return false;
+}
+
 /// The names of the child elements of a configuration key in the configuration as the server loads it: `config_file`
 /// with `config.d`, includes and substitutions applied.
 /// Elements included from ZooKeeper (`from_zk`) are known only to the server, which loads them after it connects
-/// to ZooKeeper and on every reload, so any of them can add or change the element. A configuration with them is
-/// rejected: the caller must not rely on an incomplete list.
+/// to ZooKeeper and on every reload. A configuration where one of them can add or change the element is rejected:
+/// the caller must not rely on an incomplete list. Others, elsewhere in the configuration, do not matter.
 std::vector<std::string> getConfigChildren(const std::string & config_file, const std::string & key)
 {
     DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
     auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
-    if (loaded.has_zk_includes)
-        throw Poco::Exception("the configuration has elements included from ZooKeeper (`from_zk`), "
-            "so `" + key + "` in it cannot be read without ZooKeeper");
+    /// Without ZooKeeper, its elements are left as they are in the configuration, with the `from_zk` attribute.
+    if (loaded.has_zk_includes
+        && hasZooKeeperIncludeAffecting(
+            *loaded.preprocessed_xml->documentElement(), /* is_root = */ true, /* in_selector = */ false,
+            {key.substr(0, key.find('.'))}))
+        throw Poco::Exception("`" + key + "` is affected by elements included from ZooKeeper (`from_zk`), "
+            "so it cannot be read without ZooKeeper");
     Poco::Util::AbstractConfiguration::Keys children;
     loaded.configuration->keys(key, children);
     return children;
@@ -488,28 +517,6 @@ bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool
     return true;
 }
 
-/// Whether an element included from ZooKeeper (`from_zk`) under `element` can change the users configuration file
-/// the server selects: the root, an `<include>` directly under it (its contents are spliced into the root),
-/// `include_from` (the file of the `incl` substitutions, which can select the users file), or `users_config`,
-/// `user_directories`, and anything inside them. Others, e.g. `<macros from_zk="..."/>`, cannot.
-bool hasZooKeeperIncludeSelectingUsersFile(const Poco::XML::Element & element, bool is_root, bool in_selector)
-{
-    if ((is_root || in_selector) && element.hasAttribute("from_zk"))
-        return true;
-    for (const Poco::XML::Node * child = element.firstChild(); child; child = child->nextSibling())
-    {
-        if (child->nodeType() != Poco::XML::Node::ELEMENT_NODE)
-            continue;
-        const Poco::XML::XMLString & name = child->nodeName();
-        bool child_in_selector = in_selector
-            || (is_root && (name == "users_config" || name == "user_directories" || name == "include" || name == "include_from"));
-        if (hasZooKeeperIncludeSelectingUsersFile(
-                *static_cast<const Poco::XML::Element *>(child), /* is_root = */ false, child_in_selector))
-            return true;
-    }
-    return false;
-}
-
 /// The users configuration file the server loads the users from, as `AccessControl::addStoragesFromMainConfig`
 /// finds it: `users_config`, else the main configuration itself if it has no `user_directories`, or the path of
 /// the `users.xml` storage in `user_directories`. A relative path is taken from the directory of the main
@@ -531,7 +538,9 @@ std::string getUsersConfigFile(const std::string & config_file, const std::vecto
     auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
     /// Without ZooKeeper, its elements are left as they are in the configuration, with the `from_zk` attribute.
     if (loaded.has_zk_includes
-        && hasZooKeeperIncludeSelectingUsersFile(*loaded.preprocessed_xml->documentElement(), /* is_root = */ true, /* in_selector = */ false))
+        && hasZooKeeperIncludeAffecting(
+            *loaded.preprocessed_xml->documentElement(), /* is_root = */ true, /* in_selector = */ false,
+            {"users_config", "user_directories"}))
         throw Poco::Exception("the users configuration file is selected by elements included from ZooKeeper (`from_zk`), "
             "so it cannot be found without ZooKeeper");
 
@@ -1399,19 +1408,21 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
         config_file = getOverriddenConfigValue(server_args, "config-file");
     }
 
-    /// Extract all relevant paths from the config.
-    std::string data_dir = extractConfigValue(config_file, "path");
-    std::string tmp_dir = extractConfigValue(config_file, "tmp_path");
-    std::string user_files_path = extractConfigValue(config_file, "user_files_path");
-    std::string format_schema_path = extractConfigValue(config_file, "format_schema_path");
+    /// Extract all relevant paths as the server takes them: from the server arguments if they set them (e.g.
+    /// `-- --path=/mnt/clickhouse/`), else from the configuration file. The data path also decides whether the
+    /// initialization has already been done.
+    std::string data_dir = getEffectiveConfigValue(extra_args, config_file, "path");
+    std::string tmp_dir = getEffectiveConfigValue(extra_args, config_file, "tmp_path");
+    std::string user_files_path = getEffectiveConfigValue(extra_args, config_file, "user_files_path");
+    std::string format_schema_path = getEffectiveConfigValue(extra_args, config_file, "format_schema_path");
 
     std::string log_dir;
-    std::string log_path = extractConfigValue(config_file, "logger.log");
+    std::string log_path = getEffectiveConfigValue(extra_args, config_file, "logger.log");
     if (!log_path.empty())
         log_dir = fs::path(log_path).parent_path().string();
 
     std::string error_log_dir;
-    std::string error_log_path = extractConfigValue(config_file, "logger.errorlog");
+    std::string error_log_path = getEffectiveConfigValue(extra_args, config_file, "logger.errorlog");
     if (!error_log_path.empty())
         error_log_dir = fs::path(error_log_path).parent_path().string();
 
