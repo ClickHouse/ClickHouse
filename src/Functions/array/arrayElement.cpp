@@ -2432,9 +2432,12 @@ ColumnPtr FunctionArrayElement<mode>::executeStringSubscript(
     {
         ColumnPtr values;
         bool is_unsigned = false;
+
+        [[nodiscard]] StringBytePosition read(size_t row) const { return StringBytePosition::read(*values, is_unsigned, row); }
     };
 
-    std::vector<PositionColumn> positions;
+    PositionColumn start_column;
+    std::optional<PositionColumn> end_column;
     if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get()))
     {
         Columns bounds;
@@ -2443,16 +2446,15 @@ ColumnPtr FunctionArrayElement<mode>::executeStringSubscript(
         else
             bounds = assert_cast<const ColumnTuple &>(*arguments[1].column).getColumnsCopy();
 
-        for (size_t i = 0; i < bounds.size(); ++i)
-            positions.push_back(
-                {removeNullableAndMergeNullMap(bounds[i], null_map), isNativeUInt(removeNullable(tuple_type->getElement(i)))});
+        start_column = {removeNullableAndMergeNullMap(bounds[0], null_map), isNativeUInt(removeNullable(tuple_type->getElement(0)))};
+        end_column = PositionColumn{removeNullableAndMergeNullMap(bounds[1], null_map), isNativeUInt(removeNullable(tuple_type->getElement(1)))};
     }
     else
     {
-        positions.push_back({removeNullableAndMergeNullMap(arguments[1].column, null_map), isNativeUInt(removeNullable(arguments[1].type))});
+        start_column = {removeNullableAndMergeNullMap(arguments[1].column, null_map), isNativeUInt(removeNullable(arguments[1].type))};
     }
 
-    const bool is_slice = positions.size() == 2;
+    const bool is_slice = end_column.has_value();
     auto result = ColumnString::create();
     result->reserve(input_rows_count);
 
@@ -2465,8 +2467,8 @@ ColumnPtr FunctionArrayElement<mode>::executeStringSubscript(
         }
 
         const std::string_view value = source->getDataAt(row);
-        const auto start = StringBytePosition::read(*positions.front().values, positions.front().is_unsigned, row);
-        const auto end = is_slice ? StringBytePosition::read(*positions.back().values, positions.back().is_unsigned, row) : start;
+        const auto start = start_column.read(row);
+        const auto end = is_slice ? end_column->read(row) : start;
         const auto start_offset = start.offsetIn(value.size());
         const auto end_offset = end.offsetIn(value.size());
 
