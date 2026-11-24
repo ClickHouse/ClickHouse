@@ -48,7 +48,8 @@ void throwIfUnknownTableFunction(const ASTPtr & ast, const ContextPtr & context)
     if (!function)
         return;
     const String & name = function->name;
-    if (FunctionFactory::instance().has(name) || AggregateFunctionFactory::instance().isAggregateFunctionName(name)
+    if (TableFunctionFactory::instance().isTableFunctionName(name) || FunctionFactory::instance().has(name)
+        || AggregateFunctionFactory::instance().isAggregateFunctionName(name)
         || UserDefinedSQLFunctionFactory::instance().has(name) || UserDefinedExecutableFunctionFactory::has(name, context))
         return;
     throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}{}", name, TableFunctionFactory::instance().getHintsMessage(name));
@@ -119,7 +120,24 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     const auto * second_arg_function = args.size() >= 2 ? args[1]->as<ASTFunction>() : nullptr;
     const bool throw_unknown_collection = second_arg_function && second_arg_function->name == "equals";
     if (!is_cluster_function)
+    {
+        /// Reading the named collection evaluates each override on its own, so check the table function slot first.
+        for (size_t i = 1; i < args.size(); ++i)
+        {
+            const auto * equals = args[i]->as<ASTFunction>();
+            if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+                continue;
+            const auto & key = equals->arguments->children[0];
+            String key_name;
+            if (const auto * literal = key->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+                key_name = literal->value.safeGet<String>();
+            else
+                tryGetIdentifierNameInto(key, key_name);
+            if (key_name == "database" || key_name == "db")
+                throwIfUnknownTableFunction(equals->arguments->children[1], context);
+        }
         named_collection = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id);
+    }
 
     if (named_collection)
     {

@@ -83,3 +83,13 @@ $CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote('127.0.0.1', $udf(), 'one')" |
 $CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote($nc, database = $udf())" | cut -f1,2
 $CLICKHOUSE_CLIENT --query "DROP FUNCTION $udf"
 $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION $nc"
+
+# The named collection rejects the override after evaluating it, which must not record the arguments in system.errors.
+locked="${CLICKHOUSE_DATABASE}_remote_locked"
+$CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION $locked AS addresses_expr = '127.0.0.1', database = 'system' NOT OVERRIDABLE, table = 'one'"
+for key in database db; do
+    query_id="${CLICKHOUSE_DATABASE}_unknown_nested_table_function_locked_$key"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "DESCRIBE TABLE remote($locked, $key = s3Clustr('TopSecretValue'))" 2>&1 | grep -o -m1 -e 'Unknown table function s3Clustr' -e TopSecretValue
+    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.errors WHERE query_id = '$query_id' AND position(last_error_message, 'TopSecretValue') > 0"
+done
+$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION $locked"
