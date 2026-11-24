@@ -325,7 +325,7 @@ std::map<String, Documentation> ParserCreateRowPolicyQuery::getDocumentation() c
 Creates a [row policy](/concepts/features/security/access-rights#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
 <Tip>
-Row policies make sense only for users with readonly access. If a user can modify a table or copy partitions between tables, it defeats the restrictions of row policies.
+Row policies make sense only for users with global readonly access. If a user can create/insert to any table, or copy partitions between any tables, then they can bypass all row policies on all tables they can read.
 </Tip>
 
 Syntax:
