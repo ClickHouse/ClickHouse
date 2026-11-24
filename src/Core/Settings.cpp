@@ -4712,11 +4712,11 @@ This trades probe-time CPU for lower memory: the probe decompresses the stored b
 
 It does not affect `CROSS JOIN`, which has its own compression (`cross_join_min_rows_to_compress`, `cross_join_min_bytes_to_compress`).
 )", 0, \
-        {"26.11", false, false, "New setting to compress the right-side blocks of hash-based joins in memory."}) \
+        {"26.12", false, false, "New setting to compress the right-side blocks of hash-based joins in memory."}) \
     DECLARE(UInt64, join_in_memory_compression_min_bytes, 128_MiB, R"(
 The size of the right-side blocks stored in memory by a hash-based join after which `enable_join_in_memory_compression` starts compressing them. Zero means compressing from the first block. For `parallel_hash`, it applies to the whole join. For `grace_hash`, it applies to each in-memory bucket.
 )", 0, \
-        {"26.11", 0, 128_MiB, "New setting with the size of the right side of a hash join after which `enable_join_in_memory_compression` starts compressing it."}) \
+        {"26.12", 0, 128_MiB, "New setting with the size of the right side of a hash join after which `enable_join_in_memory_compression` starts compressing it."}) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
 Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
 )", 0) \
