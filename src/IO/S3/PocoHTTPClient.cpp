@@ -848,6 +848,20 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     add_response_header(header_name, header_value);
             }
 
+            /// The SDK does not parse the headers of GCS decompressive transcoding, so pass the fact to
+            /// `getObjectInfo` in the user-defined metadata of the `HEAD` response.
+            if (request.GetMethod() == Aws::Http::HttpMethod::HTTP_HEAD
+                && isDecompressiveTranscodingResponse(
+                    poco_response.has("x-goog-stored-content-encoding")
+                        ? std::make_optional(poco_response.get("x-goog-stored-content-encoding"))
+                        : std::nullopt,
+                    poco_response.has("Content-Encoding"),
+                    poco_response.has("Content-Length")))
+            {
+                response->AddHeader(
+                    Aws::String("x-amz-meta-") + Aws::String(DECOMPRESSIVE_TRANSCODING_METADATA_KEY), Aws::String("true"));
+            }
+
             /// Request is successful but for some special requests we can have actual error message in body
             if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {
