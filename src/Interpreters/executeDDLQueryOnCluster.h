@@ -24,6 +24,11 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 /// Returns true if provided ALTER type can be executed ON CLUSTER
 bool isSupportedAlterTypeForOnClusterDDLQuery(int type);
 
+/// A partition value is evaluated where the partition command is executed. A host that does not execute a query with
+/// `ON CLUSTER` as the initiating user would evaluate it with full access, e.g. a scalar subquery reading a table the user
+/// cannot read, so only a value that needs no privilege to evaluate is allowed then. Throws for another one.
+void rejectPartitionValuesWithoutInitiatorUser(const IAST & ast);
+
 struct DDLQueryOnClusterParams
 {
     /// A cluster to execute a distributed query.

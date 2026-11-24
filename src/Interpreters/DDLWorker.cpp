@@ -12,6 +12,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeQuery.h>
@@ -596,6 +597,14 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     try
     {
         auto query_context = task.makeQueryContext(context, zookeeper);
+
+        /// The initiator refuses such a partition value when the entry does not carry the initiating user, but each host
+        /// decides by its own `distributed_ddl_use_initial_user_and_roles` whether to use it. The replicas of a `Replicated`
+        /// database execute only the entries that succeeded on the replica they were submitted to.
+        if (task.query && !query_context->getUserID() && !query_context->getClientInfo().is_replicated_database_internal)
+        {
+            rejectPartitionValuesWithoutInitiatorUser(*task.query);
+        }
 
         chassert(!query_context->getCurrentTransaction());
         if (query_context->getSettingsRef()[Setting::implicit_transaction])
