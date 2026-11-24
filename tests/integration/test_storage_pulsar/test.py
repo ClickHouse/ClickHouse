@@ -1794,6 +1794,9 @@ def test_remote_host_filter_applies_to_lookup_results(pulsar_cluster):
         # established while the broker was allowed keep working: sever them.
         stop_pulsar(pulsar_cluster)
         start_pulsar(pulsar_cluster)
+        # The client runs no threads and connects only inside a call, so read
+        # from the table to make it reconnect.
+        read_rows()
         instance.wait_for_log_line(
             "Rejected a connection to the Pulsar broker", timeout=120
         )
@@ -1808,10 +1811,9 @@ def test_remote_host_filter_applies_to_lookup_results(pulsar_cluster):
         instance.query("SYSTEM RELOAD CONFIG")
 
     # Once the allowlist permits the broker again, consumption resumes. Recreate
-    # the table's consumers instead of waiting for the client's own reconnect
-    # backoff to expire: every rejected connection attempt lengthens it, and the
-    # unacknowledged message is redelivered as soon as a fresh consumer joins the
-    # subscription.
+    # the table's consumers instead of waiting for the background task to create
+    # them again: the unacknowledged message is redelivered as soon as a fresh
+    # consumer joins the subscription.
     instance.query("DETACH TABLE test.pulsar_reader")
     instance.query("ATTACH TABLE test.pulsar_reader")
     wait_row_seen("2\t2", 240)

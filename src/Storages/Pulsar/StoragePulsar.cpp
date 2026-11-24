@@ -250,10 +250,20 @@ Pulsar::ClientConfiguration createClientConfiguration()
     /// the client also follows lookup responses and dials the returned broker addresses directly,
     /// so a redirecting broker could otherwise steer the server to a host outside the allowlist.
     /// The client calls the validator before every connection, on the thread of the call that
-    /// connects, and the exception rejecting the address propagates out of that call.
+    /// connects, and the exception rejecting the address propagates out of that call. The rejection
+    /// is also logged here with the address, because the call is often made by a background task.
     config.connection_validator = [](const String & host, UInt16 port)
     {
-        Context::getGlobalContextInstance()->getRemoteHostFilter().checkHostAndPort(host, toString(port));
+        try
+        {
+            Context::getGlobalContextInstance()->getRemoteHostFilter().checkHostAndPort(host, toString(port));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("StoragePulsar"), fmt::format("Rejected a connection to the Pulsar broker at '{}:{}'", host, port));
+            throw;
+        }
     };
     return config;
 }
