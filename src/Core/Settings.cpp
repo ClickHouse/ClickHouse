@@ -2820,6 +2820,8 @@ The plan carries the same information [`EXPLAIN ANALYZE`](/reference/statements/
 
 Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured, and only where the row itself is written, so [`log_queries`](/reference/settings/session-settings/log#log_queries) must also be enabled. A query that failed during execution is captured with the plan it was running but without statistics. The column is empty on `QueryStart` rows, because no plan exists yet when they are written.
 
+The plan is masked with the [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) of the server, like the `query` column. A query in which a rule matches, in its text or in a query parameter, stores no plan, because constant folding can carry the masked text into the plan in a form no rule matches. Otherwise every text the plan holds, such as filter conditions, `IN` lists and output column names, is masked before it is stored. A query with secret arguments, such as the key of `encrypt`, stores no plan either, because they cannot be reliably hidden inside it.
+
 Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected.
 
 That cost is decided before the query runs, so a captured query pays it even where its row is dropped afterwards by [`log_queries_min_type`](/reference/settings/session-settings/log#log_queries_min_type) or [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log#log_queries_min_query_duration_ms) — neither is knowable that early. A query answered from the [query cache](/concepts/features/performance/caches/query-cache) executes no plan and so has none to store.
@@ -4063,7 +4065,7 @@ Note, that `max_bytes_before_external_sort` is still respected, spilling to disk
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.
 )", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
@@ -10718,6 +10720,19 @@ snapshot with its own manifest, so an `INSERT` writes exactly one manifest only 
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0, \
         {"25.12", 100, 100, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_initial_backoff_ms, 10, R"(
+The upper bound of the delay before the first retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit.
+The bound doubles with each next retry, up to `iceberg_insert_commit_retry_max_backoff_ms`, and each delay is chosen at random
+between zero and the bound, so that the writers that lost the same race do not retry at the same moment and collide again.
+The delay is taken before the latest metadata is looked up, so with many concurrent writers it also limits how often the metadata
+directory is listed. `0` retries without a delay.
+)", 0, \
+        {"26.12", 0, 10, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_max_backoff_ms, 5000, R"(
+The maximum of the delay bound before a retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit,
+see `iceberg_insert_commit_retry_initial_backoff_ms`.
+)", 0, \
+        {"26.12", 0, 5000, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
     DECLARE(Bool, database_datalake_require_metadata_access, true, R"(
 Either to throw error or not if we don't have rights to get table's metadata in database engine DataLakeCatalog.
 )", 0, \
