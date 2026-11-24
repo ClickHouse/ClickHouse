@@ -303,9 +303,10 @@ struct ScalarState
         words = size / 8;
     }
 
-    [[maybe_unused]] ALWAYS_INLINE void round() { SIPROUND; }
+    /// SipHash wraps around modulo 2^64 by design. The pragma of `SipHash.h` does not reach the `SIPROUND` expanded here.
+    [[maybe_unused]] ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW void round() { SIPROUND; }
 
-    [[maybe_unused]] ALWAYS_INLINE void compressWord(size_t k)
+    [[maybe_unused]] ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW void compressWord(size_t k)
     {
         const UInt64 word = unalignedLoad<UInt64>(data + 8 * k);
         v3 ^= word;
