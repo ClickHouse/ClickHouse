@@ -9,7 +9,6 @@ namespace DB
 {
 
 class ColumnMapper;
-struct IcebergNameMapping;
 
 }
 
@@ -63,6 +62,11 @@ struct SchemaConverter
 
     void prepareForReading();
     NamesAndTypesList inferSchema();
+
+    /// Fills `name_mapped_field_ids`; called by `prepareForReading`, or before it by a caller that needs the field ids.
+    void assignFieldIdsFromNameMapping();
+    /// The field id of the element in the file, or the one the name mapping assigns to it.
+    [[nodiscard]] std::optional<Int64> getFieldId(const parq::SchemaElement & element) const;
 
 private:
     /// If we interpret the parquet schema tree in a straightforward way, ignoring List/Map type
@@ -184,9 +188,6 @@ private:
 
     void checkHasColumns();
 
-    void assignFieldIdsFromNameMapping(const IcebergNameMapping & mapping);
-    /// The field id of the element in the file, or the one the name mapping assigns to it.
-    [[nodiscard]] std::optional<Int64> getFieldId(const parq::SchemaElement & element) const;
     /// Adds the field id of `element` to the ids of its level; an element without one leaves the ids unknown, unless the
     /// name mapping is used: then the element is not in the table.
     void addFieldIdOfLevel(const parq::SchemaElement & element, std::optional<UnorderedSetWithMemoryTracking<Int64>> & level_field_ids) const;

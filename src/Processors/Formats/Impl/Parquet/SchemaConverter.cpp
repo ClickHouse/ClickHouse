@@ -105,11 +105,7 @@ void SchemaConverter::prepareForReading()
 {
     chassert(sample_block);
     checkHasColumns();
-
-    /// Like Iceberg readers, use the name mapping only for a file in which no element has a field id.
-    if (column_mapper && column_mapper->getIcebergNameMapping()
-        && std::none_of(file_metadata.schema.begin() + 1, file_metadata.schema.end(), [](const auto & e) { return e.__isset.field_id; }))
-        assignFieldIdsFromNameMapping(*column_mapper->getIcebergNameMapping());
+    assignFieldIdsFromNameMapping();
 
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
@@ -333,13 +329,19 @@ static size_t assignNameMappedFieldIds(
     return next;
 }
 
-void SchemaConverter::assignFieldIdsFromNameMapping(const IcebergNameMapping & mapping)
+void SchemaConverter::assignFieldIdsFromNameMapping()
 {
     const auto & schema = file_metadata.schema;
+    /// Like Iceberg readers, use the name mapping only for a file in which no element has a field id.
+    if (!name_mapped_field_ids.empty() || !column_mapper || !column_mapper->getIcebergNameMapping() || schema.size() < 2
+        || std::any_of(schema.begin() + 1, schema.end(), [](const auto & e) { return e.__isset.field_id; }))
+        return;
     name_mapped_field_ids.assign(schema.size(), std::nullopt);
     size_t idx = 1;
     for (size_t i = 0; i < size_t(schema.at(0).num_children); ++i)
-        idx = assignNameMappedFieldIds(schema, idx, std::nullopt, &mapping, /*depth=*/ 1, options.format.max_parser_depth, name_mapped_field_ids);
+        idx = assignNameMappedFieldIds(
+            schema, idx, std::nullopt, column_mapper->getIcebergNameMapping().get(), /*depth=*/ 1, options.format.max_parser_depth,
+            name_mapped_field_ids);
 }
 
 std::optional<Int64> SchemaConverter::getFieldId(const parq::SchemaElement & element) const

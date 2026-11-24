@@ -17,6 +17,9 @@
 # `data_iceberg/name_mapping_two_level_list` (Spark 3.5.5, Iceberg 1.10.0): `add_files` of a file without field
 # ids written by parquet-mr with a two-level list of a struct (`repeated group array`, as parquet-avro writes
 # lists), then `l.element.a` renamed to `a_new`.
+# `data_iceberg/name_mapping_geo` (PyIceberg 0.11.1): `add_files` of one GeoParquet file without field ids, a row
+# group per row, with points `g1` and `g2` and their `covering.bbox` columns, then the names of `g1_xmin` and
+# `g1_ymin` swapped by renames, then the names of `g1` and `g2`, then `g2_xmax` renamed and a second such file added.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -63,6 +66,14 @@ function L()
     echo "icebergLocal('name_mapping_two_level_list', SETTINGS iceberg_metadata_file_path = 'metadata/v$1.metadata.json')"
 }
 
+# G <metadata version>: the GeoParquet table at that version.
+function G()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_geo/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('name_mapping_geo', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
 V_BOTH=00004             # all fields mapped, `x`, `a`, `v` also under their old names
 V_UNMAPPED_B=00005       # `b` is not in the mapping
 V_B_NAMELESS=00006       # `b` is in the mapping with `names: []`
@@ -80,6 +91,11 @@ V_P_CLEANED=00008        # the schema of the manifest of the file without field 
 V_S_MAPPED=00001         # all fields mapped
 V_S_SWAPPED=00002        # the names of the fields of `s` swapped
 V_R_REWRITTEN=00006      # `b` renamed to `b_old`, `b` added, the manifest rewritten, the add_files snapshot expired
+V_G_MAPPED=00001         # all fields mapped
+V_G_BBOX_SWAPPED=00004   # the names of `g1_xmin` and `g1_ymin` swapped
+V_G_POINTS_SWAPPED=00007 # then the names of `g1` and `g2` swapped
+V_G_ADDED=00009          # then `g2_xmax` renamed to `g2_xmax_new` and a file with these names added
+AROUND_10_20="[(9., 19.), (11., 19.), (11., 21.), (9., 21.)]"
 
 LAZY="query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_object_storage = 1"
 RUNTIME_FILTER="join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_join_runtime_filters = 1, \
@@ -137,6 +153,12 @@ SELECT 'columns cache';
 SELECT id, s FROM $(S $V_S_MAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
 SELECT count() > 0 FROM system.columns_cache WHERE database = '' AND column = 's';
 SELECT id, s FROM $(S $V_S_SWAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
+SELECT 'GeoParquet covering';
+SELECT id FROM $(G $V_G_MAPPED) WHERE pointInPolygon(g1, $AROUND_10_20);
+SELECT id FROM $(G $V_G_BBOX_SWAPPED) WHERE pointInPolygon(g1, $AROUND_10_20);
+SELECT id, g1_xmin, g1_ymin, g1_xmax, g1_ymax FROM $(G $V_G_BBOX_SWAPPED) WHERE pointInPolygon(g1, $AROUND_10_20);
+SELECT id FROM $(G $V_G_POINTS_SWAPPED) WHERE pointInPolygon(g1, $AROUND_10_20);
+SELECT id FROM $(G $V_G_ADDED) WHERE pointInPolygon(g2, $AROUND_10_20) ORDER BY id SETTINGS input_format_parquet_allow_missing_columns = 0;
 "
 
 # The query above prunes the data file of `id` 4 by its manifest statistics.
@@ -151,6 +173,10 @@ $CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -q "
 SELECT id, s FROM $(S $V_S_MAPPED) SETTINGS use_columns_cache = 1 FORMAT Null;
 SELECT id, s FROM $(S $V_S_MAPPED) SETTINGS use_columns_cache = 1 FORMAT Null" 2>&1 >/dev/null \
     | grep -oE 'ColumnsCacheHits: [1-9][0-9]*' | sed 's/: .*/ > 0/'
+# With the names kept, the query above prunes the row group of `id` 2 by its `covering.bbox` statistics.
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
+    -q "SELECT id FROM $(G $V_G_MAPPED) WHERE pointInPolygon(g1, $AROUND_10_20) FORMAT Null" 2>&1 >/dev/null \
+    | grep -oE 'ParquetPrunedRowGroups: [1-9][0-9]*' | sed 's/: .*/ > 0/'
 
 # A query condition cache entry written under one mapping is not used under another one. On the server, because
 # `clickhouse-local` has no query condition cache.

@@ -109,9 +109,17 @@ columns cache
 1	(10,1)
 2	(20,2)
 3	(30,3)
+GeoParquet covering
+1
+1
+1	10	20	10	20
+1
+2
+4
 IcebergMinMaxIndexPrunedFiles > 0
 IcebergPartitionPrunedFiles > 0
 ColumnsCacheHits > 0
+ParquetPrunedRowGroups > 0
 query condition cache
 0
 5
