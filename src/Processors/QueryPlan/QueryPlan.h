@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/ListWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 
 #include <Core/UUID.h>
 
@@ -196,7 +197,7 @@ public:
         UUID uuid = UUIDHelpers::Nil;
         UInt64 semantics_fingerprint = 0;
     };
-    using ExpectedStorageIdentities = std::map<std::pair<String, String>, ExpectedStorageIdentity>;
+    using ExpectedStorageIdentities = MapWithMemoryTracking<std::pair<String, String>, ExpectedStorageIdentity>;
 
     /// `enclosing_storage_limits` are the limits of the query that executes the plan, added in front
     /// of the limits of each resolved read, like the planner does for the reads of a subquery. The
