@@ -86,6 +86,8 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_FSYNC;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace FailPoints
@@ -803,14 +805,26 @@ size_t cachedLogEntryBytes(const LogEntryPtr & log_entry)
         + cachedLogEntryFixedOverhead();
 }
 
+namespace
+{
+
+/// Some disks (e.g. `DiskEncrypted`) read and validate a file header already in `readFile`.
+/// If the file was torn on crash, the header can be truncated. Such a file must be treated
+/// the same way as a changelog torn inside its records, i.e. as a read finished with error.
+/// Other errors (e.g. a missing encryption key for an intact file) are still propagated.
+bool isTruncatedChangelogOnOpen(const Exception & ex)
+{
+    return ex.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF || ex.code() == ErrorCodes::CANNOT_READ_ALL_DATA;
+}
+
+}
+
 class ChangelogReader
 {
 public:
     explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(std::move(changelog_description_))
     {
         compression_method = chooseCompressionMethod(changelog_description->path, "");
-        auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
-        read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
 
     /// start_log_index -- all entries with index < start_log_index will be skipped, but accounted into total_entries_read_from_log
@@ -819,6 +833,22 @@ public:
         ChangelogReadResult result{};
         result.compressed_log = compression_method != CompressionMethod::None;
         const auto & filepath = changelog_description->path;
+
+        try
+        {
+            auto read_buffer_from_file = changelog_description->disk->readFile(filepath, getReadSettings());
+            read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
+        }
+        catch (const Exception & ex)
+        {
+            if (!isTruncatedChangelogOnOpen(ex))
+                throw;
+
+            result.error = true;
+            LOG_WARNING(log, "Cannot open changelog on path {}, error: {}", filepath, ex.message());
+            return result;
+        }
+
         try
         {
             while (!read_buf->eof())
@@ -928,6 +958,17 @@ ChangelogFileStartupReadResult readChangelogFile(
     try
     {
         read_buf = file_description->disk->readFile(filepath, read_settings);
+    }
+    catch (const Exception & ex)
+    {
+        if (isTruncatedChangelogOnOpen(ex))
+        {
+            result.read_result.error = true;
+            LOG_WARNING(log, "Cannot open changelog on path {}, error: {}", filepath, ex.message());
+        }
+        else
+            result.fatal_exception = std::current_exception();
+        return result;
     }
     catch (...)
     {

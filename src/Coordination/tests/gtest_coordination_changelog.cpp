@@ -37,6 +37,9 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int DATA_ENCRYPTION_ERROR;
 }
 
 namespace CoordinationSetting
@@ -4541,6 +4544,119 @@ TYPED_TEST(CoordinationChangelogTest, StartupReadOpenFailureAbortsStartup)
         for (const auto & path : all_files)
             if (path != file_to_delete)
                 EXPECT_TRUE(fs::exists(path)) << path << " must survive a failed startup read";
+    }
+}
+
+
+namespace
+{
+
+/// Fails opening one changelog file the same way `DiskEncrypted` does when the file header is torn or corrupted:
+/// the header is read eagerly by `readFile`, before any changelog record is parsed.
+class FailingOpenDisk : public DB::DiskLocal
+{
+public:
+    FailingOpenDisk(const String & name_, const String & path_)
+        : DB::DiskLocal(name_, path_)
+    {
+    }
+
+    void prepareRead(
+        const String & path,
+        const DB::ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        DB::ReadPipeline & pipeline) const override
+    {
+        {
+            std::lock_guard lock(mutex);
+            if (error_code && fs::path(path).filename() == fs::path(failing_file).filename())
+                throw DB::Exception(error_code, "Injected header read failure for {}", path);
+        }
+        DB::DiskLocal::prepareRead(path, settings, read_hint, pipeline);
+    }
+
+    void setFailure(const String & file, int code)
+    {
+        std::lock_guard lock(mutex);
+        failing_file = file;
+        error_code = code;
+    }
+
+private:
+    mutable std::mutex mutex;
+    String failing_file;
+    int error_code = 0;
+};
+
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupReadTornHeaderOnOpen)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "test doesn't depend on the fixture's compression parameter; avoid running it twice";
+
+    const DB::LogFileSettings settings{.force_sync = false, .compress_logs = false, .rotate_interval = 10};
+
+    struct Case
+    {
+        std::string failing_file;
+        int error_code;
+        bool expect_throw;
+    };
+
+    const std::vector<Case> cases{
+        /// Torn header of the trailing changelog: treated as a broken trailing changelog.
+        {"changelog_21_30.bin", DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, false},
+        {"changelog_21_30.bin", DB::ErrorCodes::CANNOT_READ_ALL_DATA, false},
+        /// A file that can't be decrypted is not a torn file, startup must fail.
+        {"changelog_21_30.bin", DB::ErrorCodes::DATA_ENCRYPTION_ERROR, true},
+        /// A torn file in the middle means lost records, startup must fail.
+        {"changelog_11_20.bin", DB::ErrorCodes::CANNOT_READ_ALL_DATA, true},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        for (int dispatch = 0; dispatch < 3; ++dispatch)
+        {
+            SCOPED_TRACE(fmt::format("file={} code={} dispatch={}", test_case.failing_file, test_case.error_code, dispatch));
+
+            ChangelogDirTest test("./logs");
+            auto disk = std::make_shared<FailingOpenDisk>("LogDisk", "./logs");
+            this->keeper_context->setLogDisk(disk);
+
+            {
+                DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+                writer.readChangelogAndInitWriter(0, 0);
+                for (uint64_t i = 1; i <= 25; ++i)
+                    writer.appendEntry(i, getLogEntry("entry_" + std::to_string(i), i));
+                writer.flush();
+            }
+
+            DB::LogFileSettings reader_settings = settings;
+            if (dispatch == 2)
+                reader_settings.startup_read_max_streams = 1;
+
+            DB::Changelog reader(this->log, reader_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            if (dispatch == 1)
+                reader.setForceSerialStartupReadForTesting(true);
+
+            disk->setFailure(test_case.failing_file, test_case.error_code);
+            if (test_case.expect_throw)
+            {
+                EXPECT_THROW(reader.readChangelogAndInitWriter(0, 0), DB::Exception);
+                disk->setFailure("", 0);
+                continue;
+            }
+
+            reader.readChangelogAndInitWriter(0, 0);
+            disk->setFailure("", 0);
+
+            EXPECT_EQ(reader.size(), 20u);
+            EXPECT_EQ(reader.getStartIndex(), 1u);
+            EXPECT_EQ(reader.getNextEntryIndex(), 21u);
+            for (uint64_t i = 1; i <= 20; ++i)
+                EXPECT_EQ(reader.termAt(i), i) << "index " << i;
+        }
     }
 }
 
