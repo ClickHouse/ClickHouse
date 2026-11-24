@@ -139,6 +139,7 @@ Returns [icosahedron](https://en.wikipedia.org/wiki/Icosahedron) faces intersect
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetFaces>(documentation);
+    factory.registerResultSettings(FunctionH3GetFaces::name, {"functions_h3_default_if_invalid"});
 }
 
 }

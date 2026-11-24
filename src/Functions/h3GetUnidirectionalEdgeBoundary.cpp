@@ -130,6 +130,7 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetUnidirectionalEdgeBoundary>(documentation);
+    factory.registerResultSettings(FunctionH3GetUnidirectionalEdgeBoundary::name, {"functions_h3_default_if_invalid"});
 }
 
 }

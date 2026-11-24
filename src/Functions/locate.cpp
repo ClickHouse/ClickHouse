@@ -52,5 +52,6 @@ The previous behavior can be restored using setting `function_locate_has_mysql_c
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionLocate>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerResultSettings(FunctionLocate::name, {"function_locate_has_mysql_compatible_argument_order"});
 }
 }

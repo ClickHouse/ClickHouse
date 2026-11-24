@@ -124,7 +124,7 @@ public:
     String getName() const override { return function_name; }
 
     /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
-    void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
+    void updateHashImpl(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -272,6 +272,8 @@ The function is also available for [arrays](/reference/functions/regular-functio
 
     factory.registerFunction("notEmpty", [](ContextPtr context){ return FunctionEmptyOverloadResolver::create(context, true, "notEmpty"); }, documentation_not_empty);
     factory.registerFunction("empty", [](ContextPtr context){ return FunctionEmptyOverloadResolver::create(context, false, "empty"); }, documentation_empty);
+    for (const auto * name : {"notEmpty", "empty"})
+        factory.registerResultSettings(name, {"type_json_skip_null_typed_paths"});
 
 }
 

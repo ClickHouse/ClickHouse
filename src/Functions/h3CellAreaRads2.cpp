@@ -123,6 +123,7 @@ Returns the exact area of a specific cell in square radians corresponding to the
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3CellAreaRads2>(documentation);
+    factory.registerResultSettings(FunctionH3CellAreaRads2::name, {"functions_h3_default_if_invalid"});
 }
 
 }

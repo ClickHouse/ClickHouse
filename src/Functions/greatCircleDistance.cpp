@@ -421,6 +421,7 @@ This function returns the angle in degrees between two points on a sphere.
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction("greatCircleAngle", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_DEGREES>>(std::move(context));}, documentation);
+        factory.registerResultSettings("greatCircleAngle", {"geo_distance_returns_float64_on_float64_arguments"});
     }
     {
         FunctionDocumentation::Description description = R"(
@@ -449,6 +450,7 @@ Calculates the distance between two points on the Earth's surface using [the gre
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction("greatCircleDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context));}, documentation);
+        factory.registerResultSettings("greatCircleDistance", {"geo_distance_returns_float64_on_float64_arguments"});
     }
     {
         FunctionDocumentation::Description description = R"(
@@ -480,6 +482,7 @@ Technical note: for close enough points it calculates the distance using planar 
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction("geoDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::WGS84_METERS>>(std::move(context));}, documentation);
+        factory.registerResultSettings("geoDistance", {"geo_distance_returns_float64_on_float64_arguments"});
     }
 }
 

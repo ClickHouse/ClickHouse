@@ -42,6 +42,7 @@ toMonday(toDate('2023-04-24'));              -- Already a Monday
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToMonday>(documentation);
+    factory.registerResultSettings(FunctionToMonday::name, {"enable_extended_results_for_datetime_functions"});
 }
 
 }

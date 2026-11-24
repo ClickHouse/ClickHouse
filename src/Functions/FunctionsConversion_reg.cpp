@@ -4995,6 +4995,32 @@ SELECT date + interval_to_year AS result
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalMonth, detail::PositiveMonotonicity>>(documentation_toIntervalMonth);
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalQuarter, detail::PositiveMonotonicity>>(documentation_toIntervalQuarter);
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalYear, detail::PositiveMonotonicity>>(documentation_toIntervalYear);
+
+    const auto register_conversions = [&](ConversionResultKind kind, std::initializer_list<const char *> targets, bool or_zero_or_null)
+    {
+        for (const auto * target : targets)
+        {
+            factory.registerResultSettings(std::string("to") + target, getConversionResultSettings(kind));
+            if (or_zero_or_null)
+                for (const auto * suffix : {"OrZero", "OrNull"})
+                    factory.registerResultSettings(std::string("to") + target + suffix, getConversionResultSettings(kind));
+        }
+    };
+    register_conversions(
+        ConversionResultKind::OverflowOnly,
+        {"UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "UInt256", "Int8", "Int16", "Int32", "Int64", "Int128", "Int256", "Decimal32",
+         "Decimal64", "Decimal128", "Decimal256"},
+        true);
+    register_conversions(ConversionResultKind::Float, {"BFloat16", "Float32", "Float64"}, true);
+    register_conversions(ConversionResultKind::DateTime, {"Date", "Date32", "Time", "Time64", "DateTime", "DateTime64"}, true);
+    register_conversions(ConversionResultKind::DateTime, {"DateTime32", "UnixTimestamp"}, false);
+    register_conversions(ConversionResultKind::IPAddress, {"IPv4", "IPv6"}, false);
+    register_conversions(ConversionResultKind::String, {"String"}, false);
+    factory.registerResultSettings("DATE", getConversionResultSettings(ConversionResultKind::DateTime));
+    for (const auto * prefix : {"parseDateTimeBestEffort", "parseDateTimeBestEffortUS", "parseDateTime32BestEffort", "parseDateTime64BestEffort",
+                                "parseDateTime64BestEffortUS"})
+        for (const auto * suffix : {"", "OrZero", "OrNull"})
+            factory.registerResultSettings(std::string(prefix) + suffix, getConversionResultSettings(ConversionResultKind::OverflowOnly));
 }
 
 }

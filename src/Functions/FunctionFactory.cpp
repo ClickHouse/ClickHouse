@@ -8,6 +8,8 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 
 #include <Poco/String.h>
@@ -76,6 +78,53 @@ const SecretArgumentsSpec * FunctionFactory::tryGetSecretArgumentsSpec(const std
 {
     auto it = secret_arguments.find(getCanonicalNameIfAny(getAliasToOrName(name)));
     return it == secret_arguments.end() ? nullptr : &it->second;
+}
+
+void FunctionFactory::registerResultSettings(const std::string & name, Names settings)
+{
+    auto function = functions.find(name);
+    if (function == functions.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: result settings of the unknown function '{}'", name);
+
+    ResultSettings entry;
+    for (const auto & setting : settings)
+    {
+        if (!Settings::hasBuiltin(setting))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: unknown result setting '{}' of the function '{}'", setting, name);
+        entry.indices.push_back(Settings::getIndexOfBuiltin(setting));
+    }
+    entry.names = std::move(settings);
+
+    auto [it, inserted] = result_settings.emplace(name, std::move(entry));
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: result settings of the function '{}' are already registered", name);
+    result_settings_by_creator.emplace(&function->second.first, &it->second);
+}
+
+const Names * FunctionFactory::tryGetResultSettings(const std::string & name) const
+{
+    auto it = result_settings.find(getCanonicalNameIfAny(getAliasToOrName(name)));
+    return it == result_settings.end() ? nullptr : &it->second.names;
+}
+
+ContextPtr FunctionFactory::withGlobalResultSettings(const ContextPtr & context) const
+{
+    const auto & settings = context->getSettingsRef();
+    const auto & global_settings = context->getGlobalContext()->getSettingsRef();
+    ContextMutablePtr result;
+    for (const auto & [_, entry] : result_settings)
+    {
+        for (const auto & name : entry.names)
+        {
+            Field global_value = global_settings.get(name);
+            if (settings.get(name) == global_value)
+                continue;
+            if (!result)
+                result = Context::createCopy(context);
+            result->setSetting(name, global_value);
+        }
+    }
+    return result ? result : context;
 }
 
 bool FunctionFactory::hasArgumentSecretsIgnoringCase(const std::string & name) const
@@ -183,7 +232,20 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     }
 
     if (canonical_creator)
+    {
         res->setFactoryHandle(canonical_creator);
+
+        if (auto settings_it = result_settings_by_creator.find(canonical_creator); settings_it != result_settings_by_creator.end())
+        {
+            /// A function created without a context uses the defaults of the settings.
+            static const Settings default_settings;
+            const auto & settings = context ? context->getSettingsRef() : default_settings;
+            SipHash hash;
+            for (size_t index : settings_it->second->indices)
+                applyVisitor(FieldVisitorHash(hash), settings.getByIndex(index));
+            res->setResultSettingsHash(hash.get128());
+        }
+    }
 
     return res;
 }

@@ -38,6 +38,10 @@ lessOrEquals(a, b)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionLessOrEquals>(documentation);
+    factory.registerResultSettings(
+        FunctionLessOrEquals::name,
+        {"decimal_check_overflow", "validate_enum_literals_in_operators", "use_variant_default_implementation_for_comparisons",
+         "cast_string_to_date_time_mode", "date_time_overflow_behavior"});
 }
 
 template <>

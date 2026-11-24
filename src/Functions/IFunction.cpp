@@ -934,6 +934,13 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
     return getReturnTypeWithoutLowCardinality(arguments);
 }
 
+void IFunctionBase::updateHash(SipHash & hash) const
+{
+    if (result_settings_hash)
+        hash.update(result_settings_hash);
+    updateHashImpl(hash);
+}
+
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
     checkAccessOnBuild();
@@ -988,6 +995,8 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
 
     if (base && factory_handle)
         base->setFactoryHandle(factory_handle);
+    if (base && result_settings_hash)
+        base->setResultSettingsHash(result_settings_hash);
 
     return base;
 }

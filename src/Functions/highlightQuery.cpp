@@ -103,6 +103,7 @@ and escape characters are highlighted separately.
         .introduced_in = {26, 5},
         .category = FunctionDocumentation::Category::Other,
     });
+    factory.registerResultSettings("highlightQuery", {"implicit_select"});
 }
 
 }

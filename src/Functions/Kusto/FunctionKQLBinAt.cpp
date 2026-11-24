@@ -423,6 +423,9 @@ from SQL.
         FunctionKQLBinAtOverloadResolver::name,
         [](ContextPtr context) { return FunctionKQLBinAtOverloadResolver::create(std::move(context)); },
         bin_at_documentation);
+
+    factory.registerResultSettings(FunctionKQLDateTimeBinAt::name, {"date_time_overflow_behavior"});
+    factory.registerResultSettings(FunctionKQLBinAtOverloadResolver::name, {"date_time_overflow_behavior", "decimal_check_overflow"});
 }
 
 }

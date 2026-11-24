@@ -198,6 +198,7 @@ REGISTER_FUNCTION(formatQuery)
                  R"(SELECT\n    a,\n    b\nFROM tab\nWHERE (a > 3) AND (b < 3))"}},
             .introduced_in = {23, 10},
             .category = FunctionDocumentation::Category::Other});
+    factory.registerResultSettings("formatQuery", {"print_pretty_type_names", "implicit_select"});
 }
 
 REGISTER_FUNCTION(formatQueryOrNull)
@@ -216,6 +217,9 @@ REGISTER_FUNCTION(formatQueryOrNull)
                  R"(SELECT\n    a,\n    b\nFROM tab\nWHERE (a > 3) AND (b < 3))"}},
             .introduced_in = {23, 11},
             .category = FunctionDocumentation::Category::Other});
+    factory.registerResultSettings(
+        "formatQueryOrNull",
+        {"print_pretty_type_names", "implicit_select", "max_query_size", "max_parser_depth", "max_parser_backtracks"});
 }
 
 REGISTER_FUNCTION(formatQuerySingleLine)
@@ -234,6 +238,7 @@ REGISTER_FUNCTION(formatQuerySingleLine)
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
             .introduced_in = {23, 10},
             .category = FunctionDocumentation::Category::Other});
+    factory.registerResultSettings("formatQuerySingleLine", {"print_pretty_type_names", "implicit_select"});
 }
 
 REGISTER_FUNCTION(formatQuerySingleLineOrNull)
@@ -252,6 +257,10 @@ REGISTER_FUNCTION(formatQuerySingleLineOrNull)
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
             .introduced_in = {23, 11},
             .category = FunctionDocumentation::Category::Other});
+
+    factory.registerResultSettings(
+        "formatQuerySingleLineOrNull",
+        {"print_pretty_type_names", "implicit_select", "max_query_size", "max_parser_depth", "max_parser_backtracks"});
 }
 
 }

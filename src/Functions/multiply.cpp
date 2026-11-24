@@ -139,6 +139,7 @@ REGISTER_FUNCTION(Multiply)
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiply>(documentation);
+    factory.registerResultSettings(NameMultiply::name, {"decimal_check_overflow"});
 }
 
 REGISTER_FUNCTION(Sqr)

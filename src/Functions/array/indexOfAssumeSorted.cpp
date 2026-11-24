@@ -34,5 +34,6 @@ ascending order. If the array is not sorted, results are undefined.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionIndexOfAssumeSorted>(documentation);
+    factory.registerResultSettings(FunctionIndexOfAssumeSorted::name, {"type_json_skip_null_typed_paths"});
 }
 }

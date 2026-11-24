@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/CastOverloadResolver.h>
+#include <base/defines.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -590,11 +591,77 @@ SELECT accurateCastOrNull('abc', 'UInt32')
     factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, CAST_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, accurateCast_documentation);
     factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, accurateCastOrNull_documentation);
+
+    for (const auto * name : {"CAST", "_CAST", "accurateCast", "accurateCastOrNull"})
+        factory.registerResultSettings(name, getConversionResultSettings(ConversionResultKind::Cast));
 }
 
 FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
 {
     return CastOverloadResolverImpl::create(context, cast_type, false, std::move(diagnostic));
+}
+
+Names getConversionResultSettings(ConversionResultKind kind)
+{
+    Names text_output = {
+        "date_time_output_format",
+        "date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands",
+        "interval_output_format",
+        "bool_true_representation",
+        "bool_false_representation",
+        "output_format_decimal_trailing_zeros",
+        "output_format_always_write_decimal_point_in_float_and_decimal",
+        "output_format_float_precision",
+        "output_format_trim_fixed_string",
+        "output_format_values_escape_quote_with_quote"};
+    switch (kind)
+    {
+        case ConversionResultKind::OverflowOnly:
+            return {"date_time_overflow_behavior"};
+        case ConversionResultKind::Float:
+            return {"date_time_overflow_behavior", "precise_float_parsing"};
+        case ConversionResultKind::DateTime:
+            return {"date_time_overflow_behavior", "cast_string_to_date_time_mode"};
+        case ConversionResultKind::IPAddress:
+            return {"cast_ipv4_ipv6_default_on_conversion_error"};
+        case ConversionResultKind::String:
+            return text_output;
+        case ConversionResultKind::Cast:
+        {
+            Names cast = {
+                "date_time_overflow_behavior",
+                "date_time_input_format",
+                "cast_string_to_date_time_mode",
+                "precise_float_parsing",
+                "cast_keep_nullable",
+                "cast_ipv4_ipv6_default_on_conversion_error",
+                "input_format_ipv4_default_on_conversion_error",
+                "input_format_ipv6_default_on_conversion_error",
+                "cast_string_to_variant_use_inference",
+                "cast_string_to_dynamic_use_inference",
+                "check_conversion_from_numbers_to_enum",
+                "allow_special_bool_values_inside_variant",
+                "input_format_null_as_default",
+                "input_format_tsv_enum_as_number",
+                "input_format_tsv_use_best_effort_in_schema_inference",
+                "input_format_read_datetime_number_as_raw_value",
+                "input_format_json_try_infer_numbers_from_strings",
+                "input_format_try_infer_integers",
+                "input_format_try_infer_exponent_floats",
+                "input_format_try_infer_variants",
+                "input_format_try_infer_dates",
+                "input_format_try_infer_datetimes",
+                "input_format_try_infer_datetimes_only_datetime64",
+                "schema_inference_make_columns_nullable",
+                "aggregate_function_input_format",
+                "type_json_skip_invalid_typed_paths",
+                "type_json_use_partial_match_to_skip_paths_by_regexp",
+                "json_type_escape_dots_in_keys"};
+            cast.insert(cast.end(), text_output.begin(), text_output.end());
+            return cast;
+        }
+    }
+    UNREACHABLE();
 }
 
 }

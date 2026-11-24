@@ -71,7 +71,7 @@ public:
     {
         return implementation->getResultType();
     }
-    void updateHash(SipHash & hash) const override
+    void updateHashImpl(SipHash & hash) const override
     {
         implementation->updateHash(hash);
     }
@@ -241,6 +241,7 @@ Floating-point division by `0` returns `inf`, `-inf`, or `nan`. `Decimal` divisi
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDivideLegacy>(documentation);
+    factory.registerResultSettings(NameDivide::name, {"decimal_check_overflow"});
 
     FunctionDocumentation::Description exact_description = R"(
 Calculates the quotient of `x` and `y`. When both arguments are integers, the quotient is computed without conversion to floating point and truncated toward zero.
@@ -267,6 +268,7 @@ Existing stored `/` and `divide` expressions retain their historical behavior.
     {
         exact_description, exact_syntax, arguments, {}, exact_returned_value, exact_examples, exact_introduced_in, category};
     factory.registerFunction<FunctionDivideExact>(exact_documentation);
+    factory.registerResultSettings("divideExact", {"decimal_check_overflow"});
 }
 
 struct NameDivideOrNull { static constexpr auto name = "divideOrNull"; };
@@ -290,6 +292,7 @@ The `sql_compatible_division_for_integers` setting does not affect this function
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDivideOrNull>(documentation);
+    factory.registerResultSettings(NameDivideOrNull::name, {"decimal_check_overflow"});
 }
 
 }

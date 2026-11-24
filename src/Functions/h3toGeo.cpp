@@ -158,6 +158,7 @@ The previous behavior can be restored using setting `h3togeo_lon_lat_result_orde
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToGeo>(documentation);
+    factory.registerResultSettings(FunctionH3ToGeo::name, {"h3togeo_lon_lat_result_order", "functions_h3_default_if_invalid"});
 }
 
 }

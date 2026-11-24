@@ -5,6 +5,7 @@
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/register_objects.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/FunctionDocumentation.h>
 #include <Functions/IFunction.h>
 
@@ -74,6 +75,19 @@ public:
         FunctionDocumentation documentation,
         Case case_sensitiveness = Case::Sensitive);
 
+    /// Declares the settings that change the result of the function `name` for the same arguments, e.g.
+    /// `formatdatetime_parsedatetime_m_is_month_name` for `formatDateTime`. Their values are captured when the function is
+    /// created and become part of its identity (`IFunctionBase::updateHash`), and storage keys use them to tell whether a
+    /// session computes the values stored with the key. Must follow the registration of the function.
+    void registerResultSettings(const std::string & name, Names settings);
+
+    /// The declared result settings of `name` (an alias or any case of a case-insensitive name), or nullptr.
+    [[nodiscard]] const Names * tryGetResultSettings(const std::string & name) const;
+
+    /// `context` with every declared result setting set to its value in the global context, or `context` itself when none
+    /// differs. For an expression whose values are stored with the table, such as a projection.
+    [[nodiscard]] ContextPtr withGlobalResultSettings(const ContextPtr & context) const;
+
     [[nodiscard]] FunctionDocumentation getDocumentation(const std::string & name) const;
 
     [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const std::string & name) const;
@@ -85,6 +99,15 @@ private:
     Functions functions;
     Functions case_insensitive_functions;
     std::unordered_map<std::string, SecretArgumentsSpec> secret_arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    struct ResultSettings
+    {
+        Names names;
+        /// See `Settings::getIndexOfBuiltin`: creating a function must not look up the names.
+        VectorWithMemoryTracking<size_t> indices;
+    };
+    std::unordered_map<std::string, ResultSettings> result_settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    /// The same, by the creator of the function: `tryGetImpl` has it already, and looking up a name costs more.
+    std::unordered_map<const FunctionCreator *, const ResultSettings *> result_settings_by_creator; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     [[nodiscard]] const Functions & getMap() const override { return functions; }
 

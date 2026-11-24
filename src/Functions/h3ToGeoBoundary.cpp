@@ -125,6 +125,7 @@ Returns array of pairs `(lat, lon)`, which corresponds to the boundary of the pr
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToGeoBoundary>(documentation);
+    factory.registerResultSettings(FunctionH3ToGeoBoundary::name, {"functions_h3_default_if_invalid"});
 }
 
 }

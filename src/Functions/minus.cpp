@@ -78,6 +78,7 @@ with the maximum scale of the two arguments.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMinus>(documentation);
+    factory.registerResultSettings(NameMinus::name, {"decimal_check_overflow", "date_time_overflow_behavior"});
 }
 
 }

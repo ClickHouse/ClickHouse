@@ -2,6 +2,9 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Storages/KeyDescription.h>
 #include <Interpreters/misc.h>
 #include <Storages/IndicesDescription.h>
 
@@ -172,6 +175,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , arguments(other.arguments ? other.arguments->clone() : nullptr)
     , column_names(other.column_names)
     , data_types(other.data_types)
+    , result_settings(other.result_settings)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
     , is_implicitly_created(other.is_implicitly_created)
@@ -212,6 +216,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
 
     column_names = other.column_names;
     data_types = other.data_types;
+    result_settings = other.result_settings;
     sample_block = other.sample_block;
     granularity = other.granularity;
     is_implicitly_created = other.is_implicitly_created;
@@ -308,6 +313,9 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     );
 
     expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
+
+    result_settings.clear();
+    collectResultSettings(*expr_list, context->getSettingsRef(), result_settings);
 
     sample_block = expression->getSampleBlock();
 }

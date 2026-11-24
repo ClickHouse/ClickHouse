@@ -2962,6 +2962,10 @@ SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM q
     factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("scalarProductTransposed", DotProductTransposedName, FunctionFactory::Case::Insensitive);
 
+    for (const auto * name : {L2DistanceTransposedName, CosineDistanceTransposedName, DotProductTransposedName, "L2DistanceTransposedQuantized",
+                              "cosineDistanceTransposedQuantized", "dotProductTransposedQuantized"})
+        factory.registerResultSettings(name, {"qbit_one_bit_symmetric_distance"});
+
     /// L1Normalize documentation
     FunctionDocumentation::Description description_l1_normalize = R"(
 Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).

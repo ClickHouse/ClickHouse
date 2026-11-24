@@ -43,6 +43,7 @@ SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSlot>(documentation);
+    factory.registerResultSettings(FunctionTimeSlot::name, {"enable_extended_results_for_datetime_functions"});
 }
 
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
+
 #include <base/types.h>
 
 #include <vector>
@@ -45,6 +47,9 @@ struct IndexDescription
 
     /// Data types of index columns
     DataTypes data_types;
+
+    /// The result settings of the functions in the index expression, see `KeyDescription::result_settings`.
+    SettingsChanges result_settings;
 
     /// Sample block with index columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;

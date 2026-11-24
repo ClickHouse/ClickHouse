@@ -123,6 +123,7 @@ Returns the exact area of a specific cell in square meters corresponding to the 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3CellAreaM2>(documentation);
+    factory.registerResultSettings(FunctionH3CellAreaM2::name, {"functions_h3_default_if_invalid"});
 }
 
 }

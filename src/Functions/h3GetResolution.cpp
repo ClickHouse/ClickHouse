@@ -118,6 +118,7 @@ Returns the resolution of the [H3](#h3-index) index.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetResolution>(documentation);
+    factory.registerResultSettings(FunctionH3GetResolution::name, {"functions_h3_default_if_invalid"});
 }
 
 }

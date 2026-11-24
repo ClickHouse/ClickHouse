@@ -134,6 +134,7 @@ Provides all of the unidirectional edges from the provided H3Index.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetUnidirectionalEdgesFromHexagon>(documentation);
+    factory.registerResultSettings(FunctionH3GetUnidirectionalEdgesFromHexagon::name, {"functions_h3_default_if_invalid"});
 }
 
 }

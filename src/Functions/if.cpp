@@ -1690,6 +1690,7 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerResultSettings(FunctionIf::name, {"optimize_if_transform_const_strings_to_lowcardinality", "optimize_if_transform_strings_to_enum"});
 }
 
 FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool allow_lossy_numeric_supertype, bool use_low_cardinality_optimisation)

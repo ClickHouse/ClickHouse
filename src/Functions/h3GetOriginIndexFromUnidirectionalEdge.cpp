@@ -122,6 +122,7 @@ Returns the origin hexagon index from the unidirectional edge [H3](#h3-index).
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetOriginIndexFromUnidirectionalEdge>(documentation);
+    factory.registerResultSettings(FunctionH3GetOriginIndexFromUnidirectionalEdge::name, {"functions_h3_default_if_invalid"});
 }
 
 }

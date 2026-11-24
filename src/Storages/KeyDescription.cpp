@@ -2,9 +2,13 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <DataTypes/TypeTree.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -29,6 +33,26 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+void collectResultSettings(const IAST & ast, const Settings & settings, SettingsChanges & result_settings)
+{
+    if (const auto * function = ast.as<ASTFunction>())
+    {
+        if (const auto * names = FunctionFactory::instance().tryGetResultSettings(function->name))
+        {
+            for (const auto & name : *names)
+                if (!result_settings.tryGet(name))
+                    result_settings.emplace_back(name, settings.get(name));
+        }
+    }
+    for (const auto & child : ast.children)
+        collectResultSettings(*child, settings, result_settings);
+}
+
+bool resultSettingsChanged(const SettingsChanges & result_settings, const Settings & settings)
+{
+    return std::ranges::any_of(result_settings, [&](const auto & change) { return settings.get(change.name) != change.value; });
+}
+
 KeyDescription::KeyDescription(const KeyDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
@@ -37,6 +61,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_columns(other.additional_columns)
+    , result_settings(other.result_settings)
     , sort_order_id(other.sort_order_id)
 {
     if (other.expression)
@@ -72,6 +97,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_columns");
 
     additional_columns = other.additional_columns;
+    result_settings = other.result_settings;
     sort_order_id = other.sort_order_id;
     return *this;
 }
@@ -192,6 +218,10 @@ KeyDescription KeyDescription::getKeyFromAST(
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
         result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
+
+        /// Collected from the analyzed AST: user-defined functions are expanded there, and no call is erased by constant folding yet.
+        for (const auto & column_ast : expr->children)
+            collectResultSettings(*column_ast, context->getSettingsRef(), result.result_settings.emplace_back());
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
@@ -214,6 +244,25 @@ KeyDescription KeyDescription::getKeyFromAST(
         forEachInTypeTree(*result.data_types.back(), check);
     }
 
+    return result;
+}
+
+NameSet KeyDescription::getExpressionsWithChangedResultSettings(const Settings & settings) const
+{
+    NameSet result;
+    for (size_t i = 0; i < result_settings.size(); ++i)
+    {
+        if (!resultSettingsChanged(result_settings[i], settings))
+            continue;
+
+        const auto * output = expression->getActionsDAG().tryFindInOutputs(column_names[i]);
+        if (!output)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Key column {} is not an output of the key expression", column_names[i]);
+
+        for (const auto * node : findReachableNodes({output}))
+            if (node->type != ActionsDAG::ActionType::INPUT)
+                result.insert(node->result_name);
+    }
     return result;
 }
 

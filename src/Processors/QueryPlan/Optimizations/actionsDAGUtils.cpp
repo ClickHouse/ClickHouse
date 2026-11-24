@@ -32,6 +32,16 @@ extern const int LOGICAL_ERROR;
 namespace DB
 {
 /// A NULL constant argument makes the default implementation for NULLs return a constant NULL, which is not strictly monotonic.
+/// Two functions of one name compute other values when they captured other settings, see `IFunctionBase::updateHash`.
+static bool sameFunctionState(const IFunctionBase & lhs, const IFunctionBase & rhs)
+{
+    SipHash lhs_hash;
+    SipHash rhs_hash;
+    lhs.updateHash(lhs_hash);
+    rhs.updateHash(rhs_hash);
+    return lhs_hash.get128() == rhs_hash.get128();
+}
+
 static bool hasNullConstantArgument(const ActionsDAG::Node & node)
 {
     return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->column && child->column->onlyNull(); });
@@ -387,7 +397,8 @@ static MatchedTrees::Matches matchTreesImpl(
                             /// One function name resolves to different result types depending on the settings
                             /// the DAG was built with, and differently-typed results are not one calculation.
                             if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName()
-                                && parent->result_type->equals(*frame.node->result_type))
+                                && parent->result_type->equals(*frame.node->result_type)
+                                && sameFunctionState(*parent->function_base, *frame.node->function_base))
                             {
                                 const auto & children = parent->children;
                                 if (children.size() == num_children)

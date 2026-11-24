@@ -120,6 +120,14 @@ SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_form
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToJSONString>(documentation);
+    factory.registerResultSettings(
+        FunctionToJSONString::name,
+        {"output_format_json_quote_64bit_integers", "output_format_json_quote_64bit_floats", "output_format_json_quote_denormals",
+         "output_format_json_quote_decimals", "output_format_json_escape_forward_slashes", "output_format_json_named_tuples_as_objects",
+         "output_format_json_skip_null_value_in_named_tuples", "output_format_json_validate_utf8", "output_format_json_map_as_array_of_tuples",
+         "output_format_json_pretty_print", "date_time_output_format", "date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands",
+         "interval_output_format", "bool_true_representation", "bool_false_representation", "output_format_decimal_trailing_zeros",
+         "output_format_always_write_decimal_point_in_float_and_decimal", "output_format_float_precision", "output_format_trim_fixed_string"});
 }
 
 }

@@ -40,6 +40,7 @@ SELECT
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToStartOfHour>(documentation);
+    factory.registerResultSettings(FunctionToStartOfHour::name, {"enable_extended_results_for_datetime_functions"});
 }
 
 }

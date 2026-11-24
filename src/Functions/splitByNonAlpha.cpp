@@ -137,6 +137,7 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSplitByNonAlpha>(documentation);
+    factory.registerResultSettings(FunctionSplitByNonAlpha::name, {"splitby_max_substrings_includes_remaining_string"});
 }
 
 }

@@ -107,6 +107,7 @@ SELECT toTypeName(123)
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToTypeName>(documentation);
+    factory.registerResultSettings(FunctionToTypeName::name, {"print_pretty_type_names"});
 }
 
 }

@@ -454,6 +454,7 @@ SELECT json, JSONAllPaths(json) FROM test;
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONAllPathsImpl>>(documentation);
+        factory.registerResultSettings(FunctionJSONPaths<JSONAllPathsImpl>::name, {"type_json_skip_null_typed_paths"});
     }
 
     /// JSONAllPathsWithTypes
@@ -487,6 +488,7 @@ SELECT json, JSONAllPathsWithTypes(json) FROM test;
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONAllPathsWithTypesImpl>>(documentation);
+        factory.registerResultSettings(FunctionJSONPaths<JSONAllPathsWithTypesImpl>::name, {"type_json_skip_null_typed_paths"});
     }
 
     /// JSONDynamicPaths

@@ -71,6 +71,7 @@ For floating-point results, a zero divisor produces `NaN`.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionModuloOrZero>(documentation);
+    factory.registerResultSettings(NameModuloOrZero::name, {"decimal_check_overflow"});
 }
 
 }

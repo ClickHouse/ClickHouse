@@ -286,6 +286,7 @@ SELECT json, JSONAllValues(json) FROM test;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionJSONAllValues>(documentation);
+    factory.registerResultSettings(FunctionJSONAllValues::name, {"type_json_skip_null_typed_paths"});
 }
 
 }

@@ -139,6 +139,7 @@ This function calculates the minimum number of grid cells between the start and 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3Distance>(documentation);
+    factory.registerResultSettings(FunctionH3Distance::name, {"functions_h3_default_if_invalid"});
 }
 
 }

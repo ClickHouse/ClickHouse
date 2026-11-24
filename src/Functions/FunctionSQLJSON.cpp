@@ -121,6 +121,8 @@ world
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionSQLJSON<NameJSONValue, JSONValueImpl>>(documentation);
+        factory.registerResultSettings(
+            NameJSONValue::name, {"function_json_value_return_type_allow_complex", "function_json_value_return_type_allow_nullable"});
     }
 }
 

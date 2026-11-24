@@ -38,6 +38,7 @@ REGISTER_FUNCTION(Has)
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHas>(documentation);
+    factory.registerResultSettings(FunctionHas::name, {"type_json_skip_null_typed_paths"});
 }
 
 FunctionOverloadResolverPtr createInternalFunctionHasOverloadResolver()

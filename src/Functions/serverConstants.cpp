@@ -351,6 +351,7 @@ SELECT timezone()
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerResultSettings(FunctionTimezone::name, {"session_timezone"});
     factory.registerAlias("timeZone", "timezone");
     factory.registerAlias("current_timezone", "timezone", FunctionFactory::Case::Insensitive);
 }

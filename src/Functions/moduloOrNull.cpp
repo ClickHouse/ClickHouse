@@ -33,6 +33,7 @@ when the divisor is zero, or, for integer arguments, when computing the minimal 
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionModuloOrNull>(documentation);
+    factory.registerResultSettings(NameModuloOrNull::name, {"decimal_check_overflow"});
     factory.registerAlias("modOrNull", "moduloOrNull", FunctionFactory::Case::Insensitive);
 }
 
@@ -68,6 +69,7 @@ for integer arguments, when computing the minimal negative value modulo `-1`.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPositiveModuloOrNll>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerResultSettings(NamePositiveModuloOrNull::name, {"decimal_check_overflow"});
 
     factory.registerAlias("positive_modulo_or_null", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);
     factory.registerAlias("pmodOrNull", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);

@@ -44,6 +44,7 @@ toStartOfTenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToStartOfTenMinutes>(documentation);
+    factory.registerResultSettings(FunctionToStartOfTenMinutes::name, {"enable_extended_results_for_datetime_functions"});
 }
 
 }

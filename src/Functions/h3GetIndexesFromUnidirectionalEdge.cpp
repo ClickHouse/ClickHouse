@@ -129,6 +129,7 @@ Returns the origin and destination hexagon indexes from the given unidirectional
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetIndexesFromUnidirectionalEdge>(documentation);
+    factory.registerResultSettings(FunctionH3GetIndexesFromUnidirectionalEdge::name, {"functions_h3_default_if_invalid"});
 }
 
 }

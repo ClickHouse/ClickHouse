@@ -3651,6 +3651,10 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
         if (ignored_index_names.contains(index.name))
             continue;
 
+        /// The query computes the index expression differently than the stored index values.
+        if (resultSettingsChanged(index.result_settings, settings))
+            continue;
+
         auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, data_settings);
 
         /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
@@ -6295,6 +6299,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 if (ignored_index_names.contains(index.name))
                     continue;
                 if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
+                    continue;
+                if (resultSettingsChanged(index.result_settings, context->getSettingsRef()))
                     continue;
                 if (std::find(index.column_names.begin(), index.column_names.end(), descr.key_column_name) == index.column_names.end())
                     continue;

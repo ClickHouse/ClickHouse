@@ -114,6 +114,7 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ExactEdgeLengthRads>(documentation);
+    factory.registerResultSettings(FunctionH3ExactEdgeLengthRads::name, {"functions_h3_default_if_invalid"});
 }
 
 }

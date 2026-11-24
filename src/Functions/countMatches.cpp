@@ -259,6 +259,8 @@ Like [`countMatches`](#countMatches) but performs case-insensitive matching.
 
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>(documentation_case_sensitive);
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>(documentation_case_insensitive);
+    for (const auto * name : {FunctionCountMatchesCaseSensitive::name, FunctionCountMatchesCaseInsensitive::name})
+        factory.registerResultSettings(name, {"count_matches_stop_at_empty_match"});
 }
 
 }

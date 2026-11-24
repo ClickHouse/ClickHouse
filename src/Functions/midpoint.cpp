@@ -73,6 +73,7 @@ SELECT midpoint(toTime64('12:00:00', 0), toTime64('14:00:00', 0)) AS result, toT
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<MidpointResolver<FunctionMidpointBinary>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerResultSettings("midpoint", {"decimal_check_overflow"});
 }
 
 }

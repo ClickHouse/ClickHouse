@@ -198,6 +198,7 @@ The previous behavior can be restored using setting `geotoh3_argument_order = 'l
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionGeoToH3>(documentation);
+    factory.registerResultSettings(FunctionGeoToH3::name, {"geotoh3_argument_order"});
 }
 
 }

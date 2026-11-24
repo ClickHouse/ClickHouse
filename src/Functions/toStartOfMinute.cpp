@@ -43,6 +43,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToStartOfMinute>(documentation);
+    factory.registerResultSettings(FunctionToStartOfMinute::name, {"enable_extended_results_for_datetime_functions"});
 }
 
 }

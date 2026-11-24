@@ -6126,7 +6126,7 @@ public:
 
     String getName() const override { return cast_name; }
 
-    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+    void updateHashImpl(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

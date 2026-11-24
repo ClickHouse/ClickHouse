@@ -134,6 +134,7 @@ SELECT visibleWidth(NULL)
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionVisibleWidth>(documentation);
+    factory.registerResultSettings(FunctionVisibleWidth::name, {"function_visible_width_behavior"});
 }
 
 }

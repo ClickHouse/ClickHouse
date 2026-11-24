@@ -230,6 +230,7 @@ negative number by minus one.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionModulo>(documentation);
+    factory.registerResultSettings(NameModulo::name, {"decimal_check_overflow"});
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
 
@@ -253,6 +254,7 @@ Calculates the remainder of a division. This is the legacy modulo implementation
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionModuloLegacy>(documentation);
+    factory.registerResultSettings(NameModuloLegacy::name, {"decimal_check_overflow"});
 }
 
 struct NamePositiveModulo
@@ -283,6 +285,7 @@ Returns the difference between `x` and the nearest integer not greater than
 
     factory.registerFunction<FunctionPositiveModulo>(documentation,
         FunctionFactory::Case::Insensitive);
+    factory.registerResultSettings(NamePositiveModulo::name, {"decimal_check_overflow"});
 
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);
     /// Compatibility with Spark:

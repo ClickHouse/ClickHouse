@@ -114,6 +114,7 @@ In the H3 grid system, most cells are hexagonal, but there are exactly 12 pentag
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3IsPentagon>(documentation);
+    factory.registerResultSettings(FunctionH3IsPentagon::name, {"functions_h3_default_if_invalid"});
 }
 
 }

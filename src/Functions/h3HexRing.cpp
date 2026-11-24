@@ -178,6 +178,7 @@ The ring is hollow when k > 0.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3HexRing>(documentation);
+    factory.registerResultSettings(FunctionH3HexRing::name, {"functions_h3_default_if_invalid"});
 }
 
 }

@@ -146,6 +146,7 @@ session settings.
     FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {26, 8}, category};
 
     factory.registerFunction<FunctionParseQueryToJSON>(documentation);
+    factory.registerResultSettings(FunctionParseQueryToJSON::name, {"implicit_select", "allow_settings_after_format_in_insert"});
 }
 
 }

@@ -26,5 +26,6 @@ Returns the number of elements in the array equal to `x`. Equivalent to `arrayCo
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionCountEqual>(documentation);
+    factory.registerResultSettings(FunctionCountEqual::name, {"type_json_skip_null_typed_paths"});
 }
 }

@@ -179,6 +179,7 @@ Lists all the [H3](#H3-index) hexagons in the radius of `k` from the given hexag
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3KRing>(documentation);
+    factory.registerResultSettings(FunctionH3KRing::name, {"functions_h3_default_if_invalid"});
 }
 
 }

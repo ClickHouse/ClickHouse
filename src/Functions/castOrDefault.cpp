@@ -1049,6 +1049,23 @@ SELECT
     factory.registerFunction("toIPv6OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); },
         toIPv6OrDefault_documentation);
+
+    const auto register_or_default = [&](ConversionResultKind kind, std::initializer_list<const char *> targets)
+    {
+        auto settings = getConversionResultSettings(kind);
+        settings.push_back("cast_keep_nullable");
+        for (const auto * target : targets)
+            factory.registerResultSettings(std::string("to") + target + "OrDefault", settings);
+    };
+    register_or_default(
+        ConversionResultKind::OverflowOnly,
+        {"UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "UInt256", "Int8", "Int16", "Int32", "Int64", "Int128", "Int256", "Decimal32",
+         "Decimal64", "Decimal128", "Decimal256"});
+    register_or_default(ConversionResultKind::Float, {"Float32", "Float64"});
+    register_or_default(ConversionResultKind::DateTime, {"Date", "Date32", "DateTime", "DateTime64"});
+    register_or_default(ConversionResultKind::IPAddress, {"IPv4", "IPv6"});
+    factory.registerResultSettings("toUUIDOrDefault", {"cast_keep_nullable"});
+    factory.registerResultSettings(FunctionCastOrDefault::name, getConversionResultSettings(ConversionResultKind::Cast));
 }
 
 }

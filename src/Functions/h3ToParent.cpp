@@ -143,6 +143,7 @@ Returns the parent (coarser) [H3](#h3-index) index containing the given H3 index
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToParent>(documentation);
+    factory.registerResultSettings(FunctionH3ToParent::name, {"functions_h3_default_if_invalid"});
 }
 
 }

@@ -36,6 +36,7 @@ SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToStartOfYear>(documentation);
+    factory.registerResultSettings(FunctionToStartOfYear::name, {"enable_extended_results_for_datetime_functions"});
 }
 
 }

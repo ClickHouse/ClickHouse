@@ -192,6 +192,7 @@ large number: While processing intDiv(1, 0.001) AS res, toTypeName(res).
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIntDiv>(documentation);
+    factory.registerResultSettings(NameIntDiv::name, {"decimal_check_overflow"});
 }
 
 struct NameIntDivOrNull { static constexpr auto name = "intDivOrNull"; };
@@ -220,5 +221,6 @@ minimal negative number by minus one.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIntDivOrNull>(documentation);
+    factory.registerResultSettings(NameIntDivOrNull::name, {"decimal_check_overflow"});
 }
 }

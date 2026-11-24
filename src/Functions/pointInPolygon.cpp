@@ -1022,6 +1022,7 @@ Checks whether the point belongs to the polygon on the plane.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>>(documentation);
+    factory.registerResultSettings("pointInPolygon", {"validate_polygons"});
 }
 
 }

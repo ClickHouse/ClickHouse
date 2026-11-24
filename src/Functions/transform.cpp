@@ -1131,6 +1131,7 @@ LIMIT 10
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionTransformOverloadResolver>(documentation);
+    factory.registerResultSettings(FunctionTransformOverloadResolver::name, {"optimize_if_transform_const_strings_to_lowcardinality", "optimize_if_transform_strings_to_enum"});
 }
 
 }

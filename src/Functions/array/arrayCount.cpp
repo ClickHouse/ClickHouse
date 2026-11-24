@@ -154,6 +154,7 @@ During a rolling upgrade of a cluster, a distributed query initiated by a not-ye
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<ArrayCountFunctionChooser>(documentation);
+    factory.registerResultSettings(ArrayCountFunctionChooser::name, {"array_count_legacy_uint32_result"});
 }
 
 }

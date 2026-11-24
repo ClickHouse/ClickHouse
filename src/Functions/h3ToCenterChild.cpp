@@ -140,6 +140,7 @@ This function finds the center child of an H3 index at a specified finer resolut
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToCenterChild>(documentation);
+    factory.registerResultSettings(FunctionH3ToCenterChild::name, {"functions_h3_default_if_invalid"});
 }
 
 }

@@ -1425,6 +1425,7 @@ If the IPv4 address has an invalid format, an exception is thrown.
     FunctionDocumentation documentation_ipv4stringtonum = {description_ipv4stringtonum, syntax_ipv4stringtonum, arguments_ipv4stringtonum, {}, returned_value_ipv4stringtonum, examples_ipv4stringtonum, introduced_in_ipv4stringtonum, category_ipv4stringtonum};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv4stringtonum);
+    factory.registerResultSettings(FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>::name, {"cast_ipv4_ipv6_default_on_conversion_error"});
 
     /// IPv4StringToNumOrDefault function
     FunctionDocumentation::Description description_ipv4stringtonumordefault = R"(
@@ -1595,6 +1596,7 @@ SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['127.0.0.1', '11
     FunctionDocumentation documentation_ipv6stringtonum = {description_ipv6stringtonum, syntax_ipv6stringtonum, arguments_ipv6stringtonum, {}, returned_value_ipv6stringtonum, examples_ipv6stringtonum, introduced_in_ipv6stringtonum, category_ipv6stringtonum};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv6stringtonum);
+    factory.registerResultSettings(FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>::name, {"cast_ipv4_ipv6_default_on_conversion_error"});
 
     /// IPv6StringToNumOrDefault function
     FunctionDocumentation::Description description_ipv6stringtonumordefault = R"(

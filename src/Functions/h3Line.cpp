@@ -182,6 +182,7 @@ Returns the line of [H3](#h3-index) indices between the two provided indices.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3Line>(documentation);
+    factory.registerResultSettings(FunctionH3Line::name, {"functions_h3_default_if_invalid"});
 }
 
 }

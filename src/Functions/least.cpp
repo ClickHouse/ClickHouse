@@ -127,6 +127,7 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerResultSettings(NameLeast::name, {"least_greatest_legacy_null_behavior", "decimal_check_overflow"});
 }
 
 }

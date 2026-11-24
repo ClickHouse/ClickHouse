@@ -127,6 +127,7 @@ SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Greatest, FunctionGreatest>>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerResultSettings(NameGreatest::name, {"least_greatest_legacy_null_behavior", "decimal_check_overflow"});
 }
 
 }

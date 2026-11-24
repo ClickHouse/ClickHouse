@@ -175,6 +175,7 @@ Returns an array of child indexes for the given [H3](#h3-index) index at the spe
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToChildren>(documentation);
+    factory.registerResultSettings(FunctionH3ToChildren::name, {"functions_h3_default_if_invalid"});
 }
 
 }

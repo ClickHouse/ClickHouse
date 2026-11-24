@@ -39,6 +39,7 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToLastDayOfMonth>(documentation);
+    factory.registerResultSettings(FunctionToLastDayOfMonth::name, {"enable_extended_results_for_datetime_functions"});
 
     /// MySQL compatibility alias.
     factory.registerAlias("LAST_DAY", "toLastDayOfMonth", FunctionFactory::Case::Insensitive);

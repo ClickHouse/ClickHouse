@@ -155,6 +155,7 @@ Empty substrings may be selected when:
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSplitByChar>(documentation);
+    factory.registerResultSettings(FunctionSplitByChar::name, {"splitby_max_substrings_includes_remaining_string"});
 }
 
 }

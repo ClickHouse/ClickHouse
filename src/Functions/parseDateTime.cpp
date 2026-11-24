@@ -2830,6 +2830,13 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
     factory.registerFunction<FunctionParseDateTime64>(parseDateTime64_documentation);
     factory.registerFunction<FunctionParseDateTime64OrZero>(parseDateTime64OrZero_documentation);
     factory.registerFunction<FunctionParseDateTime64OrNull>(parseDateTime64OrNull_documentation);
+
+    for (const auto * name : {FunctionParseDateTime::name, FunctionParseDateTimeOrZero::name, FunctionParseDateTimeOrNull::name,
+                              FunctionParseDateTime64::name, FunctionParseDateTime64OrZero::name, FunctionParseDateTime64OrNull::name})
+        factory.registerResultSettings(
+            name,
+            {"formatdatetime_parsedatetime_m_is_month_name", "parsedatetime_parse_without_leading_zeros",
+             "parsedatetime_e_requires_space_padding"});
 }
 
 

@@ -3740,5 +3740,7 @@ The first argument may also be a [`Map`](/reference/data-types/map): an absent k
     FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
     factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Null>>>(documentation_null);
+    for (const auto * name : {"arrayElement", "arrayElementOrNull"})
+        factory.registerResultSettings(name, {"json_type_escape_dots_in_keys"});
 }
 }

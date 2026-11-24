@@ -125,6 +125,7 @@ Selects substrings of consecutive bytes from the ranges `a-z` and `A-Z` and retu
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSplitByAlpha>(documentation);
+    factory.registerResultSettings(FunctionSplitByAlpha::name, {"splitby_max_substrings_includes_remaining_string"});
     factory.registerAlias("splitByAlpha", FunctionSplitByAlpha::name);
 }
 

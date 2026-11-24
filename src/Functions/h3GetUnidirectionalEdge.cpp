@@ -129,6 +129,7 @@ Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin 
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionH3GetUnidirectionalEdge>(documentation);
+    factory.registerResultSettings(FunctionH3GetUnidirectionalEdge::name, {"functions_h3_default_if_invalid"});
 }
 
 }

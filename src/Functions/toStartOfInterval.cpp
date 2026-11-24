@@ -1145,6 +1145,9 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionToStartOfIntervalOverloadResolver>(documentation);
+        factory.registerResultSettings(
+            FunctionToStartOfIntervalOverloadResolver::name,
+            {"to_start_of_interval_preserves_argument_type", "enable_extended_results_for_datetime_functions"});
     }
     factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);

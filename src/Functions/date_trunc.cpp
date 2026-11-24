@@ -331,6 +331,8 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDateTruncOverloadResolver>(documentation);
+    factory.registerResultSettings(
+        FunctionDateTruncOverloadResolver::name, {"function_date_trunc_return_type_behavior", "enable_extended_results_for_datetime_functions"});
 
     /// Compatibility alias.
     factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::Case::Insensitive);

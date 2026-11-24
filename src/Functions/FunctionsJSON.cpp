@@ -792,7 +792,7 @@ public:
     String getName() const override { return Name::name; }
 
     /// The captured settings decide how a JSON value is parsed into the result, see `IFunctionBase::updateHash`.
-    void updateHash(SipHash & hash) const override { hash.update(settings_hash); }
+    void updateHashImpl(SipHash & hash) const override { hash.update(settings_hash); }
 
     const DataTypes & getArgumentTypes() const override
     {
@@ -2673,6 +2673,60 @@ SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractLeafPathsAndValues, JSONExtractLeafPathsAndValuesImpl>>(documentation);
     }
+
+    const Names json_type_settings = {"json_type_escape_dots_in_keys", "type_json_skip_null_typed_paths"};
+    for (const auto * name :
+         {NameJSONHas::name,
+          NameJSONLength::name,
+          NameJSONKey::name,
+          NameJSONType::name,
+          NameJSONExtractInt::name,
+          NameJSONExtractUInt::name,
+          NameJSONExtractFloat::name,
+          NameJSONExtractBool::name,
+          NameJSONExtractKeys::name,
+          NameJSONExtractIntCaseInsensitive::name,
+          NameJSONExtractUIntCaseInsensitive::name,
+          NameJSONExtractFloatCaseInsensitive::name,
+          NameJSONExtractBoolCaseInsensitive::name,
+          NameJSONExtractKeysCaseInsensitive::name})
+        factory.registerResultSettings(name, json_type_settings);
+
+    Names json_raw_settings = json_type_settings;
+    json_raw_settings.push_back("input_format_json_max_depth");
+    for (const auto * name :
+         {NameJSONExtractString::name,
+          NameJSONExtractRaw::name,
+          NameJSONExtractArrayRaw::name,
+          NameJSONExtractKeysAndValuesRaw::name,
+          NameJSONExtractStringCaseInsensitive::name,
+          NameJSONExtractRawCaseInsensitive::name,
+          NameJSONExtractArrayRawCaseInsensitive::name,
+          NameJSONExtractKeysAndValuesRawCaseInsensitive::name})
+        factory.registerResultSettings(name, json_raw_settings);
+
+    Names json_typed_settings = json_raw_settings;
+    for (const auto * setting :
+         {"type_json_skip_duplicated_paths",
+          "type_json_allow_duplicated_key_with_literal_and_nested_object",
+          "input_format_read_datetime_number_as_raw_value",
+          "input_format_json_try_infer_numbers_from_strings",
+          "input_format_try_infer_dates",
+          "input_format_try_infer_datetimes",
+          "input_format_try_infer_datetimes_only_datetime64",
+          "schema_inference_make_columns_nullable",
+          "precise_float_parsing",
+          "date_time_input_format",
+          "cast_string_to_date_time_mode",
+          "json_extract_use_cast_string_to_date_time_mode",
+          "json_extract_named_tuples_as_objects"})
+        json_typed_settings.push_back(setting);
+    for (const auto * name :
+         {NameJSONExtract::name,
+          NameJSONExtractKeysAndValues::name,
+          NameJSONExtractCaseInsensitive::name,
+          NameJSONExtractKeysAndValuesCaseInsensitive::name})
+        factory.registerResultSettings(name, json_typed_settings);
 }
 
 }

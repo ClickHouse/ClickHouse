@@ -323,7 +323,9 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     /// a projection that only counts rows can need no column, but the planner needs a table with a column
     if (source_columns.empty())
         source_columns = metadata_snapshot->getColumns().getAllPhysical();
-    ProjectionPlanner projection_planner(projection.query_ast, ColumnsDescription(std::move(source_columns)), context);
+    /// The projection data is computed with the values of the result settings the table has, not those of the session.
+    ProjectionPlanner projection_planner(
+        projection.query_ast, ColumnsDescription(std::move(source_columns)), FunctionFactory::instance().withGlobalResultSettings(context));
 
     AggregateProjectionInfo info;
     info.context = projection_planner.getContext();
