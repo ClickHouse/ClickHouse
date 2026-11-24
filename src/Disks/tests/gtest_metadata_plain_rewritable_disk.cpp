@@ -4249,6 +4249,122 @@ TEST_F(MetadataPlainRewritableDiskTest, HardLinkOfFileWithLineFeedInName)
     EXPECT_FALSE(object_storage->exists(StoredObject(shared_remote_path)));
 }
 
+/// A replacement of an existing file keeps a backup of the target under a marker of a pending replacement, which
+/// names the target. The name of the target may contain a line feed, which separates the fields of the marker, so
+/// such a name is escaped. The replacement must work, be undone, and be rolled back by the next load.
+TEST_F(MetadataPlainRewritableDiskTest, ReplaceOfFileWithLineFeedInName)
+{
+    using Kind = PlainRewritableLayout::TombstoneMarker::Kind;
+    const std::string removed_name = "__removed.abcdefghijklmnop";
+
+    /// The content for a name without a line feed is the one that older versions write and read.
+    EXPECT_EQ(
+        PlainRewritableLayout::makePendingReplaceTombstoneContent({.directory_remote_path = "abc", .file_name = "back\\slash", .size = 7}),
+        "pending replace\nabc\nback\\slash\n7\n");
+
+    for (const auto & file_name : std::vector<std::string>{"f\nname", "\n", "f\nna\\me", "f\n\tname", "f\\n\nname", "plain", "back\\slash", "tab\there"})
+    {
+        const auto content = PlainRewritableLayout::makePendingReplaceTombstoneContent({.directory_remote_path = "abc", .file_name = file_name, .size = 123});
+        const auto marker = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name);
+        EXPECT_EQ(marker.kind, Kind::PendingReplace) << file_name;
+        EXPECT_EQ(marker.pending_replace.directory_remote_path, "abc");
+        EXPECT_EQ(marker.pending_replace.file_name, file_name);
+        EXPECT_EQ(marker.pending_replace.size, 123u);
+        /// A torn content is never taken for a complete one.
+        for (size_t size = 0; size < content.size(); ++size)
+            EXPECT_EQ(PlainRewritableLayout::parseTombstoneMarkerContent(content.substr(0, size), removed_name).kind, Kind::Malformed) << file_name << " " << size;
+    }
+    /// A tab that is not escaped, or a name that is not a single name, is not what is written.
+    for (const auto & escaped_name : std::vector<std::string>{"f\tname", "a/b", "f\\nname/b", ".."})
+        EXPECT_EQ(PlainRewritableLayout::parseTombstoneMarkerContent(
+            PlainRewritableLayout::PENDING_REPLACE_ESCAPED_TOMBSTONE_PREFIX + "abc\n" + escaped_name + "\n1\n", removed_name).kind, Kind::Malformed) << escaped_name;
+
+    thread_local_rng.seed(42);
+
+    const std::string test = "ReplaceOfFileWithLineFeedInName";
+    const std::string source_path = "/A/source";
+    const std::string target_path = "/A/tar\nget";
+    const std::string source_content = "the source file";
+    const std::string target_content = "the target file, longer";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    std::string target_key;
+    size_t target_size = 0;
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath(source_path).serialize(), source_content);
+        tx->createMetadataFile(source_path, {StoredObject(source_path, "source", source_size)});
+
+        target_key = tx->generateObjectKeyForPath(target_path).serialize();
+        target_size = writeObject(object_storage, target_key, target_content);
+        tx->createMetadataFile(target_path, {StoredObject(target_path, "target", target_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto objects_before = allObjects(object_storage, test);
+    const auto check_not_replaced = [&]
+    {
+        EXPECT_EQ(sorted(metadata->listDirectory("/A")), (std::vector<std::string>{"source", "tar\nget"}));
+        EXPECT_EQ(metadata->getStorageObjects(target_path).front().remote_path, target_key);
+        EXPECT_EQ(readObject(object_storage, target_key), target_content);
+        EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects(source_path).front().remote_path), source_content);
+    };
+
+    /// The replacement fails after the target is put aside under the marker of a pending replacement, and is undone.
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_copy_fail_on_file_move");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_copy_fail_on_file_move"));
+
+        auto tx = metadata->createTransaction();
+        tx->replaceFile(source_path, target_path);
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+    EXPECT_EQ(allObjects(object_storage, test), objects_before);
+    metadata = restartMetadataStorage(test);
+    check_not_replaced();
+
+    /// As if a writer died after copying the source over the target, but before committing the replacement.
+    writeObject(
+        object_storage,
+        fmt::format("./{}/__meta/__tombstone/{}", test, removed_name),
+        PlainRewritableLayout::makePendingReplaceTombstoneContent(PlainRewritableLayout::PendingReplace{
+            .directory_remote_path = fs::path(target_key).parent_path().filename(),
+            .file_name = "tar\nget",
+            .size = target_size,
+        }));
+    writeObject(object_storage, fmt::format("./{}/__root/{}", test, removed_name), target_content);
+    writeObject(object_storage, target_key, source_content);
+
+    /// The load restores the target from the backup and reclaims the backup with its marker.
+    metadata = restartMetadataStorage(test);
+    check_not_replaced();
+    EXPECT_EQ(allObjects(object_storage, test), objects_before);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->replaceFile(source_path, target_path);
+        tx->commit(DB::NoCommitOptions{});
+    }
+    const auto check_replaced = [&]
+    {
+        EXPECT_EQ(sorted(metadata->listDirectory("/A")), (std::vector<std::string>{"tar\nget"}));
+        EXPECT_EQ(metadata->getStorageObjects(target_path).front().remote_path, target_key);
+        EXPECT_EQ(readObject(object_storage, target_key), source_content);
+    };
+    check_replaced();
+    const auto objects_after = allObjects(object_storage, test);
+    for (const auto & [key, _] : objects_after)
+        EXPECT_THAT(key, testing::Not(testing::HasSubstr(PlainRewritableLayout::REMOVED_NAME_PREFIX)));
+
+    metadata = restartMetadataStorage(test);
+    check_replaced();
+    EXPECT_EQ(allObjects(object_storage, test), objects_after);
+}
+
 /// The key of a blob is taken from the content of a marker of a blob removal, and the blob is deleted if nothing
 /// links it. A key that names an object outside of the blobs of the disk must not be accepted: an absolute path
 /// would discard the common key prefix, `..` would escape it, and a key under `__meta` would name metadata.

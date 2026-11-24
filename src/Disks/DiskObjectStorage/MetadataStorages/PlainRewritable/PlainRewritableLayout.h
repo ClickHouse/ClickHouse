@@ -53,6 +53,10 @@ public:
     /// backup, and rewritten as committed only once the source is in place. A pending replacement is rolled back during
     /// the initial load: a complete backup is copied back over the target before the backup is reclaimed.
     constexpr static std::string PENDING_REPLACE_TOMBSTONE_PREFIX = "pending replace\n";
+    /// The same marker for a target whose name contains a line feed, which separates the fields of the content: the
+    /// name is escaped like in the file list of `prefix.path`. The content for any other name is not changed, so
+    /// that it is still read by the versions that know only `PENDING_REPLACE_TOMBSTONE_PREFIX`.
+    constexpr static std::string PENDING_REPLACE_ESCAPED_TOMBSTONE_PREFIX = "pending replace v2\n";
 
     /// A metadata-only operation (one that only rewrites `prefix.path`, see `isMetadataOnlyMove`) that drops the last
     /// link to a blob deletes the blob only in `finalize`, after the commit. Nothing under the prefix of a directory with
@@ -106,7 +110,7 @@ public:
     /// Whether a key relative to the common key prefix can be the key of a blob or of a file (see `FileRemoteInfo::blob_key`): it is
     /// relative, has no `.` or `..` components and no NULs, and is not under `__meta`, so that the object it names
     /// stays among the blobs of this disk. A line feed is allowed: the name of a file may contain it, and the formats
-    /// that store keys (`prefix.path` and the marker of a blob removal) escape it.
+    /// that store keys (`prefix.path`, the marker of a blob removal, and the marker of a pending replacement) escape it.
     static bool isValidBlobKey(std::string_view blob_key);
 
     /// The content of a committed marker is the removed name itself.
