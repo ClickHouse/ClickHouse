@@ -574,6 +574,7 @@ protected:
 
     /// Compute the grid timestamp `start_timestamp + grid_index * step` in unsigned 64-bit arithmetic: avoids signed overflow/UBSAN
     /// on adversarial boundary values, preserving the signed accumulator's bit pattern for normal inputs.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     TimestampType timestampAtIndex(size_t grid_index) const
     {
         chassert(grid_index < grid_size);
@@ -596,6 +597,7 @@ protected:
 
     /// End timestamp of bucket `bucket_index`: `first_bucket_end_time` plus the end-spacings (`even/odd_bucket_step`) of
     /// buckets 1..bucket_index; wrapping unsigned arithmetic recovers the in-range end modulo 2^64 on extreme grids.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     TimestampType ALWAYS_INLINE bucketEndTimestamp(size_t bucket_index) const
     {
         chassert(bucket_index < bucket_count);
@@ -890,6 +892,7 @@ private:
     /// Classifies a sample: the bucket index to add it to (or NO_BUCKET to skip it), plus its `time_range` for run
     /// detection; with `ReturnType == size_t` the range is not computed and only the index is returned.
     template <typename ReturnType = SampleClass>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ALWAYS_INLINE ReturnType classifySample(const TimestampType timestamp) const
     {
         static_assert(std::is_same_v<ReturnType, SampleClass> || std::is_same_v<ReturnType, size_t>);
