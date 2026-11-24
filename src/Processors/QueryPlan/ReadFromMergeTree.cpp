@@ -6692,7 +6692,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             const IASTHash query_hash = *build_pipeline_settings.partial_aggregate_cache_query_hash;
             RangesInDataParts miss_parts;
             miss_parts.reserve(result.parts_with_ranges.size());
-            std::vector<Pipe> plan_hit_pipes;
+            Pipes plan_hit_pipes;
             SharedHeader read_header = getOutputHeader();
             size_t num_plan_hits = 0;
 
