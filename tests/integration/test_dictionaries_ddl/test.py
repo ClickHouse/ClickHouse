@@ -584,6 +584,7 @@ def test_clickhouse_remote_same_name(started_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/38450
 #  suggests placing 'secure' in named_collections
 def test_secure(started_cluster):
+    # `CREATE DICTIONARY` with a named collection requires `NAMED COLLECTION` on it, which only `admin` has
     node1.query("DROP TABLE IF EXISTS test.foo_dict")
     node1.query("CREATE TABLE test.foo_dict(`id` UInt64, `value` String) ENGINE = Log")
     node1.query("INSERT INTO test.foo_dict values (1, 'value1')")
@@ -627,7 +628,8 @@ def test_secure(started_cluster):
             TABLE 'foo_dict' DB 'test'
             ))
         LIFETIME(MIN 1 MAX 10)
-            """
+            """,
+        user="admin",
     )
     value = node1.query(
         "SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))"
@@ -649,7 +651,8 @@ def test_secure(started_cluster):
             TABLE 'foo_dict' DB 'test'
             ))
         LIFETIME(MIN 1 MAX 10)
-            """
+            """,
+        user="admin",
     )
     with pytest.raises(QueryRuntimeException) as excinfo:
         node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
@@ -674,7 +677,8 @@ def test_secure(started_cluster):
             TABLE 'foo_dict' DB 'test'
             ))
         LIFETIME(MIN 1 MAX 10)
-            """
+            """,
+        user="admin",
     )
     with pytest.raises(QueryRuntimeException) as excinfo:
         node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
@@ -700,7 +704,8 @@ def test_secure(started_cluster):
             ))
         LIFETIME(MIN 1 MAX 10)
             """
-    # Overriding a stored key requires `SHOW NAMED COLLECTIONS SECRETS`, which `default` does not have
+    # A named collection requires `NAMED COLLECTION` on it, and overriding a stored key `SHOW NAMED COLLECTIONS SECRETS`:
+    # `default` has neither, `admin` has both
     assert "ACCESS_DENIED" in node1.query_and_get_error(create_with_override)
     node1.query(create_with_override, user="admin")
     value = node1.query(
@@ -723,7 +728,8 @@ def test_named_collection(started_cluster):
         LAYOUT(FLAT())
         SOURCE(CLICKHOUSE(NAME click1))
         LIFETIME(MIN 1 MAX 10)
-        """
+        """,
+        user="admin",
     )
 
     node1.query(

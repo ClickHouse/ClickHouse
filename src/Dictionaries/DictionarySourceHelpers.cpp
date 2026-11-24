@@ -1,4 +1,5 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,6 +16,8 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 namespace DB
 {
@@ -82,7 +85,7 @@ bool isExternalDatabaseDictionarySource(const String & source_type)
     return source_type == "mysql" || source_type == "postgresql" || source_type == "odbc";
 }
 
-void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     Poco::Util::AbstractConfiguration::Keys source_keys;
     config.keys(config_prefix + ".source", source_keys);
@@ -96,10 +99,30 @@ void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguratio
         return;
 
     const String source_prefix = config_prefix + ".source." + source_type;
-    const String query = config.getString(source_prefix + ".query", "");
-    const String where = config.getString(source_prefix + ".where", "");
-    const String update_field = config.getString(source_prefix + ".update_field", "");
-    const String invalidate_query = config.getString(source_prefix + ".invalidate_query", "");
+
+    /// The MySQL and PostgreSQL sources take the queries from the named collection that they refer to, with the keys
+    /// of the definition replacing the keys of the collection, so the checked queries are the ones that the source sends.
+    /// The ODBC source does not use named collections. A missing collection is reported when the source is created.
+    /// The privilege is checked before the collection is read, so that the errors do not show its queries to a user without it.
+    NamedCollectionPtr collection;
+    if (const String collection_name = config.getString(source_prefix + ".name", "");
+        !collection_name.empty() && (source_type == "mysql" || source_type == "postgresql"))
+    {
+        context->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
+        NamedCollectionFactory::instance().loadIfNot();
+        collection = NamedCollectionFactory::instance().tryGet(collection_name);
+    }
+    auto get_query_key = [&](const String & key) -> String
+    {
+        if (config.has(source_prefix + "." + key) || !collection)
+            return config.getString(source_prefix + "." + key, "");
+        return collection->getOrDefault<String>(key, "");
+    };
+
+    const String query = get_query_key("query");
+    const String where = get_query_key("where");
+    const String update_field = get_query_key("update_field");
+    const String invalidate_query = get_query_key("invalidate_query");
 
     /// The source composes its queries from `query` or `where`, the attribute expressions and `update_field`, which are inserted verbatim,
     /// and from identifiers, which it quotes in the style of the database. The identifiers do not change the kind of the query,

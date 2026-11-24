@@ -271,7 +271,7 @@ void checkQueriesOfExternalDictionarySource(const ASTCreateQuery & create, Conte
     if (!create.dictionary || !create.dictionary->source || !isExternalDatabaseDictionarySource(Poco::toLower(create.dictionary->source->name)))
         return;
 
-    checkExternalDictionarySourceQueries(*getDictionaryConfigurationFromAST(create, context), "dictionary");
+    checkExternalDictionarySourceQueries(*getDictionaryConfigurationFromAST(create, context), "dictionary", context);
 }
 
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
@@ -4167,6 +4167,19 @@ BlockIO InterpreterCreateQuery::execute()
             "Use ATTACH TABLE {} to reattach an existing detached table.",
             create.getTable());
 
+    /// The source of a dictionary is evaluated and checked before anything can send the query to other hosts:
+    /// the checks below and the privileges in `getRequiredAccess` must see the values that are stored.
+    if (create.is_dictionary)
+    {
+        evaluateConstantsInDictionarySource(create, getContext());
+
+        /// The queries of a source of an external database are sent to it with the credentials of the source, so only `SELECT`
+        /// is allowed. Checked only for the query of the user: the definitions of existing dictionaries (`ATTACH` at startup,
+        /// `RESTORE`, the replay on other hosts and replicas) are not checked, so that they keep loading.
+        if (!internal && !getContext()->isDDLOrOnClusterInternal() && !is_restore_from_backup)
+            checkQueriesOfExternalDictionarySource(create, getContext());
+    }
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())
@@ -4186,17 +4199,7 @@ BlockIO InterpreterCreateQuery::execute()
         }
     }
 
-    /// Before the checks of the source of a dictionary, which must see the values that are stored.
-    if (create.is_dictionary)
-        evaluateConstantsInDictionarySource(create, getContext());
-
     getContext()->checkAccess(getRequiredAccess());
-
-    /// The queries of a source of an external database are sent to it with the credentials of the source, so only `SELECT` is allowed.
-    /// Checked only for the query of the user, before it is sent to other hosts and replicas: the definitions of existing
-    /// dictionaries (`ATTACH` at startup, `RESTORE`, the replay on other hosts and replicas) are not checked, so that they keep loading.
-    if (create.is_dictionary && !internal && !getContext()->isDDLOrOnClusterInternal() && !is_restore_from_backup)
-        checkQueriesOfExternalDictionarySource(create, getContext());
 
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 

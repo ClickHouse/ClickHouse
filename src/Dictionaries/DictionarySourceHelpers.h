@@ -41,10 +41,12 @@ bool isExternalDatabaseDictionarySource(const String & source_type);
 /// (`query`, or `table` with `where` and the attribute expressions), the update query (`update_field`) and `invalidate_query`.
 /// They must be `SELECT` without `INTO OUTFILE` in the ClickHouse syntax, without comments, heredocs, typographic quotes and backslashes,
 /// which the database may read differently, and for ODBC, whose dialect is unknown, without square brackets.
+/// For MySQL and PostgreSQL, the queries can come from the named collection that the source refers to, with the keys of the
+/// definition replacing its keys; `NAMED COLLECTION` on it is checked in `context` before it is read.
 /// `config_prefix` is the dictionary configuration ("dictionary"). Does nothing for other sources.
 /// It is used only for a `CREATE DICTIONARY` query of a user: the configuration files and the definitions of existing dictionaries
 /// (`ATTACH` at startup, `RESTORE`, replicas) are not checked, so that they keep loading.
-void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.
      *
