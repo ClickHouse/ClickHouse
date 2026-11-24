@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 namespace ColorConversion
 {
@@ -135,9 +140,48 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Tuple(Number, Number, Number), [Number]) -> Tuple(Float64, Float64, Float64)";
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires 1 or 2 arguments, {} provided",
+                getName(), arguments.size());
+
+        const auto * first_arg = arguments[0].get();
+
+        if (!isTuple(first_arg))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a tuple",
+                getName());
+
+        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(first_arg);
+        const auto & tuple_inner_types  = tuple_type->getElements();
+
+        if (tuple_inner_types.size() != ColorConversion::channels)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument of function {} must be a tuple of size {}, a tuple of size {} was provided",
+                getName(), ColorConversion::channels, tuple_inner_types.size());
+
+        for (const auto & tuple_inner_type : tuple_inner_types)
+        {
+            if (!isNumber(tuple_inner_type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Tuple elements of first argument of function {} must be numbers",
+                    getName());
+        }
+
+        if (arguments.size() == 2 && !isNumber(arguments[1].get()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of function {} must be a number",
+                    getName());
+
+        auto float64_type = std::make_shared<DataTypeFloat64>();
+        return std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
     }
 
 
@@ -204,9 +248,48 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Tuple(Number, Number, Number), [Number]) -> Tuple(Float64, Float64, Float64)";
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires 1 or 2 arguments, {} provided",
+                getName(), arguments.size());
+
+        const auto * first_arg = arguments[0].get();
+
+        if (!isTuple(first_arg))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a tuple",
+                getName());
+
+        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(first_arg);
+        const auto & tuple_inner_types  = tuple_type->getElements();
+
+        if (tuple_inner_types.size() != ColorConversion::channels)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument of function {} must be a tuple of size {}, a tuple of size {} was provided",
+                getName(), ColorConversion::channels, tuple_inner_types.size());
+
+        for (const auto & tuple_inner_type : tuple_inner_types)
+        {
+            if (!isNumber(tuple_inner_type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Tuple elements of first argument of function {} must be numbers",
+                    getName());
+        }
+
+        if (arguments.size() == 2 && !isNumber(arguments[1].get()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of function {} must be a number",
+                    getName());
+
+        auto float64_type = std::make_shared<DataTypeFloat64>();
+        return std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

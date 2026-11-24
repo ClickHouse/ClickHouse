@@ -85,13 +85,6 @@ void ReadBufferFromGetObjectResult::releaseResult()
     result.reset();
 }
 
-void ReadBufferFromGetObjectResult::detachSession()
-{
-    /// `http_body` is owned by `result`.
-    if (result && http_body)
-        http_body->detachSession();
-}
-
 void ReadBufferFromGetObjectResult::observeMetrics()
 {
     if (metrics_observed)

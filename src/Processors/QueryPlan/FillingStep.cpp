@@ -265,8 +265,16 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
         /// One entry per DAG output, in output order - the pairing `FillingTransform` relies on.
         VectorWithMemoryTracking<std::string> result_columns_order;
+        NameSet result_column_names;
         for (const auto & column : actions.getResultColumns())
         {
+            /// `FillingTransform` inserts every output into the header column of its name, so a repeated
+            /// output would grow that column once per occurrence and break the row count of the chunk.
+            /// The planner never repeats a column in INTERPOLATE.
+            if (!result_column_names.insert(column.name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE column '{}' occurs more than once", column.name);
+
             if (!input_header.has(column.name))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE column '{}' is not present in the input header", column.name);

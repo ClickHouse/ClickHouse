@@ -390,7 +390,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 /// Print insert data
                 String bytes;
-                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process);
+                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process, client_context);
                 WriteBufferFromString write_buf(bytes);
                 copyData(*read_buf, write_buf);
                 fmt::print(stdout, "{}\n", bytes);
@@ -508,7 +508,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             {
                 String bytes;
                 {
-                    auto read_buf = getReadBufferFromASTInsertQuery(query);
+                    auto read_buf = getReadBufferFromASTInsertQuery(query, client_context);
                     WriteBufferFromString write_buf(bytes);
                     copyData(*read_buf, write_buf);
                 }
@@ -948,8 +948,7 @@ bool Client::buzzHouse()
                          BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DO_NOTHING;
 
                          rg.pickWeighted(
-                             /// `OPTIMIZE` drops all-zero `SummingMergeTree` rows that `SELECT ... FINAL` keeps
-                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges && !tbl.get().isSummingMergeTree(true)),
+                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
                               {25 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
                               {10 * static_cast<uint32_t>(fuzz_config->enable_backups && test_content),

@@ -1,6 +1,8 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 -- Join-order cardinality estimation must respect partition/PK pruning (issue #110281).
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS fact_04516;
 DROP TABLE IF EXISTS dim_04516;
 

@@ -136,7 +136,6 @@ DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
-DECLARE_SETTING_ENUM(HashJoinLayout)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t

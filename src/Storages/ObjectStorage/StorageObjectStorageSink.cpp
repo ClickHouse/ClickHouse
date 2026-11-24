@@ -4,6 +4,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -62,8 +63,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     ContextPtr context,
     const String & format,
     const String & compression_method,
-    FormatFilterInfoPtr format_filter_info,
-    bool fail_if_exists)
+    FormatFilterInfoPtr format_filter_info)
     : SinkToStorage(sample_block_)
     , path(path_)
     , sample_block(sample_block_)
@@ -71,13 +71,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const auto & settings = context->getSettingsRef();
     const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
 
-    auto write_settings = context->getWriteSettings();
-    /// HDFS rejects conditional writes, so it keeps writing unconditionally.
-    if (fail_if_exists && object_storage->getType() != ObjectStorageType::HDFS)
-        write_settings.object_storage_write_if_none_match = "*";
-
     auto buffer = object_storage->writeObject(
-        StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+        StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(buffer),
@@ -154,7 +149,8 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     StorageObjectStorageConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    PartitionedWriteAccessCheck write_access_check_)
     : PartitionedSink(configuration_->partition_strategy, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -162,6 +158,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     , format_settings(format_settings_)
     , sample_block(sample_block_)
     , context(context_)
+    , write_access_check(std::move(write_access_check_))
 {
 }
 
@@ -178,11 +175,29 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
 
+    /// A partition id can make the key fully qualified, e.g. `s3://other-bucket/x.tsv` for the template `{_partition_id}.tsv`,
+    /// and the S3 object storage would then write to that bucket instead of the one whose URI is checked below.
+    /// Other object storages write such a key as a literal name.
+    if (object_storage->getType() == ObjectStorageType::S3 && !configuration->supportsFullyQualifiedPaths()
+        && trySplitFullyQualifiedObjectPath(file_path))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The key {} of a partition refers to another bucket, which is not allowed",
+            file_path);
+
+    /// The partition id comes from the data, so its destination is checked before anything is written to it.
+    /// The key is checked before it is looked up too, so that an existing object outside the grant is not disclosed.
+    if (write_access_check)
+        write_access_check(context, configuration->getURIForAccessCheck(file_path));
+
+    /// A key renamed by `s3_create_new_file_on_insert` can be outside the grant, e.g. `data.1.tsv` for `data.tsv`.
+    std::function<void(const String &)> check_new_key;
+    if (write_access_check)
+        check_new_key = [&](const String & new_key) { write_access_check(context, configuration->getURIForAccessCheck(new_key)); };
+
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, file_path, /* sequence_number */1))
-    {
+            *object_storage, *configuration, query_settings, file_path, /* sequence_number */1, check_new_key))
         file_path = *new_key;
-    }
 
     last_written_object_path = file_path;
 
@@ -193,9 +208,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
         context,
         configuration->format,
-        configuration->compression_method,
-        /* format_filter_info */ nullptr,
-        /* fail_if_exists */ query_settings.create_new_file_on_insert && !query_settings.truncate_on_insert);
+        configuration->compression_method);
 }
 
 }

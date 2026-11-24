@@ -22,9 +22,9 @@ Creates a ClickHouse database with tables from PostgreSQL database. Firstly, dat
 Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In this case you should use `ATTACH`/ `DETACH PERMANENTLY` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
 <Note>
-This database engine is experimental. To use it, set `enable_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
+This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
 ```sql
-SET enable_database_materialized_postgresql=1
+SET allow_experimental_database_materialized_postgresql=1
 ```
 </Note>
 
@@ -194,7 +194,6 @@ Default value: `65536`.
 ### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
 A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
-Cannot be used together with `materialized_postgresql_use_unique_replication_consumer_identifier`.
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
@@ -218,7 +217,6 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
-Cannot be used together with `materialized_postgresql_replication_slot`: a user-managed replication slot has a single fixed name and cannot be unique per consumer. Such a combination is rejected on `CREATE` and on `ATTACH` with a full definition, but a database or table that was already created with it can still be loaded.
 
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 

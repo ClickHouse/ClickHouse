@@ -37,11 +37,6 @@ public:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
-    {
-        checkSourceTableAccess(context, source_table_id, for_structure ? AccessType::SHOW_COLUMNS : AccessType::SHOW_TABLES);
-    }
-
 private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -172,8 +167,7 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
 
     if (with_minmax)
     {
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
-        for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
+        for (const auto & column : MergeTreeData::getMinMaxColumns(*metadata_snapshot, merge_tree->getSettings()))
             columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)})});
     }
 
@@ -245,8 +239,6 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `table`       | The table name to read index and marks from.      |
 | `with_marks`  | Whether include columns with marks to the result. |
 | `with_minmax` | Whether include min-max index to the result.      |
-
-Resolving the structure of the result, for example with `DESCRIBE`, requires the `SHOW COLUMNS` privilege on the source table, and reading from it requires `SELECT` on the columns being read.
 
 ## Returned value {#returned-value}
 

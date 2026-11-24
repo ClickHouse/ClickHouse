@@ -16,7 +16,6 @@
 #include <Processors/QueryPlan/Optimizations/lazyFrontier.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -659,9 +658,8 @@ public:
             ILazyMaterializingRowsPtr lazy_materializing_rows;
             if (lazy.merge_tree_reading)
             {
-                auto rows = std::make_shared<LazyMaterializingRows>(std::move(lazy.parts));
-                lazy.merge_tree_reading->setLazyMaterializingRows(rows);
-                lazy_materializing_rows = std::move(rows);
+                /// The main read fills the rows when it builds its pipeline, see `ReadFromMergeTree::hasLazilyReadColumns`.
+                lazy_materializing_rows = lazy.merge_tree_reading->getLazyMaterializingRows();
                 lazy_plan.addStep(std::move(lazy.merge_tree_reading));
             }
             else
@@ -758,7 +756,6 @@ private:
         /// Set by `apply`.
         std::unique_ptr<LazilyReadFromMergeTree> merge_tree_reading;
         std::unique_ptr<LazilyReadFromObjectStorage> object_storage_reading;
-        RangesInDataParts parts;
         LazyObjectStorageFileRegistryPtr row_index_registry;
     };
 
@@ -1121,13 +1118,6 @@ private:
                 if (lazy->merge_tree_reading)
                     lazy_header = lazy->merge_tree_reading->getOutputHeader().get();
 
-                /// The lazy read fetches exactly the rows the main read selected, addressed by their row
-                /// index. It must not apply the vector search rescoring filter again: that one belongs to
-                /// the main read, and applying it against the candidates of the vector index can drop a
-                /// requested row.
-                lazy->parts = merge_tree->getParts();
-                for (auto & part : lazy->parts)
-                    part.read_hints.use_vector_search_result_filter = false;
             }
         }
         else if (lazy)
@@ -1267,14 +1257,12 @@ private:
     NameSet added_names;
 };
 
-/// Whether a step can produce a block of totals: `WITH TOTALS`, a remote read, whose query can have it, or a read of a
-/// cached result that has it. Such a block goes through the joins up to the `LIMIT` with no rows to read lazily, so it
-/// would reach the expression above the `LIMIT` without the columns read lazily; and a value computed below a join is
-/// that join's default in it, which recomputing the value above the `LIMIT` would not give.
+/// Whether a step can produce a block of totals: `WITH TOTALS`, or a remote read, whose query can have it. Such a block
+/// goes through the joins up to the `LIMIT` with no rows to read lazily, so it would reach the expression above the
+/// `LIMIT` without the columns read lazily; and a value computed below a join is that join's default in it, which
+/// recomputing the value above the `LIMIT` would not give.
 bool canProduceTotals(const IQueryPlanStep & step)
 {
-    if (const auto * cache_read = typeid_cast<const ReadFromQueryResultCacheStep *>(&step))
-        return cache_read->hasTotals();
     return typeid_cast<const TotalsHavingStep *>(&step) || typeid_cast<const ReadFromRemote *>(&step)
         || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step);
 }

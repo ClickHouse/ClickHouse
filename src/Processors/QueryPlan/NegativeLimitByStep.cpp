@@ -90,11 +90,6 @@ void NegativeLimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Negative Offset", group_offset);
 }
 
-QueryPlanStepPtr NegativeLimitByStep::clone() const
-{
-    return std::make_unique<NegativeLimitByStep>(*this);
-}
-
 void NegativeLimitByStep::serialize(Serialization & ctx) const
 {
     writeVarUInt(group_length, ctx.out);

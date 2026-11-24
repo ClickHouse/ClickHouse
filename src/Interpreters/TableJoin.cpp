@@ -1249,6 +1249,11 @@ void TableJoin::resetToCross()
     this->table_join.kind = JoinKind::Cross;
 }
 
+bool TableJoin::allowParallelHashJoin() const
+{
+    return ::DB::allowParallelHashJoin(join_algorithms, kind(), isSpecialStorage(), oneDisjunct());
+}
+
 ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
 {
     ASTPtr expression_list = rightKeysList();
@@ -1303,13 +1308,13 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .spilled_to_disk_operator = "join"}, temporary_files_buffer_size, temporary_files_codec);
 }
 
-bool allowHashJoinCacheKeys(
+bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
     bool is_special_storage,
     bool one_disjunct)
 {
-    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
+    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
     if (kind != JoinKind::Left && kind != JoinKind::Inner
         && kind != JoinKind::Right && kind != JoinKind::Full)
@@ -1317,23 +1322,5 @@ bool allowHashJoinCacheKeys(
     if (is_special_storage || !one_disjunct)
         return false;
     return true;
-}
-
-bool TableJoin::preferParallelHashLayout(
-    HashJoinLayout layout, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const
-{
-    if (!(isInnerOrLeft(kind()) || isRightOrFull(kind())) || isSpecialStorage())
-        return false;
-
-    switch (layout)
-    {
-        case HashJoinLayout::SERIAL:
-            return false;
-        case HashJoinLayout::PARALLEL:
-            return true;
-        case HashJoinLayout::AUTO:
-            return !rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold;
-    }
-    UNREACHABLE();
 }
 }
