@@ -89,6 +89,10 @@ void MergeTreeReaderStream::init()
     if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
+    /// The reader bounds its reads at the right offset of its last mark, see `adjustRightMark`. Knowing it up front
+    /// lets a pipeline stage that reads before the bound is set, such as the encryption header, already use it.
+    const size_t right_offset = getRightOffset(getLastMark(all_mark_ranges));
+
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         ReadPipeline pipeline;
@@ -97,6 +101,8 @@ void MergeTreeReaderStream::init()
             read_settings,
             estimated_sum_mark_range_bytes,
             pipeline);
+        if (right_offset)
+            pipeline.setInitialReadUntilPosition(right_offset);
 
         return pipeline.build();
     };
@@ -120,7 +126,7 @@ void MergeTreeReaderStream::init()
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
-            [this, estimated_sum_mark_range_bytes, read_settings]()
+            [this, estimated_sum_mark_range_bytes, read_settings, right_offset]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
@@ -130,6 +136,8 @@ void MergeTreeReaderStream::init()
                     read_settings,
                     estimated_sum_mark_range_bytes,
                     pipeline);
+                if (right_offset)
+                    pipeline.setInitialReadUntilPosition(right_offset);
 
                 return pipeline.build();
             },
@@ -369,13 +377,18 @@ ReadRangesRegistry::~ReadRangesRegistry()
 ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
 {
     const UInt128 key = sipHash128(path.data(), path.size());
-    std::lock_guard lock(mutex);
-    if (auto it = read_ranges_by_path.find(key); it != read_ranges_by_path.end())
-        return *it->second;
-    if (!reserve(units_per_file))
-        return not_registered;
-    auto read_ranges = std::make_unique<ReadRanges>();
-    return *read_ranges_by_path.emplace(key, std::move(read_ranges)).first->second;
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = read_ranges_by_path.find(key); it != read_ranges_by_path.end())
+            return *it->second;
+        if (reserve(units_per_file))
+        {
+            auto read_ranges = std::make_unique<ReadRanges>();
+            return *read_ranges_by_path.emplace(key, std::move(read_ranges)).first->second;
+        }
+    }
+    releaseAll();
+    return not_registered;
 }
 
 size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
@@ -455,33 +468,51 @@ void ReadRangesRegistry::registerRanges(Batch & batch, ReadRanges & file_ranges,
         return;
     }
 
-    /// Reserved before the ranges are kept, by how many more they can become at most: every range kept on its own.
-    if (ranges.size() > batch.reserved && !reserve(ranges.size() - batch.reserved))
+    if (stopped())
     {
         ranges.clear();
-        std::lock_guard lock(file_ranges.mutex);
-        CompressedBlockRanges().swap(file_ranges.united_ranges);
-        file_ranges.merged = 0;
-        file_ranges.merged_bytes = 0;
+        /// Also what was added to the file after the others were freed.
+        release(file_ranges);
+        releaseAll();
         return;
     }
-    batch.reserved = std::max(batch.reserved, ranges.size());
 
-    std::lock_guard lock(file_ranges.mutex);
-    const size_t ranges_before = file_ranges.united_ranges.size();
-    batch.bytes += file_ranges.add(ranges);
-    /// Merging can also leave fewer ranges, which go back with the rest of the reservation.
-    const size_t ranges_after = file_ranges.united_ranges.size();
-    chassert(ranges_after <= ranges_before + batch.reserved);
-    batch.reserved = batch.reserved + ranges_before - ranges_after;
+    size_t grown = 0;
+    {
+        std::lock_guard lock(file_ranges.mutex);
+        const size_t capacity_before = file_ranges.united_ranges.capacity();
+        batch.bytes += file_ranges.add(ranges);
+        grown = file_ranges.united_ranges.capacity() - capacity_before;
+    }
+    /// Charged by the memory the ranges hold, which merging does not give back.
+    if (grown && !reserve(grown))
+    {
+        release(file_ranges);
+        releaseAll();
+    }
 }
 
 void ReadRangesRegistry::commit(const Batch & batch)
 {
-    if (batch.reserved && block->max_counted_ranges)
-        block->read_ranges.fetch_sub(batch.reserved, std::memory_order_relaxed);
     if (batch.bytes)
         (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(batch.bytes, std::memory_order_relaxed);
+}
+
+void ReadRangesRegistry::release(ReadRanges & read_ranges)
+{
+    std::lock_guard lock(read_ranges.mutex);
+    CompressedBlockRanges().swap(read_ranges.united_ranges);
+    read_ranges.merged = 0;
+    read_ranges.merged_bytes = 0;
+}
+
+void ReadRangesRegistry::releaseAll()
+{
+    if (all_released.exchange(true))
+        return;
+    std::lock_guard lock(mutex);
+    for (auto & [_, read_ranges] : read_ranges_by_path)
+        release(*read_ranges);
 }
 
 bool ReadRangesRegistry::stopped() const
