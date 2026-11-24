@@ -399,6 +399,7 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsBool use_columns_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsUInt64 merge_tree_min_read_task_bytes;
     extern const SettingsUInt64 merge_tree_read_end_tasks_per_stream;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
@@ -2026,6 +2027,62 @@ static void capStreamsByReadBytes(
         log);
 }
 
+/// The average uncompressed size of `column_names` in a selected mark of `parts_with_ranges`, or 0 when it is not
+/// known. Each part contributes the size of the columns in the whole part per mark, weighted by its selected marks.
+/// Unlike `estimateReadBytes`, an average is also known for a partial read of a `String` column, which is enough
+/// to size the read tasks. Columns that are absent from a part are not counted, and the sizes of the columns of a
+/// part that is not wide are not known.
+static size_t averageMarkBytes(const RangesInDataParts & parts_with_ranges, const Names & column_names, const Settings & settings)
+{
+    const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
+
+    double total_bytes = 0;
+    size_t total_marks = 0;
+
+    for (const auto & part : parts_with_ranges)
+    {
+        const auto & data_part = *part.data_part;
+        const size_t part_marks = data_part.getMarksCount();
+        const size_t selected_marks = part.getMarksCount();
+        if (part_marks == 0 || selected_marks == 0)
+            continue;
+
+        if (data_part.getType() != MergeTreeDataPartType::Wide)
+            return 0;
+
+        size_t part_bytes = 0;
+        NameSet counted_columns;
+        for (const auto & col_name : column_names)
+        {
+            const auto column = data_part.tryGetColumn(col_name);
+            if (!column)
+                continue;
+
+            const auto name_in_storage = column->getNameInStorage();
+            if (counted_columns.contains(name_in_storage))
+                continue;
+
+            if (column->isSubcolumn() && use_subcolumn_sizes)
+            {
+                part_bytes += data_part.getSubcolumnSize(col_name).data_uncompressed;
+            }
+            else
+            {
+                part_bytes += data_part.getColumnSize(name_in_storage).data_uncompressed;
+                counted_columns.insert(name_in_storage);
+            }
+        }
+
+        total_bytes += static_cast<double>(part_bytes) / static_cast<double>(part_marks) * static_cast<double>(selected_marks);
+        total_marks += selected_marks;
+    }
+
+    if (total_marks == 0)
+        return 0;
+
+    return static_cast<size_t>(total_bytes / static_cast<double>(total_marks));
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -2088,11 +2145,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         const bool pool_cuts_tasks_of_exact_size = is_local_unordered_read && data.canUseAdaptiveGranularity()
             && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem];
 
+        const size_t min_read_task_size = settings[Setting::merge_tree_min_read_task_size];
+
         /// Returns the task size that cuts the share of each of `streams` streams into `tasks_per_stream`
-        /// tasks. It only lowers the current task size, and not below `merge_tree_min_read_task_size`.
-        const auto task_marks_for_share = [&](size_t streams, size_t tasks_per_stream)
+        /// tasks. It only lowers the current task size, and not below `min_task_marks`.
+        const auto task_marks_for_share = [&](size_t streams, size_t tasks_per_stream, size_t min_task_marks)
         {
-            const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
             return std::min(
                 info.min_marks_for_concurrent_read, std::max(info.sum_marks / streams / tasks_per_stream, min_task_marks));
         };
@@ -2105,7 +2163,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
         {
             static constexpr size_t tasks_per_stream = 3;
-            const size_t task_marks = task_marks_for_share(initial_num_streams, tasks_per_stream);
+            const size_t task_marks = task_marks_for_share(initial_num_streams, tasks_per_stream, min_read_task_size);
             size_t tasks = 0;
             for (const size_t part_marks : info.sum_marks_in_parts)
                 tasks += std::max<size_t>(1, part_marks / task_marks);
@@ -2134,10 +2192,32 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         /// the default task is 24 marks, and the tasks at the end of the read are the smallest task of 8
         /// marks. 16 streams have 768 marks each, which is 32 default tasks, so all their tasks are default
         /// ones.
+        /// A task has a fixed cost, so for heavy marks (e.g. long strings) fewer marks than
+        /// `merge_tree_min_read_task_size` already outweigh it. Then the smallest task at the end of the read is
+        /// the number of marks that hold `merge_tree_min_read_task_bytes` of the columns being read, but at least
+        /// one mark, so that the threads that have finished can take the last marks of a small read of heavy
+        /// marks. The number of streams does not change.
         const size_t read_end_tasks_per_stream = settings[Setting::merge_tree_read_end_tasks_per_stream];
         if (pool_cuts_tasks_of_exact_size && num_streams > 1 && read_end_tasks_per_stream)
         {
-            const size_t task_marks = task_marks_for_share(num_streams, read_end_tasks_per_stream);
+            size_t min_task_marks = min_read_task_size;
+            const size_t min_read_task_bytes = settings[Setting::merge_tree_min_read_task_bytes];
+            if (min_read_task_bytes && min_task_marks > 1)
+            {
+                const size_t avg_mark_bytes = averageMarkBytes(parts_with_ranges, column_names, settings);
+                if (avg_mark_bytes)
+                {
+                    const size_t marks_for_bytes = min_read_task_bytes / avg_mark_bytes + (min_read_task_bytes % avg_mark_bytes != 0);
+                    if (marks_for_bytes < min_task_marks)
+                    {
+                        min_task_marks = std::max<size_t>(1, marks_for_bytes);
+                        LOG_TEST(log, "Lowering the smallest task at the end of the read from {} to {} marks (average mark bytes {})",
+                            min_read_task_size, min_task_marks, avg_mark_bytes);
+                    }
+                }
+            }
+
+            const size_t task_marks = task_marks_for_share(num_streams, read_end_tasks_per_stream, min_task_marks);
             if (task_marks < info.min_marks_for_concurrent_read)
                 min_marks_per_task_at_read_end = task_marks;
         }

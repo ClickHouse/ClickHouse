@@ -8820,13 +8820,26 @@ Whether to use constant size tasks for reading from a remote table.
 Whether to use only prewhere columns size to determine reading task size.
 )", 0) \
     DECLARE(NonZeroUInt64, merge_tree_min_read_task_size, 8, R"(
-Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
+Lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks).
+The tasks at the end of a local read of heavy marks can be smaller, see `merge_tree_min_read_task_bytes`, which is 0 to keep this limit hard.
 )", 0, \
         {"24.10", 8, 8, "New setting"}) \
+    DECLARE(UInt64, merge_tree_min_read_task_bytes, 2 * 1024 * 1024, R"(
+Lets the tasks at the end of a local `MergeTree` read of heavy marks (see `merge_tree_read_end_tasks_per_stream`) be
+smaller than `merge_tree_min_read_task_size`: the smallest task is then the number of marks that hold this many bytes
+of the uncompressed columns being read, but at least one mark. A task has a fixed cost that does not depend on the
+size of its marks, so a few heavy marks (for example long `String` values) already outweigh it, while at the end of a
+read of a few dozen such marks tasks of `merge_tree_min_read_task_size` marks leave threads working alone on their
+last task. The bytes of a mark are averaged over the selected marks and include the columns that are read only for
+the rows that pass `PREWHERE`. The number of streams does not change. This also lowers an explicitly set
+`merge_tree_min_read_task_size`; 0 keeps `merge_tree_min_read_task_size` as a hard limit.
+)", 0, \
+        {"26.12", 0, 2 * 1024 * 1024, "New setting: the tasks at the end of a read of heavy marks may be smaller than `merge_tree_min_read_task_size`."}) \
     DECLARE(UInt64, merge_tree_read_end_tasks_per_stream, 32, R"(
 Makes the tasks at the end of a `MergeTree` read 1/N of one thread's share of the data (not smaller than
-`merge_tree_min_read_task_size`), so that all threads finish at about the same time. Larger values balance the
-threads better but add per-task overhead. 0 disables it.
+`merge_tree_min_read_task_size`, or for heavy marks than the smallest task of `merge_tree_min_read_task_bytes`), so
+that all threads finish at about the same time. Larger values balance the threads better but add per-task overhead.
+0 disables it.
 )", 0, \
         {"26.11", 0, 32, "New setting: the tasks at the end of a `MergeTree` read are smaller, so that all threads finish at about the same time."}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
