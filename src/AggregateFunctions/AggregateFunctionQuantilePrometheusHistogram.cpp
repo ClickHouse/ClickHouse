@@ -249,6 +249,9 @@ public:
         if (!isNativeNumber(argument_types_[2]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the level argument of aggregate function {}",
                 argument_types_[2]->getName(), getName());
+
+        const WhichDataType which_count(argument_types_[1]);
+        count_is_wide = which_count.isUInt128() || which_count.isUInt256();
     }
 
     [[nodiscard]] String getName() const override { return "timeSeriesQuantilePrometheusHistogram"; }
@@ -266,7 +269,7 @@ public:
 
         Value upper_bound = assert_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num];
         if constexpr (std::is_same_v<CumulativeHistogramValue, UInt64>)
-            data.histogram.add(upper_bound, columns[1]->getUInt(row_num));
+            data.histogram.add(upper_bound, getCount(*columns[1], row_num));
         else
             data.histogram.add(upper_bound, columns[1]->getFloat64(row_num));
     }
@@ -299,6 +302,26 @@ public:
     }
 
 private:
+    /// The cumulative bucket value is `UInt128` or `UInt256`, see `getCount`.
+    bool count_is_wide = false;
+
+    /// The counts are aggregated as `UInt64`: `getUInt` would narrow a wider one silently, so it is checked in its own type like in `getWeight`.
+    [[nodiscard]] UInt64 getCount(const IColumn & column, size_t row_num) const
+    {
+        if (unlikely(count_is_wide))
+        {
+            const Field count = column[row_num];
+            const bool fits = count.getType() == Field::Types::UInt128
+                ? count.safeGet<UInt128>() <= std::numeric_limits<UInt64>::max()
+                : count.safeGet<UInt256>() <= std::numeric_limits<UInt64>::max();
+            if (!fits)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The cumulative bucket value {} of function {} is too large: cumulative bucket values are at most the maximum of UInt64",
+                    count.dump(), getName());
+        }
+        return column.getUInt(row_num);
+    }
+
     void setLevel(Float64 & level, Float64 new_level) const
     {
         if (!isNaN(level) && level != new_level)

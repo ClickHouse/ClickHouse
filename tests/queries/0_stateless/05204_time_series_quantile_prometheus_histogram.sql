@@ -12,6 +12,12 @@ FROM VALUES('le Float64, count UInt64', (0, 6), (0.5, 11), (1, 14), (inf, 19));
 SELECT quantilePrometheusHistogram(0.9)(le, count), timeSeriesQuantilePrometheusHistogram(le, count, 0.9)
 FROM VALUES('le Float32, count Float64', (0.1, 1), (0.5, 3), (1, 7), (inf, 10));
 
+SELECT 'wide cumulative counts up to the maximum of UInt64';
+SELECT quantilePrometheusHistogram(0.5)(le, count), timeSeriesQuantilePrometheusHistogram(le, count, 0.5)
+FROM VALUES('le Float64, count UInt128', (1, 0), (2, 18446744073709551615), (inf, 18446744073709551615));
+SELECT quantilePrometheusHistogram(0.5)(le, count), timeSeriesQuantilePrometheusHistogram(le, count, 0.5)
+FROM VALUES('le Float64, count UInt256', (1, 0), (2, 18446744073709551615), (inf, 18446744073709551615));
+
 SELECT 'a different level in each group';
 SELECT g, timeSeriesQuantilePrometheusHistogram(le, count, level)
 FROM VALUES('g UInt8, level Float64, le Float64, count UInt64',
@@ -41,3 +47,8 @@ GROUP BY g WITH TOTALS; -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesQuantilePrometheusHistogram(0.5)(le, count, 0.5) FROM VALUES('le Float64, count UInt64', (1, 1), (inf, 2)); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
 SELECT timeSeriesQuantilePrometheusHistogram(le, count) FROM VALUES('le Float64, count UInt64', (1, 1), (inf, 2)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT timeSeriesQuantilePrometheusHistogram(le, count, '0.5') FROM VALUES('le Float64, count UInt64', (1, 1), (inf, 2)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- A wide cumulative count above the maximum of UInt64 is rejected instead of narrowed (the strings keep the exact values).
+SELECT timeSeriesQuantilePrometheusHistogram(le, count, 0.5)
+FROM VALUES('le Float64, count UInt128', (1, '18446744073709551616'), (2, '18446744073709551618'), (inf, '18446744073709551618')); -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesQuantilePrometheusHistogram(le, count, 0.5)
+FROM VALUES('le Float64, count UInt256', (1, '18446744073709551616'), (2, '18446744073709551618'), (inf, '18446744073709551618')); -- { serverError BAD_ARGUMENTS }

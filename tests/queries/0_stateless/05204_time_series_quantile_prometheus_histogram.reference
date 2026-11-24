@@ -1,6 +1,9 @@
 same result as quantilePrometheusHistogram
 0.06499999999999995	0.06499999999999995
 1	1
+wide cumulative counts up to the maximum of UInt64
+1.5	1.5
+1.5	1.5
 a different level in each group
 1	0.25
 2	0.9166666666666667
