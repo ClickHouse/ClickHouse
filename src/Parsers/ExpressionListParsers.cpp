@@ -1542,9 +1542,10 @@ protected:
         if (elements.size() != 2)
             return false;
 
+        /// A call, not the `(a, b)` operator: `tuple(a, b)` formats and parses back to the same AST, a pair of literals would not.
         auto first = std::move(elements[0]);
         auto second = std::move(elements[1]);
-        node = makeASTOperator("tuple", std::move(first), std::move(second));
+        node = makeASTFunction("tuple", std::move(first), std::move(second));
         return true;
     }
 

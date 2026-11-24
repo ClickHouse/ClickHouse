@@ -16,28 +16,35 @@ the same as `arrayMap(i -> a[i], N)`. The positions may be nullable. A `NULL` po
 can be wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), it produces
 the default value of the element type, the same as for a scalar `NULL` index.
 
-`s[N]` – Access to a character in a string by index. Returns a `String` containing a single character.
-- Index `N` is 1-based (first character is at index 1)
-- Negative indices count from the end (last character is at index -1)
-- Throws an exception if the index is out of bounds or zero
+`a.N` – Access to a tuple element. The `tupleElement(a, N)` function.
 
-`s[N:M]` – String slicing. Returns a substring from index `N` to index `M` (inclusive).
-- Both `N` and `M` are 1-based indices
-- Negative indices are supported and count from the end
-- Throws an exception if start or end indices are out of bounds, zero, or if start > end
+`s[N]` – Access to a byte of a string. The `arrayElement(s, N)` function.
+Returns a `String` that holds the single byte at position `N`.
+- `N` is 1-based: the first byte is at position 1.
+- A negative `N` counts from the end: the last byte is at position -1.
+- A position outside of the string throws an `ARGUMENT_OUT_OF_BOUND` exception, and the position 0 throws a `ZERO_ARRAY_OR_TUPLE_INDEX` exception.
+
+`s[N:M]` – A slice of a string. The `arrayElement(s, (N, M))` function.
+Returns the bytes from position `N` to position `M`, both inclusive.
+- `N` and `M` follow the same rules as the position of `s[N]`, so both are 1-based and may be negative.
+- A bound outside of the string, or a slice that starts after it ends, throws an `ARGUMENT_OUT_OF_BOUND` exception, and a bound 0 throws a `ZERO_ARRAY_OR_TUPLE_INDEX` exception.
+
+Positions count bytes, not Unicode code points, the same as for the [`substring`](/reference/functions/regular-functions/string-functions#substring) function.
+A `NULL` string or position gives `NULL`.
+The `arrayElementOrNull` function gives `NULL` instead of an exception for an invalid position.
 
 Examples:
 
 ```sql
-SELECT 'ClickHouse'[1];      -- 'C'
-SELECT 'ClickHouse'[-1];     -- 'e'
-SELECT 'ClickHouse'[3:7];    -- 'ickHo'
-SELECT 'ClickHouse'[-5:-1];  -- 'House'
-SELECT 'ClickHouse'[100];    -- throws ILLEGAL_INDEX exception
-SELECT 'abc'[1:10];          -- throws ILLEGAL_INDEX exception (end out of bounds)
+SELECT 'ClickHouse'[1];                -- 'C'
+SELECT 'ClickHouse'[-1];               -- 'e'
+SELECT 'ClickHouse'[3:7];              -- 'ickHo'
+SELECT 'ClickHouse'[-5:-1];            -- 'House'
+SELECT 'ClickHouse'[100];              -- throws ARGUMENT_OUT_OF_BOUND
+SELECT 'abc'[0];                       -- throws ZERO_ARRAY_OR_TUPLE_INDEX
+SELECT 'abc'[1:10];                    -- throws ARGUMENT_OUT_OF_BOUND
+SELECT arrayElementOrNull('abc', 10);  -- NULL
 ```
-
-`a.N` – Access to a tuple element. The `tupleElement(a, N)` function.
 
 ## Numeric Negation Operator {#numeric-negation-operator}
 
