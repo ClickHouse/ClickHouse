@@ -78,3 +78,6 @@ SELECT count() FROM t AS l JOIN jn AS r ON l.k = r.k WHERE l.m = r.x;
 SELECT count() FROM t AS l JOIN jn AS r ON l.k = r.k AND l.m > r.x SETTINGS query_plan_join_swap_table = 'false';
 SELECT count() FROM t AS l ASOF JOIN jn AS r ON l.k = r.k AND l.m >= r.x;
 SELECT count() FROM t AS l JOIN jn AS r ON l.m <=> r.x;
+SELECT arrayIntersect([tuple(m)], [tuple(toNullable(toUInt64(40)))]), tuple(m) <=> tuple(toNullable(toUInt64(40))), [m] = [toNullable(toUInt64(40))], if(k > 0, m, NULL) AS x, toTypeName(x) FROM t;
+SELECT x, toTypeName(x) FROM (SELECT m AS x FROM t UNION ALL SELECT NULL) ORDER BY x;
+SELECT count(), toTypeName(any(m)) FROM t JOIN (SELECT x AS m FROM jn) AS r USING (m);

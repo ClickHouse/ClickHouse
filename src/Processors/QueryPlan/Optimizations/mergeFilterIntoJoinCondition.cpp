@@ -9,7 +9,6 @@
 #include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -337,8 +336,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
             /// We can't push equality condition into JOIN if types do not have a common super type.
             if (!lhs->result_type->equals(*rhs->result_type)
-                && !tryGetLeastSupertype(
-                    DataTypes{removeSimpleAggregateFunction(lhs->result_type), removeSimpleAggregateFunction(rhs->result_type)}))
+                && !tryGetLeastSupertype(DataTypes{lhs->result_type, rhs->result_type}))
             {
                 rejected_conjuncts.push_back(conjunct);
                 continue;

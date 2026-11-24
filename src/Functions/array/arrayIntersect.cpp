@@ -510,9 +510,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
         if (mode == ArraySetMode::Intersect && !nested_return_type->onlyNull()
             && typeid_cast<const DataTypeArray &>(*arguments[i].type).getNestedType()->onlyNull())
             continue;
-        /// `Nullable` cannot wrap a `SimpleAggregateFunction` element, so the conversion target uses its storage type.
-        const auto & nested_type = typeid_cast<const DataTypeArray &>(*arguments[i].type).getNestedType();
-        data_types.push_back(std::make_shared<DataTypeArray>(removeSimpleAggregateFunction(nested_type)));
+        data_types.push_back(arguments[i].type);
     }
 
     DataTypePtr return_type_with_nulls;

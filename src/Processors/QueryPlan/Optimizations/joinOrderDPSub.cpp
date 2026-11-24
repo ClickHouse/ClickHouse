@@ -7,7 +7,6 @@
 #include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
 #include <Processors/QueryPlan/Optimizations/conflictDetector.h>
 
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/CastOverloadResolver.h>
@@ -54,7 +53,7 @@ UInt32 toMask(const BitSet & bits)
 /// by a cast that is monotonic and increasing on the whole type, as `UInt32` to `UInt64`, unlike `Date` to `DateTime`.
 bool castsKeepOrder(const DataTypePtr & lhs, const DataTypePtr & rhs)
 {
-    const auto common_type = tryGetLeastSupertype(DataTypes{removeSimpleAggregateFunction(lhs), removeSimpleAggregateFunction(rhs)});
+    const auto common_type = tryGetLeastSupertype(DataTypes{lhs, rhs});
     if (!common_type)
         return false;
     for (const auto & type : {lhs, rhs})

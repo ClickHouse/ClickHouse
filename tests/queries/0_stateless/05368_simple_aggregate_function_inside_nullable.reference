@@ -38,3 +38,7 @@
 1
 1
 1
+[(40)]	1	1	40	Nullable(UInt64)
+40	Nullable(UInt64)
+\N	Nullable(UInt64)
+1	Nullable(UInt64)
