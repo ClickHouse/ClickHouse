@@ -1,0 +1,43 @@
+p_alias_as_column	['b']
+p_alias_column	['if(1, a, b)']
+p_alias_of_alias	['a']
+p_argument	['a']
+p_cast	['a']
+p_chain	['multiIf(equals(a, 0), 1, equals(a, 1), 2, 3)']
+p_if_in_with	['a']
+p_key_alias	['a']
+p_lambda	['arrayMap(lambda(tuple(c), if(c, 1, 2)), array(a))']
+p_nested	['if(greater(a, 1), a, 0)']
+p_normal	['a']
+p_null	['b']
+p_select	['a']
+p_with	['a']
+p_alias_as_column	b	UInt64
+p_alias_as_column	count()	AggregateFunction(count)
+p_alias_column	if(1, a, b)	UInt64
+p_alias_column	count()	AggregateFunction(count)
+p_alias_of_alias	a	UInt8
+p_alias_of_alias	count()	AggregateFunction(count)
+p_argument	a	UInt8
+p_argument	sum(a)	AggregateFunction(sum, UInt8)
+p_cast	a	UInt8
+p_cast	count()	AggregateFunction(count)
+p_chain	multiIf(equals(a, 0), 1, equals(a, 1), 2, 3)	UInt8
+p_chain	count()	AggregateFunction(count)
+p_if_in_with	a	UInt8
+p_if_in_with	count()	AggregateFunction(count)
+p_key_alias	a	UInt8
+p_key_alias	count()	AggregateFunction(count)
+p_lambda	arrayMap(lambda(tuple(c), if(c, 1, 2)), array(a))	Array(UInt8)
+p_lambda	count()	AggregateFunction(count)
+p_nested	if(greater(a, 1), a, 0)	UInt8
+p_nested	count()	AggregateFunction(count)
+p_normal	a	UInt8
+p_null	b	UInt64
+p_null	count()	AggregateFunction(count)
+p_select	a	UInt8
+p_select	count()	AggregateFunction(count)
+p_with	a	UInt8
+p_with	count()	AggregateFunction(count)
+1	2
+2	1

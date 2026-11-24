@@ -155,6 +155,10 @@ std::optional<bool> getConstantCondition(const QueryTreeNodePtr & node)
 {
     if (const auto * constant_node = node->as<ConstantNode>())
     {
+        /// the analyzer folds an expression to a constant, but the old analysis took only what the query writes
+        if (constant_node->hasSourceExpression())
+            return getConstantCondition(constant_node->getSourceExpression());
+
         const auto & value = constant_node->getValue();
         if (value.isNull())
             return false;
@@ -249,6 +253,113 @@ void replaceIfChainsWithMultiIf(QueryTreeNodePtr & node)
             multi_if_node->setAlias(child->getAlias());
         child = std::move(multi_if_node);
     }
+}
+
+/// for an `if` (the key is its text): the expressions of the arguments that are aliases of the query
+using AliasedIfArguments = std::map<String, std::array<ASTPtr, 3>>;
+
+/// the old analysis put the expression of an alias in its place before it changed `if`; the analyzer finds that expression
+/// returns true if an `if` has a new argument to replace
+bool collectAliasedIfArguments(const QueryTreeNodePtr & node, bool with_chains, AliasedIfArguments & result)
+{
+    bool found = false;
+    for (const auto & child : node->getChildren())
+        if (child && !isQueryOrUnionNode(child))
+            found |= collectAliasedIfArguments(child, with_chains, result);
+
+    if (!isIfFunction(node) || !node->hasOriginalAST())
+        return found;
+
+    const auto * if_ast = node->getOriginalAST()->as<ASTFunction>();
+    if (!if_ast || !if_ast->arguments || if_ast->arguments->children.size() != 3)
+        return found;
+
+    const auto & arguments = node->as<FunctionNode &>().getArguments().getNodes();
+    auto add = [&](size_t position)
+    {
+        if (!if_ast->arguments->children[position]->as<ASTIdentifier>())
+            return;
+
+        const auto * constant_node = arguments[position]->as<ConstantNode>();
+        const auto & written_node = constant_node && constant_node->hasSourceExpression() ? constant_node->getSourceExpression() : arguments[position];
+        if (!written_node->hasOriginalAST())
+            return;
+
+        auto & expression = result[if_ast->getColumnNameWithoutAlias()][position];
+        if (!expression)
+        {
+            expression = written_node->getOriginalAST();
+            found = true;
+        }
+    };
+
+    if (getConstantCondition(arguments[0]))
+        add(0);
+    if (with_chains && isIfFunction(arguments[2]))
+        add(2);
+
+    return found;
+}
+
+/// true if an `if` of the query (not of a subquery) has an identifier as its condition, or as its last argument when a chain matters
+bool hasIfWithIdentifierArgument(const ASTPtr & ast, bool with_chains)
+{
+    if (ast->as<ASTSubquery>())
+        return false;
+
+    const auto * function = ast->as<ASTFunction>();
+    if (function && function->name == "if" && function->arguments && function->arguments->children.size() == 3
+        && (function->arguments->children[0]->as<ASTIdentifier>() || (with_chains && function->arguments->children[2]->as<ASTIdentifier>())))
+        return true;
+
+    return std::ranges::any_of(ast->children, [&](const auto & child) { return child && hasIfWithIdentifierArgument(child, with_chains); });
+}
+
+void collectIdentifierNames(const ASTPtr & ast, Names & names)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        names.push_back(identifier->name());
+
+    for (const auto & child : ast->children)
+        if (child)
+            collectIdentifierNames(child, names);
+}
+
+/// a parameter of a lambda hides an alias with its name, and a subquery has its own aliases
+/// returns true if it replaced an argument
+bool replaceAliasedIfArguments(const ASTPtr & ast, const AliasedIfArguments & aliased_arguments, Names & lambda_parameters)
+{
+    if (ast->as<ASTSubquery>())
+        return false;
+
+    bool replaced = false;
+    size_t parameters_before = lambda_parameters.size();
+    if (const auto * function = ast->as<ASTFunction>(); function && function->arguments)
+    {
+        auto & arguments = function->arguments->children;
+        if (function->name == "lambda" && !arguments.empty())
+            collectIdentifierNames(arguments[0], lambda_parameters);
+
+        auto it = function->name == "if" && arguments.size() == 3 ? aliased_arguments.find(function->getColumnNameWithoutAlias()) : aliased_arguments.end();
+        for (size_t i = 0; it != aliased_arguments.end() && i < arguments.size(); ++i)
+        {
+            const auto * identifier = arguments[i]->as<ASTIdentifier>();
+            if (!it->second[i] || !identifier || std::ranges::contains(lambda_parameters, identifier->name()))
+                continue;
+
+            auto expression = it->second[i]->clone();
+            expression->setAlias(arguments[i]->tryGetAlias());
+            arguments[i] = std::move(expression);
+            replaced = true;
+        }
+    }
+
+    for (const auto & child : ast->children)
+        if (child)
+            replaced |= replaceAliasedIfArguments(child, aliased_arguments, lambda_parameters);
+
+    lambda_parameters.resize(parameters_before);
+    return replaced;
 }
 
 /// the constant that a key is for the analyzer; an `ALIAS` column is the expression that it has
@@ -493,6 +604,21 @@ void storeValuesOfScalarSubqueries(ASTPtr & query_ast, const StoragePtr & source
     query_ast = query_tree->getOriginalAST();
     if (replaceScalarSubqueries(query_ast, values) != values.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A scalar subquery of a projection is not in the query {}", query_ast->formatForErrorMessage());
+}
+
+void storeExpressionsOfAliasesInIf(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
+{
+    bool with_chains = createProjectionAnalysisContext(query_ast, context)->getSettingsRef()[Setting::optimize_if_chain_to_multiif];
+
+    /// the analyzer finds what an alias is; the expression of an alias can have an alias too, so this repeats
+    while (hasIfWithIdentifierArgument(query_ast, with_chains))
+    {
+        AliasedIfArguments aliased_arguments;
+        Names lambda_parameters;
+        if (!collectAliasedIfArguments(resolveProjectionQuery(query_ast, source, context, /*only_analyze=*/true), with_chains, aliased_arguments)
+            || !replaceAliasedIfArguments(query_ast, aliased_arguments, lambda_parameters))
+            return;
+    }
 }
 
 }
