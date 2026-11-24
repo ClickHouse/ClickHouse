@@ -515,12 +515,12 @@ int dumpStateMachine(
     else
         LOG_INFO(logger, "Last changelog entry {}", changelog.next_slot() - 1);
 
-    // Apply log entries to the state machine up to end_index
-    size_t last_index_to_apply = std::min(changelog.next_slot() - 1, end_index);
-    if (last_committed_index + 1 < last_index_to_apply)
+    // Apply log entries to the state machine up to end_index (exclusive)
+    size_t end_index_to_apply = std::min(changelog.next_slot(), end_index);
+    if (last_committed_index + 1 < end_index_to_apply)
     {
-        LOG_INFO(logger, "Applying changelog entries from {} to {}", last_committed_index + 1, last_index_to_apply - 1);
-        for (size_t i = last_committed_index + 1; i < last_index_to_apply; ++i)
+        LOG_INFO(logger, "Applying changelog entries from {} to {}", last_committed_index + 1, end_index_to_apply - 1);
+        for (size_t i = last_committed_index + 1; i < end_index_to_apply; ++i)
         {
             auto & entry = *changelog.entry_at(i);
             if (entry.get_val_type() == nuraft::log_val_type::app_log)
