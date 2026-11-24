@@ -38,7 +38,7 @@ void readVectorRow(const ColumnArray & col_arr, size_t row, float uint8_shift, s
 {
     const IColumn & arr_data = col_arr.getData();
     const auto & arr_offsets = col_arr.getOffsets();
-    const size_t begin = row == 0 ? 0 : arr_offsets[row - 1];
+    const size_t begin = row == 0 ? 0 : arr_offsets[static_cast<ssize_t>(row) - 1];
     const size_t size = arr_offsets[row] - begin;
     result.resize(size);
 
