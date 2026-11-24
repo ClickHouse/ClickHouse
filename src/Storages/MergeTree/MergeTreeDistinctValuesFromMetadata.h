@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -21,7 +21,7 @@ namespace DB
 /// frame of its data files, read once for a part (`IMergeTreeDataPart::isColumnStoredWithGeneralPurposeCodecs`); on a
 /// remote disk, where that would be a request per file, a part of a replicated table has to be written with the
 /// current metadata version instead, and a part of another table is taken as declared. No other data is read.
-std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
+UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromMetadata(
     const RangesInDataParts & parts, const StorageMetadataPtr & metadata, const Names & column_names);
 
 }

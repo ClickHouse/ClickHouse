@@ -7407,7 +7407,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
     return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
 
-std::unordered_map<String, UInt64> ReadFromMergeTree::estimateDistinctValuesFromMetadata(
+UnorderedMapWithMemoryTracking<String, UInt64> ReadFromMergeTree::estimateDistinctValuesFromMetadata(
     const Names & column_names, const AnalysisResultPtr & analyzed_result) const
 {
     const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();

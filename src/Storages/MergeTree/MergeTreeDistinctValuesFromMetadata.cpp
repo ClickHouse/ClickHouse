@@ -98,7 +98,7 @@ bool isStoredWithGeneralPurposeCodecs(const IMergeTreeDataPart & part, const Str
 
 }
 
-std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
+UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromMetadata(
     const RangesInDataParts & parts, const StorageMetadataPtr & metadata, const Names & column_names)
 {
     const auto & columns = metadata->getColumns();
@@ -124,7 +124,7 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
     /// per row. Columns of the sorting key get no estimate.
     const Names sorting_key_columns = metadata->getColumnsRequiredForSortingKey();
 
-    std::unordered_map<String, CompressedSize> sizes;
+    UnorderedMapWithMemoryTracking<String, CompressedSize> sizes;
     for (const auto & column_name : column_names)
     {
         const auto * column = columns.tryGet(column_name);
@@ -183,7 +183,7 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
         }
     }
 
-    std::unordered_map<String, UInt64> result;
+    UnorderedMapWithMemoryTracking<String, UInt64> result;
     for (const auto & [column_name, size] : sizes)
         if (auto distinct_values = estimateDistinctValuesFromCompressedSize(size.rows, size.compressed_bytes))
             result.emplace(column_name, *distinct_values);
