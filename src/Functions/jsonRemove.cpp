@@ -28,6 +28,7 @@
 #include <Parsers/Lexer.h>
 #include <Common/JSONParsers/RapidJSONMemoryTrackerAllocator.h>
 #include <Common/checkStackSize.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
@@ -741,17 +742,18 @@ private:
         if (num_members == 0)
             return column;
 
-        /// prefixes[k - 1] is the stored path of the first k member steps.
-        VectorWithMemoryTracking<String> prefixes;
-        prefixes.reserve(num_members);
-        String prefix;
+        /// get_prefix(k) is the stored path of the first k member steps.
+        StringWithMemoryTracking prefix;
+        VectorWithMemoryTracking<size_t> prefix_ends;
+        prefix_ends.reserve(num_members);
         for (size_t k = 0; k < num_members; ++k)
         {
             if (k)
                 prefix += '.';
             prefix += escape_dots_in_keys ? escapeDotInJSONKey(steps[k].member_name) : steps[k].member_name;
-            prefixes.push_back(prefix);
+            prefix_ends.push_back(prefix.size());
         }
+        auto get_prefix = [&](size_t k) { return std::string_view(prefix).substr(0, prefix_ends[k - 1]); };
 
         /// The path itself and the paths below it are removed if all steps are members.
         /// A stored path equal to a shorter prefix holds a value (an array, or an object inside `Dynamic`) the rest of the steps apply to.
@@ -759,12 +761,12 @@ private:
         const size_t max_depth = std::min(num_members, steps.size() - 1);
         auto get_depth = [&](std::string_view path) -> std::optional<size_t>
         {
-            const auto & removed_path = prefixes.back();
+            const std::string_view removed_path = prefix;
             if (remove_subtree && path.starts_with(removed_path) && (path.size() == removed_path.size() || path[removed_path.size()] == '.'))
                 return 0;
             for (size_t k = 1; k <= max_depth; ++k)
             {
-                if (path == prefixes[k - 1])
+                if (path == get_prefix(k))
                     return k;
             }
             return std::nullopt;
@@ -794,7 +796,7 @@ private:
         for (const auto & [path, path_column] : column_object.getDynamicPaths())
             dynamic_paths.emplace(path, transform(path, path_column, dynamic_type));
 
-        ColumnPtr shared_data = removeFromSharedData(column_object, prefixes.front(), get_depth, steps, rows);
+        ColumnPtr shared_data = removeFromSharedData(column_object, get_prefix(1), get_depth, steps, rows);
         changed |= shared_data != column_object.getSharedDataPtr();
 
         if (!changed)
@@ -813,7 +815,7 @@ private:
     template <typename GetDepth>
     ColumnPtr removeFromSharedData(
         const ColumnObject & column_object,
-        const String & first_prefix,
+        std::string_view first_prefix,
         const GetDepth & get_depth,
         std::span<const PathStep> steps,
         const IColumn::Filter * rows) const
