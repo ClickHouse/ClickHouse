@@ -468,7 +468,7 @@ def test_namespaces(started_cluster):
     ns = f"sales_{uuid.uuid4().hex[:8]}"
 
     # The location must be inside the warehouse bucket.
-    location = f"s3://{BUCKET}/sales/"
+    location = f"{BASE_LOCATION}/sales/"
     response = create_namespace([ns], properties={"location": location})
     result = response.json()
     assert result["namespace"] == [ns]
@@ -595,7 +595,7 @@ def test_update_namespace_properties(started_cluster):
         assert_error_shape(response, "BadRequestException")
     assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
 
-    location = f"s3://{BUCKET}/props/"
+    location = f"{BASE_LOCATION}/props/"
     update_namespace_properties([ns], updates={"location": location})
     assert load_namespace_properties([ns])["location"] == location
 
@@ -851,7 +851,7 @@ def test_clickhouse_rest_catalog_client(started_cluster):
     create_namespace([ns])
     create_table(ns, "events")
     level = "a b?#%41+/é&:;=@"
-    create_namespace([ns, level], properties={"location": f"s3://{BUCKET}/{ns}_special"})
+    create_namespace([ns, level], properties={"location": f"{BASE_LOCATION}/{ns}_special"})
     create_table(f"{ns}%1F{quote(level, safe='')}", "events")
     create_table(ns, "t?#x")
 
@@ -888,10 +888,10 @@ def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
         f"client_location_q_{suffix}": "q?x%41y",
     }
     for ns, directory in directories.items():
-        create_namespace([ns], properties={"location": f"s3://{BUCKET}/custom/{ns}/{directory}"})
+        create_namespace([ns], properties={"location": f"{BASE_LOCATION}/custom/{ns}/{directory}"})
         create_table(ns, "events")
     encoded_ns = f"client_location_e_{suffix}"
-    create_namespace([encoded_ns], properties={"location": f"s3://{BUCKET}/custom/{encoded_ns}/a%20b"})
+    create_namespace([encoded_ns], properties={"location": f"{BASE_LOCATION}/custom/{encoded_ns}/a%20b"})
     create_table(encoded_ns, "events")
 
     node.query(f"""
@@ -1114,7 +1114,7 @@ def test_partition_spec_field_ids(started_cluster):
 
 def test_table_location(started_cluster):
     ns = f"location_{uuid.uuid4().hex[:8]}"
-    ns_location = f"s3://{BUCKET}/custom/{ns}"
+    ns_location = f"{BASE_LOCATION}/custom/{ns}"
     create_namespace([ns], properties={"location": ns_location + "/"})
 
     result = create_table(ns, "events").json()
@@ -1123,7 +1123,7 @@ def test_table_location(started_cluster):
     cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
 
     # A client-chosen location is used as given, without the trailing slash.
-    explicit_location = f"s3://{BUCKET}/explicit/{ns}"
+    explicit_location = f"{BASE_LOCATION}/explicit/{ns}"
     result = create_table(ns, "explicit", location=explicit_location + "/").json()
     assert result["metadata"]["location"] == explicit_location
     assert result["metadata-location"].startswith(explicit_location + "/metadata/")
@@ -1143,6 +1143,10 @@ def test_table_location(started_cluster):
     response = create_table(ns, "foreign", location=f"s3://other-bucket/{ns}", expected_code=400)
     assert_error_shape(response, "BadRequestException")
     assert not table_exists(ns, "foreign")
+
+    # A table stays inside the base location of its warehouse.
+    response = create_table(ns, "outside", location=f"s3://{BUCKET}/outside/{ns}", expected_code=400)
+    assert "is outside base location" in response.json()["error"]["message"]
 
 
 def test_table_location_overlap(started_cluster):
@@ -1585,6 +1589,10 @@ def test_warehouse_management_crud(started_cluster):
 
     response = create_warehouse(warehouse, base_location, expected_code=409)
     assert_error_shape(response, "AlreadyExistsException")
+
+    # Base locations of two warehouses do not overlap.
+    response = create_warehouse(f"{warehouse}_inner", f"{base_location}/inner", expected_code=400)
+    assert "overlaps base location" in response.json()["error"]["message"]
 
     delete_warehouse(warehouse)
     response = catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", expected_code=404)
@@ -2084,7 +2092,7 @@ def test_clickhouse_insert(started_cluster):
 
 def test_clickhouse_create_table(started_cluster):
     ns = f"chcreate_{uuid.uuid4().hex[:8]}"
-    ns_location = f"s3://{BUCKET}/{ns}"
+    ns_location = f"{BASE_LOCATION}/{ns}"
     # The ClickHouse client sends no location. The catalog builds it from the namespace location.
     create_namespace([ns], properties={"location": ns_location})
     table = f"rest_tables_db.`{ns}.events`"
@@ -2266,7 +2274,7 @@ def test_stage_create_location(started_cluster):
     create_namespace([ns])
 
     # Stage with a client-chosen location. It is used as given, without the trailing slash.
-    location = f"s3://{BUCKET}/explicit/{ns}"
+    location = f"{BASE_LOCATION}/explicit/{ns}"
     staged = stage_create_table(ns, "events", location=location + "/").json()["metadata"]
     assert staged["location"] == location
 

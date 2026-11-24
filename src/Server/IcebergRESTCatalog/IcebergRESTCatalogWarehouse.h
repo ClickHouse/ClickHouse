@@ -31,6 +31,7 @@ public:
     const String base_location;
     const ObjectStoragePtr object_storage;
 
+    /// For a table or namespace location. It must be inside `base_location`.
     void validateLocation(const String & location) const;
     [[nodiscard]] String objectKey(const String & location) const;
 

@@ -115,7 +115,8 @@ TableNode tableNodeFromJSON(const String & data, const String & path)
     return TableNode{.uuid = json->getValue<String>("uuid"), .location = json->getValue<String>("location")};
 }
 
-/// Two table roots overlap when they are equal or one is a directory above the other. Both without a trailing slash.
+}
+
 bool locationsOverlap(const String & a, const String & b)
 {
     if (a == b)
@@ -123,8 +124,6 @@ bool locationsOverlap(const String & a, const String & b)
     if (a.size() < b.size())
         return b.starts_with(a) && b[a.size()] == '/';
     return a.starts_with(b) && a[b.size()] == '/';
-}
-
 }
 
 KeeperIcebergRESTCatalogStore::KeeperIcebergRESTCatalogStore(zkutil::GetZooKeeper get_zookeeper_, String root_path_)

@@ -22,6 +22,9 @@ constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 /// Checked for every table path the store builds. The handler maps `BAD_ARGUMENTS` to a 400 response.
 void validateTableName(const String & name);
 
+/// Two locations overlap when they are equal or one is a directory above the other. Both without a trailing slash.
+bool locationsOverlap(const String & a, const String & b);
+
 /// What Keeper stores for a table: the current `metadata.json` on object storage.
 struct IcebergTablePointer
 {

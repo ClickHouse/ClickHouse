@@ -127,6 +127,17 @@ void IcebergRESTCatalogWarehouseRegistry::checkStorageAccess(const String & name
 
 bool IcebergRESTCatalogWarehouseRegistry::create(const String & name, IcebergRESTCatalogWarehouseDefinition definition)
 {
+    /// Tables stay inside base location of their warehouse. Disjoint base locations keep tables of two warehouses apart.
+    /// TODO: Two creates that run at the same moment can both pass this check.
+    for (const auto & [other_name, other] : list())
+        if (other_name != name && locationsOverlap(definition.base_location, other.base_location))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Base location {} overlaps base location {} of warehouse {}",
+                definition.base_location,
+                other.base_location,
+                other_name);
+
     /// Nothing is stored until the role has been assumed and the location has been read.
     checkStorageAccess(name, definition);
 

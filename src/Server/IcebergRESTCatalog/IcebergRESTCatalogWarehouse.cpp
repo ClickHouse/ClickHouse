@@ -107,12 +107,17 @@ IcebergRESTCatalogWarehouse::IcebergRESTCatalogWarehouse(
     : name(std::move(name_)), base_location(std::move(base_location_)), object_storage(std::move(object_storage_)), store(std::move(store_))
 {
     /// The warehouse has one S3 client, bound to one bucket. Every location must be in that bucket.
-    validateLocation(base_location);
+    validateLocation(parseS3Location(base_location));
 }
 
 void IcebergRESTCatalogWarehouse::validateLocation(const String & location) const
 {
     validateLocation(parseS3Location(location));
+
+    /// Base locations of warehouses are disjoint, so tables of two warehouses never overlap.
+    if (!stripTrailingSlashes(location).starts_with(base_location + "/"))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Location {} is outside base location {} of warehouse {}", location, base_location, name);
 }
 
 void IcebergRESTCatalogWarehouse::validateLocation(const S3Location & location) const
