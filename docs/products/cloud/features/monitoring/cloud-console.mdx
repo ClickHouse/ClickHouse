@@ -100,6 +100,28 @@ The table below maps each graph in the Advanced Dashboard to its corresponding C
 
 For detailed information on each visualization and how to use them for troubleshooting, see the [advanced dashboard documentation](/products/cloud/features/monitoring/advanced-dashboard).
 
+## Private preview views {#private-preview-views}
+
+These views are a private preview. They may change, and they are not covered by the standard ClickHouse Cloud SLA.
+
+### Health checks {#health-checks}
+
+**Monitoring** > **Overview** > **Health checks** reports:
+
+- Last backup status
+- Cache hit rate
+- Service size
+- Mutations running
+- Part count
+
+### Tables {#tables}
+
+**Monitoring** > **Tables** lists the tables in the service. Open a table to see its schema, the size of the data, the primary index, the secondary indexes, and the projections. [Schema recommendations](/products/cloud/features/monitoring/recommendations#schema-recommendations) appear on this page.
+
+### Query performance {#query-performance}
+
+**Monitoring** > **Query performance** is the next version of Query insights. You can filter queries by table, and open a normalized query to see its metrics. [Query recommendations](/products/cloud/features/monitoring/recommendations#query-recommendations) appear when you open a query.
+
 ## Query insights {#query-insights}
 
 The **Query Insights** feature makes ClickHouse's built-in query log easier to use through various visualizations and tables. ClickHouse's `system.query_log` table is a key source of information for query optimization, debugging, and monitoring overall cluster health and performance.
@@ -174,6 +196,7 @@ From this pane, the `Settings` and `Profile Events` items for each query run can
 
 ## Related pages {#related}
 
+- [Query and schema recommendations](/products/cloud/features/monitoring/recommendations)
 - [Notifications](/products/cloud/features/monitoring/notifications) — Configure alerts for scaling events, errors, and billing
 - [Advanced dashboard](/products/cloud/features/monitoring/advanced-dashboard) — Detailed reference for each dashboard visualization
 - [Querying system tables](/products/cloud/features/monitoring/system-tables) — Run custom SQL queries against system tables for deep introspection

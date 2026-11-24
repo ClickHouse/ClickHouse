@@ -2,8 +2,8 @@
 sidebarTitle: 'Schema Advisor'
 slug: /cloud/features/ai-ml/schema-advisor
 title: 'Schema Advisor'
-description: 'Recommends a schema change from your queries, then uses AI to plan the impact analysis and deployment after you approve each step.'
-keywords: ['Schema Advisor', 'schema change', 'ORDER BY', 'primary key', 'projection', 'impact analysis', 'ClickHouse Cloud', 'private preview']
+description: 'Plans and deploys a schema change for one MergeTree table. Recommendations come from your queries. You approve each step before it runs.'
+keywords: ['Schema Advisor', 'schema change', 'ORDER BY', 'partition key', 'impact analysis', 'EXCHANGE TABLES', 'ClickHouse Cloud', 'private preview']
 doc_type: 'guide'
 ---
 
@@ -11,14 +11,11 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 <PrivatePreviewBadge />
 
-Schema Advisor helps you migrate your schema in ClickHouse Cloud from a recommendation, through an impact analysis on a sample of your data, to a deployment you approve. 
+Schema Advisor moves a schema recommendation through an optional impact analysis to a deployment you approve. In this private preview it works on one [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) table at a time.
 
-In ClickHouse, the schema decides how a table is stored: the primary key, the `ORDER BY` key, compression, indexes, and projections. A better `ORDER BY` can turn a full table scan into a read of a few granules, and a better compression codec can cut the storage a table uses. 
-Making that change on a production table requires that you have a plan, validation on the plan, and a rollout with as little downtime as possible.
+It can deploy five kinds of change: the sorting key, the partition key, column types, compression codecs, and combinations of those. Creating a materialized view, a projection, or an index is not supported yet.
 
-Schema Advisor helps you with that work. Recommendations come from your query logs in [Monitoring](/products/cloud/features/monitoring/cloud-console), based on deterministic tests, not AI-generated.
-If you want to action those recommendations, then Schema Advisor proposes the plan to help you get there.
-A durable workflow runs the SQL. You approve each step before the workflow continues.
+[Recommendations](/products/cloud/features/monitoring/recommendations) come from deterministic tests on your query logs. The model does not invent the recommendation, and it does not run SQL. It proposes a plan. A durable workflow runs the SQL. You see each statement and approve it before the workflow continues. [`EXCHANGE TABLES`](/sql-reference/statements/exchange) and `DROP TABLE` are templates, not statements the model writes.
 
 <Warning>
 Schema Advisor is a preview feature. It may change, and it is not covered by the standard ClickHouse Cloud SLA.
@@ -27,6 +24,8 @@ Schema Advisor is a preview feature. It may change, and it is not covered by the
 ## Request access {#request-access}
 
 Schema Advisor is available in ClickHouse Cloud. This preview does not include [Bring Your Own Cloud (BYOC)](/cloud/reference/byoc/overview) or [ClickHouse Private](/cloud/infrastructure/clickhouse-private).
+
+In this preview, only an organization admin can use Schema Advisor. Access for other roles is planned.
 
 <Steps>
 
@@ -40,83 +39,119 @@ Sign in to the Cloud console, select your organization, and open **Preview featu
 
 Find **Schema Advisor**, select **Learn more**, and then select **Request access**. We will email you when access is turned on.
 
-
 </Step>
 
 </Steps>
 
 Some previews are hidden for some organizations. Contact [Cloud Support](https://clickhouse.com/support/program) if Schema Advisor is missing from the list.
 
+## What you need {#what-you-need}
+
+- **An organization admin.** Other roles cannot open Schema Advisor in this preview.
+- **A service to run against.** Schema Advisor can use a service that also serves other work. A dedicated service is recommended, so the preview stays off production traffic.
+- **A sandbox database on that service.** Impact analysis builds its tables there. A separate service used only for the analysis is not available in this preview.
+
 ## How a change moves {#how-a-change-moves}
 
 ```mermaid
 flowchart LR
-    Rec["Recommendation on the Tables page"]
+    Rec["Recommendation"]
     Impact["Impact analysis, recommended"]
     Deploy["Deployment"]
-    Rebuild["Rebuild the table, then EXCHANGE TABLES"]
-    Alter["ALTER the production table"]
+    Create["Creation"]
+    Audit["Auditing"]
+    Exchange["Exchange"]
+    Cleanup["Cleanup"]
 
     Rec --> Impact
     Impact --> Deploy
     Rec -.->|"skip"| Deploy
-    Deploy --> Rebuild
-    Deploy --> Alter
+    Deploy --> Create --> Audit --> Exchange --> Cleanup
 ```
 
-Impact analysis is optional but highly recommended. If you trust the recommendation, you can skip ahead to deploying the schema change. 
-Else, run impact analysis first so you can see what the change does to your queries before anything touches the production table.
+Impact analysis is optional and recommended. Skipping it means you deploy without a measured comparison. The new table is then built at the exchange step, instead of during the analysis.
 
 ## Start from a recommendation {#start-from-a-recommendation}
 
-After your organization has access, open a service and go to [**Monitoring**](/products/cloud/features/monitoring/cloud-console), then **Tables**. Schema Advisor shows the recommendation for a table and the queries that produced it. See [Query insights](/products/cloud/features/sql-console-features/query-insights) for the query log those recommendations are based on.
-Recommendations come from deterministic tests on your query logs. The tests run in the background and do not consume compute on your service.
-Once you're ready to apply the recommendation, click **Generate implementation plan** at the bottom of the recommendation page.
+You can start from a recommendation, or describe a change yourself.
+
+1. **Tables.** Open a service, go to [**Monitoring**](/products/cloud/features/monitoring/cloud-console), then **Tables**, and open the recommendation. The queries that produced it are on that page. Select **Generate implementation plan** at the bottom of the page.
+2. **SQL console.** Right-click the table name and select **Optimize table schema**.
+3. **Assistant.** Open [Assistant](/agents/assistant/using-ai-chat) with the sparkle button in the top right. Older consoles put Assistant in the left sidebar. This is not ClickHouse Agents. In the Assistant tools, enable **Manage Schema Changes**. You can paste the change you want and ask Schema Advisor to carry it out. A change you describe yourself can be less accurate than a recommendation from query history.
+
+Schema Advisor then asks whether to run impact analysis or go straight to deployment, and generates the plan. The run, including the chat, is listed under **Runs** on the Tables page.
 
 ## Impact analysis {#impact-analysis}
 
-Schema Advisor builds a plan and shows the SQL for every step. After you approve, the workflow runs it against a sample of the table:
+After you choose which recommendations to apply, impact analysis checks the change before production is touched.
 
-1. It keeps a sample of the current table. That sample is the baseline.
-2. It builds a candidate table with the proposed schema.
-3. It replays the queries that run most often on that table, once on the baseline and once on the candidate.
-4. It shows those runs side by side, so you can compare the current schema with the new one.
+Schema Advisor writes a plan that builds two tables from a sample, in the sandbox database:
 
-You choose where the analysis runs:
+1. A **baseline** with the current schema.
+2. A **candidate** with the proposed schema.
 
-- **In the current service.** The analysis uses the service you are already in.
-- **In an isolated service.** Schema Advisor creates a separate ephemeral service restored from your latest backup. The benchmarking queries run on that copy of the data. This is separate from a [warehouse](/products/cloud/features/infrastructure/warehouses), where services share the same storage.
+It replays the queries that run most often on that table, or the queries that produced the recommendation, once on each table. It shows those runs side by side.
+
+The comparison is a sample, and it covers those queries only. It is not a measurement of the full table. The queries come from [`system.query_log`](/operations/system-tables/query_log). You cannot supply your own benchmark queries in this preview.
+
+You can approve the plan, modify it, or abandon it. The sandbox does not run until you approve.
 
 ## Deploy a change {#deploy-a-change}
 
-You can deploy after impact analysis, or skip the analysis and deploy directly. Impact analysis is the recommended path. Depending on the change type, the execution looks different.
+Deployment is a blue-green cutover in four stages. Data is copied partition by partition. The production name changes only after you approve the swap.
 
-- **Full table rebuild.** These are examples of a full rebuild: changing the sort order, or changing the primary key.
-Schema Advisor creates the new table, copies the data, checks the copy, and then swaps it into place with [`EXCHANGE TABLES`](/sql-reference/statements/exchange).
-The exchange is atomic, so the production name points at the new table with no downtime.
-Schema Advisor shows the exact statement, and the workflow runs it after you approve it.
-- **`ALTER TABLE`.** These changes apply in place, with no rebuild and no `EXCHANGE TABLES`. These include adding an index or a projection.
-Schema Advisor shows the exact `ALTER` statement. After you approve it, the workflow runs that statement on the production table.
+1. **Creation.** Schema Advisor creates the new table and copies the data. If you skipped impact analysis, this build happens when you approve the exchange.
+2. **Auditing.** Row counts, checksums, and the schema are checked against the source. The swap waits until you approve it.
+3. **Exchange.** You approve [`EXCHANGE TABLES`](/sql-reference/statements/exchange). The exchange is atomic, so the production name points at the new table. The previous table is kept as a backup.
+4. **Cleanup.** The backup table stays until you approve `DROP TABLE`.
+
+The exchange and the drop are templates. The workflow shows the statement and runs it only after you approve it.
+
+Running impact analysis and deployment uses compute on the service. There is no separate charge for Schema Advisor. This does not change the service's scaling or idling settings. Generating the recommendation does not use service compute.
+
+## Approval gates {#approval-gates}
+
+Nothing destructive runs without an explicit click. Each gate shows the SQL first.
+
+| Gate | What you decide | What is already true |
+| --- | --- | --- |
+| Choose recommendations | Which recommendations to apply. | The table and its workload have been inspected. |
+| Run the impact-analysis plan | Approve the sandbox plan, modify it, or abandon it. | The plan has been generated and checked. |
+| Continue to production | Deploy, or stop after the benchmark. | The sandbox run has finished. |
+| Exchange | Approve `EXCHANGE TABLES` on the production table. | When impact analysis ran first, the data has been copied and the row counts, checksums, and schema have been checked. When it did not, the new table is built at this step. |
+| Clean up | Approve dropping the backup table. | The exchange succeeded. The backup table is kept until you drop it. |
+
+## What the workflow is allowed to do {#what-the-workflow-is-allowed-to-do}
+
+- **A dedicated database user.** The user can write only in the sandbox database. It can read system tables and production databases. It has no other write access to production.
+- **Approval for destructive statements.** `EXCHANGE TABLES`, `DROP TABLE`, and any repair step wait for a click. The SQL is shown first.
+- **A check on generated SQL.** Statements outside the supported change set are blocked, and generated SQL is reviewed before it can run.
+- **Admins only.** Other roles cannot use the preview yet.
 
 ## Models and data handling {#models-and-data-handling}
 
-Model calls from Schema Advisor go through the ClickHouse Inference Gateway on Amazon Bedrock.
-Your data stays within AWS security and privacy controls, and ClickHouse applies its own safeguards on top.
-See [AI compliance](/cloud/security/ai-compliance) for how ClickHouse Cloud handles data used by AI features.
+Model calls from Schema Advisor go through the ClickHouse Inference Gateway on Amazon Bedrock. Your data stays within AWS security and privacy controls, and ClickHouse applies its own safeguards on top. See [AI compliance](/cloud/security/ai-compliance) for how ClickHouse Cloud handles data used by AI features.
 
 ## Limitations {#limitations}
 
-In this private preview, deployment of a full table rebuild change is unavailable in these cases:
+In this private preview:
 
-- The table ingests data continuously.
-- The table has more than 100 million rows, or is larger than 100 MB, whichever limit it reaches first. You can still build a plan and run impact analysis.
-- The table has downstream dependencies, including [materialized views](/materialized-views).
+- Schema Advisor changes one `MergeTree` table at a time.
+- The supported changes are the sorting key, the partition key, column types, compression codecs, and combinations of those. Materialized views, projections, and indexes are not created.
+- Tables with downstream dependencies, including [materialized views](/materialized-views), are out of scope.
+- Tables with continuous ingestion, or tables that update rapidly, are a poor fit. Rows that arrive during the copy can be missing from the new table.
+- Deployment is unavailable when the table has more than 100 million rows, or is larger than 100 GiB, whichever limit it reaches first. You can still build a plan and run impact analysis.
+- There is no public API. The preview runs in the console.
+- There is no notification when a long operation finishes.
+- There is no deployment history. Statements that ran are in `system.query_log`.
+- If Schema Advisor cannot create the table, start the flow again.
 
 ## Related pages {#related-pages}
 
+- [Query and schema recommendations](/products/cloud/features/monitoring/recommendations)
 - [Monitoring in the Cloud console](/products/cloud/features/monitoring/cloud-console)
 - [Query insights](/products/cloud/features/sql-console-features/query-insights)
-- [Warehouses](/products/cloud/features/infrastructure/warehouses)
 - [Schema design](/data-modeling/schema-design)
+- [Assistant](/agents/assistant/using-ai-chat)
 - [Self-service previews](/products/cloud/features/self-service-previews)
 - [`EXCHANGE`](/sql-reference/statements/exchange)
