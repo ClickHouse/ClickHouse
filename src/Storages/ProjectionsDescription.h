@@ -174,7 +174,7 @@ struct ProjectionDescription
 
     /// the table that `query_ast` is resolved against after the description: the columns that the query reads and the `ALIAS` columns
     /// it is not kept in the description, because each table has at least one projection
-    StoragePtr createQuerySource(const StorageInMemoryMetadata & table_metadata) const;
+    [[nodiscard]] StoragePtr createQuerySource(const StorageInMemoryMetadata & table_metadata) const;
 
     [[nodiscard]] String getDirectoryName() const { return name + ".proj"; }
 };
