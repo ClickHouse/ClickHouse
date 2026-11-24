@@ -2,6 +2,8 @@
 
 SET enable_json_type = 1;
 SET mutations_sync = 2;
+-- isDynamicElementInSharedData describes the column in memory, and a merge of sorted streams from replicas rebuilds it.
+SET enable_parallel_replicas = 0;
 
 -- Inferred nested objects never carry SHARED REGEXP in their type, so removing the rule and
 -- widening the type later must leave the same nested type names as a table that never had the rule.
