@@ -1,0 +1,9 @@
+['if(equals(a, 0), \'zero\', if(equals(a, 1), \'one\', \'other\'))']
+if(equals(a, 0), \'zero\', if(equals(a, 1), \'one\', \'other\'))	String
+count()	AggregateFunction(count)
+['if(equals(a, 0), \'zero\', if(equals(a, 1), \'one\', \'other\'))']
+if(equals(a, 0), \'zero\', if(equals(a, 1), \'one\', \'other\'))	String
+count()	AggregateFunction(count)
+one	20
+other	20
+zero	20

@@ -36,6 +36,8 @@ namespace Setting
 {
     extern const SettingsBool enable_positional_arguments_for_projections;
     extern const SettingsBool optimize_if_chain_to_multiif;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool prefer_column_name_to_alias;
 }
 
@@ -438,6 +440,11 @@ void storeSettingsOfProjectionQuery(const ASTPtr & query_ast, const ContextPtr &
     for (const auto * setting : kept_settings)
         if (settings.isChanged(setting))
             stored_settings.setSetting(setting, settings.get(setting));
+
+    /// the old analysis kept a chain of `if` with these settings: `multiIf` of constant strings would be `LowCardinality(String)`
+    if (settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+        && !settings[Setting::optimize_if_transform_strings_to_enum])
+        stored_settings.removeSetting("optimize_if_chain_to_multiif");
 }
 
 QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze)
