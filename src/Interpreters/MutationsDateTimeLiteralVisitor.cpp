@@ -54,9 +54,9 @@ void collectAliases(const IAST & ast, std::vector<String> & aliases)
 {
     if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
         return;
-    /// `time AS time` still names the column.
+    /// `time AS time` still names the column, unlike `x.time AS time`.
     const auto * identifier = ast.as<ASTIdentifier>();
-    if (auto alias = ast.tryGetAlias(); !alias.empty() && (!identifier || identifier->shortName() != alias))
+    if (auto alias = ast.tryGetAlias(); !alias.empty() && (!identifier || identifier->name() != alias))
         aliases.push_back(std::move(alias));
     if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>())
         return;
@@ -76,9 +76,9 @@ DataTypePtr getDateTimeColumnType(
     const ASTIdentifier & identifier,
     const ColumnsDescription & columns,
     const StorageID & table_id,
-    bool bound_by_lambda = false)
+    bool bound_by_name = false)
 {
-    if (bound_by_lambda)
+    if (bound_by_name)
         return getDateTimeColumnType(identifier.name(), columns);
 
     const auto & parts = identifier.name_parts;
@@ -125,10 +125,13 @@ bool tryWrapComparisonLiteral(
     const ColumnsDescription & columns,
     const StorageID & table_id,
     const String & timezone,
-    const std::vector<String> & lambda_parameters)
+    const std::vector<String> & lambda_parameters,
+    const std::vector<String> & aliases)
 {
     if (!function.arguments || function.arguments->children.size() != 2)
         return false;
+
+    auto bound_by_name = [&](const ASTIdentifier & id) { return isBoundBy(id, lambda_parameters) || isBoundBy(id, aliases); };
 
     bool wrapped = false;
     auto & left = function.arguments->children[0];
@@ -137,7 +140,7 @@ bool tryWrapComparisonLiteral(
     /// Check left=identifier, right=string-literal
     if (const auto * id = left->as<ASTIdentifier>())
     {
-        if (auto dt = getDateTimeColumnType(*id, columns, table_id, isBoundBy(*id, lambda_parameters)))
+        if (auto dt = getDateTimeColumnType(*id, columns, table_id, bound_by_name(*id)))
         {
             if (const auto * lit = right->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
             {
@@ -150,7 +153,7 @@ bool tryWrapComparisonLiteral(
     /// Check right=identifier, left=string-literal (e.g. '2000-01-01' <= time)
     if (const auto * id = right->as<ASTIdentifier>())
     {
-        if (auto dt = getDateTimeColumnType(*id, columns, table_id, isBoundBy(*id, lambda_parameters)))
+        if (auto dt = getDateTimeColumnType(*id, columns, table_id, bound_by_name(*id)))
         {
             if (const auto * lit = left->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
             {
@@ -273,13 +276,13 @@ bool tryWrapInLiterals(
     if (!id)
         return false;
 
-    const bool bound_by_lambda = isBoundBy(*id, lambda_parameters);
-    auto dt = getDateTimeColumnType(*id, columns, table_id, bound_by_lambda);
+    const bool bound_by_name = isBoundBy(*id, lambda_parameters) || isBoundBy(*id, aliases);
+    auto dt = getDateTimeColumnType(*id, columns, table_id, bound_by_name);
     if (!dt)
         return false;
 
     /// A set value would drop an alias, and fits only the column itself, not a lambda parameter or alias of its name.
-    const bool wrap_strings = bound_by_lambda || (!id->compound() && isBoundBy(*id, aliases)) || !right->tryGetAlias().empty();
+    const bool wrap_strings = bound_by_name || !right->tryGetAlias().empty();
 
     bool wrapped = false;
     const auto zoned_type = withExplicitTimezone(dt, timezone);
@@ -427,7 +430,7 @@ public:
         else if (comparison_functions.contains(function.name))
         {
             if (tryWrapComparisonLiteral(
-                    function, data.columns, data.table_id, data.session_timezone, data.lambda_parameters))
+                    function, data.columns, data.table_id, data.session_timezone, data.lambda_parameters, data.aliases))
                 data.modified = true;
         }
         else if (functionIsInOrGlobalInOperator(function.name))

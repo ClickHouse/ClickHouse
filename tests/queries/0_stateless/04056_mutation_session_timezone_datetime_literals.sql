@@ -503,18 +503,48 @@ ALTER TABLE mut_tz_in_alias_lambda_shadow DELETE
     WHERE arrayExists(x -> length(('2000-01-01 01:00:00' AS time)) = 19 AND time IN ('2000-01-01 01:00:00'), ['x']);
 SELECT 'in alias lambda shadow survivors', arraySort(groupArray(id)) FROM mut_tz_in_alias_lambda_shadow;
 
--- Neither an alias of the column itself nor one named like the table hides the column.
+-- An alias of the column itself does not hide the column.
 DROP TABLE IF EXISTS mut_tz_in_alias_column SYNC;
 CREATE TABLE mut_tz_in_alias_column (id UInt32, time DateTime) ENGINE = MergeTree ORDER BY id;
-INSERT INTO mut_tz_in_alias_column VALUES (1, toDateTime('2000-01-01 01:00:00')), (2, toDateTime('2000-01-01 02:00:00')),
-                                          (8, toDateTime('2000-01-01 02:00:00', 'UTC')), (9, toDateTime('2000-01-01 01:00:00', 'UTC'));
+INSERT INTO mut_tz_in_alias_column VALUES (1, toDateTime('2000-01-01 01:00:00')), (9, toDateTime('2000-01-01 01:00:00', 'UTC'));
 SELECT 'in alias column selected', arraySort(groupArray(id)) FROM mut_tz_in_alias_column WHERE (time AS time) IN ('2000-01-01 01:00:00');
 ALTER TABLE mut_tz_in_alias_column DELETE WHERE (time AS time) IN ('2000-01-01 01:00:00');
-SELECT 'in alias table selected', arraySort(groupArray(id)) FROM mut_tz_in_alias_column
-    WHERE length(('x' AS mut_tz_in_alias_column)) = 1 AND mut_tz_in_alias_column.time IN ('2000-01-01 02:00:00');
-ALTER TABLE mut_tz_in_alias_column DELETE
-    WHERE length(('x' AS mut_tz_in_alias_column)) = 1 AND mut_tz_in_alias_column.time IN ('2000-01-01 02:00:00');
 SELECT 'in alias column survivors', arraySort(groupArray(id)) FROM mut_tz_in_alias_column;
+
+-- An alias named like the column or like the first part of a qualified name keeps
+-- master's rewrite, whatever it binds: here a `String` subcolumn and `String` tuples.
+DROP TABLE IF EXISTS mut_tz_in_alias_subcolumn SYNC;
+CREATE TABLE mut_tz_in_alias_subcolumn (id UInt32, time DateTime, x Tuple(time String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_alias_subcolumn VALUES (1, toDateTime('2000-01-01 01:00:00'), tuple('2000-01-01 01:00:00')),
+                                             (9, toDateTime('2000-01-01 01:00:00'), tuple('2000-01-01 02:00:00'));
+SELECT 'in alias subcolumn selected', arraySort(groupArray(id)) FROM mut_tz_in_alias_subcolumn
+    WHERE length((x.time AS time)) = 19 AND time NOT IN ('2000-01-01 01:00:00');
+ALTER TABLE mut_tz_in_alias_subcolumn DELETE WHERE length((x.time AS time)) = 19 AND time NOT IN ('2000-01-01 01:00:00');
+SELECT 'in alias subcolumn survivors', arraySort(groupArray(id)) FROM mut_tz_in_alias_subcolumn;
+
+DROP TABLE IF EXISTS mut_tz_in_alias_qualified SYNC;
+CREATE TABLE mut_tz_in_alias_qualified (id UInt32, x Tuple(time DateTime)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_alias_qualified VALUES (1, tuple(toDateTime('2000-01-01 01:00:00'))), (2, tuple(toDateTime('2000-01-01 01:00:00')));
+SELECT 'in alias qualified selected', arraySort(groupArray(id)) FROM mut_tz_in_alias_qualified
+    WHERE notEmpty(toString(CAST(tuple('2000-01-01 01:00:00'), 'Tuple(time String)') AS x)) AND x.time NOT IN ('2000-01-01 01:00:00') AND id = 1;
+ALTER TABLE mut_tz_in_alias_qualified DELETE
+    WHERE notEmpty(toString(CAST(tuple('2000-01-01 01:00:00'), 'Tuple(time String)') AS x)) AND x.time NOT IN ('2000-01-01 01:00:00') AND id = 1;
+SELECT 'in alias qualified equals selected', arraySort(groupArray(id)) FROM mut_tz_in_alias_qualified
+    WHERE notEmpty(toString(CAST(tuple('2000-01-01T01:00:00'), 'Tuple(time String)') AS x)) AND x.time = '2000-01-01 01:00:00' AND id = 2;
+ALTER TABLE mut_tz_in_alias_qualified DELETE
+    WHERE notEmpty(toString(CAST(tuple('2000-01-01T01:00:00'), 'Tuple(time String)') AS x)) AND x.time = '2000-01-01 01:00:00' AND id = 2;
+SELECT 'in alias qualified survivors', arraySort(groupArray(id)) FROM mut_tz_in_alias_qualified;
+
+DROP TABLE IF EXISTS mut_tz_in_alias_table SYNC;
+CREATE TABLE mut_tz_in_alias_table (id UInt32, time DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_alias_table VALUES (1, toDateTime('2000-01-01 01:00:00')), (9, toDateTime('2000-01-01 01:00:00', 'UTC'));
+SELECT 'in alias table selected', arraySort(groupArray(id)) FROM mut_tz_in_alias_table
+    WHERE notEmpty(toString(CAST(tuple('2000-01-01 01:00:00'), 'Tuple(time String)') AS mut_tz_in_alias_table))
+        AND mut_tz_in_alias_table.time NOT IN ('2000-01-01 01:00:00');
+ALTER TABLE mut_tz_in_alias_table DELETE
+    WHERE notEmpty(toString(CAST(tuple('2000-01-01 01:00:00'), 'Tuple(time String)') AS mut_tz_in_alias_table))
+        AND mut_tz_in_alias_table.time NOT IN ('2000-01-01 01:00:00');
+SELECT 'in alias table survivors', arraySort(groupArray(id)) FROM mut_tz_in_alias_table;
 
 -- One case under a second session timezone, so that the file stays discriminating
 -- even for a server whose own timezone is America/Denver.
@@ -579,5 +609,8 @@ DROP TABLE mut_tz_in_alias_lambda SYNC;
 DROP TABLE mut_tz_in_alias_subquery SYNC;
 DROP TABLE mut_tz_in_alias_lambda_shadow SYNC;
 DROP TABLE mut_tz_in_alias_column SYNC;
+DROP TABLE mut_tz_in_alias_subcolumn SYNC;
+DROP TABLE mut_tz_in_alias_qualified SYNC;
+DROP TABLE mut_tz_in_alias_table SYNC;
 DROP TABLE mut_tz_in_tokyo SYNC;
 DROP TABLE mut_tz_in_tokyo_mixed SYNC;
