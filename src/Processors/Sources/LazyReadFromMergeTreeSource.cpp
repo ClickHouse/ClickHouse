@@ -226,7 +226,14 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepareColumnGroups(const Update
     if (!output.canPush())
         return Status::PortFull;
 
-    while (next_range_to_process < num_ranges)
+    if (joined_chunk)
+    {
+        output.push(std::move(*joined_chunk));
+        joined_chunk.reset();
+        return Status::PortFull;
+    }
+
+    if (next_range_to_process < num_ranges)
     {
         bool all_finished = true;
         for (size_t column_group = 0; column_group < num_column_groups; ++column_group)
@@ -241,20 +248,19 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepareColumnGroups(const Update
                 chunks[input_num].emplace_back(input.pull());
         }
 
-        if (!all_finished)
-            return Status::NeedData;
-
-        auto chunk = joinColumnGroups(next_range_to_process);
-        ++next_range_to_process;
-        if (chunk.getNumRows())
-        {
-            output.push(std::move(chunk));
-            return Status::PortFull;
-        }
+        return all_finished ? Status::Ready : Status::NeedData;
     }
 
     output.finish();
     return Status::Finished;
+}
+
+void LazyReadFromMergeTreeSource::work()
+{
+    auto chunk = joinColumnGroups(next_range_to_process);
+    ++next_range_to_process;
+    if (chunk.getNumRows())
+        joined_chunk = std::move(chunk);
 }
 
 Chunk LazyReadFromMergeTreeSource::joinColumnGroups(size_t range)

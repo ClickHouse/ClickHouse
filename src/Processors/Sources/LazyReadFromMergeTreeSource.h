@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -40,6 +41,7 @@ public:
     String getName() const override { return "LazyReadFromMergeTreeSource"; }
     Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     PipelineUpdate updatePipeline() override;
+    void work() override;
 
 private:
     size_t max_block_size;
@@ -68,6 +70,8 @@ private:
     VectorWithMemoryTracking<InputPort *> input_ports;
     /// For every column of the output header: the column group that reads it and its position in that group's header.
     VectorWithMemoryTracking<std::pair<size_t, size_t>> output_column_sources;
+    /// Joined by `work`, pushed by the next `prepare`.
+    std::optional<Chunk> joined_chunk;
 
     Processors buildReaders();
     RangesInDataParts splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const;
