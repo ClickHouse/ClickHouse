@@ -45,6 +45,7 @@ public:
     {
         underlying->setMapColumnsReadByOneSide(by_keys, by_values);
     }
+    void setBytesPerRowAddedAfterReading(size_t bytes) override { underlying->setBytesPerRowAddedAfterReading(bytes); }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }

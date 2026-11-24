@@ -612,6 +612,30 @@ static std::shared_ptr<const ActionsDAG> getFilterOverFileColumns(const ActionsD
     return std::make_shared<const ActionsDAG>(ActionsDAG::cloneSubDAG(outputs, /*remove_aliases=*/ true));
 }
 
+/// The bytes per row of the constant columns that `dag` materializes, e.g. the `initial-default` of a field that a
+/// data file written under an older schema does not have. The reader of the file does not form these columns, but every
+/// chunk that it returns gets them.
+static size_t bytesPerRowOfMaterializedConstants(const ActionsDAG & dag)
+{
+    size_t bytes = 0;
+    for (const auto * node : dag.getOutputs())
+    {
+        bool materialized = false;
+        while (node->children.size() == 1
+               && (node->type == ActionsDAG::ActionType::ALIAS
+                   || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize")))
+        {
+            materialized = materialized || node->type == ActionsDAG::ActionType::FUNCTION;
+            node = node->children.front();
+        }
+        if (!materialized || node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+            continue;
+        if (const auto * constant = typeid_cast<const ColumnConst *>(node->column.get()))
+            bytes += constant->getDataColumn().byteSize();
+    }
+    return bytes;
+}
+
 static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
     const Block & header, const std::vector<std::pair<String, Field>> & identity_partition_columns)
 {
@@ -2377,45 +2401,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             need_only_count);
         }
 
-        input_format->setBucketsToRead(object_info->file_bucket_info);
-        input_format->setSerializationHints(read_from_format_info.serialization_hints);
-        /// The header of a file with another schema has the names of that schema.
-        if (!schema_changed)
-            input_format->setMapColumnsReadByOneSide(
-                read_from_format_info.map_columns_read_by_keys, read_from_format_info.map_columns_read_by_values);
-
-        if (need_only_count)
-            input_format->needOnlyCount();
-
-        if (prefetch_input_format)
-            input_format->prefetch();
-
-        builder.init(Pipe(input_format));
-
-        if (!identity_partition_columns.empty())
-        {
-            if (auto dag = buildIdentityPartitionColumnsDag(builder.getHeader(), identity_partition_columns))
-            {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*dag));
-                builder.addSimpleTransform([&](const SharedHeader & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, actions);
-                });
-            }
-        }
-
-        configuration->addDeleteTransformers(object_info, builder, object_format_settings, parser_shared_resources, context_);
-
-        if (object_info->data_lake_metadata
-            && object_info->data_lake_metadata->excluded_rows
-            && object_info->data_lake_metadata->excluded_rows->size() > 0)
-        {
-            builder.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
-            });
-        }
-
         std::optional<ActionsDAG> schema_transform;
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
         {
@@ -2450,6 +2435,47 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto transform = configuration->getSchemaTransformer(context_, object_info);
             if (transform)
                 schema_transform = transform->clone();
+        }
+
+        input_format->setBucketsToRead(object_info->file_bucket_info);
+        input_format->setSerializationHints(read_from_format_info.serialization_hints);
+        /// The header of a file with another schema has the names of that schema.
+        if (!schema_changed)
+            input_format->setMapColumnsReadByOneSide(
+                read_from_format_info.map_columns_read_by_keys, read_from_format_info.map_columns_read_by_values);
+        if (schema_transform)
+            input_format->setBytesPerRowAddedAfterReading(bytesPerRowOfMaterializedConstants(*schema_transform));
+
+        if (need_only_count)
+            input_format->needOnlyCount();
+
+        if (prefetch_input_format)
+            input_format->prefetch();
+
+        builder.init(Pipe(input_format));
+
+        if (!identity_partition_columns.empty())
+        {
+            if (auto dag = buildIdentityPartitionColumnsDag(builder.getHeader(), identity_partition_columns))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, actions);
+                });
+            }
+        }
+
+        configuration->addDeleteTransformers(object_info, builder, object_format_settings, parser_shared_resources, context_);
+
+        if (object_info->data_lake_metadata
+            && object_info->data_lake_metadata->excluded_rows
+            && object_info->data_lake_metadata->excluded_rows->size() > 0)
+        {
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
+            });
         }
 
         if (schema_transform.has_value())

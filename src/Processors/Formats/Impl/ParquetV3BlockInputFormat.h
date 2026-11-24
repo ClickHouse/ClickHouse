@@ -117,6 +117,8 @@ public:
         read_options.map_columns_read_by_values = by_values;
     }
 
+    void setBytesPerRowAddedAfterReading(size_t bytes) override { read_options.bytes_per_row_added_after_reading = bytes; }
+
 private:
     Chunk read() override;
 

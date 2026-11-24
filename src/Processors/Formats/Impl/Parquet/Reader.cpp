@@ -3461,7 +3461,9 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         /// When the size of the decoded strings of a column is not known, a whole chunk is not risked: the dictionary
         /// of such a column is decoded in advance (see `ColumnChunk::decode_dictionary_early`), unless it does not
         /// fit the memory budget of the reader either.
-        double bytes_per_row = 0;
+        /// The columns that the caller adds to every chunk after the reader (e.g. the `initial-default` of a field
+        /// that the file does not have, materialized by the schema transform of the source) are counted too.
+        double bytes_per_row = static_cast<double>(options.bytes_per_row_added_after_reading);
         bool size_unknown = false;
         for (size_t i = 0; i < primitive_columns.size(); ++i)
         {
