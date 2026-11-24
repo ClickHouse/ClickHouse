@@ -54,6 +54,28 @@ negate of the minimum of a signed integer type
 -9223372036854775808
 -1
 -1
+negate of the minimum of an interval
+-1
+-2
+-9223372036854775808
+-1
+-2
+-9223372036854775808
+-1
+-1
+negate of the minimum of a decimal
+-1
+-1
+-1
+-2
+-9223372036854775808
+-1
+-2
+-9223372036854775808
+-1
+-1
+-1
+-1
 a conversion to BFloat16 that turns NaN into infinity
 inf
 1

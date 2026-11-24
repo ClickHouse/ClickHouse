@@ -66,6 +66,40 @@ SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int_min ORDER BY x LIMIT 10) ORDE
 
 DROP TABLE t_sort_prop_int_min;
 
+-- `Interval` and `Decimal` are stored as signed integers, so `negate` maps their minimum to itself too.
+DROP TABLE IF EXISTS t_sort_prop_interval_min;
+CREATE TABLE t_sort_prop_interval_min (x IntervalSecond) ENGINE = Memory;
+INSERT INTO t_sort_prop_interval_min SELECT toIntervalSecond(toInt64('-9223372036854775808'));
+INSERT INTO t_sort_prop_interval_min SELECT toIntervalSecond(number) FROM numbers(1, 2);
+
+SELECT 'negate of the minimum of an interval';
+SELECT -x AS n FROM (SELECT x FROM t_sort_prop_interval_min ORDER BY x LIMIT 10) ORDER BY n DESC;
+SELECT -x AS n FROM (SELECT x FROM t_sort_prop_interval_min ORDER BY x LIMIT 10) ORDER BY n DESC SETTINGS optimize_sorting_by_input_stream_properties = 0;
+SELECT -x AS n FROM (SELECT x FROM t_sort_prop_interval_min ORDER BY x LIMIT 10) ORDER BY n DESC LIMIT 1;
+SELECT -x AS n FROM (SELECT x FROM t_sort_prop_interval_min ORDER BY x LIMIT 10) ORDER BY n DESC LIMIT 1 SETTINGS optimize_sorting_by_input_stream_properties = 0;
+
+DROP TABLE t_sort_prop_interval_min;
+
+DROP TABLE IF EXISTS t_sort_prop_decimal_min;
+CREATE TABLE t_sort_prop_decimal_min (d32 Decimal32(0), d64 Decimal64(0), d128 Decimal128(0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_sort_prop_decimal_min SELECT
+    toDecimal32(toInt32('-2147483648'), 0),
+    toDecimal64(toInt64('-9223372036854775808'), 0),
+    toDecimal128(toInt128('-170141183460469231731687303715884105728'), 0);
+INSERT INTO t_sort_prop_decimal_min SELECT number, number, number FROM numbers(1, 2);
+
+SELECT 'negate of the minimum of a decimal';
+SELECT -d32 AS n FROM (SELECT d32 FROM t_sort_prop_decimal_min ORDER BY d32 LIMIT 10) ORDER BY n DESC LIMIT 1;
+SELECT -d32 AS n FROM (SELECT d32 FROM t_sort_prop_decimal_min ORDER BY d32 LIMIT 10) ORDER BY n DESC LIMIT 1 SETTINGS optimize_sorting_by_input_stream_properties = 0;
+SELECT -d64 AS n FROM (SELECT d64 FROM t_sort_prop_decimal_min ORDER BY d64 LIMIT 10) ORDER BY n DESC;
+SELECT -d64 AS n FROM (SELECT d64 FROM t_sort_prop_decimal_min ORDER BY d64 LIMIT 10) ORDER BY n DESC SETTINGS optimize_sorting_by_input_stream_properties = 0;
+SELECT -d64 AS n FROM (SELECT d64 FROM t_sort_prop_decimal_min ORDER BY d64 LIMIT 10) ORDER BY n DESC LIMIT 1;
+SELECT -d64 AS n FROM (SELECT d64 FROM t_sort_prop_decimal_min ORDER BY d64 LIMIT 10) ORDER BY n DESC LIMIT 1 SETTINGS optimize_sorting_by_input_stream_properties = 0;
+SELECT -d128 AS n FROM (SELECT d128 FROM t_sort_prop_decimal_min ORDER BY d128 LIMIT 10) ORDER BY n DESC LIMIT 1;
+SELECT -d128 AS n FROM (SELECT d128 FROM t_sort_prop_decimal_min ORDER BY d128 LIMIT 10) ORDER BY n DESC LIMIT 1 SETTINGS optimize_sorting_by_input_stream_properties = 0;
+
+DROP TABLE t_sort_prop_decimal_min;
+
 -- `toBFloat16` keeps only the high half of a `Float32`, so a signaling NaN, whose payload is in the low half, becomes infinity.
 DROP TABLE IF EXISTS t_sort_prop_bfloat16;
 CREATE TABLE t_sort_prop_bfloat16 (x Float32) ENGINE = MergeTree ORDER BY tuple();
