@@ -1919,7 +1919,6 @@ protected:
                 catch (...)
                 {
                     stopPolling(endpoint_uri);
-                    /// recordFailure logs and stores the exception; the query stops.
                     recordFailure(std::current_exception());
                     return;
                 }
@@ -1968,12 +1967,11 @@ protected:
                     for (size_t i = 0; i < tasks.size(); ++i)
                     {
                         auto & task_status = statuses[i].status;
-                        /// A task cancelled early (e.g. LIMIT satisfied) still delivers its logs through the cleanup polls.
+                        /// A task cancelled early still delivers its logs here.
                         handleWorkerLogs(tasks[i], task_status);
                         if (isTerminalTaskStatus(task_status.status))
                         {
-                            /// Its failure can be the root cause of the teardown: the initiator often sees an effect first, e.g. the
-                            /// result reader's socket closing.
+                            /// Its failure can be the teardown's root cause: the initiator often sees only an effect of it first.
                             if (task_status.status != "Finished" && task_status.status != "Unknown task")
                                 recordTaskFailureOnce(tasks[i], task_status);
                             continue;

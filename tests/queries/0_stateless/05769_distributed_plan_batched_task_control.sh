@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: the remote executor needs the stateless worker configuration.
-#
 # The coordinator polls, cancels and forgets the tasks of a query per worker: one `get_statuses` asks about all of a worker's
 # unfinished tasks, and the teardown of a killed query sends one `cancel_tasks` per worker, whatever the number of tasks.
 

@@ -183,7 +183,7 @@ std::vector<DistributedQueryTaskStatusEntry> getTaskStatuses(const String & endp
     {
         timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
         timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
-        /// Retrying is fine: a retry can lose drained log lines, which is accepted.
+        /// Retrying is fine: a retry can lose the drained log lines and progress of the tasks, which is accepted.
         read_settings.http_settings.max_tries = 3;
         read_settings.http_settings.retry_initial_backoff_ms = 200;
         read_settings.http_settings.retry_max_backoff_ms = 1000;

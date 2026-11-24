@@ -79,8 +79,8 @@ public:
     /// Returns false for a query with no task on this worker when `max_queries` queries have tasks here.
     bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
-    /// Waits up to `wait_milliseconds` until one of the tasks ends or reports a failure that an earlier reply did not carry,
-    /// then returns the status of each, in order.
+    /// Waits up to `wait_milliseconds` until one of the tasks is unknown, ends or starts failing, then returns the status of
+    /// each, in order.
     std::vector<TaskStatus> getStatuses(const Strings & task_ids, UInt64 wait_milliseconds);
     /// Remembers an unknown id, so its start, still on the wire, is ignored when it arrives.
     Result cancelTask(const String & task_id);
@@ -146,7 +146,7 @@ private:
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
         TaskCollectors collectors;
-        /// Filled by the task's setup only when logs are collected; drained by `getStatus`.
+        /// Filled by the task's setup only when logs are collected; drained by `currentStatus`.
         std::shared_ptr<LogsQueueSlot> logs_queue = std::make_shared<LogsQueueSlot>();
         /// Lines handed to status replies so far.
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();

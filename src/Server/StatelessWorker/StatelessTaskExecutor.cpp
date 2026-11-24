@@ -466,7 +466,7 @@ std::vector<StatelessTaskExecutor::TaskStatus> StatelessTaskExecutor::getStatuse
     {
         TaskStatePtr state;
         std::shared_future<std::optional<TaskFailure>> completion_future;
-        /// Its failure was reported before this request, so an earlier reply carried it.
+        /// Failing when the request came, so its failure does not end the wait.
         bool failing_before = false;
     };
     std::vector<Polled> polled(task_ids.size());

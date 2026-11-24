@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
-# no-fasttest: the remote executor needs the stateless worker configuration, and the test enables failpoints.
+# no-fasttest: the test enables failpoints.
 # no-parallel: the failpoints are global.
 #
 # A status poller that fails before it sends its request ends the query with its error, instead of leaving its worker unpolled
