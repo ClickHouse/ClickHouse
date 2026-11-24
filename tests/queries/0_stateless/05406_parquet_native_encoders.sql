@@ -1,3 +1,4 @@
+-- Random settings limits: output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_use_alp_encoding=(0, 0)
 -- Round trip through the Parquet writer and reader, covering the PLAIN and dictionary encodings of
 -- every physical type, the fallback from dictionary to PLAIN, and the RLE / bit-packed hybrid
 -- encoding of levels and dictionary indexes: long runs, short runs, and distinct values.

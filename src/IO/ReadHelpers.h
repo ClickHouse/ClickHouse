@@ -75,7 +75,7 @@ inline char parseEscapeSequence(char c)
         case 'b':
             return '\b';
         case 'e':
-            return '\x1B';      /// \e escape sequence is non standard for C and C++ but supported by gcc and clang.
+            return '\x1B';      /// \e escape sequence is non standard for C and C++ but supported by clang.
         case 'f':
             return '\f';
         case 'n':
@@ -530,7 +530,7 @@ struct NullOutput
     void append(const char *) {}
     void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
-    size_t size() const { return 0; }
+    [[nodiscard]] size_t size() const { return 0; }
 };
 
 template <typename ReturnType>

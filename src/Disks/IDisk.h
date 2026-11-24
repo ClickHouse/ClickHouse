@@ -579,9 +579,6 @@ public:
     virtual bool supportsStat() const { return false; }
     virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
 
-    virtual bool supportsChmod() const { return false; }
-    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
-
     /// Was disk created to be used without storage configuration?
     bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
     UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
@@ -669,17 +666,17 @@ class IReservation : boost::noncopyable
 {
 public:
     /// Get reservation size.
-    virtual UInt64 getSize() const = 0;
+    [[nodiscard]] virtual UInt64 getSize() const = 0;
 
     /// Space available for reservation
     /// (with this reservation already take into account).
-    virtual std::optional<UInt64> getUnreservedSpace() const = 0;
+    [[nodiscard]] virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT
 
     /// Get all disks, used in reservation
-    virtual Disks getDisks() const = 0;
+    [[nodiscard]] virtual Disks getDisks() const = 0;
 
     /// Changes amount of reserved space.
     virtual void update(UInt64 new_size) = 0;
