@@ -47,9 +47,13 @@ def set_config(content):
 
 
 def test_hot_reload(started_cluster):
+    # The native client applies the `FORMAT` of a query itself,
+    # so check the formats that the server uses.
     # The server starts with the restrictions from its initial config.
-    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error("SELECT 1 FORMAT CSV")
-    assert node.query("SELECT 1 FORMAT TSV") == "1\n"
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+        "SELECT * FROM format(CSV, '1')"
+    )
+    assert node.query("SELECT * FROM format(TSV, '1')") == "1\n"
     assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
         "CREATE TABLE t_log (x UInt8) ENGINE = Log"
     )
@@ -61,16 +65,20 @@ def test_hot_reload(started_cluster):
     assert "INVALID_CONFIG_PARAMETER" in node.query_and_get_error(
         "SYSTEM RELOAD CONFIG"
     )
-    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error("SELECT 1 FORMAT CSV")
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+        "SELECT * FROM format(CSV, '1')"
+    )
 
     # Without the section everything is allowed.
     set_config("<clickhouse></clickhouse>")
-    assert node.query("SELECT 1 FORMAT CSV") == "1\n"
+    assert node.query("SELECT * FROM format(CSV, '1')") == "1\n"
     node.query("CREATE TABLE t_log (x UInt8) ENGINE = Log")
 
     # The restrictions are applied again on reload.
     set_config(RESTRICTIONS)
-    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error("SELECT 1 FORMAT CSV")
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+        "SELECT * FROM format(CSV, '1')"
+    )
     assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
         "CREATE TABLE t_log2 (x UInt8) ENGINE = Log"
     )
