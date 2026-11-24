@@ -132,6 +132,8 @@ private:
     std::optional<bool> allow_archive_path_syntax;
     bool reject_archive_failover = true;
     HTTPHeaderEntries headers_from_ast;
+    /// See `initializeFromParsedArguments`.
+    bool enable_url_encoding = true;
 };
 
 }

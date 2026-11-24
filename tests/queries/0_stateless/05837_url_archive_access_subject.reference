@@ -1,7 +1,12 @@
---- without the grant on the archive the read is refused
---- while a grant on the archive does
-3
---- and taking it back brings the refusal back
---- a grant with spaces around the separator never matched
---- urlCluster names the archive as well
-3
+--- an archive grant without the whole-source grant is refused, with no request sent
+necessary to have the grant READ ON URL
+--- and so is its schema inference
+necessary to have the grant READ ON URL
+--- and the clustered read of the same source
+necessary to have the grant READ ON URL
+--- while the whole-source grant plus the archive grant reads through the redirect
+4851
+--- and taking the archive grant back brings the refusal back, before any request
+--- a grant on the literal member string never covered the archive
+--- and the clustered read names the archive as well
+4851

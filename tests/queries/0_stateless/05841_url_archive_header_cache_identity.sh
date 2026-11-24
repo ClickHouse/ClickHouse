@@ -57,8 +57,22 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
     def do_GET(self):
-        # One row for tenant `a`, two rows for tenant `b`; any other value matches `a`.
-        self.respond(make_archive(2 if self.headers.get("X-Tenant") == "b" else 1))
+        # The rows depend on the exact (name, value) pair, so the cache identity has to bound both: one row
+        # for the name `X-Tenant` with any value but `b`, two rows for `X-Tenant=b`, and three rows for the
+        # longer name `X-Tenantb` with the empty value - the pair that would collide with `X-Tenant=b` if
+        # the identity hashed only the concatenation without the field boundary.
+        if self.headers.get("X-Tenant") == "b":
+            self.respond(make_archive(2))
+        elif "X-Tenantb" in self.headers and self.headers["X-Tenantb"] == "":
+            self.respond(make_archive(3))
+        elif self.path.startswith("/dir%2Fa.zip"):
+            # `%2F` is a literal of the object name with the encoding off, and one row lives there.
+            self.respond(make_archive(1))
+        elif self.path.startswith("/dir/a.zip"):
+            # With the encoding on, `%2F` is decoded into a path separator, and another object lives there.
+            self.respond(make_archive(2))
+        else:
+            self.respond(make_archive(1))
 
     do_HEAD = do_GET
 
@@ -94,3 +108,18 @@ ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() FROM urlCluster('test_shard_localhost', '${source}', 'TSV', 'x UInt64', headers('X-Tenant'='b'))"
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() FROM urlCluster('test_shard_localhost', '${source}', 'TSV', 'x UInt64', headers('X-Tenant'='a'))"
+
+echo "--- and a longer name with a shorter value is no other pair"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM url('${source}', 'TSV', 'x UInt64', headers('X-Tenantb'=''))"
+
+echo "--- and the URL encoding mode is part of the same identity"
+# `%2F` stays a literal of the object name with the encoding off and names another object with it on,
+# so warming one mode must not answer the other.
+encoded_source="http://127.0.0.1:${PORT}/dir%2Fa.zip::m.tsv"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM url('${encoded_source}', 'TSV', 'x UInt64') SETTINGS enable_url_encoding = 0"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM url('${encoded_source}', 'TSV', 'x UInt64') SETTINGS enable_url_encoding = 1"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM url('${encoded_source}', 'TSV', 'x UInt64') SETTINGS enable_url_encoding = 0"

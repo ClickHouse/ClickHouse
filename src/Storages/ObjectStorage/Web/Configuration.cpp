@@ -28,6 +28,7 @@ namespace Setting
     extern const SettingsBool schema_inference_use_cache_for_url;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsBool allow_archive_path_syntax;
+    extern const SettingsBool enable_url_encoding;
 }
 
 namespace ErrorCodes
@@ -120,11 +121,18 @@ std::string StorageWebConfiguration::getHeadersHash() const
     SipHash header_hash;
     for (const auto & [name, value] : headers_from_ast)
     {
+        /// The sizes are part of the input: without them a longer name with a shorter value could hash as
+        /// the concatenation of another pair, e.g. `('X-Tenant', 'b')` and `('X-Tenantb', '')` would be one
+        /// identity otherwise. `update(size_t)` folds the sizes in as fixed-width words, which a `char` of
+        /// a name or a value can never alias.
+        header_hash.update(name.size());
         header_hash.update(name);
-        header_hash.update(std::string_view{"\0"});
+        header_hash.update(value.size());
         header_hash.update(value);
-        header_hash.update(std::string_view{"\0"});
     }
+    /// The URL encoding mode changes which resource the path names (see `initializeFromParsedArguments`),
+    /// so it belongs to the same identity as the headers.
+    header_hash.update(enable_url_encoding);
     return getHexUIntLowercase(header_hash.get128());
 }
 
@@ -252,6 +260,12 @@ void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArgu
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
     raw_url = parsed_arguments.url;
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
+    /// The readers parse the URL of the object with this setting of the request context (with it, an
+    /// encoded slash `%2F` in the path is decoded into a path separator), so the same path can name
+    /// different resources: the cache identities have to tell the modes apart, and they read the
+    /// decision from here, where the arguments are parsed, rather than from whichever context happens
+    /// to build the reader later.
+    enable_url_encoding = context->getSettingsRef()[Setting::enable_url_encoding];
 
     setNamespaceFromURL(context);
     setPaths({path});
