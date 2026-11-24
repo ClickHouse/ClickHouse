@@ -43,7 +43,6 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
@@ -209,12 +208,8 @@ public:
         }
 
     private:
-        /// Helper to process ColumnObject directly using subcolumns.
-        /// Only supports constant string path keys (no indexes or non-const keys).
-        /// - Extract literal subcolumn (json.path) for scalar values
-        /// - Extract subobject subcolumn (json.^`path`) for nested objects
-        /// - Merge them row-by-row, preferring literal over subobject
-        /// - Cast the result to the function's return type
+        /// Runs the `String` implementation on the JSON text of the column. For a path of plain constant keys it writes
+        /// only the text of the value at the path, read from the subcolumn of the path.
         template <typename TName, template <typename> typename TImpl>
         static ColumnPtr runForObjectColumn(
             const ColumnsWithTypeAndName & arguments,
@@ -226,134 +221,104 @@ public:
             const auto & data_type_object = assert_cast<const DataTypeObject &>(*first_column.type);
 
             const auto * col_const = typeid_cast<const ColumnConst *>(first_column.column.get());
-            const auto * col_object = typeid_cast<const ColumnObject *>(
-                col_const ? col_const->getDataColumnPtr().get() : first_column.column.get());
-
-            if (!col_object)
+            const ColumnPtr object_column = col_const ? col_const->getDataColumnPtr() : first_column.column;
+            if (!typeid_cast<const ColumnObject *>(object_column.get()))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column type for Object parsing");
+            const size_t num_rows = col_const ? 1 : input_rows_count;
 
-            /// Determine number of path arguments (parser type doesn't matter for this).
             size_t num_index_arguments = TImpl<DummyJSONParser>::getNumberOfIndexArguments(arguments);
 
-            /// Build a dotted path from constant string key arguments only.
-            /// During constant folding (scalar queries without tables), arguments may not be
-            /// wrapped in ColumnConst even if they're effectively constant (single-row columns).
-            String path;
-            for (size_t i = 1; i <= num_index_arguments; ++i)
+            /// The subcolumn of a path is the value of the key lookup only for non-empty keys without `.`, `%` or a backtick.
+            bool use_subcolumn = num_index_arguments != 0 && !case_insensitive && std::string_view(TName::name) != "JSONKey";
+            Strings keys;
+            for (size_t i = 1; use_subcolumn && i <= num_index_arguments; ++i)
             {
-                const auto & arg = arguments[i];
-                if (!isString(arg.type) || !arg.column)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function {} with JSON type input supports only constant string path arguments",
-                        String(TName::name));
-
-                String key;
-                if (const auto * col_const_arg = typeid_cast<const ColumnConst *>(arg.column.get()))
-                {
-                    key = col_const_arg->getValue<String>();
-                }
-                else if (input_rows_count <= 1 && !arg.column->empty())
-                {
-                    /// Constant folding: single-row column that isn't wrapped in ColumnConst.
-                    key = (*arg.column)[0].safeGet<String>();
-                }
+                const auto * key_column = typeid_cast<const ColumnConst *>(arguments[i].column.get());
+                if (!key_column || !isString(arguments[i].type))
+                    use_subcolumn = false;
+                else if (String key = key_column->getValue<String>(); key.empty() || key.find_first_of(".%`") != String::npos)
+                    use_subcolumn = false;
                 else
+                    keys.push_back(std::move(key));
+            }
+
+            /// Each prefix of the path; the last one is the path.
+            Strings prefixes;
+            for (const auto & key : keys)
+                prefixes.push_back(prefixes.empty() ? key : prefixes.back() + "." + key);
+
+            for (const auto & [typed_path, _] : data_type_object.getTypedPaths())
+            {
+                if (use_subcolumn && prefixes.back().size() > typed_path.size() && prefixes.back().starts_with(typed_path)
+                    && prefixes.back()[typed_path.size()] == '.')
+                    use_subcolumn = false;
+            }
+
+            FormatSettings text_settings;
+            text_settings.json.json_type_escape_dots_in_keys = format_settings.json.json_type_escape_dots_in_keys;
+            text_settings.json.type_json_skip_null_typed_paths = format_settings.json.type_json_skip_null_typed_paths;
+            text_settings.json.write_float_type_markers = true;
+
+            auto text_column = ColumnString::create();
+            auto & chars = text_column->getChars();
+            auto & offsets = text_column->getOffsets();
+            offsets.reserve(num_rows);
+            auto write_text = [&](const ISerialization & serialization, const IColumn & column, size_t row)
+            {
+                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+                serialization.serializeTextJSON(column, row, buf, text_settings);
+                buf.finalize();
+            };
+
+            ColumnsWithTypeAndName text_arguments;
+            if (use_subcolumn)
+            {
+                /// The combined subcolumn holds the literal at the path, else the sub-object, else NULL.
+                const String & path = prefixes.back();
+                const bool skip_null = format_settings.json.type_json_skip_null_typed_paths;
+                const bool always_present = data_type_object.getTypedPaths().contains(path) && !skip_null;
+                String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
+                auto value = skip_null
+                    ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
+                    : data_type_object.getSubcolumn(combined_name, object_column);
+                auto value_type = skip_null ? data_type_object.getDynamicType() : data_type_object.getSubcolumnType(combined_name);
+                auto value_serialization = value_type->getDefaultSerialization();
+
+                /// The text has a literal at a shorter prefix before the object with the path, and the lookup stops at it.
+                Columns prefix_literals;
+                for (size_t k = 0; k + 1 < prefixes.size(); ++k)
+                    prefix_literals.push_back(data_type_object.getSubcolumn(prefixes[k], object_column));
+
+                for (size_t i = 0; i < num_rows; ++i)
                 {
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function {} with JSON type input supports only constant string path arguments",
-                        String(TName::name));
+                    bool present = always_present || !value->isNullAt(i);
+                    for (const auto & literal : prefix_literals)
+                        present = present && literal->isNullAt(i);
+                    /// An absent value is an empty string, which is not a JSON document, so the result is the default.
+                    if (present)
+                        write_text(*value_serialization, *value, i);
+                    offsets.push_back(chars.size());
                 }
 
-                if (format_settings.json.json_type_escape_dots_in_keys)
-                    key = escapeDotInJSONKey(key);
-
-                if (!path.empty())
-                    path += '.';
-                path += key;
-            }
-
-            /// Expand ColumnConst to full column if needed.
-            ColumnPtr object_column = col_const ? col_const->convertToFullColumn() : first_column.column;
-
-            /// Root case (no path specified) return defaults for most functions.
-            if (path.empty())
-                return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
-
-            /// Use combined `@` subcolumn that merges literal value and sub-object.
-            /// For typed paths getSubcolumn returns only the literal value. For non-typed paths it returns
-            /// a Dynamic column: literal if present, sub-object as JSON if not, NULL otherwise.
-            /// When type_json_skip_null_typed_paths is enabled, use extractCombinedSubcolumn for every path
-            /// (including typed ones) so a NULL typed literal still surfaces a non-empty sub-object, and
-            /// a parent whose typed descendants are all NULL is treated as absent.
-            String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
-            const bool skip_null = format_settings.json.type_json_skip_null_typed_paths;
-            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
-            bool treat_typed_as_always_present = is_typed_path && !skip_null;
-
-            auto merged = skip_null
-                ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
-                : data_type_object.getSubcolumn(combined_name, object_column);
-            auto merged_type = skip_null
-                ? data_type_object.getDynamicType()
-                : data_type_object.getSubcolumnType(combined_name);
-
-            /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
-            /// cast the extracted value to UInt8 and silently return the value itself.
-            constexpr bool is_has = std::string_view(TName::name) == std::string_view("JSONHas");
-
-            if constexpr (is_has)
-            {
-                if (treat_typed_as_always_present)
-                    return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
-
-                auto result = ColumnVector<UInt8>::create(input_rows_count);
-                auto & data = result->getData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    data[i] = merged->isNullAt(i) ? 0 : 1;
-                return result;
-            }
-
-            /// JSONExtractBool must return UInt8 {0,1} with boolean semantics. Cast to `Bool` instead
-            /// of `UInt8` so that `convertToBool` normalizes any non-zero numeric value to 1.
-            constexpr bool is_extract_bool = std::string_view(TName::name) == std::string_view("JSONExtractBool")
-                        || std::string_view(TName::name) == std::string_view("JSONExtractBoolCaseInsensitive");
-
-            if constexpr (is_extract_bool)
-            {
-                auto casted = castColumnAccurateOrNull({merged, merged_type, ""}, DataTypeFactory::instance().get("Bool"));
-                return removeNullable(casted);
-            }
-
-            /// For JSONExtractRaw: serialize each value as a JSON string
-            constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
-                        || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");
-
-            if constexpr (is_extract_raw)
-            {
-                auto raw_col = ColumnString::create();
-                auto serialization = merged_type->getDefaultSerialization();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    if (!treat_typed_as_always_present && merged->isNullAt(i))
-                    {
-                        raw_col->insertDefault();
-                    }
-                    else
-                    {
-                        WriteBufferFromOwnString buf;
-                        serialization->serializeTextJSON(*merged, i, buf, format_settings);
-                        raw_col->insert(buf.str());
-                    }
-                }
-                return raw_col;
+                text_arguments.push_back(first_column);
+                text_arguments.insert(text_arguments.end(), arguments.begin() + 1 + num_index_arguments, arguments.end());
             }
             else
             {
-                auto casted = castColumnAccurateOrNull({merged, merged_type, ""}, result_type);
-                return result_type->isNullable() ? casted : removeNullable(casted);
+                auto serialization = data_type_object.getDefaultSerialization();
+                for (size_t i = 0; i < num_rows; ++i)
+                {
+                    write_text(*serialization, *object_column, i);
+                    offsets.push_back(chars.size());
+                }
+                text_arguments = arguments;
             }
+
+            ColumnPtr text = std::move(text_column);
+            if (col_const)
+                text = ColumnConst::create(text, input_rows_count);
+            text_arguments[0] = {text, std::make_shared<DataTypeString>(), first_column.name};
+            return run(text_arguments, result_type, input_rows_count, format_settings);
         }
     };
 

@@ -11,7 +11,7 @@ SELECT JSONExtractBool(CAST('{"sold":-1}', 'JSON'), 'sold');
 SELECT JSONExtractBool(CAST('{"sold":0}', 'JSON'), 'sold');
 SELECT toTypeName(JSONExtractBool(CAST('{"k":1}', 'JSON'), 'k'));
 
-SELECT '-- float and string values use Bool cast semantics';
+SELECT '-- float and string values: the same as for a JSON string';
 SELECT JSONExtractBool(CAST('{"sold":-3.14159265}', 'JSON'), 'sold');
 SELECT JSONExtractBool(CAST('{"sold":"foobar"}', 'JSON'), 'sold');
 SELECT JSONExtractBool(CAST('{"sold":"true"}', 'JSON'), 'sold');

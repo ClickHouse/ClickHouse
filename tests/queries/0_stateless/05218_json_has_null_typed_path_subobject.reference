@@ -14,15 +14,15 @@ non-nullable with setting
 {"a":0}	1	0
 {"a":0}	1	0
 both typed JSONHas with setting
-1	0
-1	1
-0	0
-0	0
+1	0	0
+1	0	1
+0	0	0
+0	0	0
 both typed JSONExtractRaw with setting
-1	
-{"b":42}	42
-	
-	
+1		
+{"b":42}		42
+		
+		
 both typed has with setting
 1	0
 1	1

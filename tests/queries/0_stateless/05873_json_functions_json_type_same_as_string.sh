@@ -32,10 +32,9 @@ INSERT INTO src VALUES
     (14, 1, '{\"\":{\"a\":42}}'),
     (15, 1, '{}'),
     (16, 1, '{\"f\":1.25e-7,\"n\":-7,\"x\":{\"y\":[1,\"a\",null]}}'),
-    (17, 0, '{\"x\":{\"y\":{\"z\":\"deep\"}},\"a\":{\"e\":{\"f\":{\"g\":\"str\"}}},\"d\":[5]}');
-
-CREATE TABLE src_dup (id UInt32, canon UInt8, s String) ENGINE = Memory;
-INSERT INTO src_dup VALUES (1, 0, '{\"a\":42,\"a\":{\"b\":42}}'), (2, 0, '{\"a\":{\"b\":42},\"a\":42}');
+    (17, 0, '{\"x\":{\"y\":{\"z\":\"deep\"}},\"a\":{\"e\":{\"f\":{\"g\":\"str\"}}},\"d\":[5]}'),
+    (18, 0, '{\"a\":42,\"a\":{\"b\":42}}'),
+    (19, 0, '{\"a\":{\"b\":42},\"a\":42}');
 "
 
 # The expected side reads `o_<column>`: the source document of a canonical row of `t`, otherwise the column as
@@ -57,13 +56,13 @@ create_table()
     "
 }
 
-create_table t src "" 1
-create_table te src "SETTINGS json_type_escape_dots_in_keys = 1" 0
-create_table td src_dup "SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 1" 0
+create_table t src "SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 1" 1
+create_table te src "SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 1, json_type_escape_dots_in_keys = 1" 0
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE res (tbl String, call String, col String, id UInt32, r String, e String) ENGINE = Memory"
 
 # One call per line: <function>|<path arguments, each with a leading comma>|<result type of JSONExtract*>.
+# Arguments, if any: the result types to generate, instead of all of them.
 gen_calls()
 {
     local plain=(JSONHas JSONLength JSONKey JSONType JSONExtractInt JSONExtractUInt JSONExtractFloat JSONExtractBool
@@ -89,6 +88,7 @@ gen_calls()
         "LowCardinality(Nullable(String))" "Enum8('x' = 1, 'hi' = 2)" "Array(Int64)" "Array(Nullable(String))"
         "Array(Array(Int64))" "Tuple(b String, c Int64)" "Tuple(Int64, Int64)" "Map(String, String)"
         "Map(String, Nullable(Int64))" "Decimal(10, 2)" "DateTime64(3, 'UTC')" "Dynamic" "Variant(Int64, String)" "JSON")
+    [ $# -gt 0 ] && types=("$@")
     local f p ty
     printf 'isValidJSON||\n'
     for f in "${plain[@]}"; do
@@ -105,53 +105,64 @@ gen_calls()
     done
 }
 
-sql_quote() { local s=${1//\\/\\\\}; s=${s//\'/\\\'}; printf "'%s'" "$s"; }
+# The functions below set REPLY instead of printing, so that generating thousands of calls forks no subshell.
 
-# The printed form of a result; a type that the printed value does not show is printed too.
+# The SQL string literal of $1.
+sql_quote() { local s=${1//\\/\\\\}; REPLY="'${s//\'/\\\'}'"; }
+
+# The printed form of the result $3 of the function $1 with the result type $2; a type the value does not show is printed too.
 result_text()
 {
-    local f=$1 ty=$2 e=$3
-    local kv=0
-    [[ $f == JSONExtractKeysAndValues* ]] && kv=1
-    case "$ty" in
-        Dynamic) [ $kv = 1 ] && echo "toString(tuple($e, arrayMap(p -> dynamicType(p.2), $e)))" || echo "toString(tuple($e, dynamicType($e)))" ;;
-        Variant*) [ $kv = 1 ] && echo "toString(tuple($e, arrayMap(p -> variantType(p.2), $e)))" || echo "toString(tuple($e, variantType($e)))" ;;
-        JSON) [ $kv = 1 ] && echo "toString(tuple($e, arrayMap(p -> JSONAllPathsWithTypes(p.2), $e)))" || echo "toString(tuple($e, JSONAllPathsWithTypes($e)))" ;;
-        *) echo "toString(tuple($e))" ;;
+    local e=$3 of=""
+    case "$2" in
+        Dynamic) of=dynamicType ;;
+        Variant*) of=variantType ;;
+        JSON) of=JSONAllPathsWithTypes ;;
     esac
+    if [ -z "$of" ]; then
+        REPLY="toString(tuple($e))"
+    elif [[ $1 == JSONExtractKeysAndValues* ]]; then
+        REPLY="toString(tuple($e, arrayMap(p -> $of(p.2), $e)))"
+    else
+        REPLY="toString(tuple($e, $of($e)))"
+    fi
 }
 
 # Reads calls from stdin and writes one INSERT per group of calls of the same function and result type.
 build_queries()
 {
     local tbl=$1 settings=$2 columns=($3)
-    local f args ty group="" key="" call c o x
-    flush() { [ -n "$group" ] && echo "INSERT INTO res SELECT '$tbl', x.1, x.2, id, x.3, x.4 FROM (SELECT id, [${group#,}] AS xs FROM $tbl) ARRAY JOIN xs AS x $settings;"; group=""; }
+    local f args ty tyarg label c r group="" key=""
     while IFS='|' read -r f args ty; do
-        [ "$f|$ty" != "$key" ] && flush
+        if [ "$f|$ty" != "$key" ] && [ -n "$group" ]; then
+            echo "INSERT INTO res SELECT '$tbl', x.1, x.2, id, x.3, x.4 FROM (SELECT id, [${group#,}] AS xs FROM $tbl) ARRAY JOIN xs AS x $settings;"
+            group=""
+        fi
         key="$f|$ty"
-        call="$f(c$args${ty:+, $(sql_quote "$ty")})"
+        tyarg=""
+        if [ -n "$ty" ]; then sql_quote "$ty"; tyarg=", $REPLY"; fi
+        sql_quote "$f(c$args$tyarg)"; label=$REPLY
         for c in "${columns[@]}"; do
-            o=o_${c#j_}
-            x="($(sql_quote "$call"), '$c', $(result_text "$f" "$ty" "$f($c$args${ty:+, $(sql_quote "$ty")})"), $(result_text "$f" "$ty" "$f($o$args${ty:+, $(sql_quote "$ty")})"))"
-            group="$group,$x"
+            result_text "$f" "$ty" "$f($c$args$tyarg)"; r=$REPLY
+            result_text "$f" "$ty" "$f(o_${c#j_}$args$tyarg)"
+            group+=",($label, '$c', $r, $REPLY)"
         done
     done
-    flush
+    [ -n "$group" ] && echo "INSERT INTO res SELECT '$tbl', x.1, x.2, id, x.3, x.4 FROM (SELECT id, [${group#,}] AS xs FROM $tbl) ARRAY JOIN xs AS x $settings;"
 }
 
-echo "calls: $(gen_calls | wc -l)"
+# With escaped dots the paths of the keys change, not the conversion of a value: fewer result types are enough there.
 ALL_COLUMNS="j_dyn j_typed j_shared j_shared0"
+TE_TYPES=("String" "Dynamic" "JSON" "Tuple(b String, c Int64)" "Map(String, Nullable(Int64))")
+echo "calls: $(gen_calls | wc -l) $(gen_calls "${TE_TYPES[@]}" | wc -l)"
 gen_calls | build_queries t "" "$ALL_COLUMNS" | $CLICKHOUSE_CLIENT
-gen_calls | build_queries te "SETTINGS json_type_escape_dots_in_keys = 1" "$ALL_COLUMNS" | $CLICKHOUSE_CLIENT
-gen_calls | build_queries td "" "$ALL_COLUMNS" | $CLICKHOUSE_CLIENT
+gen_calls "${TE_TYPES[@]}" | build_queries te "SETTINGS json_type_escape_dots_in_keys = 1" "$ALL_COLUMNS" | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- the data: rows, text size, rows whose source is not what the JSON type keeps (must be 0)';
 SELECT 't', count(), sum(length(o_dyn)), sum(length(o_typed)), countIf(canon AND (JSONExtractRaw(j_dyn::String) != JSONExtractRaw(s)
     OR JSONExtractRaw(j_shared::String) != JSONExtractRaw(s) OR JSONExtractRaw(j_shared0::String) != JSONExtractRaw(s))) FROM t;
 SELECT 'te', count(), sum(length(o_dyn)), sum(length(o_typed)) FROM te;
-SELECT 'td', count(), sum(length(o_dyn)), sum(length(o_typed)) FROM td;
 "
 
 # Presentation settings change how a result is printed, never which value is extracted.
@@ -175,8 +186,9 @@ INSERT INTO tp SELECT 1, j_x, j_x::String FROM tp_0;
 # Whole-number, negative-zero, large and narrow floats keep their type and value; non-finite values are strings.
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE tf_0 (id UInt32, s String) ENGINE = Memory;
-INSERT INTO tf_0 VALUES (1, '{\"f\":1.0}'), (2, '{\"f\":-0.0}'), (3, '{\"f\":1e20}'), (4, '{\"f\":0.1}'), (5, '{\"f\":[1.0,-2.5]}'),
-    (6, '{\"f32\":1234567808.0,\"fx\":\"inf\"}'), (7, '{\"f32\":0.5,\"fx\":\"-inf\"}'), (8, '{\"f32\":-0.0,\"fx\":\"nan\"}');
+INSERT INTO tf_0 VALUES (1, '{\"f\":1.0,\"f32\":0.0,\"fx\":0.0}'), (2, '{\"f\":-0.0,\"f32\":1.5,\"fx\":2.0}'),
+    (3, '{\"f\":1e20,\"f32\":-0.0,\"fx\":-0.0}'), (4, '{\"f\":0.1,\"f32\":1234567808.0,\"fx\":1e300}'),
+    (5, '{\"f\":[1.0,-2.5],\"f32\":0.5,\"fx\":\"inf\"}'), (6, '{\"f32\":16777216.0,\"fx\":\"-inf\"}'), (7, '{\"f32\":0.25,\"fx\":\"nan\"}');
 CREATE TABLE tf (id UInt32, j_x JSON(f32 Float32, fx Float64), o_x String) ENGINE = Memory;
 INSERT INTO tf SELECT id, s, s FROM tf_0;
 "
@@ -191,7 +203,7 @@ $CLICKHOUSE_CLIENT -q "
 SELECT '-- comparisons, calls, distinct String results, mismatches';
 SELECT tbl, count(), uniqExact(call), uniqExact(e), countIf(r != e) FROM res GROUP BY tbl ORDER BY tbl;
 SELECT '-- mismatches';
-SELECT tbl, call, col, id, r, e FROM res WHERE r != e ORDER BY ALL;
+SELECT tbl, call, col, id, r, e FROM res WHERE r != e ORDER BY ALL FORMAT TSVRaw;
 "
 
 # A constant JSON document with non-constant keys is serialized once, not once per row.
@@ -204,31 +216,37 @@ SELECT count(), countIf(JSONExtractInt(j, materialize(['a', 'd', 'zz'][number % 
 FROM numbers(256) SETTINGS max_execution_time = 10;
 "
 
-$CLICKHOUSE_CLIENT -q "
-SELECT '-- examples: JSON, then String';
-WITH '{\"a\":{\"b\":\"x\",\"c\":1},\"d\":[1,2],\"s\":\"hi\"}' AS s, s::JSON AS j
-SELECT JSONLength(j), JSONLength(s), JSONLength(j, 'a'), JSONLength(s, 'a'), JSONType(j, 'a'), JSONType(s, 'a'), JSONType(j, 'd'), JSONType(s, 'd'),
-    JSONExtractKeys(j), JSONExtractKeys(s), JSONExtractKeysAndValuesRaw(j), JSONExtractKeysAndValuesRaw(s),
-    JSONExtractStringCaseInsensitive(j, 'S'), JSONExtractStringCaseInsensitive(s, 'S'), JSONExtractRawCaseInsensitive(j, 'A'), JSONExtractRawCaseInsensitive(s, 'A'),
-    isValidJSON(j), isValidJSON(s) FORMAT Vertical;
-WITH '{\"a\":{\"b\":\"x\",\"c\":1},\"d\":[1,2],\"s\":\"hi\"}' AS s, s::JSON AS j
-SELECT JSONExtractKeys(j, 'a'), JSONExtractKeys(s, 'a'), JSONExtractKeysCaseInsensitive(j, 'A'), JSONExtractKeysCaseInsensitive(s, 'A'),
-    JSONExtractArrayRaw(j, 'd'), JSONExtractArrayRaw(s, 'd'), JSONExtract(j, 'd', 'Array(Int64)'), JSONExtract(s, 'd', 'Array(Int64)'),
-    JSONExtractKeysAndValues(j, 'a', 'String'), JSONExtractKeysAndValues(s, 'a', 'String'), JSONKey(j, 1), JSONKey(s, 1),
-    JSONHas(j, 'd', 1), JSONHas(s, 'd', 1), JSONExtractInt(j, 'd', 1), JSONExtractInt(s, 'd', 1) FORMAT Vertical;
-SELECT '-- https://github.com/ClickHouse/ClickHouse/issues/102079';
-WITH '{\"x\": {\"a\": 5, \"b\": 7, \"c\": 11}}' AS s SELECT JSONExtractKeysAndValues(s::JSON, 'x', 'Int8'), JSONExtractKeysAndValues(s, 'x', 'Int8');
-WITH '{\"a\": \"hello\", \"b\": [-100, 200.0, 300]}' AS s SELECT JSONExtract(s::JSON, 'Tuple(String, Array(Float64))'), JSONExtract(s, 'Tuple(String, Array(Float64))');
-WITH '{\"a\": \"hello\", \"b\": [-100, 200.0, 300]}' AS s SELECT JSONExtractKeys(s::JSON), JSONExtractKeys(s);
-SELECT '-- value extraction';
-WITH '{\"f\":1.5,\"t\":true,\"str\":\"hi\",\"o\":{\"n\":5,\"m\":6}}' AS s, s::JSON AS j
-SELECT JSONExtractInt(j, 'f'), JSONExtractInt(s, 'f'), JSONExtractFloat(j, 't'), JSONExtractFloat(s, 't'),
-    JSONExtract(j, 'str', 'LowCardinality(String)'), JSONExtract(s, 'str', 'LowCardinality(String)'),
-    JSONExtract(j, 'missing', 'Enum8(\\'x\\' = 1, \\'hi\\' = 2)'), JSONExtract(s, 'missing', 'Enum8(\\'x\\' = 1, \\'hi\\' = 2)'),
-    JSONExtract(j, 'o', 'Tuple(n UInt8, m UInt8)'), JSONExtract(s, 'o', 'Tuple(n UInt8, m UInt8)') FORMAT Vertical;
-SELECT '-- what the JSON type itself normalizes: JSON, String, then the source document';
-WITH '{\"z\":null,\"o\":{},\"b\":1,\"a\":{\"c\":2},\"a.b\":3}' AS s, s::JSON AS j
-SELECT j::String, JSONHas(j, 'z'), JSONHas(j::String, 'z'), JSONHas(s, 'z'), JSONHas(j, 'o'), JSONHas(j::String, 'o'), JSONHas(s, 'o'),
-    JSONExtractKeys(j), JSONExtractKeys(j::String), JSONExtractKeys(s), JSONExtractInt(j, 'a.b'), JSONExtractInt(j::String, 'a.b'), JSONExtractInt(s, 'a.b'),
-    JSONExtractInt(j, 'a', 'b'), JSONExtractInt(j::String, 'a', 'b'), JSONExtractInt(s, 'a', 'b') FORMAT Vertical;
-"
+# Prints each call on the JSON document, then on the same document as String (and with a third column: as `j::String`).
+examples()
+{
+    local doc=$1 call list=""
+    shift
+    for call in "$@"; do
+        sql_quote "$call"
+        list+=", ($REPLY, toString(${call}), toString(${call/(j/(s}))"
+    done
+    echo "SELECT x.1, x.2, x.3 FROM (WITH '$doc' AS s, s::JSON AS j SELECT [${list#, }] AS xs) ARRAY JOIN xs AS x FORMAT TSVRaw;"
+}
+
+{
+    echo "SELECT '-- examples: the call, on JSON, on String';"
+    examples '{"a":{"b":"x","c":1},"d":[1,2],"s":"hi"}' "JSONLength(j)" "JSONLength(j, 'a')" "JSONType(j, 'a')" "JSONType(j, 'd')" \
+        "JSONExtractKeys(j)" "JSONExtractKeysAndValuesRaw(j)" "JSONExtractStringCaseInsensitive(j, 'S')" "JSONExtractRawCaseInsensitive(j, 'A')" \
+        "isValidJSON(j)" "JSONExtractKeys(j, 'a')" "JSONExtractKeysCaseInsensitive(j, 'A')" "JSONExtractArrayRaw(j, 'd')" \
+        "JSONExtract(j, 'd', 'Array(Int64)')" "JSONExtractKeysAndValues(j, 'a', 'String')" "JSONKey(j, 1)" "JSONHas(j, 'd', 1)" \
+        "JSONExtractInt(j, 'd', 1)"
+    echo "SELECT '-- https://github.com/ClickHouse/ClickHouse/issues/102079';"
+    examples '{"x": {"a": 5, "b": 7, "c": 11}}' "JSONExtractKeysAndValues(j, 'x', 'Int8')"
+    examples '{"a": "hello", "b": [-100, 200.0, 300]}' "JSONExtract(j, 'Tuple(String, Array(Float64))')" "JSONExtractKeys(j)"
+    echo "SELECT '-- value extraction';"
+    examples '{"f":1.5,"t":true,"str":"hi","o":{"n":5,"m":6}}' "JSONExtractInt(j, 'f')" "JSONExtractFloat(j, 't')" \
+        "JSONExtract(j, 'str', 'LowCardinality(String)')" "JSONExtract(j, 'missing', 'Enum8(\\'x\\' = 1, \\'hi\\' = 2)')" \
+        "JSONExtract(j, 'o', 'Tuple(n UInt8, m UInt8)')"
+    echo "SELECT '-- what the JSON type itself normalizes: the call, on JSON, on j::String, on the source document';"
+    echo "WITH '{\"z\":null,\"o\":{},\"b\":1,\"a\":{\"c\":2},\"a.b\":3}' AS s, s::JSON AS j SELECT j::String;"
+    for call in "JSONHas(j, 'z')" "JSONHas(j, 'o')" "JSONExtractKeys(j)" "JSONExtractInt(j, 'a.b')" "JSONExtractInt(j, 'a', 'b')"; do
+        sql_quote "$call"
+        echo "WITH '{\"z\":null,\"o\":{},\"b\":1,\"a\":{\"c\":2},\"a.b\":3}' AS s, s::JSON AS j
+            SELECT $REPLY, toString($call), toString(${call/(j/(j::String}), toString(${call/(j/(s}) FORMAT TSVRaw;"
+    done
+} | $CLICKHOUSE_CLIENT

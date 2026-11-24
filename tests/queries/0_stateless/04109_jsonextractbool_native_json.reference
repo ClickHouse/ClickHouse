@@ -6,10 +6,10 @@
 1
 0
 UInt8
--- float and string values use Bool cast semantics
-1
+-- float and string values: the same as for a JSON string
 0
-1
+0
+0
 -- missing path returns 0
 0
 -- JSONExtractBool on native and String JSON must agree

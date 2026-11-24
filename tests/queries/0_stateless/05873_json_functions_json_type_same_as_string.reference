@@ -1,0 +1,47 @@
+calls: 2949 2065
+-- the data: rows, text size, rows whose source is not what the JSON type keeps (must be 0)
+t	19	645	1798	0
+te	19	632	1796
+-- comparisons, calls, distinct String results, mismatches
+t	224124	2949	907	0
+te	156940	2065	582	0
+tf	189	27	57	0
+tp	131	131	48	0
+-- mismatches
+-- constant JSON argument
+256	0	0	306
+-- examples: the call, on JSON, on String
+JSONLength(j)	3	3
+JSONLength(j, 'a')	2	2
+JSONType(j, 'a')	Object	Object
+JSONType(j, 'd')	Array	Array
+JSONExtractKeys(j)	['a','d','s']	['a','d','s']
+JSONExtractKeysAndValuesRaw(j)	[('a','{"b":"x","c":1}'),('d','[1,2]'),('s','"hi"')]	[('a','{"b":"x","c":1}'),('d','[1,2]'),('s','"hi"')]
+JSONExtractStringCaseInsensitive(j, 'S')	hi	hi
+JSONExtractRawCaseInsensitive(j, 'A')	{"b":"x","c":1}	{"b":"x","c":1}
+isValidJSON(j)	1	1
+JSONExtractKeys(j, 'a')	['b','c']	['b','c']
+JSONExtractKeysCaseInsensitive(j, 'A')	['b','c']	['b','c']
+JSONExtractArrayRaw(j, 'd')	['1','2']	['1','2']
+JSONExtract(j, 'd', 'Array(Int64)')	[1,2]	[1,2]
+JSONExtractKeysAndValues(j, 'a', 'String')	[('b','x'),('c','1')]	[('b','x'),('c','1')]
+JSONKey(j, 1)	a	a
+JSONHas(j, 'd', 1)	1	1
+JSONExtractInt(j, 'd', 1)	1	1
+-- https://github.com/ClickHouse/ClickHouse/issues/102079
+JSONExtractKeysAndValues(j, 'x', 'Int8')	[('a',5),('b',7),('c',11)]	[('a',5),('b',7),('c',11)]
+JSONExtract(j, 'Tuple(String, Array(Float64))')	('hello',[-100,200,300])	('hello',[-100,200,300])
+JSONExtractKeys(j)	['a','b']	['a','b']
+-- value extraction
+JSONExtractInt(j, 'f')	1	1
+JSONExtractFloat(j, 't')	0	0
+JSONExtract(j, 'str', 'LowCardinality(String)')	hi	hi
+JSONExtract(j, 'missing', 'Enum8(\'x\' = 1, \'hi\' = 2)')	x	x
+JSONExtract(j, 'o', 'Tuple(n UInt8, m UInt8)')	(5,6)	(5,6)
+-- what the JSON type itself normalizes: the call, on JSON, on j::String, on the source document
+{"a":{"b":3,"c":2},"b":1}
+JSONHas(j, 'z')	0	0	1
+JSONHas(j, 'o')	0	0	1
+JSONExtractKeys(j)	['a','b']	['a','b']	['z','o','b','a','a.b']
+JSONExtractInt(j, 'a.b')	0	0	3
+JSONExtractInt(j, 'a', 'b')	3	3	0
