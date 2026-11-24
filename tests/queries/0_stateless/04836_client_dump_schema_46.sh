@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# --dump-schema of a data path runs no stored command: a table whose secondary index would load a dictionary,
-# or whose TTL or projection holds a subquery, is refused before the command runs.
+# --dump-schema of a data path runs no stored command: a table whose secondary index, or a projection or an index through
+# an ALIAS column, would load a dictionary, or whose TTL or projection holds a subquery, is refused before the command runs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -54,6 +54,20 @@ dump_with_commands ttl_where_in "CREATE TABLE d.t (ts DateTime, k UInt64) ENGINE
     TTL ts DELETE WHERE k IN (SELECT v FROM d.commands)"
 dump_with_commands projection_subquery "CREATE TABLE d.t (k UInt64, PROJECTION p (SELECT k + (SELECT v FROM d.commands LIMIT 1) ORDER BY k))
     ENGINE = MergeTree ORDER BY k"
+
+echo '--- a projection or a secondary index that reads an ALIAS column which would load a dictionary is refused ---'
+dump_with_commands projection_alias "CREATE TABLE d.t (ts DateTime, x UInt64, a UInt64 ALIAS dictGetUInt64('d.rules', 'v', toUInt64(1)),
+    PROJECTION p (SELECT x + a ORDER BY x)) ENGINE = MergeTree ORDER BY ts"
+dump_with_commands projection_alias_key "CREATE TABLE d.t (ts DateTime, x UInt64, a UInt64 ALIAS toUInt64(1),
+    PROJECTION p (SELECT x + dictGetUInt64('d.rules', 'v', a) ORDER BY x)) ENGINE = MergeTree ORDER BY ts"
+dump_with_commands index_alias "$attach (ts DateTime, x UInt64, a UInt64 ALIAS dictGetUInt64('d.rules', 'v', toUInt64(1)),
+    INDEX i x + a TYPE minmax) ENGINE = MergeTree ORDER BY ts"
+
+echo '--- an ALIAS column that looks a column up in a dictionary, and a dictionary key built through a lambda, load nothing ---'
+dump_with_commands projection_alias_column "CREATE TABLE d.t (ts DateTime, x UInt64, a UInt64 ALIAS dictGetUInt64('d.rules', 'v', x),
+    PROJECTION p (SELECT x + a ORDER BY x)) ENGINE = MergeTree ORDER BY ts"
+dump_with_commands ttl_lambda_key "CREATE TABLE d.t (ts DateTime, k UInt64) ENGINE = MergeTree ORDER BY k
+    TTL ts DELETE WHERE k < dictGetUInt64('d.rules', 'v', arraySum(arrayMap(v -> toUInt64(v), [1])))"
 
 echo '--- a TTL with a condition and a projection without a subquery are dumped ---'
 dump_with_commands plain "CREATE TABLE d.t (ts DateTime, k UInt64, INDEX i k + 1 TYPE minmax, PROJECTION p (SELECT k + 1 ORDER BY k))

@@ -21,6 +21,26 @@ projection_subquery: dump failed: 1
 would run when the table is loaded
 projection_subquery: table dumped: 0
 projection_subquery: no command ran
+--- a projection or a secondary index that reads an ALIAS column which would load a dictionary is refused ---
+projection_alias: dump failed: 1
+would run when the table is loaded
+projection_alias: table dumped: 0
+projection_alias: no command ran
+projection_alias_key: dump failed: 1
+would run when the table is loaded
+projection_alias_key: table dumped: 0
+projection_alias_key: no command ran
+index_alias: dump failed: 1
+would run when the table is loaded
+index_alias: table dumped: 0
+index_alias: no command ran
+--- an ALIAS column that looks a column up in a dictionary, and a dictionary key built through a lambda, load nothing ---
+projection_alias_column: dump failed: 0
+projection_alias_column: table dumped: 1
+projection_alias_column: no command ran
+ttl_lambda_key: dump failed: 0
+ttl_lambda_key: table dumped: 1
+ttl_lambda_key: no command ran
 --- a TTL with a condition and a projection without a subquery are dumped ---
 plain: dump failed: 0
 plain: table dumped: 1

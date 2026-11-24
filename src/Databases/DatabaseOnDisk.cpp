@@ -109,8 +109,23 @@ namespace ErrorCodes
 namespace
 {
 
+/// The expressions of the table's `ALIAS` columns, which a projection or an index that names one analyzes in its place.
+using AliasColumns = std::unordered_map<String, const IAST *>;
+
+AliasColumns getAliasColumns(const ASTCreateQuery & create)
+{
+    AliasColumns res;
+    if (create.columns_list && create.columns_list->columns)
+        for (const auto & column : create.columns_list->columns->children)
+            if (const auto * declaration = column->as<ASTColumnDeclaration>();
+                declaration && declaration->default_specifier == ColumnDefaultSpecifier::Alias && declaration->getDefaultExpression())
+                res.emplace(declaration->name, declaration->getDefaultExpression().get());
+    return res;
+}
+
 /// Whether an argument of the call, other than a dictionary name, reads a column, so the call is not folded.
-bool readsColumn(const ASTFunction & call)
+/// An `ALIAS` column reads what its expression reads.
+bool readsColumn(const ASTFunction & call, const AliasColumns & aliases)
 {
     if (!call.arguments)
         return false;
@@ -118,12 +133,19 @@ bool readsColumn(const ASTFunction & call)
     std::vector<const IAST *> stack;
     for (size_t i = Poco::toLower(call.name).starts_with("dict") ? 1 : 0; i < arguments.size(); ++i)
         stack.push_back(arguments[i].get());
+    std::unordered_set<String> expanded;
     while (!stack.empty())
     {
         const IAST * node = stack.back();
         stack.pop_back();
-        if (node->as<ASTIdentifier>())
-            return true;
+        if (const auto * identifier = node->as<ASTIdentifier>())
+        {
+            const auto alias = aliases.find(identifier->name());
+            if (alias == aliases.end())
+                return true;
+            if (expanded.insert(alias->first).second)
+                stack.push_back(alias->second);
+        }
         for (const auto & child : node->children)
             stack.push_back(child.get());
     }
@@ -158,7 +180,7 @@ void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQu
         {
             const auto [node, in_not_run] = stack.back();
             stack.pop_back();
-            if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !(per_row && readsColumn(*call)))
+            if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !(per_row && readsColumn(*call, {})))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot load {} with `load_tables_readonly`: the argument {} of {} would run when the table is loaded",
                     backQuote(create.getTable()), call->formatForErrorMessage(), function->name);
@@ -173,7 +195,8 @@ void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQu
     }
 }
 
-/// With `load_tables_readonly`, refuses a TTL, a projection or a secondary index whose call on constants or subquery would run the same way.
+/// With `load_tables_readonly`, refuses a TTL, a projection or a secondary index whose call on constants or subquery would run the same way,
+/// also through an `ALIAS` column it reads.
 void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextPtr & context)
 {
     if (!context->getServerSettings()[ServerSetting::load_tables_readonly])
@@ -191,11 +214,13 @@ void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextP
         for (const auto & index : create.columns_list->indices->children)
             if (const auto * declaration = index->as<ASTIndexDeclaration>(); declaration)
                 stack.push_back(declaration->getExpression().get());
+    const auto aliases = getAliasColumns(create);
+    std::unordered_set<String> expanded;
     while (!stack.empty())
     {
         const IAST * node = stack.back();
         stack.pop_back();
-        if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !readsColumn(*call))
+        if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !readsColumn(*call, aliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot load {} with `load_tables_readonly`: {} would run when the table is loaded",
                 backQuote(create.getTable()), call->formatForErrorMessage());
@@ -203,6 +228,9 @@ void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextP
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot load {} with `load_tables_readonly`: the subquery {} would run when the table is loaded",
                 backQuote(create.getTable()), node->formatForErrorMessage());
+        if (const auto * identifier = node->as<ASTIdentifier>())
+            if (const auto alias = aliases.find(identifier->name()); alias != aliases.end() && expanded.insert(alias->first).second)
+                stack.push_back(alias->second);
         for (const auto & child : node->children)
             stack.push_back(child.get());
         /// The key and the assignments of `GROUP BY ... SET` are kept apart from the children.
