@@ -22,6 +22,16 @@ INSERT INTO squality_prepared_enum_array_set SELECT [CAST('a' AS Enum8('a' = 1))
 SELECT [toFloat64(1.5)] IN squality_prepared_enum_array_set; -- { serverError NOT_IMPLEMENTED }
 DROP TABLE squality_prepared_enum_array_set;
 
+SELECT toUInt32(1) IN materialize(toIPv4(1));
+SELECT count() FROM (SELECT toUInt32(1) AS x) WHERE x IN materialize(toIPv4(1));
+SELECT toUInt32(1) IN (SELECT toIPv4(1)); -- { serverError NOT_IMPLEMENTED }
+
+DROP TABLE IF EXISTS squality_prepared_ipv4_set;
+CREATE TABLE squality_prepared_ipv4_set (k IPv4) ENGINE = Set;
+INSERT INTO squality_prepared_ipv4_set SELECT toIPv4(1);
+SELECT toUInt32(1) IN squality_prepared_ipv4_set; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE squality_prepared_ipv4_set;
+
 SELECT [toDecimal64('0.01', 2)] IN [toDateTime64('1970-01-01 00:00:00', 1, 'UTC')],
        [toDecimal64('0.01', 2)] IN materialize([toDateTime64('1970-01-01 00:00:00', 1, 'UTC')]);
 SELECT count() FROM (SELECT [toDecimal64('0.01', 2)] AS a)

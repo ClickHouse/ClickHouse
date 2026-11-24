@@ -402,6 +402,10 @@ bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const Actions
 
     auto probe_type = removeLowCardinalityAndNullable(probe.result_type);
     auto set_type = removeLowCardinalityAndNullable(set_types.front());
+    /// A singleton floating set can match both signs of zero. Expressions of
+    /// the probe, such as its sign bit, are therefore not necessarily fixed.
+    if (anyInTypeTree(*probe_type, [](const IDataType & type) { return isFloat(type); }))
+        return false;
     return probe_type->equals(*set_type);
 }
 

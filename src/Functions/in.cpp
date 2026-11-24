@@ -305,14 +305,14 @@ namespace
     return false;
 }
 
-[[nodiscard]] bool hasNumericTemporalOrEnumPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
+[[nodiscard]] bool hasNumericTemporalEnumOrIPPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
     const auto right = removeNullable(removeLowCardinality(right_type));
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
     {
         if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
-            return hasNumericTemporalOrEnumPair(left_array->getNestedType(), right_array->getNestedType());
+            return hasNumericTemporalEnumOrIPPair(left_array->getNestedType(), right_array->getNestedType());
     }
     if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
     {
@@ -320,20 +320,20 @@ namespace
             right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
         {
             for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
-                if (hasNumericTemporalOrEnumPair(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                if (hasNumericTemporalEnumOrIPPair(left_tuple->getElements()[i], right_tuple->getElements()[i]))
                     return true;
         }
     }
     if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
     {
         if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
-            return hasNumericTemporalOrEnumPair(left_map->getKeyType(), right_map->getKeyType())
-                || hasNumericTemporalOrEnumPair(left_map->getValueType(), right_map->getValueType());
+            return hasNumericTemporalEnumOrIPPair(left_map->getKeyType(), right_map->getKeyType())
+                || hasNumericTemporalEnumOrIPPair(left_map->getValueType(), right_map->getValueType());
     }
     const bool left_temporal = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left);
     const bool right_temporal = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right);
-    return (isNumber(left) && (right_temporal || isEnum(right)))
-        || ((left_temporal || isEnum(left)) && isNumber(right));
+    return (isNumber(left) && (right_temporal || isEnum(right) || isIPv4(right) || isIPv6(right)))
+        || ((left_temporal || isEnum(left) || isIPv4(left) || isIPv6(left)) && isNumber(right));
 }
 
 [[nodiscard]] bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
@@ -480,7 +480,8 @@ namespace
     }
     if (active_type)
     {
-        if (hasNumericTemporalOrEnumPair(left_bare, active_type))
+        if (hasNumericTemporalEnumOrIPPair(left_bare, active_type)
+            || hasNestedCalendarDateInComparison(left_bare, active_type))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'in_null_as_unknown' does not yet support comparing {} with an active carrier of {}",
                 left_bare->getName(), active_type->getName());
@@ -818,6 +819,12 @@ public:
 
             if (isStringOrFixedString(source_type) || isArray(source_type))
             {
+                if (isArray(source_type) && hasCompoundCarrierForIn(left_type, source_type))
+                {
+                    values[row] = accurateEqualsCompoundWithActiveTypes(
+                        (*left_values)[row], (*sources)[row], left_type, source_type, *sources, row);
+                    continue;
+                }
                 if (isArray(source_type) && hasCompoundStringConversionLeaf(left_type, source_type))
                 {
                     values[row] = matchesSetColumnConversion(*left_values, *sources, row, left_type, arguments[1].type);
@@ -1142,7 +1149,7 @@ public:
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
             const bool mixed_nested_calendar_types = (isArray(left_type) || isMap(left_type) || isTuple(left_type))
                 && hasNestedCalendarDateInComparison(left_type, key_type);
-            const bool mixed_numeric_temporal_or_enum_types = hasNumericTemporalOrEnumPair(left_type, key_type);
+            const bool mixed_numeric_temporal_enum_or_ip_types = hasNumericTemporalEnumOrIPPair(left_type, key_type);
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !left_type->equals(*key_type);
             /// A set containing only `NULL` has no key whose type-sensitive hash
@@ -1161,7 +1168,7 @@ public:
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
                     left_arg.type->getName(), set_types[0]->getName(), getName());
-            if ((mixed_temporal_types || mixed_nested_calendar_types || mixed_numeric_temporal_or_enum_types)
+            if ((mixed_temporal_types || mixed_nested_calendar_types || mixed_numeric_temporal_enum_or_ip_types)
                 && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
