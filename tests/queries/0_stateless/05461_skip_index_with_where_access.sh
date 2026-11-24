@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS secret;
 DROP TABLE IF EXISTS scratch;
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS hidden;
+DROP TABLE IF EXISTS aliased;
 CREATE TABLE secret (sensitive UInt8) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE scratch (p UInt8, INDEX i p TYPE minmax) ENGINE = MergeTree ORDER BY tuple();
 CREATE FUNCTION $udf AS (t, c) -> hasColumnInTable('$CLICKHOUSE_DATABASE', t, c);
@@ -79,6 +80,19 @@ do
     run_as_user "CREATE INDEX j ON ${CLICKHOUSE_DATABASE}.scratch ($expression) TYPE minmax WHERE p > 0" $enabled
 done
 
+echo "an alias that a stored partial index expands"
+# `ALTER` rebuilds the stored index with the server context, which would probe `default.hidden` instead.
+$CLICKHOUSE_CLIENT -q "GRANT ALTER MODIFY COLUMN ON $CLICKHOUSE_DATABASE.aliased TO $user"
+for index in "p TYPE minmax WHERE p = intDiv(1, a)" "p + intDiv(1, a) TYPE minmax WHERE p > 0"
+do
+    $CLICKHOUSE_CLIENT --allow_experimental_partial_skip_indexes=1 -q "
+    DROP TABLE IF EXISTS aliased;
+    CREATE TABLE aliased (p UInt8, a UInt8 ALIAS 1, INDEX i $index) ENGINE = MergeTree ORDER BY tuple();
+    "
+    run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.aliased MODIFY COLUMN a UInt8 ALIAS hasColumnInTable(currentDatabase(), 'hidden', 'sensitive')" 1
+    $CLICKHOUSE_CLIENT -q "SELECT default_expression FROM system.columns WHERE database = currentDatabase() AND table = 'aliased' AND name = 'a'"
+done
+
 echo "introspection function in the indexed expression"
 output=$($CLICKHOUSE_CLIENT --user "$user" --allow_experimental_partial_skip_indexes=1 --allow_introspection_functions=1 \
     -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i demangle(toString(p)) TYPE minmax WHERE p > 0) ENGINE = MergeTree ORDER BY tuple()" 2>&1)
@@ -112,5 +126,6 @@ DROP TABLE secret;
 DROP TABLE scratch;
 DROP TABLE src;
 DROP TABLE hidden;
+DROP TABLE aliased;
 DROP TABLE IF EXISTS probe;
 "

@@ -72,6 +72,11 @@ BAD_ARGUMENTS
 BAD_ARGUMENTS
 BAD_ARGUMENTS
 BAD_ARGUMENTS
+an alias that a stored partial index expands
+BAD_ARGUMENTS
+1
+BAD_ARGUMENTS
+1
 introspection function in the indexed expression
 ACCESS_DENIED
 copied from another table

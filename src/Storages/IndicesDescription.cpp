@@ -158,6 +158,22 @@ void rejectNonDeterministicFunctions(const IAST & ast, const ContextPtr & contex
         rejectNonDeterministicFunctions(*child, context, index_name);
 }
 
+/// On the definition as the analysis expands it: a later `MODIFY COLUMN` of an alias changes what a stored definition calls.
+void rejectNonDeterministicFunctions(const ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    for (const auto & ast : {declaration.getExpression(), declaration.getWhere()})
+    {
+        ASTPtr expanded = ast->clone();
+        ReplaceAliasToExprVisitor::Data data{columns, {}};
+        ReplaceAliasToExprVisitor{data}.visit(expanded);
+        /// Inlines SQL UDF bodies, as `TreeRewriter` does, so a function used only inside one is seen.
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(expanded, context);
+        rejectNonDeterministicFunctions(*expanded, context, declaration.name);
+    }
+}
+
 }
 
 void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const ColumnsDescription & columns, const ContextPtr & context)
@@ -167,8 +183,7 @@ void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const Colum
         return;
 
     /// `getIndexFromAST` analyses the indexed expression of a partial index with the global context too.
-    IndexDescription index;
-    index.initExpressionInfo(index_definition->getExpression()->clone(), columns, context);
+    IndexDescription().initExpressionInfo(index_definition->getExpression()->clone(), columns, context);
 
     ASTPtr where_ast = index_definition->getWhere()->clone();
     if (auto * where_with_alias = dynamic_cast<ASTWithAlias *>(where_ast.get()))
@@ -177,19 +192,11 @@ void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const Colum
     ReplaceAliasToExprVisitor::Data data{columns, {}};
     ReplaceAliasToExprVisitor{data}.visit(where_ast);
 
-    /// `TreeRewriter` rewrites what it analyses, and the check below needs the condition as `getIndexFromAST` gets it.
-    ASTPtr analysed_where_ast = where_ast->clone();
-    auto syntax = TreeRewriter(context).analyze(analysed_where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-    ExpressionAnalyzer(analysed_where_ast, syntax, context).getActions(true);
+    auto syntax = TreeRewriter(context).analyze(where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    ExpressionAnalyzer(where_ast, syntax, context).getActions(true);
 
     /// After the analysis as the user, which reports what they may not access, before the one with the global context.
-    for (auto ast : {index.expression_list_ast->clone(), where_ast})
-    {
-        /// Inlines SQL UDF bodies, as `TreeRewriter` does, so a function used only inside one is seen.
-        if (!UserDefinedSQLFunctionFactory::instance().empty())
-            UserDefinedSQLFunctionVisitor::visit(ast, context);
-        rejectNonDeterministicFunctions(*ast, context, index_definition->name);
-    }
+    rejectNonDeterministicFunctions(*index_definition, columns, context);
 }
 
 void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context)
@@ -379,6 +386,10 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.escape_filenames = escape_filenames;
 
     checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
+    /// Before every analysis with the global context, see `rejectNonDeterministicFunctions`: `ALTER` also rebuilds a stored
+    /// partial index with it, after a `MODIFY COLUMN` changed an alias that the index expands.
+    if (index_definition->getWhere())
+        rejectNonDeterministicFunctions(*index_definition, columns, context->getGlobalContext());
     /// The part writer of a partial index runs the indexed expression analysed with the global context,
     /// see `selected_rows_expression` below, so the types of the index are taken from the same analysis.
     result.initExpressionInfo(
