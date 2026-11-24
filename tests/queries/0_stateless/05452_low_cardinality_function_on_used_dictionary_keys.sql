@@ -30,3 +30,13 @@ SELECT count(),
 FROM t_lc_used_keys SETTINGS max_block_size = 65536;
 
 DROP TABLE t_lc_used_keys;
+
+-- A point lookup must not run the function on a value that only another row holds: here it would throw.
+DROP TABLE IF EXISTS t_lc_unused_key;
+CREATE TABLE t_lc_unused_key (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_lc_unused_key SELECT number, if(number = 5000, 'longer than FixedString(5)', concat('v', toString(number % 1000)))
+FROM numbers(10000);
+
+SELECT id, toFixedString(s, 5) FROM t_lc_unused_key WHERE id = 43;
+
+DROP TABLE t_lc_unused_key;

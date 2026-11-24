@@ -132,7 +132,8 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
 
     /// A block can carry a dictionary much larger than itself; then only the keys its rows use are evaluated.
-    /// That copies the used values, so the required ratio grows with the average value size.
+    /// That hashes the indexes and copies the used values. The ratio is where the cheapest functions break even (measured
+    /// in #134030): `=` on short values at about 16 times the block's rows, `empty` at one more per 16 bytes of average value.
     const size_t block_rows = low_cardinality_column->size();
     const auto & dictionary = low_cardinality_column->getDictionary();
     const size_t value_bytes = dictionary.byteSize() / dictionary.size();
