@@ -1254,6 +1254,21 @@ bool Client::buzzHouse()
                          fuzz_config->outf << health_check_cmd << std::endl;
                          fuzz_config->validateClickHouseHealth();
                      }},
+                    /// Queries over `MergeTree` tables in the shapes that run differently on parallel replicas
+                    {400 * static_cast<uint32_t>(!fuzz_config->parallel_replicas_clusters.empty() && !gen.shapeTables().empty()),
+                     [&]()
+                     {
+                         const String shaped = gen.generateShapedQuery(rg);
+
+                         fuzz_config->outf << shaped << std::endl;
+                         server_up &= processBuzzHouseQuery(shaped);
+                         if (gen.takeRepeatStatement() && server_up && !have_error)
+                         {
+                             /// The first run collected the statistics automatic parallel replicas decides on
+                             fuzz_config->outf << shaped << std::endl;
+                             server_up &= processBuzzHouseQuery(shaped);
+                         }
+                     }},
                     {910,
                      [&]()
                      {

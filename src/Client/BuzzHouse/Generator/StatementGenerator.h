@@ -835,6 +835,7 @@ private:
     /// Rules that target the differences between local and distributed execution, see DistributedShapes.cpp
     void injectDistributedShapes(RandomGenerator & rg, google::protobuf::Message & message, bool in_subquery);
     void addParallelReplicasSettings(RandomGenerator & rg, SettingValues * svs);
+    std::vector<std::pair<String, String>> parallelReplicasSettings(RandomGenerator & rg);
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
     void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
@@ -1122,6 +1123,11 @@ public:
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
     /// Whether the statement generated last must run twice, resets the request
     bool takeRepeatStatement() { return std::exchange(repeat_statement, false); }
+    /// A small valid query over `MergeTree` tables in one of the shapes that run differently on parallel replicas,
+    /// empty when there is no table to read
+    String generateShapedQuery(RandomGenerator & rg);
+    /// The tables `generateShapedQuery` reads
+    std::vector<const SQLTable *> shapeTables();
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
     void setInTransaction(const bool value) { in_transaction = value; }

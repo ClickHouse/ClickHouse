@@ -485,6 +485,22 @@ auto StatementGenerator::getQueryTableLambda()
     };
 }
 
+std::vector<const SQLTable *> StatementGenerator::shapeTables()
+{
+    std::vector<const SQLTable *> res;
+    const auto mergetree_lambda = getQueryTableLambda<TableRequirement::RequireMergeTree>();
+
+    /// The replicas do not see the temporary tables of the session
+    for (const auto & entry : filterCollection<SQLTable>(mergetree_lambda))
+    {
+        if (!entry.get().is_temp)
+        {
+            res.emplace_back(&entry.get());
+        }
+    }
+    return res;
+}
+
 void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::optional<String> rel_name, const uint32_t ncols, Expr * expr)
 {
     if (rg.nextBool())

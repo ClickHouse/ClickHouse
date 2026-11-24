@@ -1,5 +1,6 @@
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
 #include <Common/checkStackSize.h>
+#include <fmt/ranges.h>
 
 /// Rules that steer a query to where its distributed plan is built differently from the local one. The replicas get
 /// the query tree rewritten and shipped as text, and the initiator then pairs objects of the two plans: sets by the
@@ -132,15 +133,10 @@ void StatementGenerator::injectDistributedShapes(RandomGenerator & rg, google::p
     }
 }
 
-void StatementGenerator::addParallelReplicasSettings(RandomGenerator & rg, SettingValues * svs)
+std::vector<std::pair<String, String>> StatementGenerator::parallelReplicasSettings(RandomGenerator & rg)
 {
-    const auto add = [&](const String & name, const String & value)
-    {
-        SetValue * setv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-        setv->set_property(name);
-        setv->set_value(value);
-    };
+    std::vector<std::pair<String, String>> res;
+    const auto add = [&](const String & name, const String & value) { res.emplace_back(name, value); };
     /// The automatic mode needs the local plan, and decides on statistics from an earlier execution of the query
     const bool automatic = rg.nextBool();
 
@@ -179,6 +175,247 @@ void StatementGenerator::addParallelReplicasSettings(RandomGenerator & rg, Setti
     {
         add("query_plan_convert_join_to_in", "1");
     }
+    return res;
+}
+
+void StatementGenerator::addParallelReplicasSettings(RandomGenerator & rg, SettingValues * svs)
+{
+    for (const auto & [name, value] : parallelReplicasSettings(rg))
+    {
+        SetValue * setv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+        setv->set_property(name);
+        setv->set_value(value);
+    }
+}
+
+/// Columns any query can read and hash, skipping nested and aggregate function states
+static DB::Strings shapeColumns(const SQLTable & t)
+{
+    DB::Strings res;
+
+    for (const auto & [_, col] : t.cols)
+    {
+        if (!col.tp)
+        {
+            continue;
+        }
+        switch (col.tp->getTypeClass())
+        {
+            case SQLTypeClass::BOOL:
+            case SQLTypeClass::INT:
+            case SQLTypeClass::FLOAT:
+            case SQLTypeClass::DATE:
+            case SQLTypeClass::TIME:
+            case SQLTypeClass::DATETIME:
+            case SQLTypeClass::DECIMAL:
+            case SQLTypeClass::STRING:
+            case SQLTypeClass::UUID:
+            case SQLTypeClass::ENUM:
+            case SQLTypeClass::IPV4:
+            case SQLTypeClass::IPV6:
+            case SQLTypeClass::NULLABLE:
+            case SQLTypeClass::LOWCARDINALITY:
+            case SQLTypeClass::ARRAY:
+            case SQLTypeClass::TUPLE:
+                res.emplace_back("`" + col.getColumnName() + "`");
+                break;
+            default:
+                break;
+        }
+    }
+    std::sort(res.begin(), res.end());
+    return res;
+}
+
+String StatementGenerator::generateShapedQuery(RandomGenerator & rg)
+{
+    struct ShapeTable
+    {
+        String name;
+        DB::Strings cols;
+    };
+    std::vector<ShapeTable> sources;
+
+    for (const SQLTable * t : shapeTables())
+    {
+        DB::Strings cols = shapeColumns(*t);
+
+        if (!cols.empty())
+        {
+            sources.push_back({"`" + t->getDatabaseName() + "`.`" + t->getBaseName(false) + "`", std::move(cols)});
+        }
+    }
+    if (sources.empty())
+    {
+        return "";
+    }
+    static const std::vector<uint32_t> moduli = {2, 3, 10, 100};
+    static const std::vector<uint32_t> lengths = {1, 31, 32, 33, 255, 256, 257, 300, 1000};
+    const auto pick_table = [&]() -> const ShapeTable & { return rg.pickRandomly(sources); };
+    const auto column = [&](const ShapeTable & t, const String & alias)
+    { return (alias.empty() ? "" : alias + ".") + rg.pickRandomly(t.cols); };
+    /// `cityHash64` takes any of the columns, so the two sides of a comparison always have the same type
+    const auto key = [&](const String & col, const uint32_t modulus) { return fmt::format("cityHash64({}) % {}", col, modulus); };
+    /// A constant longer than `optimize_const_name_size` is shipped to the replicas as a `__getScalar` call
+    const auto long_constant = [&]() { return fmt::format("materialize(repeat('x', {})) != ''", rg.pickRandomly(lengths)); };
+    const auto in_subquery = [&](const uint32_t modulus)
+    {
+        const ShapeTable & t = pick_table();
+        String res = fmt::format("SELECT {} FROM {}", key(column(t, ""), modulus), t.name);
+
+        if (rg.nextMediumNumber() < 61)
+        {
+            res += " WHERE " + long_constant();
+        }
+        return res;
+    };
+    const auto predicate = [&](const ShapeTable & t, const String & alias)
+    {
+        const uint32_t modulus = rg.pickRandomly(moduli);
+
+        switch (rg.randomInt<uint32_t>(0, 4))
+        {
+            case 0:
+                return fmt::format("{} < {}", key(column(t, alias), modulus), rg.randomInt<uint32_t>(0, modulus));
+            case 1:
+                return long_constant();
+            case 2:
+                return fmt::format("{} {}IN ({})", key(column(t, alias), modulus), rg.nextSmallNumber() < 3 ? "GLOBAL " : "", in_subquery(modulus));
+            case 3: {
+                /// The same subquery twice is one set, built once and looked up by every use
+                const String sub = in_subquery(modulus);
+
+                return fmt::format(
+                    "{} IN ({}) {} {} IN ({})",
+                    key(column(t, alias), modulus),
+                    sub,
+                    rg.nextBool() ? "AND" : "OR",
+                    key(column(t, alias), modulus),
+                    sub);
+            }
+            default:
+                return fmt::format("NOT ({} = {})", key(column(t, alias), modulus), rg.randomInt<uint32_t>(0, modulus));
+        }
+    };
+    const auto where = [&](const ShapeTable & t, const String & alias)
+    {
+        String res;
+        const uint32_t npreds = rg.randomInt<uint32_t>(0, 2);
+
+        for (uint32_t i = 0; i < npreds; i++)
+        {
+            res += (i == 0 ? " WHERE " : " AND ") + predicate(t, alias);
+        }
+        return res;
+    };
+    const auto aggregate = [&](const ShapeTable & t, const String & alias)
+    {
+        switch (rg.randomInt<uint32_t>(0, 4))
+        {
+            case 0:
+                return String("count()");
+            case 1:
+                return fmt::format("sum(cityHash64({}))", column(t, alias));
+            case 2:
+                return fmt::format("uniqExact({})", column(t, alias));
+            case 3:
+                return fmt::format("min(cityHash64({}))", column(t, alias));
+            default:
+                return fmt::format("max({})", key(column(t, alias), 1000));
+        }
+    };
+    const ShapeTable & t1 = pick_table();
+    /// A table read twice in one query: the reads must be told apart when the plans are paired
+    const ShapeTable & t2 = rg.nextBool() ? t1 : pick_table();
+    const uint32_t modulus = rg.pickRandomly(moduli);
+    String query;
+
+    switch (rg.randomInt<uint32_t>(0, 7))
+    {
+        case 0:
+            query = fmt::format(
+                "SELECT {} AS k, {}, {} FROM {}{} GROUP BY k ORDER BY k LIMIT 100",
+                key(column(t1, ""), modulus),
+                aggregate(t1, ""),
+                aggregate(t1, ""),
+                t1.name,
+                where(t1, ""));
+            break;
+        case 1:
+            query = fmt::format("SELECT {} FROM {} {} {}", aggregate(t1, ""), t1.name, rg.nextSmallNumber() < 4 ? "PREWHERE" : "WHERE", predicate(t1, ""));
+            break;
+        case 2: {
+            static const DB::Strings joins = {"INNER", "LEFT", "RIGHT", "FULL", "ANY LEFT", "SEMI LEFT", "ANTI LEFT", "GLOBAL INNER"};
+
+            query = fmt::format(
+                "SELECT {}, {} FROM {} AS a {} JOIN {} AS b ON {} = {}{}",
+                aggregate(t1, "a"),
+                aggregate(t2, "b"),
+                t1.name,
+                rg.pickRandomly(joins),
+                /// The columns by name: `*` skips `ALIAS` and `MATERIALIZED` ones
+                rg.nextSmallNumber() < 3 ? fmt::format("(SELECT {} FROM {}{})", fmt::join(t2.cols, ", "), t2.name, where(t2, "")) : t2.name,
+                key(column(t1, "a"), modulus),
+                key(column(t2, "b"), modulus),
+                where(t1, "a"));
+            break;
+        }
+        case 3:
+            query = fmt::format(
+                "SELECT k, count() FROM (SELECT {} AS k FROM {}{}) GROUP BY k ORDER BY k",
+                key(column(t1, ""), modulus),
+                t1.name,
+                where(t1, ""));
+            break;
+        case 4:
+            query = fmt::format(
+                "SELECT count() FROM {} WHERE cityHash64({}) > (SELECT min(cityHash64({})) FROM {}{})",
+                t1.name,
+                column(t1, ""),
+                column(t2, ""),
+                t2.name,
+                where(t2, ""));
+            break;
+        case 5:
+            query = fmt::format(
+                "SELECT k, count() FROM (SELECT {} AS k FROM {}{} UNION ALL SELECT {} AS k FROM {}{}) GROUP BY k ORDER BY k",
+                key(column(t1, ""), modulus),
+                t1.name,
+                where(t1, ""),
+                key(column(t2, ""), modulus),
+                t2.name,
+                where(t2, ""));
+            break;
+        case 6:
+            query = fmt::format(
+                "WITH s AS (SELECT {} AS k FROM {}{}) SELECT {} FROM {} WHERE {} IN (SELECT k FROM s)",
+                key(column(t2, ""), modulus),
+                t2.name,
+                where(t2, ""),
+                aggregate(t1, ""),
+                t1.name,
+                key(column(t1, ""), modulus));
+            break;
+        default:
+            query = fmt::format(
+                "SELECT {}, {} FROM {}{} ORDER BY ALL LIMIT {}",
+                column(t1, ""),
+                column(t1, ""),
+                t1.name,
+                where(t1, ""),
+                rg.randomInt<uint32_t>(1, 1000));
+            break;
+    }
+    query += " SETTINGS ";
+    bool first = true;
+    for (const auto & [name, value] : parallelReplicasSettings(rg))
+    {
+        query += (first ? "" : ", ") + name + " = " + value;
+        first = false;
+    }
+    query += " FORMAT Null;";
+    return query;
 }
 
 }
