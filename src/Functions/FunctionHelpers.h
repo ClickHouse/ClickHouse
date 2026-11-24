@@ -227,6 +227,10 @@ bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 
+/// Casts a `Nullable(Enum)` column to the `Nullable` form of `result_type`. A cast of its nested column instead would also
+/// convert the values under `NULL`, which can be invalid, e.g. `0` for an `Enum` without such an element.
+ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type);
+
 /// Throws VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE if a UInt64 argument holds 2^63 or more, which `IColumn::getInt`
 /// would read as negative. Accepts a constant or an ordinary column.
 void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name);
