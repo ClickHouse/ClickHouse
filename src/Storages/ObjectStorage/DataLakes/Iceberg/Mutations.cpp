@@ -1056,7 +1056,7 @@ void mutate(
 
 /// Iceberg (`TableMetadata.Builder.build`) requires each source column of the default partition spec and of the default
 /// sort order to be in `schema`; a `void` partition field, which format version 1 keeps for a removed field, needs none.
-/// Only a source column that this `ALTER` removes is refused, a table that already lacks one stays alterable.
+/// Only a source column that this `ALTER` removes is refused; a table that already lacks one stays alterable.
 static std::optional<String> findFieldWithoutSourceColumn(
     const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & previous_schema, const Poco::JSON::Object::Ptr & schema)
 {
