@@ -1350,21 +1350,40 @@ bool engineCanBind(ReferenceKind kind, const String & engine)
     }
 }
 
-/// The query of a dictionary's local `CLICKHOUSE` source, which an eager dictionary runs at CREATE; null for any other source.
-/// `unproven_host` is set when the metadata does not show the host to be this server: the query is then only checked for a warning.
-ASTPtr localDictionarySourceQuery(
-    const ASTDictionary & dictionary, const ASTExpressionList * attributes, const ClusterLocality & clusters, String & unproven_host)
+/// Parses a query that a dictionary's `CLICKHOUSE` source runs: under the dictionary's settings, of which these are query text.
+ASTPtr parseDictionarySourceQuery(const ASTDictionary & dictionary, const String & text)
+{
+    SettingsChanges construction_settings;
+    if (dictionary.dict_settings)
+        for (const auto & change : dictionary.dict_settings->changes)
+            if ((change.name == "select" || change.name == "filter" || change.name == "order" || change.name == "sort")
+                && change.value.getType() == Field::Types::String)
+                construction_settings.push_back(change);
+    return parseSelectWithConstructionSettings(text, construction_settings);
+}
+
+/// The query a dictionary's `CLICKHOUSE` source runs, read the way the source reads it, and the address it runs on.
+struct DictionarySourceQuery
+{
+    ASTPtr ast;
+    String host = "localhost";
+    std::optional<UInt64> port;
+    UInt64 secure = 0;
+    /// A port or a flag that cannot be read, which does not show the source to be this server.
+    bool unreadable_address = false;
+};
+
+/// Empty for any other source or one without a query; throws when the query does not parse.
+std::optional<DictionarySourceQuery> readDictionarySourceQuery(const ASTDictionary & dictionary, const ASTExpressionList * attributes)
 {
     const auto * source = dictionary.source;
     if (!source || !source->elements || !equalsCaseInsensitive(source->name, "clickhouse"))
-        return nullptr;
+        return {};
+    DictionarySourceQuery res;
     String query;
     String database;
     String table;
     String where;
-    String host = "localhost";
-    std::optional<UInt64> port;
-    UInt64 secure = 0;
     std::set<String> seen;
     for (const auto & element : source->elements->children)
     {
@@ -1382,30 +1401,28 @@ ASTPtr localDictionarySourceQuery(
             std::optional<UInt64> number;
             bool flag = false;
             unsigned parsed = 0;
+            const bool is_text = literal->value.getType() == Field::Types::String;
             if (literal->value.getType() == Field::Types::UInt64)
                 number = literal->value.safeGet<UInt64>();
             else if (literal->value.getType() == Field::Types::Bool)
                 number = literal->value.safeGet<bool>();
-            else if (literal->value.getType() != Field::Types::String)
-                return nullptr;
-            else if (is_port && Poco::NumberParser::tryParseUnsigned(literal->value.safeGet<String>(), parsed))
+            else if (is_text && is_port && Poco::NumberParser::tryParseUnsigned(literal->value.safeGet<String>(), parsed))
                 number = parsed;
-            else if (!is_port && Poco::NumberParser::tryParseBool(literal->value.safeGet<String>(), flag))
+            else if (is_text && !is_port && Poco::NumberParser::tryParseBool(literal->value.safeGet<String>(), flag))
                 number = flag;
-            /// A port or a flag that cannot be read is not shown to be this server's.
             if (!number)
-                return nullptr;
-            if (is_port)
-                port = *number;
+                res.unreadable_address = true;
+            else if (is_port)
+                res.port = *number;
             else
-                secure = *number;
+                res.secure = *number;
             continue;
         }
         if (literal->value.getType() != Field::Types::String)
             continue;
         const String & value = literal->value.safeGet<String>();
         if (equalsCaseInsensitive(pair->first, "host"))
-            host = value;
+            res.host = value;
         else if (equalsCaseInsensitive(pair->first, "query"))
             query = value;
         else if (equalsCaseInsensitive(pair->first, "db"))
@@ -1427,28 +1444,36 @@ ASTPtr localDictionarySourceQuery(
             + (database.empty() ? "" : backQuoteIfNeed(database) + ".") + backQuoteIfNeed(table) + (where.empty() ? "" : " WHERE " + where);
     }
     if (query.empty())
-        return nullptr;
-    /// Like the source itself, it is local when the host is this server and the port, if any, is the server's own.
-    if (port && *port != (secure ? clusters.tcp_port_secure() : clusters.tcp_port))
-        return nullptr;
-    if (remoteAddressLocality(host.contains(':') ? "[" + host + "]" : host, secure != 0, clusters) != Locality::Local)
-        unproven_host = host;
-    /// The source runs the query under the dictionary's settings, and these of them are query text.
-    SettingsChanges construction_settings;
-    if (dictionary.dict_settings)
-        for (const auto & change : dictionary.dict_settings->changes)
-            if ((change.name == "select" || change.name == "filter" || change.name == "order" || change.name == "sort")
-                && change.value.getType() == Field::Types::String)
-                construction_settings.push_back(change);
+        return {};
+    /// The source replaces `{condition}` before it runs the query, so the query parses only without it.
+    res.ast = parseDictionarySourceQuery(dictionary, removeWhereConditionPlaceholder(query));
+    return res;
+}
+
+/// The query of a dictionary's local `CLICKHOUSE` source, which an eager dictionary runs at CREATE; null for any other source.
+/// `unproven_host` is set when the metadata does not show the host to be this server: the query is then only checked for a warning.
+ASTPtr localDictionarySourceQuery(
+    const ASTDictionary & dictionary, const ASTExpressionList * attributes, const ClusterLocality & clusters, String & unproven_host)
+{
+    std::optional<DictionarySourceQuery> source;
     try
     {
-        /// The source replaces `{condition}` before it runs the query, so the query parses only without it.
-        return parseSelectWithConstructionSettings(removeWhereConditionPlaceholder(query), construction_settings);
+        source = readDictionarySourceQuery(dictionary, attributes);
     }
     catch (const Exception &)
     {
         return nullptr;
     }
+    /// A port or a flag that cannot be read is not shown to be this server's.
+    if (!source || source->unreadable_address)
+        return nullptr;
+    /// Like the source itself, it is local when the host is this server and the port, if any, is the server's own.
+    if (source->port && *source->port != (source->secure ? clusters.tcp_port_secure() : clusters.tcp_port))
+        return nullptr;
+    const String & host = source->host;
+    if (remoteAddressLocality(host.contains(':') ? "[" + host + "]" : host, source->secure != 0, clusters) != Locality::Local)
+        unproven_host = host;
+    return source->ast;
 }
 
 /// Tables (name -> engine) of the databases left out of the dump, and the external ones among them, whose tables are not listed.
@@ -2100,7 +2125,8 @@ void collectNamedCollectionsFromTableExpressions(
 }
 
 void collectDictionaryNamedCollection(
-    const ASTFunctionWithKeyValueArguments * source, const ClusterLocality & clusters, NamedCollectionDependencies & dependencies)
+    const ASTDictionary & dictionary, const ASTExpressionList * attributes, const ClusterLocality & clusters,
+    NamedCollectionDependencies & dependencies)
 {
     static constexpr std::string_view source_names[] = {
         "clickhouse",
@@ -2110,26 +2136,33 @@ void collectDictionaryNamedCollection(
         "postgresql",
         "ytsaurus",
     };
+    const auto * source = dictionary.source;
     if (!source || !source->elements
         || !std::ranges::any_of(source_names, [&](std::string_view n) { return equalsCaseInsensitive(n, source->name); }))
         return;
 
+    /// A `CLICKHOUSE` source runs its query, read as for the table order, and its `invalidate_query` under the dictionary's
+    /// settings, so a table function in one resolves its collection on load.
+    try
+    {
+        if (const auto query = readDictionarySourceQuery(dictionary, attributes))
+            collectNamedCollectionsFromTableExpressions(*query->ast, clusters, dependencies);
+    }
+    catch (const Exception &)
+    {
+        dependencies.unscannable = true;
+    }
     for (const auto & element : source->elements->children)
     {
         const auto * pair = element->as<ASTPair>();
-        /// A `CLICKHOUSE` source runs these queries, so a table function in one resolves its collection on load.
         const auto * text = pair && pair->second ? pair->second->as<ASTLiteral>() : nullptr;
         if (equalsCaseInsensitive(source->name, "clickhouse") && text && text->value.getType() == Field::Types::String
-            && (pair->first == "query" || pair->first == "where" || pair->first == "invalidate_query"))
+            && pair->first == "invalidate_query")
         {
             try
             {
-                const String & value = text->value.safeGet<String>();
-                ParserSelectWithUnionQuery select_parser;
-                ParserExpression expression_parser;
-                IParser & parser = pair->first == "where" ? static_cast<IParser &>(expression_parser) : select_parser;
-                const ASTPtr query = parseQuery(parser, value, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-                collectNamedCollectionsFromTableExpressions(*query, clusters, dependencies);
+                collectNamedCollectionsFromTableExpressions(
+                    *parseDictionarySourceQuery(dictionary, text->value.safeGet<String>()), clusters, dependencies);
             }
             catch (const Exception &)
             {
@@ -2237,7 +2270,7 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
     if (create->columns_list)
         collectNamedCollectionsFromTableExpressions(*create->columns_list, clusters, dependencies);
     if (create->dictionary)
-        collectDictionaryNamedCollection(create->dictionary->source, clusters, dependencies);
+        collectDictionaryNamedCollection(*create->dictionary, create->dictionary_attributes_list, clusters, dependencies);
     return dependencies;
 }
 

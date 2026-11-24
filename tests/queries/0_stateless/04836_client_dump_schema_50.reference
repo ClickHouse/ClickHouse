@@ -1,0 +1,4 @@
+dump rc=0
+query setting warned: 1
+dictionary setting warned: 1
+unscannable warned: 0
