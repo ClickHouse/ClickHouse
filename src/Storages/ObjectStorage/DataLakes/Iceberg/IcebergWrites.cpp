@@ -2054,6 +2054,7 @@ bool IcebergStorageSink::initializeMetadata()
         {
             const auto merge_settings = Iceberg::getManifestMergeSettings(metadata, context->getSettingsRef());
             manifests_depend_on_parent = merge_settings.has_value();
+            const DataTypes partition_types = partitioner ? partitioner->getResultTypes() : DataTypes{};
             ManifestFileCacheKeys parent_manifests;
             if (merge_settings && parent_snapshot != -1)
             {
@@ -2070,6 +2071,8 @@ bool IcebergStorageSink::initializeMetadata()
                         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg metadata has no snapshot with the current snapshot id {}", parent_snapshot);
                 parent_manifests = getManifestList(object_storage, persistent_table_components, context, *parent_manifest_list, log);
             }
+            const Iceberg::ManifestsByPartition parent_manifests_by_partition(
+                parent_manifests, static_cast<Int32>(partition_spec_id), partition_types);
 
             /// Either one manifest for every partition the insert touched, or one manifest per partition.
             const bool single_manifest = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
@@ -2082,7 +2085,7 @@ bool IcebergStorageSink::initializeMetadata()
                 if (partitioner)
                 {
                     if (!partition_summary)
-                        partition_summary.emplace(partitioner->getResultTypes());
+                        partition_summary.emplace(partition_types);
                     partition_summary->add(partition_key);
                 }
                 if (single_manifest)
@@ -2092,10 +2095,8 @@ bool IcebergStorageSink::initializeMetadata()
                 {
                     auto merged = Iceberg::selectManifestsToMerge(
                         *merge_settings,
-                        parent_manifests,
+                        parent_manifests_by_partition.get(partition_key),
                         partition_key,
-                        partitioner ? partitioner->getResultTypes() : DataTypes{},
-                        static_cast<Int32>(partition_spec_id),
                         static_cast<Int32>(current_schema_id),
                         write_format,
                         persistent_table_components,

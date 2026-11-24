@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <map>
 #include <memory>
 
 #if USE_AVRO
@@ -47,15 +48,31 @@ struct ManifestsToMerge
     std::vector<ManifestFileEntry> entries;
 };
 
-/// Selects the newest manifests of the parent snapshot that hold only data files of the partition `partition_value` with
-/// the schema and the format of the new files, up to `target_size_bytes` in total. Selects none if, with the new manifest,
-/// there would be fewer than `min_count_to_merge`.
+/// The data manifests of the parent snapshot by the single partition they hold, according to their summaries in the
+/// manifest list. Only they can be merged into the new manifest of a partition, which also holds a single partition.
+class ManifestsByPartition
+{
+public:
+    ManifestsByPartition(const ManifestFileCacheKeys & parent_manifests, Int32 partition_spec_id, const DataTypes & partition_types);
+
+    /// The manifests that hold only the partition `partition_value`, newest first.
+    const ManifestFileCacheKeys & get(const Row & partition_value) const;
+
+private:
+    /// The serialized value of each partition field, or unset for null.
+    using SinglePartition = std::vector<std::optional<String>>;
+
+    DataTypes partition_types;
+    std::map<SinglePartition, ManifestFileCacheKeys> manifests;
+};
+
+/// Selects the newest of `candidates`, which hold only the partition `partition_value`, whose data files have the schema
+/// and the format of the new files, up to `target_size_bytes` in total. Selects none if, with the new manifest, there
+/// would be fewer than `min_count_to_merge`.
 ManifestsToMerge selectManifestsToMerge(
     const ManifestMergeSettings & merge_settings,
-    const ManifestFileCacheKeys & parent_manifests,
+    const ManifestFileCacheKeys & candidates,
     const Row & partition_value,
-    const DataTypes & partition_types,
-    Int32 partition_spec_id,
     Int32 schema_id,
     const String & write_format,
     const PersistentTableComponents & persistent_table_components,

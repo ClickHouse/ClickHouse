@@ -168,6 +168,29 @@ bool isSamePartition(const Row & lhs, const Row & rhs)
 
 }
 
+ManifestsByPartition::ManifestsByPartition(
+    const ManifestFileCacheKeys & parent_manifests, Int32 partition_spec_id, const DataTypes & partition_types_)
+    : partition_types(partition_types_)
+{
+    for (auto it = parent_manifests.rbegin(); it != parent_manifests.rend(); ++it)
+    {
+        if (it->content_type != ManifestFileContentType::DATA || it->partition_spec_id != partition_spec_id)
+            continue;
+        if (auto partition = getSinglePartition(it->partition_summaries))
+            manifests[std::move(*partition)].push_back(*it);
+    }
+}
+
+const ManifestFileCacheKeys & ManifestsByPartition::get(const Row & partition_value) const
+{
+    static const ManifestFileCacheKeys no_manifests;
+    const auto partition = getSinglePartition(partition_value, partition_types);
+    if (!partition)
+        return no_manifests;
+    auto it = manifests.find(*partition);
+    return it == manifests.end() ? no_manifests : it->second;
+}
+
 std::vector<ManifestFileEntry> getInsertedFileEntries(
     const Row & partition_value, const MultipleFileWriter & writer, std::optional<Int32> sort_order_id)
 {
@@ -199,36 +222,26 @@ std::vector<ManifestFileEntry> getInsertedFileEntries(
 
 ManifestsToMerge selectManifestsToMerge(
     const ManifestMergeSettings & merge_settings,
-    const ManifestFileCacheKeys & parent_manifests,
+    const ManifestFileCacheKeys & candidates,
     const Row & partition_value,
-    const DataTypes & partition_types,
-    Int32 partition_spec_id,
     Int32 schema_id,
     const String & write_format,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     ContextPtr context)
 {
-    const auto partition = getSinglePartition(partition_value, partition_types);
-    if (!partition)
-        return {};
-
     auto log = getLogger("IcebergManifestMerge");
     ManifestsToMerge selected;
     size_t selected_size = 0;
-    for (auto it = parent_manifests.rbegin(); it != parent_manifests.rend(); ++it)
+    for (const auto & manifest : candidates)
     {
-        if (it->content_type != ManifestFileContentType::DATA || it->partition_spec_id != partition_spec_id)
-            continue;
-        if (getSinglePartition(it->partition_summaries) != partition)
-            continue;
-        if (selected_size + it->manifest_file_byte_size > merge_settings.target_size_bytes)
+        if (selected_size + manifest.manifest_file_byte_size > merge_settings.target_size_bytes)
             break;
 
-        auto manifest_file = getManifestFile(object_storage, persistent_table_components, context, log, it->manifest_file_path);
+        auto manifest_file = getManifestFile(object_storage, persistent_table_components, context, log, manifest.manifest_file_path);
         if (manifestHasKeyMetadata(*manifest_file.getDeserializer()))
             continue;
-        auto files_handle = getManifestFileEntriesHandle(manifest_file, persistent_table_components, context, *it, schema_id);
+        auto files_handle = getManifestFileEntriesHandle(manifest_file, persistent_table_components, context, manifest, schema_id);
         const auto & files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
         if (std::any_of(
                 files.begin(),
@@ -250,11 +263,11 @@ ManifestsToMerge selectManifestsToMerge(
                 .partition_value = partition_value,
                 .sort_order_id = entry.sort_order_id,
                 .statistics = getColumnStatisticsForRewrite(entry),
-                .existing_lineage = getEntryLineageForRewrite(entry, *it)});
+                .existing_lineage = getEntryLineageForRewrite(entry, manifest)});
         }
-        selected.manifest_paths.push_back(it->manifest_file_path);
-        selected_size += it->manifest_file_byte_size;
-        LOG_DEBUG(log, "Merging manifest file {} with {} data files into the new manifest", it->manifest_file_path.serialize(), files.size());
+        selected.manifest_paths.push_back(manifest.manifest_file_path);
+        selected_size += manifest.manifest_file_byte_size;
+        LOG_DEBUG(log, "Merging manifest file {} with {} data files into the new manifest", manifest.manifest_file_path.serialize(), files.size());
     }
     if (selected.manifest_paths.size() + 1 < merge_settings.min_count_to_merge)
         return {};
