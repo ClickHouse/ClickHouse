@@ -1,7 +1,5 @@
 #pragma once
 
-#include <optional>
-
 #include <Core/Field.h>
 #include <Common/HiddenSecret.h>
 
