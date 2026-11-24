@@ -86,21 +86,48 @@ SELECT * FROM json_test;
 
 DROP TABLE json_test;
 
--- Test ambiguity when two input columns map to the same table column (auto case match)
+-- Test two input columns that map to the same table column (auto case match):
+-- the exactly matching key wins over the case-insensitively matching one, regardless of the order.
 CREATE TABLE json_test (id Int);
 
 SET input_format_column_name_matching_mode='auto';
 SET input_format_json_ignore_unnecessary_fields=false;
 
-INSERT INTO json_test FORMAT JSONEachRow {"ID": 444, "id": 123}; -- { error 117 }
+INSERT INTO json_test FORMAT JSONEachRow {"ID": 444, "id": 123};
+INSERT INTO json_test FORMAT JSONEachRow {"id": 124, "ID": 444};
 
 SET input_format_json_ignore_unnecessary_fields=true;
 
-INSERT INTO json_test FORMAT JSONEachRow {"ID": 444, "id": 123};
+INSERT INTO json_test FORMAT JSONEachRow {"ID": 444, "id": 125};
+INSERT INTO json_test FORMAT JSONEachRow {"id": 126, "ID": 444};
 
-SELECT * FROM json_test;
+-- Two keys that match the same table column only case-insensitively are ambiguous
+INSERT INTO json_test FORMAT JSONEachRow {"ID": 444, "Id": 555}; -- { error 117 }
+
+SET input_format_json_ignore_unnecessary_fields=false;
+
+INSERT INTO json_test FORMAT JSONEachRow {"ID": 444, "Id": 555}; -- { error 117 }
+
+SELECT * FROM json_test ORDER BY id;
 
 DROP TABLE json_test;
+
+-- Test reading a subset of columns from a file with two keys that differ only in case (auto case match)
+SET input_format_column_name_matching_mode='auto';
+SET input_format_json_ignore_unnecessary_fields=true;
+
+INSERT INTO FUNCTION file(currentDatabase() || '_04027.jsonl', 'LineAsString', 'x String') SELECT '{"a":1,"A":2}' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_04027_rev.jsonl', 'LineAsString', 'x String') SELECT '{"A":2,"a":1}' SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT a, A FROM file(currentDatabase() || '_04027.jsonl', 'JSONEachRow') ORDER BY ALL;
+SELECT A FROM file(currentDatabase() || '_04027.jsonl', 'JSONEachRow') ORDER BY ALL;
+SELECT a FROM file(currentDatabase() || '_04027.jsonl', 'JSONEachRow') ORDER BY ALL;
+SELECT count() FROM file(currentDatabase() || '_04027.jsonl', 'JSONEachRow') WHERE A = 2;
+SELECT A FROM file(currentDatabase() || '_04027_rev.jsonl', 'JSONEachRow') ORDER BY ALL;
+SELECT a FROM file(currentDatabase() || '_04027_rev.jsonl', 'JSONEachRow') ORDER BY ALL;
+SELECT A FROM file(currentDatabase() || '_04027.jsonl', 'JSONEachRow') ORDER BY ALL SETTINGS input_format_json_ignore_unnecessary_fields = 0;
+SELECT A FROM file(currentDatabase() || '_04027.jsonl', 'JSONEachRow') ORDER BY ALL SETTINGS input_format_json_ignore_unnecessary_fields = 0, input_format_skip_duplicated_fields = 1;
+SELECT a FROM file(currentDatabase() || '_04027_rev.jsonl', 'JSONEachRow') ORDER BY ALL SETTINGS input_format_json_ignore_unnecessary_fields = 0;
 
 -- Test ambiguity when two input columns map to the same table column (ignore case)
 CREATE TABLE json_test (id Int);
@@ -165,7 +192,10 @@ INSERT INTO json_test FORMAT JSONEachRow {"ID": 1, "user": {"aGe": 55, "NAME": "
 
 INSERT INTO json_test FORMAT JSONEachRow {"id": 2, "USER": {"AGE": 65, "NAME": "ggggg"}};
 
-INSERT INTO json_test FORMAT JSONEachRow {"user": {"age": 20, "name": "Alfred"}, "USER": {"age": 30, "name": "Elias"}}; -- { error 117 }
+-- The exactly matching `user` wins over the case-insensitively matching `USER`
+INSERT INTO json_test FORMAT JSONEachRow {"user": {"age": 20, "name": "Alfred"}, "USER": {"age": 30, "name": "Elias"}};
+
+INSERT INTO json_test FORMAT JSONEachRow {"id": 3, "USER": {"age": 30, "name": "Elias"}, "user": {"age": 40, "name": "Frank"}};
 
 SELECT * FROM json_test ORDER BY id;
 

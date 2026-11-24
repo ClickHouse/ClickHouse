@@ -51,7 +51,7 @@ private:
     bool advanceToNextKey(size_t key_index);
     void skipUnknownField(std::string_view name_ref);
     std::string_view readColumnName(ReadBuffer & buf);
-    void readField(size_t index, MutableColumns & columns);
+    void readField(size_t index, MutableColumns & columns, bool exact_match);
     void readJSONObject(MutableColumns & columns);
     void readNestedData(const String & name, MutableColumns & columns);
 
@@ -90,7 +90,10 @@ protected:
     /// Set of columns for which the values were read. The rest will be filled with default values.
     VectorWithMemoryTracking<UInt8> read_columns;
     /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
+    /// Non-zero value means the column was seen; a value read from a case-insensitively matched key is marked
+    /// differently, because a later key that matches the column name exactly replaces it.
     VectorWithMemoryTracking<UInt8> seen_columns;
+    /// Number of columns which were seen with a key that matches the column name exactly.
     size_t seen_columns_count = 0;
     size_t total_columns = 0;
 

@@ -35,6 +35,16 @@ enum
     NOT_INITIALIZED = size_t(-3)
 };
 
+/// Values of `seen_columns`.
+enum : UInt8
+{
+    NOT_SEEN = 0,
+    /// The value was read from a key that matches the column name exactly.
+    SEEN_EXACT = 1,
+    /// The value was read from a key that matches the column name only case-insensitively (`auto` matching mode).
+    SEEN_CASE_INSENSITIVE = 2,
+};
+
 }
 
 
@@ -128,22 +138,45 @@ void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref)
     skipJSONField(*in, name_ref, format_settings.json);
 }
 
-void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
+void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns, bool exact_match)
 {
+    /// With `input_format_column_name_matching_mode = 'auto'` a key that matches a column only case-insensitively
+    /// is a fallback: a key that matches the column name exactly takes precedence over it, regardless of the order
+    /// of keys in the object. The header may contain only a subset of the columns of the file, so a key like `a`
+    /// can reach column `A` even if the file also contains key `A`.
+    const UInt8 seen_state = exact_match ? SEEN_EXACT : SEEN_CASE_INSENSITIVE;
+
     if (seen_columns[index])
     {
-        if (!format_settings.skip_duplicated_fields)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Duplicate field found while parsing JSONEachRow format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
-                columnName(index));
+        if (seen_columns[index] == SEEN_EXACT && !exact_match)
+        {
+            /// The value of the exactly matching key was already read.
+            skipJSONField(*in, columnName(index), format_settings.json);
+            return;
+        }
 
-        skipJSONField(*in, columnName(index), format_settings.json);
-        return;
+        if (seen_columns[index] == SEEN_CASE_INSENSITIVE && exact_match)
+        {
+            /// Replace the value read from the case-insensitively matching key.
+            columns[index]->popBack(1);
+        }
+        else
+        {
+            if (!format_settings.skip_duplicated_fields)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Duplicate field found while parsing JSONEachRow format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                    columnName(index));
+
+            skipJSONField(*in, columnName(index), format_settings.json);
+            return;
+        }
     }
 
-    seen_columns[index] = true;
-    seen_columns_count++;
+    seen_columns[index] = seen_state;
+    /// Only exactly matched columns are final: a case-insensitive match may still be replaced by a later key.
+    if (exact_match)
+        seen_columns_count++;
     const auto & type = getPort().getHeader().getByPosition(index).type;
     const auto & serialization = serializations[index];
     read_columns[index] = JSONUtils::readField(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
@@ -205,8 +238,12 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
         }
         else
         {
+            /// name_ref may point directly to the input buffer, so compare it before reading anything else.
+            const bool exact_match = format_settings.input_format_column_matching_case_sensitivity
+                    != FormatSettings::InputFormatColumnMatchingCaseSensitivity::AUTO
+                || name_ref == columnName(column_index);
             JSONUtils::skipColon(*in);
-            readField(column_index, columns);
+            readField(column_index, columns, exact_match);
         }
     }
 }
