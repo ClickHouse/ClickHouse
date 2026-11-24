@@ -16,6 +16,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
@@ -460,8 +461,15 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         /// the sorting key is the last `ORDER BY` expression, as before
         if (projection_order_by)
         {
-            const auto & sort_expression = query_node.getOrderBy().getNodes().front()->as<SortNode &>().getExpression();
-            projection_order_by = sort_expression->as<FunctionNode &>().getArguments().getNodes().back()->toAST(ast_options);
+            /// the analyzer folds a `tuple` of constants, the `tuple` is then the source of the constant
+            auto sort_expression = query_node.getOrderBy().getNodes().front()->as<SortNode &>().getExpression();
+            if (const auto * constant_node = sort_expression->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+                sort_expression = constant_node->getSourceExpression();
+
+            /// a matcher can give no columns: the key is then the last expression of `SELECT`, as before
+            const auto & order_by_nodes = sort_expression->as<FunctionNode &>().getArguments().getNodes();
+            const auto & key_node = order_by_nodes.empty() ? query_node.getProjection().getNodes().back() : order_by_nodes.back();
+            projection_order_by = key_node->toAST(ast_options);
             projection_order_by->setAlias({});
         }
 
