@@ -12,7 +12,6 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -23,7 +22,6 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 enum class SubstringDirection : uint8_t
@@ -102,11 +100,9 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    Int64 abs_length_value = 0;
-                    if (common::subOverflow(Int64(0), length_value, abs_length_value))
-                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Argument of function {} is out of bound: {}", getName(), length_value);
-                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(abs_length_value));
+                    /// Unsigned negation, so INT64_MIN gives 2^63 instead of overflowing; it skips the whole string.
+                    const UInt64 abs_length_value = 0 - static_cast<UInt64>(length_value);
+                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), abs_length_value);
                 }
             }
             else
@@ -129,11 +125,8 @@ public:
                         slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
                     else if (length < 0)
                     {
-                        Int64 abs_length = 0;
-                        if (common::subOverflow(Int64(0), length, abs_length))
-                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                "Argument of function {} is out of bound: {}", getName(), length);
-                        slice = source.getSliceFromLeft(static_cast<size_t>(abs_length));
+                        const UInt64 abs_length = 0 - static_cast<UInt64>(length);
+                        slice = source.getSliceFromLeft(abs_length);
                     }
                     if (length != 0)
                         writeSlice(slice, sink);

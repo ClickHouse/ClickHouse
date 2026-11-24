@@ -20,10 +20,10 @@ SELECT length(bitSlice('abcdefghij', 1, 9223372036854775807));
 SELECT left('abcdefghij', -1) AS a, right('abcdefghij', -1) AS b, substring('abcdefghij', 3, -1) AS c, substring('abcdefghij', -1) AS d, byteSlice('hello', 2, -1) AS e;
 SELECT leftUTF8('abcdefghij', -1) AS a, rightUTF8('abcdefghij', -1) AS b, substringUTF8('abcdefghij', 3, -1) AS c;
 SELECT length(bitSlice('abcdefghij', 1, -1)) AS a, length(bitSlice('abcdefghij', -1, 8)) AS b;
--- Int64 minimum fits Int64 and still overflows the slice: ARGUMENT_OUT_OF_BOUND, as before.
-SELECT left('abcdefghij', -9223372036854775808); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT right('abcdefghij', -9223372036854775808); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT substring('abcdefghij', 3, -9223372036854775808); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Int64 minimum fits Int64; the slice saturates to an empty string instead of overflowing.
+SELECT left('abcdefghij', -9223372036854775808);
+SELECT right('abcdefghij', -9223372036854775808);
+SELECT substring('abcdefghij', 3, -9223372036854775808);
 
 --- A UInt64 argument of 2^63 or more is out of range for Int64.
 
