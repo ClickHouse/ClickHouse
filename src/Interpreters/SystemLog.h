@@ -1053,16 +1053,17 @@ INSERT INTO small SELECT number, number FROM numbers(1000);
 EXPLAIN PIPELINE
 SELECT count()
 FROM big AS b
-INNER JOIN small AS s ON b.id = s.id;
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
 ```
 
-`EXPLAIN PIPELINE` shows one read pipeline for each side of the join (`ReadFromMergeTree`, with `MergeTreeSelect` sources below it), connected by the join processors.
+`EXPLAIN PIPELINE` shows one read pipeline for each side of the join (`ReadFromMergeTree`, with `MergeTreeSelect` sources below it), connected by the join processors. `join_algorithm = 'hash'` and `enable_join_runtime_filters = 0` make this example reproducible: a join runtime filter cannot prune `big` before its source emits rows.
 
 ```sql title="Query"
 SELECT count()
 FROM big AS b
 INNER JOIN small AS s ON b.id = s.id
-SETTINGS log_processors_profiles = 1;
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
 -- Note the query ID printed by the client, or look it up in `system.query_log`.
 
 SYSTEM FLUSH LOGS;
