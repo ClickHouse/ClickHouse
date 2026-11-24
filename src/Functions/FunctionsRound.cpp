@@ -1,9 +1,37 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsRound.h>
 
+#include <array>
+#include <cmath>
+
 
 namespace DB
 {
+
+const ScaledExp10 & scaledExp10(int n)
+{
+    static const auto powers = []
+    {
+        std::array<ScaledExp10, max_scaled_exp10 + 1> res{};
+        Float64 power = 0x1p-192;
+        for (size_t i = 0; i <= 22; ++i)
+        {
+            res[i] = {power, 0};
+            power *= 10;
+        }
+        /// 10^22 is exact, so each step rounds only the error terms.
+        for (size_t i = 23; i < res.size(); ++i)
+        {
+            const auto & prev = res[i - 22];
+            const Float64 product = prev.hi * 1e22;
+            const Float64 error = std::fma(prev.hi, 1e22, -product) + prev.lo * 1e22;
+            res[i].hi = product + error;
+            res[i].lo = error - (res[i].hi - product);
+        }
+        return res;
+    }();
+    return powers[n];
+}
 
 REGISTER_FUNCTION(Round)
 {

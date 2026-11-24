@@ -9,7 +9,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
-#include <base/preciseExp10.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
@@ -282,6 +281,17 @@ struct FloatRoundingComputation
 };
 
 
+/// `10^n * 2^-192 = hi + lo` with `|lo| <= ulp(hi) / 2`.
+struct ScaledExp10
+{
+    Float64 hi;
+    Float64 lo;
+};
+
+inline constexpr int max_scaled_exp10 = 338;
+
+const ScaledExp10 & scaledExp10(int n);
+
 /// Rounding with `|N| > 19`, where `10^N` is not exact in the argument type or out of its range. Computed in `Float64`.
 template <RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingLargeScale
@@ -289,23 +299,36 @@ struct FloatRoundingLargeScale
     static constexpr int max_exp10 = 308;
     /// From 2^52 on every `Float64` is an integer, so rounding returns it unchanged.
     static constexpr Float64 integer_limit = 4503599627370496.0;
+    static constexpr Float64 shift_up = 0x1p192;
+    static constexpr Float64 shift_down = 0x1p-192;
 
     struct Scales
     {
         int digits;
-        Float64 scale;
-        Float64 extra_scale;
+        Float64 hi;
+        Float64 lo;
     };
 
-    /// 10^digits = scale * extra_scale, with scale <= 10^308.
+    /// `hi + lo = 10^digits`, times 2^-192 for a positive `N`.
     static Scales prepare(int digits)
     {
-        if (digits <= max_exp10)
-            return {digits, preciseExp10(digits), 1.0};
-        return {digits, preciseExp10(max_exp10), preciseExp10(digits - max_exp10)};
+        if constexpr (scale_mode == ScaleMode::Positive)
+        {
+            if (digits > max_scaled_exp10)
+                return {digits, 0, 0};
+            const auto & power = scaledExp10(digits);
+            return {digits, power.hi, power.lo};
+        }
+        else
+        {
+            if (digits > max_exp10)
+                return {digits, 0, 0};
+            const auto & power = scaledExp10(digits);
+            return {digits, power.hi * shift_up, power.lo * shift_up};
+        }
     }
 
-    /// An inexact `10^N` may move the result to the wrong side of `x`.
+    /// Rounding `x * 10^N` to nearest may reach an integer from the wrong side of `x`.
     static Float64 clampToDirection(Float64 res, Float64 x)
     {
         if constexpr (rounding_mode == RoundingMode::Floor)
@@ -318,14 +341,34 @@ struct FloatRoundingLargeScale
             return res;
     }
 
+    /// `a / (hi + lo)`, corrected by the exact remainder of `a / hi`.
+    static Float64 divide(Float64 a, Float64 hi, Float64 lo)
+    {
+        const Float64 quotient = a / hi;
+        return quotient + (std::fma(-quotient, hi, a) - quotient * lo) / hi;
+    }
+
     static Float64 compute(Float64 x, const Scales & scales)
     {
         if constexpr (scale_mode == ScaleMode::Positive)
         {
-            const Float64 scaled = x * scales.extra_scale * scales.scale;
+            /// `x * 10^digits >= 2^52` for every nonzero `x`.
+            if (scales.digits > max_scaled_exp10)
+                return x;
+
+            const Float64 shifted = x * shift_up;
+            const Float64 product = shifted * scales.hi;
+            const Float64 scaled = product + (std::fma(shifted, scales.hi, -product) + shifted * scales.lo);
             if (!(std::abs(scaled) < integer_limit))
                 return x;
-            return clampToDirection(roundWithMode(scaled, rounding_mode) / scales.scale / scales.extra_scale, x);
+
+            const Float64 rounded = roundWithMode(scaled, rounding_mode);
+            Float64 res = divide(rounded, scales.hi, scales.lo) * shift_down;
+            /// Shifting a result at or below `DBL_MIN` down can round it a second time.
+            if (std::abs(res) <= std::numeric_limits<Float64>::min())
+                res = divide(rounded * shift_down, scales.hi, scales.lo);
+            /// The correction terms do not keep the sign of a zero.
+            return std::copysign(clampToDirection(res, x), x);
         }
         else
         {
@@ -347,7 +390,7 @@ struct FloatRoundingLargeScale
                 return std::copysign(0.0, x);
             }
 
-            const Float64 quotient = x / scales.scale;
+            const Float64 quotient = divide(x, scales.hi, scales.lo);
             if (!(std::abs(quotient) < integer_limit))
                 return x;
 
@@ -357,7 +400,7 @@ struct FloatRoundingLargeScale
                 res = (quotient == 0 && x > 0) ? 1 : res;
             else if constexpr (rounding_mode == RoundingMode::Floor)
                 res = (quotient == 0 && x < 0) ? -1 : res;
-            return clampToDirection(res * scales.scale, x);
+            return std::copysign(clampToDirection(std::fma(res, scales.hi, res * scales.lo), x), x);
         }
     }
 };

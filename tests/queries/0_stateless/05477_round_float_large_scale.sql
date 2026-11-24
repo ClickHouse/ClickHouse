@@ -8,11 +8,19 @@ SELECT round(1., 400), round(-0., 400), round(1.234567890123e-300, 309), round(6
 SELECT round(1., -400), trunc(-1., -400), floor(-1., -400), ceil(1., -400), ceil(-1., -400), ceil(toFloat32(1), -39), round(inf, -400), round(nan, -400);
 SELECT ceil(1e-300, -30), floor(-1e-300, -30);
 SELECT round(6.04232e56, 20), floor(1.74686e55, -20), round(2.4554477816543998e150, 20);
--- x * 10^N rounds onto an integer from the wrong side; floor(x) <= x <= ceil(x) still holds.
+-- x * 10^N can round onto an integer from the wrong side; floor(x) <= x <= ceil(x) still holds.
 SELECT ceil(6.385506180058851e-264, 278), floor(-6.03263106e-18, 26), ceil(-6.36297676e44, -36);
+SELECT floor(8.048537127250599e-10, 23), ceil(6.782840434034981e-50, 64), floor(8.401063861109889e46, -32), trunc(-6.704123565980179e155, -141);
 SELECT x, n, round(x, n), floor(x, n), ceil(x, n) FROM values('x Float64, n Int16', (1e300, 10), (1.6e-20, 20), (1.23456789e25, -20), (1., 400), (-1., -400), (1e-300, -30));
 SELECT x, round(x, 10), round(x, 20), floor(x, -20), ceil(x, -400), y, round(y, 9), floor(y, 20) FROM values('x Float64, y Float32', (1e300, 1e30), (1.6e-20, 1.6e-20), (1.23456789e25, 1.23456789e25), (-1., -1.));
 -- Negative N with |N| <= 19: x / 10^N * 10^N overflows at the type max.
 SELECT floor(1.7976931348623157e308, -6), round(1.7976931348623157e308, -6), floor(toFloat32(3.4028235e38), -2), round(toFloat32(3.4028235e38), -2);
 SELECT x, floor(x, -6), y, round(y, -2) FROM values('x Float64, y Float32', (1.7976931348623157e308, 3.4028234663852886e38));
 SELECT round(123.456, 2), floor(-1.5), roundBankers(2.5), ceil(123.45, -1);
+-- 10^N is not exact for |N| >= 23: values on the 10^-N grid stay unchanged, as for |N| <= 22.
+SELECT floor(6e-23, 23), trunc(3e-23, 23), ceil(1.5e24, -23), floor(5e26, -25), floor(6e-23, materialize(23));
+SELECT floor(7e-22, 22), trunc(4e-22, 22), ceil(1.7e23, -22), floor(5e24, -22);
+SELECT floor(1e-213, 213), round(-2.1e-81, 82), ceil(7e-210, 209), floor(6e-300, 309), ceil(3e-323, 307), ceil(2.4e-309, 310), floor(3e23, -23);
+SELECT floor(-0., 23), ceil(-3e-24, 23), floor(-0., -23), ceil(-3e22, -23);
+SELECT x, floor(x, 23), trunc(x, 23), y, ceil(y, -23), floor(y, -25) FROM values('x Float64, y Float64', (6e-23, 1.5e24), (3e-23, 5e26));
+SELECT x, n, floor(x, n), ceil(x, n), round(x, n) FROM values('x Float64, n Int16', (6e-23, 23), (1.5e24, -23), (4e-308, 309), (3e-323, 307), (3e23, -23));
