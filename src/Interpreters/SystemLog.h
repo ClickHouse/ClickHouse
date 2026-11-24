@@ -1037,6 +1037,57 @@ Here you can see:
 - `SourceFromSingleChunk` need to wait, because `ExpressionTransform` does not accept any data during execution of `sleep(1)`, so it will be in `PortFull` state for 1e6 us, and so `output_wait_elapsed_us` > 1e6.
 - `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` need to wait until `ExpressionTransform` will execute `sleep(1)` to process the result, so `input_wait_elapsed_us` > 1e6.
 
+### Profiling a join {#profiling-a-join}
+
+When a query reads from several tables, every table has its own read pipeline, and rows pass through many processors on their way to the result.
+Summing `input_rows` or `output_rows` over all processors therefore counts the same rows several times and does not tell how much was read from each table.
+The following example uses two `MergeTree` tables of different sizes on a single server.
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id;
+```
+
+`EXPLAIN PIPELINE` shows one read pipeline for each side of the join (`ReadFromMergeTree`, with `MergeTreeSelect` sources below it), connected by the join processors.
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+To interpret the result:
+
+- Look at the source processors, whose `name` is `MergeTreeSelect(...)` (or `MergeTreeSource`) and whose `plan_step_name` is `ReadFromMergeTree`. Their `output_rows` is the number of rows each source produced. Sum it per read step (`plan_step`), not over the whole query. The value is the number of rows that the read step passed on to the rest of the pipeline.
+- Each side of the join has its own `ReadFromMergeTree` step with a different `plan_step`. Use `parent_ids` and `id` to follow the processors from a source towards the join processor and see which side they belong to.
+- Processors above the sources (for example `ExpressionTransform`, `FillingRightJoinSide`, `ConcatProcessor`, or the join transform itself) consume and produce rows derived from the sources. Do not add their counters to the source counters, because that counts the same rows again.
+- The step information is not always enough to identify a source. If both tables are read by steps with the same `plan_step_name` and a similar `plan_step_description`, or if a processor has `plan_step = 0` because it was not added from any step, determine the table by following `parent_ids` from the `EXPLAIN PIPELINE` output, or by comparing the row counts with the known sizes of the tables.
+- The row and byte counters of processors describe the data passing through the pipeline, not physical storage reads. They do not include granules or marks that were read and then filtered out, they are affected by the primary key and other index filtering, `PREWHERE`, and column pruning, and they do not reflect compressed bytes read from disk. For physical reads, use `system.query_log` and its `ProfileEvents`, such as `SelectedRows`, `SelectedBytes`, and `SelectedMarks`.
+
 .see_also
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
 )DOCS_MD";
