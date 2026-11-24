@@ -308,10 +308,12 @@ private:
         bool & is_smallest_column_requested,
         Aliases & aliases) const;
 
+public:
     /// An object of this helper class is created
     ///  when processing a Merge table data source (subordinary table)
     ///  that has row policies
-    ///  to guarantee that these row policies are applied
+    ///  to guarantee that these row policies are applied.
+    /// `StorageBuffer` uses it as well, for the row policies of its destination table.
     class RowPolicyData
     {
     public:
@@ -336,6 +338,11 @@ private:
 
         void addCreatingSetsStep(QueryPlan &, ContextPtr) const;
 
+        /// The policy predicate over the columns of the table it was built for: the outputs are
+        /// the inputs and the filter column named `getFilterColumnName`.
+        const ActionsDAG & getActionsDAG() const { return actions_dag; }
+        const std::string & getFilterColumnName() const { return filter_column_name; }
+
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
@@ -346,6 +353,8 @@ private:
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
+
+private:
 
     struct ChildPlan
     {

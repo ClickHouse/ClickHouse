@@ -1,0 +1,32 @@
+--- direct
+alice	1	alice order
+--- buffer
+alice	1	alice order
+alice	4	alice buffered
+--- buffer, the policy columns are not requested
+alice buffered
+alice order
+--- buffer, count
+2
+--- buffer, aggregation
+alice	2	5
+--- buffer, PREWHERE does not see the hidden rows
+1
+4
+--- buffer, WHERE does not see the hidden rows
+1
+4
+--- buffer with a narrower type of the policy column
+alice	1	alice order
+--- buffer without the policy column
+NOT_IMPLEMENTED
+--- policy with a subquery
+alice	1	alice order
+alice	5	alice buffered
+--- buffer, as a user without the policy
+alice	1	alice order
+bob	2	bob order
+bob	3	bob buffered
+alice	4	alice buffered
+alice	300	alice big order
+alice	500	alice big buffered
