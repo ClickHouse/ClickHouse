@@ -52,6 +52,8 @@ dependencies = [
  "futures",
  "kanal",
  "parking",
+ "serde",
+ "toml",
  "vortex",
 ]
 

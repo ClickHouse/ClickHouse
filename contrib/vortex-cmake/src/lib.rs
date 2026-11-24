@@ -1635,6 +1635,11 @@ pub unsafe extern "C" fn vortex_ffi_free_string(string: *mut c_char) {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn vortex_ffi_version() -> *const c_char {
+    concat!(env!("VORTEX_CRATE_VERSION"), "\0").as_ptr().cast()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
