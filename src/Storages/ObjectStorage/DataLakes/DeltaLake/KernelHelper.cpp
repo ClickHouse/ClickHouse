@@ -57,13 +57,13 @@ namespace DeltaLake
 namespace
 {
 
-/// Forwards to `ffi::set_builder_option`, translating a kernel error into a `DB::Exception`.
+/// Forwards to `::set_builder_option`, translating a kernel error into a `DB::Exception`.
 /// The Rust FFI decodes the `(ptr, len)` slices as `&str`. Validate the value up front so a
 /// user supplied credential, region, endpoint or SAS token that is not valid UTF-8 (e.g. raw
 /// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
 /// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
 /// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
-void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, std::string_view value)
+void setBuilderOption(::EngineBuilder * builder, const std::string & name, std::string_view value)
 {
     if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
         throw DB::Exception(
@@ -73,24 +73,24 @@ void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, st
             name);
 
     KernelUtils::unwrapResult(
-        ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
+        ::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
         "set_builder_option");
 }
 
 /// RAII guard that frees an `EngineBuilder` unless released.
-/// `ffi::builder_build` consumes the builder on success; if configuring the builder throws before
+/// `::builder_build` consumes the builder on success; if configuring the builder throws before
 /// that (invalid option, unsupported auth, malformed connection string), the builder must be freed
-/// via `ffi::free_engine_builder` to avoid leaking it.
+/// via `::free_engine_builder` to avoid leaking it.
 class BuilderGuard
 {
 public:
-    explicit BuilderGuard(ffi::EngineBuilder * builder_) : builder(builder_) {}
-    ~BuilderGuard() { if (builder) ffi::free_engine_builder(builder); }
+    explicit BuilderGuard(::EngineBuilder * builder_) : builder(builder_) {}
+    ~BuilderGuard() { if (builder) ::free_engine_builder(builder); }
     BuilderGuard(const BuilderGuard &) = delete;
     BuilderGuard & operator=(const BuilderGuard &) = delete;
-    ffi::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
+    ::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
 private:
-    ffi::EngineBuilder * builder = nullptr;
+    ::EngineBuilder * builder = nullptr;
 };
 
 /// The kernel parses the location as a URL, where `#` would start a fragment.
@@ -184,10 +184,10 @@ public:
         return object_storage->tryRefreshCredentialsViaCallback();
     }
 
-    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ::EngineBuilder * createBuilder() const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
+        ::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
@@ -494,16 +494,25 @@ class AzureKernelHelper final : public IKernelHelper
 {
 public:
     AzureKernelHelper(
-        const DB::AzureBlobStorage::ConnectionParams & connection_params_,
+        DB::ObjectStoragePtr object_storage_,
         const std::string & blob_path_)
-        : connection_params(connection_params_)
-        , table_location(buildTableLocation(connection_params_, blob_path_))
+        : object_storage(std::move(object_storage_))
+        , table_location(buildTableLocation(*object_storage->getAzureBlobStorageConnectionParams(), blob_path_))
         , data_path(normalizeBlobPath(blob_path_))
     {}
 
     [[nodiscard]] const std::string & getTableLocation() const override { return table_location; }
 
     [[nodiscard]] const std::string & getDataPath() const override { return data_path; }
+
+    [[nodiscard]] DB::UInt128 getCredentialsFingerprint() const override
+    {
+        /// A storage that uses the server's identity follows the restriction of the accessing session
+        /// (see `AzureObjectStorage::applyNewSettings`), so a cached engine is rebuilt when it changes.
+        SipHash hash;
+        hash.update(object_storage->getAzureBlobStorageConnectionParams()->forbid_implicit_credentials);
+        return hash.get128();
+    }
 
     /// The Azure object storage resolves a key inside the container and the endpoint prefix of the table. The table's
     /// checks (the credentials, the source grant) cover the table's location only.
@@ -520,7 +529,8 @@ public:
         const std::string_view account
             = at == std::string_view::npos ? "" : authority.substr(at + 1, authority.find('.', at) - at - 1);
 
-        std::string prefix = connection_params.endpoint.prefix;
+        const auto connection_params = object_storage->getAzureBlobStorageConnectionParams();
+        std::string prefix = connection_params->endpoint.prefix;
         if (!prefix.empty() && !prefix.ends_with('/'))
             prefix += '/';
         const std::string key = DB::unescapeForFileName(std::string(qualified->key));
@@ -533,38 +543,40 @@ public:
 
         const std::string_view scheme = qualified->scheme;
         const bool is_own_scheme = scheme == "abfss" || scheme == "abfs" || scheme == "wasbs" || scheme == "wasb";
-        if (!is_own_scheme || container != connection_params.endpoint.container_name || account.empty()
+        if (!is_own_scheme || container != connection_params->endpoint.container_name || account.empty()
             || account != getAccountName() || !key.starts_with(prefix) || has_unsafe_segment)
             throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Data file `{}` of the Delta Lake table is not in the container `{}` of the table",
-                path, connection_params.endpoint.container_name);
+                path, connection_params->endpoint.container_name);
         context->getAccess()->checkAccessWithFilter(
             DB::AccessType::READ, DB::AccessTypeObjects::toStringSource(DB::AccessTypeObjects::Source::AZURE), /* filter */ "");
         return key.substr(prefix.size());
     }
 
-    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ::EngineBuilder * createBuilder() const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
+        ::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
         BuilderGuard guard(builder);
 
-        for (const auto & [name, value] : getAzureBuilderOptions(connection_params))
+        /// Read the *current* params, which follow the restriction of the accessing session, not a copy from table creation.
+        const auto connection_params = object_storage->getAzureBlobStorageConnectionParams();
+        for (const auto & [name, value] : getAzureBuilderOptions(*connection_params))
             setBuilderOption(builder, name, value);
 
         LOG_TRACE(
             log,
             "Using azure container: {}, data_path: {}",
-            connection_params.endpoint.container_name, data_path);
+            connection_params->endpoint.container_name, data_path);
 
         return guard.release();
     }
 
 private:
-    const DB::AzureBlobStorage::ConnectionParams connection_params;
+    const DB::ObjectStoragePtr object_storage;
     const std::string table_location;
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
@@ -577,7 +589,7 @@ private:
     {
         std::call_once(account_name_once, [this]
         {
-            for (const auto & [name, value] : getAzureBuilderOptions(connection_params))
+            for (const auto & [name, value] : getAzureBuilderOptions(*object_storage->getAzureBlobStorageConnectionParams()))
                 if (name == "azure_storage_account_name")
                     account_name = value;
         });
@@ -641,10 +653,10 @@ public:
         return DB::unescapeForFileName(std::string(file_path));
     }
 
-    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ::EngineBuilder * createBuilder() const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
+        ::EngineBuilder * builder = KernelUtils::unwrapResult(
+            ::get_engine_builder(
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
@@ -703,7 +715,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Azure:
         {
             return std::make_shared<DeltaLake::AzureKernelHelper>(
-                *object_storage->getAzureBlobStorageConnectionParams(),
+                object_storage,
                 configuration->getRawPath().path);
         }
 #endif

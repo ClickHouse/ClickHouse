@@ -312,8 +312,7 @@ dependencies = [
 [[package]]
 name = "arrow"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c943b9bec582e47f8394e44713c3cbfbe645fd049e3a7771585f54849c710fe6"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-arith",
  "arrow-array",
@@ -333,8 +332,7 @@ dependencies = [
 [[package]]
 name = "arrow-arith"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b13b85a6a547a1669114e418f6ab3c3e39c2edb1b8be5ab2889e5739a433ae9"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -347,8 +345,7 @@ dependencies = [
 [[package]]
 name = "arrow-array"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b11eb61b95868592ad6edbd537465a6940eb3c81a875addecec24283301b267"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "ahash",
  "arrow-buffer",
@@ -366,8 +363,7 @@ dependencies = [
 [[package]]
 name = "arrow-buffer"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53ee609a07eb721c2e4a7669d7bb88e2106c560e7dec1219096fecf5eae356d1"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "bytes",
  "half",
@@ -378,8 +374,7 @@ dependencies = [
 [[package]]
 name = "arrow-cast"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9575323ffeb4bc6955f39bf8716f734671a32780f1fac9ba6c2891048fc0ea1f"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -399,8 +394,7 @@ dependencies = [
 [[package]]
 name = "arrow-csv"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50659e76e264937e967167e08d76b1d50b1c162f723c5a3c0527d28c4cdf0d56"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-array",
  "arrow-cast",
@@ -414,8 +408,7 @@ dependencies = [
 [[package]]
 name = "arrow-data"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10791765e6927cdd8ace5bf0e51a69f38a1c3aded2db93561b003c332d02ee2a"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-buffer",
  "arrow-schema",
@@ -427,8 +420,7 @@ dependencies = [
 [[package]]
 name = "arrow-ipc"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "165051f1f996f19b50c4d2cdb7ed02ddd400d8d984b422bf6848507eee099c3d"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -441,8 +433,7 @@ dependencies = [
 [[package]]
 name = "arrow-json"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0efe21cd317f22e6b8d7eecc4ed71a043e7269a7bc313a8827c7fb8733866ca"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -466,8 +457,7 @@ dependencies = [
 [[package]]
 name = "arrow-ord"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "908a1b5aeefce5c6eb2a0a4e98f4ccacbd441fe0ed23fb799e634cd0135821e5"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -479,8 +469,7 @@ dependencies = [
 [[package]]
 name = "arrow-row"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5383b1676492a509032f06fa4ca9522c886036aec4ebe8261bebfbce904af667"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -492,8 +481,7 @@ dependencies = [
 [[package]]
 name = "arrow-schema"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8506ad465ebb9483bb6efa1e2e78a313549122c6dd67dc2f7087297b762eaede"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "bitflags",
  "serde_core",
@@ -503,8 +491,7 @@ dependencies = [
 [[package]]
 name = "arrow-select"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd0f0a0d641356ae2df829af5d635ed9fb93fbeb0d39f3239487cb5fdb37a6ef"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "ahash",
  "arrow-array",
@@ -517,8 +504,7 @@ dependencies = [
 [[package]]
 name = "arrow-string"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd245a358d52e77bfcb99dc3e21f04b947383271b7a0b9ca8feec43e9039234d"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -2707,8 +2693,7 @@ dependencies = [
 [[package]]
 name = "ipnet"
 version = "2.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
+source = "git+https://github.com/ClickHouse/ipnet?branch=ClickHouse%2F2.12.2#d96614739c13af5f8232f92bec67df277ca5a11d"
 
 [[package]]
 name = "is_terminal_polyfill"
@@ -3519,8 +3504,7 @@ dependencies = [
 [[package]]
 name = "parquet"
 version = "58.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b967e8aa77dbc32719087ff91f0f100948a0a7e4c88609bd91b0ccf47e594d7e"
+source = "git+https://github.com/ClickHouse/arrow-rs?branch=ClickHouse%2F58.4.1#0152c2a2736b696d14b26fb168c22db7199bf51b"
 dependencies = [
  "ahash",
  "arrow-array",
