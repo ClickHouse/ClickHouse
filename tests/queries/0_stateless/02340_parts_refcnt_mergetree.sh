@@ -69,13 +69,7 @@ function check_refcnt_for_table()
     # Kill the query gracefully.
     kill -INT $PID
     wait $PID
-    # Ignore the whole `QUERY_WAS_CANCELLED_BY_CLIENT` log record, including its stack trace.
-    awk '
-        /^(\[[^]]+\] )?[0-9]{4}\.[0-9]{2}\.[0-9]{2} / {
-            cancelled_by_client = /QUERY_WAS_CANCELLED_BY_CLIENT/
-        }
-        /Exception/ && !cancelled_by_client
-    ' "$log_file"
+    grep -F Exception "$log_file" | grep -v -F QUERY_WAS_CANCELLED_BY_CLIENT
     rm -f "${log_file:?}"
 }
 

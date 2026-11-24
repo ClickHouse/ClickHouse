@@ -246,6 +246,9 @@ public:
     virtual void setRequestMap(ByteRangeSet ranges);
 
 protected:
+    /// Call only while handling an exception.
+    static bool isCurrentExceptionCancellation();
+
     template <PaddedBufferStorage Storage>
     void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size)
     {

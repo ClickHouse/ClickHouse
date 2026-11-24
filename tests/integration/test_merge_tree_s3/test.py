@@ -264,11 +264,23 @@ def run_timed_out_query_before_s3(node, query, query_id):
         node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
         wait_until_query_is_cancelled(node, query_id)
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        _, error = query_future.result(timeout=10)
+        answer, error = query_future.result(timeout=10)
+        assert answer == "", answer
         assert "TIMEOUT_EXCEEDED" in error, error
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         executor.shutdown(wait=False, cancel_futures=True)
+
+
+def assert_no_read_buffer_cancellation_log(node, query_id):
+    debug_logs, cancellation_logs = node.query(
+        "SELECT count(), countIf(logger_name = 'ReadBuffer' "
+        "AND startsWith(message, 'ReadBuffer is canceled by the exception')) "
+        "FROM system.text_log "
+        f"WHERE query_id = '{query_id}' AND level = 'Debug'"
+    ).split()
+    assert int(debug_logs) > 0, "no Debug log was recorded for the query"
+    assert cancellation_logs == "0", "ReadBuffer logged a cancellation"
 
 
 def assert_no_s3_requests(node, query_id):
@@ -321,6 +333,7 @@ def test_s3_read_stops_after_max_execution_time(
         query_id,
     )
     assert_no_s3_requests(node, query_id)
+    assert_no_read_buffer_cancellation_log(node, query_id)
 
 
 @pytest.mark.parametrize("allow_prefetched_pool", [0, 1], ids=["without-pool", "prefetched"])
@@ -354,6 +367,39 @@ def test_s3_read_stops_after_kill_query(s3_cancellation_table, allow_prefetched_
         executor.shutdown(wait=False, cancel_futures=True)
 
     assert_no_s3_requests(node, query_id)
+    assert_no_read_buffer_cancellation_log(node, query_id)
+
+
+def test_s3_read_failure_logs_stack_trace(cluster, broken_s3):
+    node = cluster.instances["node"]
+    query_id = uuid.uuid4().hex
+    key = f"read_buffer_failure_{query_id}.csv"
+    source = (
+        f"s3('http://resolver:8085/{cluster.minio_bucket}/{key}', "
+        f"'minio', '{cluster.minio_secret_key}', 'CSV', 'id UInt64')"
+    )
+    node.query(f"INSERT INTO FUNCTION {source} SELECT toUInt64(1)")
+    try:
+        broken_s3.setup_at_object_get(action="no_such_upload", key=key)
+        error = node.query_and_get_error(
+            f"SELECT sum(id) FROM {source} SETTINGS input_format_parallel_parsing=0",
+            query_id=query_id,
+        )
+        assert "upload does not exist" in error, error
+
+        node.query("SYSTEM FLUSH LOGS text_log")
+        assert int(
+            node.query(
+                "SELECT count() FROM system.text_log "
+                f"WHERE query_id = '{query_id}' AND logger_name = 'ReadBuffer' AND level = 'Debug' "
+                "AND startsWith(message, 'ReadBuffer is canceled by the exception') "
+                "AND position(message, 'upload does not exist') > 0 "
+                "AND position(message, 'Stack trace (') > 0"
+            )
+        ), "ReadBuffer did not log a stack trace for the S3 read failure"
+    finally:
+        broken_s3.reset()
+        cluster.minio_client.remove_object(cluster.minio_bucket, key)
 
 
 @pytest.mark.parametrize("cancel_method", ["timeout", "kill_query"])

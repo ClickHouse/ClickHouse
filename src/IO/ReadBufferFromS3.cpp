@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/StdStreamBufFromReadBuffer.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <Common/BackgroundTaskCancellationException.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/HTTPConnectionPool.h>
 #include <IO/WriteHelpers.h>
@@ -402,12 +401,10 @@ bool ReadBufferFromS3::shouldRetryRead(size_t read_offset, size_t attempt) const
 
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
-    const auto exception = std::current_exception();
-    /// A background task can reach the same cancellation checks as a query without a `QueryStatus`.
-    if (CurrentThread::isQueryCancellationException(exception) || current_exception_cast<const BackgroundTaskCancellationException *>())
+    if (isCurrentExceptionCancellation())
         return false;
 
-    const auto exception_code = getExceptionErrorCode(exception);
+    const auto exception_code = getCurrentExceptionCode();
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
