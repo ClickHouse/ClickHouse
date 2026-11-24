@@ -1759,7 +1759,11 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || (!prewhere_info_for_cache && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
-            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
+            /// A masking policy rewrites the values this read filters without being in the mutations snapshot
+            /// or the condition hash, so entries recorded by a read without the policy may drop matching marks.
+            || (!parts_with_ranges.empty()
+                && parts_with_ranges.front().data_part->storage.hasEnabledMaskingPolicies(context)))
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
