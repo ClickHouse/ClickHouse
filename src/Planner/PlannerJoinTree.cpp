@@ -2609,7 +2609,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// different, locally-permitted set of keys and the initiator would return more groups
                         /// in total than the limit allows. Matches the precedent set by
                         /// `useDataParallelAggregation`, which disables independent aggregation for the same
-                        /// reason.
+                        /// reason. The cap of a trivial `GROUP BY ... LIMIT` does not need this: the `LIMIT` applies
+                        /// on the initiator, and any keys are a correct result.
                         const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
                             && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
 
