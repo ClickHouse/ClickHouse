@@ -965,15 +965,15 @@ using FileIds = std::map<String, std::pair<UInt64, UInt64>>;
 
 void collectFileIds(const IDisk & disk, const fs::path & dir, const fs::path & relative, FileIds & ids)
 {
-    for (auto it = disk.iterateDirectory(dir / relative); it->isValid(); it->next())
+    for (auto it = disk.iterateDirectory(pathToString(dir / relative)); it->isValid(); it->next())
     {
-        const fs::path file = relative / it->name();
-        if (disk.existsDirectory(dir / file))
+        const fs::path file = relative / pathFromString(it->name());
+        if (disk.existsDirectory(pathToString(dir / file)))
             collectFileIds(disk, dir, file, ids);
         else
         {
-            const auto st = disk.stat(dir / file);
-            ids.emplace(file.string(), std::pair<UInt64, UInt64>{st.st_dev, st.st_ino});
+            const auto st = disk.stat(pathToString(dir / file));
+            ids.emplace(pathToGenericString(file), std::pair<UInt64, UInt64>{st.st_dev, st.st_ino});
         }
     }
 }

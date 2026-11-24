@@ -337,6 +337,22 @@ void ReadBufferFromFileDescriptor::enableOSPageCacheReadsDetection(int flags)
 }
 
 
+namespace
+{
+
+/// Not inside the `fiu_do_on` below, because a preprocessor directive cannot be among the arguments of a macro.
+[[maybe_unused]] bool isOpenedForDirectIO([[maybe_unused]] int fd)
+{
+#if defined(OS_WINDOWS)
+    /// There is no `fcntl` to ask, and no descriptor is opened for direct IO on Windows.
+    return false;
+#else
+    return fcntl(fd, F_GETFL) & O_DIRECT;
+#endif
+}
+
+}
+
 bool ReadBufferFromFileDescriptor::nextImpl()
 {
     /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
@@ -358,7 +374,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     {
         fiu_do_on(FailPoints::file_read_corrupt_data_without_direct_io,
         {
-            if (getFileName().ends_with(".bin") && !(fcntl(fd, F_GETFL) & O_DIRECT))
+            if (getFileName().ends_with(".bin") && !isOpenedForDirectIO(fd))
                 working_buffer.begin()[0] = static_cast<char>(~working_buffer.begin()[0]);
         });
     }

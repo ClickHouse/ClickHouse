@@ -1859,7 +1859,7 @@ void StorageObjectStorageQueue::alter(
         {
             String metadata_in_keeper;
             ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop(
-                [&] { metadata_in_keeper = getZooKeeper()->get(zk_path / "metadata"); });
+                [&] { metadata_in_keeper = getZooKeeper()->get(zkutil::joinZooKeeperPath(zk_path, "metadata")); });
             const auto table_metadata_in_keeper = ObjectStorageQueueTableMetadata::parse(metadata_in_keeper);
             return getSettings(&table_metadata_in_keeper);
         };

@@ -355,11 +355,6 @@ int platformSetFileTimes(const std::string & path, time_t access_time, time_t mo
     return 0;
 }
 
-int platformChmod(const std::string & path, mode_t mode)
-{
-    return ::_wchmod(pathFromString(path).c_str(), static_cast<int>(mode));
-}
-
 namespace
 {
 
@@ -531,11 +526,6 @@ int platformSetFileTimes(const std::string & path, time_t access_time, time_t mo
     times.actime = access_time;
     times.modtime = modification_time;
     return ::utime(path.c_str(), &times);
-}
-
-int platformChmod(const std::string & path, mode_t mode)
-{
-    return ::chmod(path.c_str(), mode);
 }
 
 namespace

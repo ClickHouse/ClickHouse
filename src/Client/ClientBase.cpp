@@ -119,7 +119,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <csignal>
-#include <poll.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -132,6 +131,8 @@
 #if defined(OS_WINDOWS)
 #include <Poco/UnWindows.h>
 #include <io.h>
+#else
+#include <poll.h>
 #endif
 
 
@@ -2708,6 +2709,31 @@ StdinState getStdinStateNonBlocking(ReadBuffer & std_in, int fd)
     if (std_in.hasPendingData())
         return StdinState::Data;
 
+#if defined(OS_WINDOWS)
+    /// There is no `poll` for a descriptor that is not a socket, so ask by the kind of the handle.
+    auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (handle == INVALID_HANDLE_VALUE)
+        return StdinState::EndOfFile;
+
+    switch (GetFileType(handle))
+    {
+        case FILE_TYPE_DISK:
+            /// `poll` reports a regular file as readable, and the caller finds out whether it is at its end.
+            return StdinState::Data;
+        case FILE_TYPE_PIPE:
+        {
+            /// Fails with `ERROR_BROKEN_PIPE` when the pipe is empty and its write end is closed, which is
+            /// `POLLHUP` without `POLLIN`. Data that was written before the write end was closed is still reported.
+            DWORD bytes_available = 0;
+            if (!PeekNamedPipe(handle, nullptr, 0, nullptr, &bytes_available, nullptr))
+                return StdinState::EndOfFile;
+            return bytes_available ? StdinState::Data : StdinState::Ambiguous;
+        }
+        default:
+            /// A console or another character device: nothing tells whether a read would block.
+            return StdinState::Ambiguous;
+    }
+#else
     struct pollfd pfd{};
     pfd.fd = fd;
     pfd.events = POLLIN;
@@ -2739,6 +2765,7 @@ StdinState getStdinStateNonBlocking(ReadBuffer & std_in, int fd)
         return StdinState::EndOfFile;
 
     return StdinState::Ambiguous;
+#endif
 }
 }
 
