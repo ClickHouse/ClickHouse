@@ -266,7 +266,6 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
             columns_needing_defaults.emplace_back(col_name, column_idx);
     }
 
-    /// A column the output does not have gets its default only when a default of the output reads it.
     if (columns_to_fill)
     {
         NameSet needing;
