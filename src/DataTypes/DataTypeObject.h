@@ -54,10 +54,10 @@ public:
 
         /// `SKIP a` skips `a` and `a.b`, but not `ab`. `partial_match_regexps` is the setting
         /// `type_json_use_partial_match_to_skip_paths_by_regexp`.
-        bool shouldSkip(std::string_view path, bool partial_match_regexps) const;
+        [[nodiscard]] bool shouldSkip(std::string_view path, bool partial_match_regexps) const;
 
-        const Paths & getPaths() const { return paths; }
-        const std::vector<String> & getRegexps() const { return regexps; }
+        [[nodiscard]] const Paths & getPaths() const { return paths; }
+        [[nodiscard]] const std::vector<String> & getRegexps() const { return regexps; }
         bool operator==(const PathsToSkip & rhs) const { return paths == rhs.paths && regexps == rhs.regexps; }
 
     private:
