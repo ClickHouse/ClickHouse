@@ -8,7 +8,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 from subprocess import DEVNULL
-from typing import Any, Dict, List, Optional, TextIO, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Union
 
 import tqdm  # type: ignore
 from github.GithubException import RateLimitExceededException, UnknownObjectException
@@ -16,7 +16,7 @@ from github.NamedUser import NamedUser
 from rapidfuzz.distance import Levenshtein  # type: ignore
 
 from git_helper import git_runner, is_shallow
-from github_helper import GitHub, PullRequest, PullRequests, Repository
+from github_helper import GitHub, Issues, PullRequest, PullRequests, Repository
 from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
@@ -126,11 +126,41 @@ def _match_changelog_category(category: str) -> Optional[str]:
 
 BOT_AUTHORS = {"dependabot[bot]"}
 
+# The subject GitHub gives to the merge commit of a pull request: its number, and
+# its head branch after the owner.
+MERGE_SUBJECT_RE = re.compile(r"^Merge pull request #(\d+) from [^/\s]+/(\S+)")
+
 FROM_REF = ""
 TO_REF = ""
 SHA_IN_CHANGELOG = []  # type: List[str]
 gh = GitHub(create_cache_dir=False)
 runner = git_runner
+
+
+def link_issues(text: str) -> str:
+    """Substitute issue links."""
+    # 1) issue number w/o markdown link
+    text = re.sub(
+        r"([^[])#([0-9]{4,})",
+        r"\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)",
+        text,
+    )
+    # 2) issue URL w/o markdown link
+    # including #issuecomment-1 or #event-12
+    return re.sub(
+        r"([^(])(https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})[-#a-z0-9]*)",
+        r"\1[#\3](\2)",
+        text,
+    )
+
+
+def get_backported_number(head_ref: str) -> Optional[int]:
+    """The number of the original pull request, if `head_ref` is the branch of
+    its backport: `backport/<release branch>/<number>`."""
+    parts = head_ref.split("/")
+    if len(parts) == 3 and parts[0] == "backport" and parts[2].isdecimal():
+        return int(parts[2])
+    return None
 
 
 class Description:
@@ -155,20 +185,7 @@ class Description:
 
     @property
     def formatted_entry(self) -> str:
-        # Substitute issue links.
-        # 1) issue number w/o markdown link
-        entry = re.sub(
-            r"([^[])#([0-9]{4,})",
-            r"\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)",
-            self.entry,
-        )
-        # 2) issue URL w/o markdown link
-        # including #issuecomment-1 or #event-12
-        entry = re.sub(
-            r"([^(])(https://github.com/ClickHouse/ClickHouse/issues/([0-9]{4,})[-#a-z0-9]*)",
-            r"\1[#\3](\2)",
-            entry,
-        )
+        entry = link_issues(self.entry)
         # It's possible that we face a secondary rate limit.
         # In this case we should sleep until we get it
         while True:
@@ -191,12 +208,117 @@ class Description:
             raise NotImplementedError
         return bool(self.number == other.number)
 
-    def __lt__(self, other: "Description") -> bool:
+    def __lt__(self, other: "Entry") -> bool:
         return self.number < other.number
 
 
-def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
-    descriptions = {}  # type: Dict[str, List[Description]]
+class ExistingEntry:
+    """An entry copied from `CHANGELOG.md` as it is, see `get_existing_entries`."""
+
+    def __init__(self, number: int, category: str, formatted_entry: str):
+        self.number = number
+        self.category = category
+        self.formatted_entry = formatted_entry
+
+    def __lt__(self, other: "Entry") -> bool:
+        return self.number < other.number
+
+
+Entry = Union[Description, ExistingEntry]
+
+
+def read_existing_entries(path: Path, repo: str) -> Dict[int, List[Tuple[str, str]]]:
+    """The entries of `CHANGELOG.md` by pull request, as `(category, bullet)`.
+
+    A bullet is an entry of every pull request it attributes. The attribution is
+    what this script writes at the end of an entry, and what an editor keeps for
+    each of the entries merged into one bullet: `[#N](.../pull/N) ([Author](...))`.
+    A link that is not followed by the author is a mention in the text of another
+    entry ("Follow-up to ..."), not an entry of that pull request. It is the same
+    definition as `PR_ATTRIBUTION_RE` in `ci/jobs/changelog_nightly.py`.
+    """
+    attribution = re.compile(
+        rf"\[#(\d+)\]\(https://github\.com/{re.escape(repo)}/pull/\1\) \(\["
+    )
+    entries = {}  # type: Dict[int, List[Tuple[str, str]]]
+    category = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#### "):
+            category = line[5:].strip()
+            category = _match_changelog_category(category) or category
+        elif line.startswith("#"):
+            # A header of another level ends the category
+            category = ""
+        elif line.startswith("* ") and category:
+            for number in dict.fromkeys(attribution.findall(line)):
+                entries.setdefault(int(number), []).append((category, line.rstrip()))
+    return entries
+
+
+def get_merged_prs() -> Dict[int, str]:
+    """The pull requests merged in the changelog interval according to git, as
+    number -> head branch.
+
+    GitHub merges a pull request with a commit `Merge pull request #N from
+    owner/branch` on the first-parent history of the base branch. A pull request
+    merged in another way has no such commit and is not found here.
+    """
+    merged = {}  # type: Dict[int, str]
+    subjects = runner.run(
+        f"git log --first-parent --format=format:%s {FROM_REF}..{TO_REF}"
+    )
+    for subject in subjects.split("\n"):
+        match = MERGE_SUBJECT_RE.match(subject)
+        if match:
+            merged.setdefault(int(match.group(1)), match.group(2))
+    return merged
+
+
+def get_existing_entries(
+    issues: Issues, path: Path, repo: str
+) -> Tuple[List[ExistingEntry], Set[int]]:
+    """The entries to copy from `CHANGELOG.md`, and the pull requests they stand
+    for: the ones that do not have to be requested from GitHub.
+
+    The search finds the pull requests by the date of the merge, and the dates
+    cover more than the changelog interval, so an entry is copied only for a pull
+    request whose merge commit is in the interval. For a backport, it is the entry
+    of the original pull request. A pull request without an entry, or without a
+    merge commit found in the interval, is left to `get_descriptions`.
+    """
+    existing = read_existing_entries(path, repo)
+    merged = get_merged_prs()
+    entries = {}  # type: Dict[Tuple[str, str], ExistingEntry]
+    reused = set()  # type: Set[int]
+    for number in sorted(issue.number for issue in issues):
+        head_ref = merged.get(number)
+        if head_ref is None:
+            continue
+        original = get_backported_number(head_ref)
+        bullets = existing.get(number if original is None else original)
+        if not bullets:
+            continue
+        reused.add(number)
+        for category, bullet in bullets:
+            # The same prefix and the same place as in `generate_description`:
+            # a backport is sorted by the number of the original pull request.
+            entry_number = number
+            if original is not None:
+                prefix = link_issues(f"Backported in #{number}: ")
+                bullet = f"* {prefix}{bullet[2:]}"
+                entry_number = original
+            # A bullet that attributes several pull requests is their common
+            # entry: it is written once, at the place of the first of them.
+            entries.setdefault(
+                (category, bullet), ExistingEntry(entry_number, category, bullet)
+            )
+    return list(entries.values()), reused
+
+
+def get_descriptions(
+    prs: PullRequests, existing_entries: Sequence[ExistingEntry] = ()
+) -> Dict[str, List[Entry]]:
+    descriptions = {}  # type: Dict[str, List[Entry]]
     repos = {}  # type: Dict[str, Repository]
     for pr in prs:
         # See https://github.com/PyGithub/PyGithub/issues/2202,
@@ -219,6 +341,9 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
                 if desc.category not in descriptions:
                     descriptions[desc.category] = []
                 descriptions[desc.category].append(desc)
+
+    for entry in existing_entries:
+        descriptions.setdefault(entry.category, []).append(entry)
 
     for descs in descriptions.values():
         descs.sort()
@@ -281,6 +406,13 @@ def parse_args() -> argparse.Namespace:
         "has already fetched the history and the tags needed for the interval",
     )
     parser.add_argument(
+        "--reuse-entries-from",
+        type=Path,
+        metavar="CHANGELOG",
+        help="a path to `CHANGELOG.md`: a pull request that already has an entry "
+        "there is not requested from GitHub, the entry is copied as it is",
+    )
+    parser.add_argument(
         "--from",
         dest="from_ref",
         help="git ref for a starting point of changelog, by default is calculated "
@@ -300,10 +432,10 @@ def parse_args() -> argparse.Namespace:
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number
     if item.head.ref.startswith("backport/"):
-        branch_parts = item.head.ref.split("/")
-        if len(branch_parts) == 3:
+        original_number = get_backported_number(item.head.ref)
+        if original_number is not None:
             try:
-                item = gh.get_pull_cached(repo, int(branch_parts[-1]))
+                item = gh.get_pull_cached(repo, original_number)
             except Exception as e:
                 logging.warning("unable to get backported PR, exception: %s", e)
         else:
@@ -454,7 +586,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
 
 
 def write_changelog(
-    fd: TextIO, descriptions: Dict[str, List[Description]], year: int
+    fd: TextIO, descriptions: Dict[str, List[Entry]], year: int
 ) -> None:
     to_commit = runner(f"git rev-parse {TO_REF}^{{}}")[:11]
     from_commit = runner(f"git rev-parse {FROM_REF}^{{}}")[:11]
@@ -529,10 +661,10 @@ def set_sha_in_changelog():
     ).split("\n")
 
 
-def get_year(prs: PullRequests) -> int:
-    if not prs:
+def get_year(issues: Issues) -> int:
+    if not issues:
         return date.today().year
-    return max(pr.created_at.year for pr in prs)
+    return max(issue.created_at.year for issue in issues)
 
 
 def get_branch_and_patch_by_tag(tag: str) -> Tuple[Optional[str], Optional[int]]:
@@ -621,12 +753,31 @@ def main():
         logging.error("ERROR: invalid branch %s - pass", branch)
 
     logging.info("Fetch PRs with query %s", query)
-    prs = gh.get_pulls_from_search(
-        query=query, merged=merged, sort="created", progress_func=tqdm.tqdm
+    # The search returns issues: getting a pull request costs one more request
+    # for each of them, and writing its entry yet another one for the author.
+    issues = gh.search_issues(query=query, merged=merged, sort="created")
+
+    existing_entries = []  # type: List[ExistingEntry]
+    reused = set()  # type: Set[int]
+    if args.reuse_entries_from:
+        existing_entries, reused = get_existing_entries(
+            issues, args.reuse_entries_from, args.repo
+        )
+        logging.info(
+            "%s of %s pull requests already have an entry in %s: "
+            "copying it instead of requesting them from GitHub",
+            len(reused),
+            len(issues),
+            args.reuse_entries_from,
+        )
+
+    prs = gh.get_pulls_from_issues(
+        [issue for issue in issues if issue.number not in reused],
+        progress_func=tqdm.tqdm,
     )
 
-    descriptions = get_descriptions(prs)
-    changelog_year = get_year(prs)
+    descriptions = get_descriptions(prs, existing_entries)
+    changelog_year = get_year(issues)
 
     write_changelog(args.output, descriptions, changelog_year)
 
