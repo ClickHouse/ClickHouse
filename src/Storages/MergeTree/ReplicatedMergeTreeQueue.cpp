@@ -2884,6 +2884,17 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
 {
     std::shared_lock lock(state_mutex);
 
+    /// Parts in `parts_to_do` may be virtual parts of queue entries which are not executed yet
+    /// (e.g. the result of a merge which is still in the queue). The merge selecting task considers
+    /// only existing data parts, so it never records a postpone reason for them. Report such parts
+    /// explicitly, otherwise the mutation looks like it was never scheduled for no reason.
+    std::unordered_map<String, const LogEntry *> entries_by_virtual_part;
+    for (const auto & queue_entry : queue)
+    {
+        for (const String & virtual_part_name : queue_entry->getVirtualPartNames(format_version))
+            entries_by_virtual_part.emplace(virtual_part_name, queue_entry.get());
+    }
+
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & pair : mutations_by_znode)
     {
@@ -2908,6 +2919,29 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                     auto it = entry.block_numbers.find(part_info.getPartitionId());
                     if (it != entry.block_numbers.end() && part_info.getDataVersion() < it->second)
                         parts_postpone_reasons_map[part_name] = postpone_reason;
+                }
+            }
+
+            if (!parts_postpone_reasons_map.contains(PostponeReasons::ALL_PARTS_KEY))
+            {
+                for (const auto & part_name : parts_to_mutate)
+                {
+                    if (parts_postpone_reasons_map.contains(part_name))
+                        continue;
+
+                    auto queue_it = entries_by_virtual_part.find(part_name);
+                    if (queue_it == entries_by_virtual_part.end())
+                        continue;
+
+                    const LogEntry & producing_entry = *queue_it->second;
+                    String reason = fmt::format("{} {} ({})",
+                        PostponeReasons::PART_NOT_CREATED_YET, producing_entry.znode_name, producing_entry.typeToString());
+                    if (producing_entry.currently_executing)
+                        reason += ", which is executing now";
+                    else if (!producing_entry.postpone_reason.empty())
+                        reason += fmt::format(", which is postponed: {}", producing_entry.postpone_reason);
+
+                    parts_postpone_reasons_map[part_name] = std::move(reason);
                 }
             }
         }

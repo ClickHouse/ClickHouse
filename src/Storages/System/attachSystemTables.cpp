@@ -2994,6 +2994,7 @@ In ClickHouse Cloud the `system.mutations` table on each node has all the mutati
 <Note>
 - If a part name is not in `parts_postpone_reasons` and has not yet been mutated, it means the part is yet not scheduled for mutation.
 - The part name `all_parts` represents all parts that have not yet been mutated.
+- For `ReplicatedMergeTree`, a part which is not created yet (for example, the result of a merge which is still in the replication queue) is reported with the reason `Part is not created yet, waiting for queue entry`, followed by the name and the type of that entry.
 </Note>
 
 - `is_killed` ([UInt8](/reference/data-types/int-uint)) — Indicates whether a mutation has been killed. **Only available in ClickHouse Cloud.**

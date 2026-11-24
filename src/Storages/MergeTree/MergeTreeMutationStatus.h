@@ -22,6 +22,7 @@ namespace PostponeReasons
     inline constexpr auto VERSION_NOT_VISIBLE = "Not visible by transaction version";
     inline constexpr auto PENDING_LIGHTWEIGHT_UPDATE = "Lightweight update with a lower block number is not committed yet";
     inline constexpr auto UNREGISTERED_MUTATION = "Mutation with a lower block number is not registered yet";
+    inline constexpr auto PART_NOT_CREATED_YET = "Part is not created yet, waiting for queue entry";
 
     /// Special key in parts_postpone_reasons map indicating the reason applies to all parts
     inline constexpr auto ALL_PARTS_KEY = "all_parts";
