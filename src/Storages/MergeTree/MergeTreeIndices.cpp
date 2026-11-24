@@ -214,15 +214,17 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
     }
 }
 
-bool missingMapKeyEquals(const DataTypePtr & map_value_type, const Field & constant, const DataTypePtr & constant_type, ContextPtr context)
+bool missingMapKeyMatches(
+    const String & function_name, const DataTypePtr & map_value_type, const Field & constant, const DataTypePtr & constant_type, ContextPtr context)
 {
     try
     {
+        const auto value_type = removeLowCardinality(map_value_type);
         ColumnsWithTypeAndName arguments{
-            {ColumnConst::create(createColumnWithInsertedDefault(*map_value_type), 1), map_value_type, ""},
+            {ColumnConst::create(createColumnWithInsertedDefault(*value_type), 1), value_type, ""},
             {constant_type->createColumnConst(1, constant), constant_type, ""}};
-        const auto equals = FunctionFactory::instance().get("equals", context)->build(arguments);
-        return equals->execute(arguments, equals->getResultType(), 1, /*dry_run=*/ false)->getBool(0);
+        const auto function = FunctionFactory::instance().get(function_name, context)->build(arguments);
+        return function->execute(arguments, function->getResultType(), 1, /*dry_run=*/ false)->getBool(0);
     }
     catch (const Exception &)
     {

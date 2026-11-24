@@ -1684,7 +1684,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                         return false;
                 }
                 /// A missing key reads the inserted default, e.g. the first value of each `Enum` in a `Tuple`.
-                else if (missingMapKeyEquals(map_value_type, value_field, value_type, key_node.getContext()))
+                else if (missingMapKeyMatches("equals", map_value_type, value_field, value_type, key_node.getContext()))
                     return false;
             }
 

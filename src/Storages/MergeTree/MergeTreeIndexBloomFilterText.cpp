@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/Utils.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -578,40 +577,6 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
-/// A key the row does not have reads the value `insertDefaultInto` gives the map value type, e.g. `''`, the first value
-/// of an `Enum` or 1970-01-01 for `Date32`. Returns whether the predicate may hold on it: `NULL` matches nothing, `[]` no
-/// `has`, a string is checked for each function that can hold on it, and any other value can match anything but (in)equality.
-bool missingKeyValueBreaksIndex(
-    const String & function_name,
-    const DataTypePtr & map_value_type,
-    const Field & constant,
-    const DataTypePtr & constant_type,
-    const ContextPtr & context)
-{
-    const auto value_type = removeLowCardinality(map_value_type);
-    const auto missing = createColumnWithInsertedDefault(*value_type);
-    if (isArray(value_type) || missing->isNullAt(0))
-        return false;
-    if (function_name == "equals" || function_name == "notEquals")
-        return missingMapKeyEquals(value_type, constant, constant_type, context);
-    if (!isStringOrFixedString(value_type))
-        return true;
-    if (constant.getType() != Field::Types::String)
-        return false;
-    const auto & pattern = constant.safeGet<String>();
-    const auto missing_value = (*missing)[0].safeGet<String>();
-    if (function_name == "startsWith")
-        return missing_value.starts_with(pattern);
-    if (function_name == "endsWith")
-        return missing_value.ends_with(pattern);
-    const bool is_like = isLikePatternFunction(function_name);
-    if (!is_like && function_name != "match")
-        return false;
-    const auto regexp = is_like ? Regexps::createRegexp</*like=*/ true, false, /*no_capture=*/ true, false>(pattern)
-                                : Regexps::createRegexp</*like=*/ false, false, /*no_capture=*/ true, false>(pattern);
-    return regexp.match(missing_value.data(), missing_value.size());
-}
-
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -665,6 +630,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
     bool reads_map_element_against_values_index = false;
+    /// A missing key breaks the index for `notEquals` and `notLike` exactly where it does for `equals` and `like`.
+    const String missing_key_function = function_name == "notEquals" ? "equals" : (function_name == "notLike" ? "like" : function_name);
 
     if (key_node.isFunction())
     {
@@ -684,7 +651,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             const auto * map_type = typeid_cast<const DataTypeMap *>(first_argument.getDAGNode()->result_type.get());
             if (const_value == value_type->getDefault()
                 || (map_type
-                    && missingKeyValueBreaksIndex(function_name, map_type->getValueType(), const_value, value_type, key_node.getContext())))
+                    && missingMapKeyMatches(missing_key_function, map_type->getValueType(), const_value, value_type, key_node.getContext())))
                 return false;
 
             const auto map_column_name = first_argument.getColumnName();
@@ -730,8 +697,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
             if (const_value == value_type->getDefault()
-                || missingKeyValueBreaksIndex(
-                    function_name, key_node.getDAGNode()->result_type, const_value, value_type, key_node.getContext()))
+                || missingMapKeyMatches(
+                    missing_key_function, key_node.getDAGNode()->result_type, const_value, value_type, key_node.getContext()))
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))

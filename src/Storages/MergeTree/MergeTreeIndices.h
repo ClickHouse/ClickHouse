@@ -89,9 +89,10 @@ struct MergeTreeDataPartChecksums;
 /// representation is treated as incompatible.
 bool isRepresentationPreservingConversion(const IDataType * from, const IDataType * to);
 
-/// Whether `equals` holds for `constant` and the value a `Map` with values of `map_value_type` reads for a key the row
-/// does not have (true when it cannot be evaluated), so an index probing that key cannot serve the comparison.
-bool missingMapKeyEquals(const DataTypePtr & map_value_type, const Field & constant, const DataTypePtr & constant_type, ContextPtr context);
+/// Whether `function_name(value, constant)` holds for the value a `Map` with values of `map_value_type` reads for a key the
+/// row does not have (true when it cannot be evaluated), so an index probing that key cannot serve the predicate.
+bool missingMapKeyMatches(
+    const String & function_name, const DataTypePtr & map_value_type, const Field & constant, const DataTypePtr & constant_type, ContextPtr context);
 
 namespace ErrorCodes
 {
