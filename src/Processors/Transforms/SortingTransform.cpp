@@ -1,4 +1,5 @@
 #include <Processors/Transforms/SortingTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <type_traits>
@@ -43,6 +44,7 @@ MergeSorter::MergeSorter(
         convertToFullIfConst(chunk);
 
         size_t num_rows = chunk.getNumRows();
+        total_input_rows += num_rows;
         auto columns = chunk.detachColumns();
         /// Sort cursors compare materialized keys; replicated payloads retain their representation.
         for (const auto & column_desc : description)
@@ -125,8 +127,9 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = createMergedColumns();
 
+    /// Reserve the whole block: `MergeSortingTransform::remerge` keeps merged blocks and judges itself by their allocated bytes.
     /// Reserve at most one output block because reserved capacity counts toward tracked memory.
-    size_t size_to_reserve = std::min(static_cast<size_t>(chunks[0].getNumRows()), max_merged_block_size);
+    size_t size_to_reserve = std::min(total_input_rows, max_merged_block_size);
     for (auto & column : merged_columns)
         column->reserve(size_to_reserve);
 
@@ -213,7 +216,7 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 MutableColumns MergeSorter::createMergedColumns() const
 {
     size_t num_columns = chunks[0].getNumColumns();
-    std::vector<bool> is_replicated(num_columns, false);
+    VectorWithMemoryTracking<bool> is_replicated(num_columns, false);
     for (const auto & chunk : chunks)
     {
         for (size_t i = 0; i != chunk.getNumColumns(); ++i)

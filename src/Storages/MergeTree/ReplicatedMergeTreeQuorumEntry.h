@@ -7,6 +7,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -59,7 +60,7 @@ struct ReplicatedMergeTreeQuorumEntry
         }
     }
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         WriteBufferFromOwnString out;
         writeText(out);

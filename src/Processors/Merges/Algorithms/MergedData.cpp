@@ -17,10 +17,9 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-bool hasNonAdditiveByteSizeAt(const IColumn & column)
+bool byteSizeAtCanUnderestimateGrowth(const IColumn & column)
 {
-    if (column.getDataType() == TypeIndex::LowCardinality
-        || column.getDataType() == TypeIndex::AggregateFunction
+    if (column.getDataType() == TypeIndex::AggregateFunction
         || column.isReplicated()
         || column.hasDynamicStructure())
         return true;
@@ -28,7 +27,7 @@ bool hasNonAdditiveByteSizeAt(const IColumn & column)
     bool result = false;
     column.forEachSubcolumn([&](const ColumnPtr & subcolumn)
     {
-        result = result || hasNonAdditiveByteSizeAt(*subcolumn);
+        result = result || byteSizeAtCanUnderestimateGrowth(*subcolumn);
     });
     return result;
 }
@@ -56,7 +55,14 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
     for (size_t i = 0; i != columns.size(); ++i)
     {
         /// Sometimes header can contain Sparse columns, we don't support Sparse in merge algorithms.
-        columns[i] = recursiveRemoveSparse(std::move(columns[i]))->assumeMutable();
+        /// `recursiveRemoveSparse` takes `const ColumnPtr &` and may return its argument unchanged when
+        /// no sparse representation is present. Keep the result in a separate statement, so the temporary
+        /// `ColumnPtr` materialized from `columns[i]` is destroyed before `IColumn::mutate`: otherwise it
+        /// sees `use_count() == 2` and deep-clones the column on the no-op path. `IColumn::mutate` also
+        /// guarantees unique ownership needed by `ColumnReplicated::create` and the
+        /// `chooseDynamicStructureForMerge` / `takeOrCalculateStatisticsFrom` hooks below.
+        ColumnPtr column_without_sparse = recursiveRemoveSparse(std::move(columns[i]));
+        columns[i] = IColumn::mutate(std::move(column_without_sparse));
         if (is_replicated[i])
             columns[i] = ColumnReplicated::create(std::move(columns[i]));
         /// Columns with dynamic structure (like JSON/Dynamic) need their structure to be
@@ -302,16 +308,19 @@ size_t MergedData::rowsToInsertBeforeFlush(
         }
     }
 
-    if (!max_block_size_bytes)
+    if (!max_block_size_bytes || rows_to_insert == 1)
         return rows_to_insert;
 
     chassert(columns.size() == raw_columns.size());
 
-    /// `byteSizeAt` is not additive for dictionary/index-backed columns, so let
-    /// `hasEnoughRows` measure the actual size after inserting one row.
+    /// The sum of `IColumn::byteSizeAt` over the source rows can arbitrarily underestimate how much
+    /// the destination grows for aggregate states (their data is copied into the destination arena)
+    /// and dynamic columns (the destination adds defaults for paths missing in the source), so let
+    /// `hasEnoughRows` measure the actual size after inserting one row. For `LowCardinality` the sum
+    /// is a close, mostly pessimistic estimate: a repeated value adds just an index entry.
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        if (hasNonAdditiveByteSizeAt(*columns[i]) || hasNonAdditiveByteSizeAt(*raw_columns[i]))
+        if (byteSizeAtCanUnderestimateGrowth(*columns[i]) || byteSizeAtCanUnderestimateGrowth(*raw_columns[i]))
             return 1;
     }
 
