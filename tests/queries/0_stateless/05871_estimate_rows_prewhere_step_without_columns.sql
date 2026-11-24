@@ -10,7 +10,8 @@ DROP TABLE IF EXISTS t_estimate_rows;
 -- The granules follow the size of rows: the first one has fewer rows than the next ones.
 CREATE TABLE t_estimate_rows (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 16384, index_granularity_bytes = '1Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-    enable_vertical_merge_algorithm = 0, merge_max_block_size = 8192, ratio_of_defaults_for_sparse_serialization = 1;
+    enable_vertical_merge_algorithm = 0, merge_max_block_size = 8192, ratio_of_defaults_for_sparse_serialization = 1,
+    use_const_adaptive_granularity = 0;
 
 INSERT INTO t_estimate_rows SELECT number, number, repeat('x', 100) FROM numbers(8000);
 INSERT INTO t_estimate_rows SELECT 8000 + number, number, '' FROM numbers(100000);
