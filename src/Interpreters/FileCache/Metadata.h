@@ -347,7 +347,7 @@ private:
     /// `removeAllKeys` remove a key at once unless a file segment is held or is being evicted.
     void cleanupThreadFunc();
     /// Runs cleanup tasks until none is left; started by `cleanupThreadFunc` when they pile up.
-    void cleanupThreadFuncImpl();
+    void runCleanupUntilEmpty();
     void runCleanupTask(const CleanupTask & task);
 };
 

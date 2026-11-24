@@ -996,13 +996,14 @@ void CacheMetadata::runCleanupTask(const CleanupTask & task)
     }
 }
 
-void CacheMetadata::cleanupThreadFuncImpl()
+void CacheMetadata::runCleanupUntilEmpty()
 {
     while (true)
     {
         try
         {
             auto task = cleanup_queue->tryPop();
+            /// No task is waiting, so this helper thread is not needed anymore.
             if (!task)
                 return;
             runCleanupTask(*task);
@@ -1034,6 +1035,7 @@ void CacheMetadata::cleanupThreadFunc()
         try
         {
             auto task = cleanup_queue->waitAndPop();
+            /// Only at shutdown: with an empty queue `waitAndPop` waits, and it returns nothing once cancelled.
             if (!task)
                 return;
             runCleanupTask(*task);
@@ -1042,7 +1044,7 @@ void CacheMetadata::cleanupThreadFunc()
             const size_t running_threads = helper_threads.active() + 1;
             if (running_threads < max_cleanup_threads
                 && task->backlog >= running_threads * cleanup_tasks_per_thread
-                && helper_threads.trySchedule([this] { cleanupThreadFuncImpl(); }))
+                && helper_threads.trySchedule([this] { runCleanupUntilEmpty(); }))
             {
                 LOG_DEBUG(log, "Started a helper cleanup thread: {} cleanup tasks were waiting", task->backlog);
             }
