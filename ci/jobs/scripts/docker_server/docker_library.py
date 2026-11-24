@@ -100,12 +100,13 @@ def write_distroless_docker_library_config(docker_image: str, config_dir: Path) 
         raise
 
 
-def test_docker_library(test_results, check_images=None) -> None:
+def test_docker_library(test_results, check_images=None, test_tries=None) -> None:
     """we test our images vs the official docker library repository to track integrity
 
     `check_images` names the images to run the suite against. Without it they are taken from the
     `-<arch>`-suffixed `test_results` names, which is how this job labels them; a caller using
     another naming convention passes its own tags, so a mismatch cannot silently test nothing.
+    `test_tries` overrides the readiness probe count for this invocation only.
     """
     arch = "amd64" if Utils.is_amd() else "arm64"
     if check_images is None:
@@ -115,14 +116,20 @@ def test_docker_library(test_results, check_images=None) -> None:
     test_name = "docker library image test"
     try:
         repo = "docker-library/official-images"
-        logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
         repo_path = TEMP_PATH / repo
-        if not Shell.check(
-            f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
-            verbose=True,
-            retries=3,
-        ):
-            raise RuntimeError(f"Failed to clone {repo}")
+        # Reuse an existing checkout: a single job may test several images
+        # (e.g. clickhouse-server + clickhouse-server-ubuntu), and re-cloning
+        # into the already-populated path would fail.
+        if not repo_path.exists():
+            logging.info(
+                "Cloning %s repository to run tests for 'clickhouse' image", repo
+            )
+            if not Shell.check(
+                f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
+                verbose=True,
+                retries=3,
+            ):
+                raise RuntimeError(f"Failed to clone {repo}")
         run_sh = repo_path / "test/run.sh"
         for image in check_images:
             generated_config = None
@@ -142,7 +149,15 @@ def test_docker_library(test_results, check_images=None) -> None:
                         name=f"{test_name} ({image})",
                         command=Shell.check,
                         command_args=[cmd],
-                        command_kwargs={"verbose": True, "timeout": RUN_SH_TIMEOUT},
+                        command_kwargs={
+                            "verbose": True,
+                            "timeout": RUN_SH_TIMEOUT,
+                            "env": (
+                                {**os.environ, "CLICKHOUSE_TEST_TRIES": str(test_tries)}
+                                if test_tries is not None
+                                else None
+                            ),
+                        },
                         with_info=True,
                     )
                 )
