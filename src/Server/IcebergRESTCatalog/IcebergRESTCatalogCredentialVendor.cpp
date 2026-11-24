@@ -38,40 +38,11 @@ CredentialVendor::CredentialVendor(
 {
 }
 
-std::optional<VendedCredentials> CredentialVendor::Cache::get(const String & location, VendedAccessLevel access)
-{
-    const auto now_ms = nowMs();
-
-    std::lock_guard lock(mutex);
-    const auto it = entries.find(Key{.location = location, .access = access});
-    if (it == entries.end() || it->second.reuse_until_ms <= now_ms)
-        return std::nullopt;
-    return it->second.credentials;
-}
-
-void CredentialVendor::Cache::put(
-    const String & location, VendedAccessLevel access, const VendedCredentials & credentials, Int64 expires_at_ms)
-{
-    const auto now_ms = nowMs();
-    /// Stop reuse at half of lifetime.
-    const auto reuse_until_ms = now_ms + (expires_at_ms - now_ms) / 2;
-
-    std::lock_guard lock(mutex);
-    std::erase_if(entries, [&](const auto & entry) { return entry.second.reuse_until_ms <= now_ms; });
-    entries[Key{.location = location, .access = access}] = Entry{.credentials = credentials, .reuse_until_ms = reuse_until_ms};
-}
-
 VendedCredentials CredentialVendor::vend(const String & location, VendedAccessLevel access) const
 {
 #if USE_AWS_S3
-    if (auto cached = credentials_cache.get(location, access))
-        return *cached;
-
-    /// Can call STS outside of cache mutex. Concurrent requests each get valid credentials.
     const auto sts_result = assumeRole(location, access);
-    auto credentials = toVendedCredentials(location, sts_result);
-    credentials_cache.put(location, access, credentials, sts_result.getExpiration().Millis());
-    return credentials;
+    return toVendedCredentials(location, sts_result);
 #else
     UNUSED(location, access);
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Credential vending needs S3 support, but this build has none");
