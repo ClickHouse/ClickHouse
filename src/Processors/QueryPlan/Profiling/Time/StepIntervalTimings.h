@@ -1,6 +1,5 @@
 #pragma once
 
-#include <unordered_map>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
@@ -42,7 +41,7 @@ private:
 
     [[nodiscard]] VectorWithMemoryTracking<TimeIntervals> collectLowerBranchIntervals(
         TimeIntervals && current_step_intervals,
-        const std::vector<UInt64> & children,
+        const VectorWithMemoryTracking<UInt64> & children,
         TimeIntervalsByStep & branch_intervals_by_step) const;
 
     UnorderedMapWithMemoryTracking<UInt64, StepTimeAndConcurrency> timing_by_step;

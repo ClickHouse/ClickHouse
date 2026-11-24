@@ -148,7 +148,7 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     checkWriteAccessIfFilesAreRenamed(context);
 
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator)](size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();
         if (file.empty())

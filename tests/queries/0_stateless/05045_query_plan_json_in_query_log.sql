@@ -3,8 +3,8 @@
 -- Verifies `system.query_log.query_plan`: which queries get a plan, which do not, and that the
 -- stored value is the JSON of the plan that actually ran, with its runtime statistics.
 --
--- Rows are matched by joining on query_id against the rows of this test's own database, so the
--- assertions cannot see queries left by an earlier run or by another test running in parallel.
+-- Rows are matched on `log_comment` and on `currentDatabase()`, so the assertions cannot see
+-- themselves, an earlier run, or another test running in parallel.
 --
 -- The column has the JSON type, so it is turned back into text with toJSONString before being
 -- inspected, which keeps the assertions independent of how JSON subcolumns are addressed.
@@ -14,17 +14,17 @@
 -- id, a number. Anything a reader can compute from those is not stored -- see FlatJSONPlanRenderer.
 
 SET log_query_plans = 0;
-SELECT count() FROM numbers(1000) WHERE number > 900 AND '05045_off' != '' FORMAT Null;
+SELECT count() FROM numbers(1000) WHERE number > 900 SETTINGS log_comment = '05045_off' FORMAT Null;
 
 SET log_query_plans = 1;
 
 -- A plain SELECT is captured. A million rows keeps the per-step timings above the resolution of
 -- the clock, so the statistics assertions are not racing the noise floor.
-SELECT number FROM numbers(1000000) WHERE number % 7 = 0 AND '05045_finish' != '' ORDER BY number DESC LIMIT 3 FORMAT Null;
+SELECT number FROM numbers(1000000) WHERE number % 7 = 0 ORDER BY number DESC LIMIT 3 SETTINGS log_comment = '05045_finish' FORMAT Null;
 
 -- A query failing during execution keeps the plan it was running, but has no statistics: they are
 -- collected when the pipeline is finalized, which a failing query never reaches.
-SELECT throwIf(number = 5, '05045_throw') FROM numbers(10); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT throwIf(number = 5, '05045_throw') FROM numbers(10) SETTINGS log_comment = '05045_throw'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SET log_query_plans = 0;
 SYSTEM FLUSH LOGS query_log;
@@ -33,13 +33,13 @@ SYSTEM FLUSH LOGS query_log;
 SELECT 'off', count(), anyLast(toJSONString(query_plan))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-  AND position(query, '05045_off') > 0;
+  AND log_comment = '05045_off';
 
 -- The QueryStart row of a captured query carries no plan: none exists yet at that point.
 SELECT 'query_start', count(), anyLast(toJSONString(query_plan))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryStart'
-  AND position(query, '05045_finish') > 0;
+  AND log_comment = '05045_finish';
 
 -- The captured plan is valid JSON, describes the tree that ran, and carries statistics.
 SELECT
@@ -56,7 +56,7 @@ SELECT
     anyLast(position(toJSONString(query_plan), 'Sort description: number DESC')) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-  AND position(query, '05045_finish') > 0;
+  AND log_comment = '05045_finish';
 
 -- A failed query keeps its plan and reports no statistics at all.
 SELECT
@@ -67,4 +67,4 @@ SELECT
     anyLast(position(toJSONString(query_plan), '"Statistics"')) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
-  AND position(query, '05045_throw') > 0;
+  AND log_comment = '05045_throw';

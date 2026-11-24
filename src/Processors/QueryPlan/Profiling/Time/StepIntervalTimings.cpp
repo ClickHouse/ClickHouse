@@ -134,7 +134,7 @@ void StepIntervalTimings::computeBranchTime(const PlanAnalysisSnapshot & plan_sn
 }
 
 VectorWithMemoryTracking<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(
-    TimeIntervals && current_step_intervals, const std::vector<UInt64> & children, TimeIntervalsByStep & branch_intervals_by_step) const
+    TimeIntervals && current_step_intervals, const VectorWithMemoryTracking<UInt64> & children, TimeIntervalsByStep & branch_intervals_by_step) const
 {
     VectorWithMemoryTracking<TimeIntervals> current_step_branch_intervals;
 

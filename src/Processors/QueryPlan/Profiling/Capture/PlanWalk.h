@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 namespace DB
@@ -15,7 +15,7 @@ struct VisitedStep
     UInt64 id = 0;
 
     /// This step's own children, then the roots of the child plans it holds.
-    std::vector<UInt64> children;
+    VectorWithMemoryTracking<UInt64> children;
 
     IQueryPlanStep * step = nullptr;
 
@@ -36,7 +36,7 @@ struct PlanWalk
     /// The plan that was walked. Null when it had nothing to walk.
     const QueryPlan * plan = nullptr;
     UInt64 root_id = 0;
-    std::vector<VisitedStep> steps;
+    VectorWithMemoryTracking<VisitedStep> steps;
 
     /// `only_built_child_plans` keeps the walk from asking a step to build a child plan it does
     /// not already hold, so that reading a plan does not change the work the query does. The

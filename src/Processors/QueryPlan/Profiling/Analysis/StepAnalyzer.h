@@ -3,7 +3,7 @@
 #include <functional>
 #include <optional>
 #include <span>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <base/types.h>
@@ -54,7 +54,7 @@ struct StepAnalyzer
 
     /// The steps below this one: its own children, then the roots of the child plans it holds.
     /// Filled by the walk, which is the only thing that knows the shape.
-    std::vector<UInt64> children;
+    VectorWithMemoryTracking<UInt64> children;
 
     /// What the passes that run across steps need to know about this one.
     ///
@@ -65,7 +65,7 @@ struct StepAnalyzer
     bool is_creating_set = false;
 
     /// Every step has at least the one unnamed stage.
-    std::vector<StepGroup> groups{{}};
+    VectorWithMemoryTracking<StepGroup> groups{{}};
 
     /// Empty when the step has nothing to report of its own.
     StepReporter reporter;
