@@ -111,7 +111,7 @@ RUN ARCH=$(uname -m) && \
     ./rustup-init -y && \
     rm rustup-init && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2026-11-02 --no-self-update --profile minimal --component rustfmt,clippy && \
+    rustup toolchain install nightly-2026-11-02 --no-self-update && \
     rustup default nightly-2026-11-02 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \

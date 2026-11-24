@@ -17,8 +17,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <WindowFunctions/WindowFunctionFactory.h>
-
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
@@ -1448,9 +1446,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     // checked for it above, so no need to do anything more.
     if (AggregateUtils::isAggregateFunction(node))
         return;
-
-    if (WindowFunctionFactory::instance().isWindowFunctionName(node.name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} is a window function and requires an OVER clause", node.name);
 
     FunctionOverloadResolverPtr function_builder;
 

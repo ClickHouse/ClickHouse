@@ -9,7 +9,7 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/CancellationBudget.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>

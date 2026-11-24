@@ -76,7 +76,7 @@ bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
 
         if (const auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isWindowCall() || !function_node->isOrdinaryCall())
+            if (function_node->isWindowFunction() || !function_node->isOrdinaryFunction())
                 return false;
 
             auto function_base = function_node->getFunction();

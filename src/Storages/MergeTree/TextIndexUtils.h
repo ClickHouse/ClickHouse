@@ -33,7 +33,7 @@ public:
         MergeTreeWriterSettings writer_settings_,
         CompressionCodecPtr default_codec_,
         String marks_file_extension_,
-        MergeTreeSettingsPtr storage_settings_);
+        const MergeTreeSettings & storage_settings);
 
     String getName() const override { return "BuildTextIndexTransform"; }
 
@@ -61,7 +61,6 @@ private:
     MergeTreeWriterSettings writer_settings;
     CompressionCodecPtr default_codec;
     String marks_file_extension;
-    MergeTreeSettingsPtr storage_settings;
 
     /// Number of rows in blocks processed by the transform.
     size_t num_processed_rows = 0;

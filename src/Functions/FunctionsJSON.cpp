@@ -1,7 +1,6 @@
 #include <type_traits>
 
 #include <base/range.h>
-#include <base/sanitizer_defs.h>
 
 #include <Formats/JSONExtractTree.h>
 #include <Formats/FormatFactory.h>
@@ -78,12 +77,6 @@ template <typename T>
 concept Reservable = requires (T t)
 {
     t.reserve(0);
-};
-
-template <typename T>
-concept ParsableInPlace = requires (T t, typename T::Element & element)
-{
-    t.parse(std::string_view{}, size_t{0}, element);
 };
 
 template <typename T>
@@ -176,12 +169,8 @@ public:
             {
                 if (!col_json_const)
                 {
-                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[static_cast<ssize_t>(i) - 1]]), offsets[i] - offsets[static_cast<ssize_t>(i) - 1]};
-                    /// The bytes of the next rows serve as padding, so only the last rows are copied.
-                    if constexpr (ParsableInPlace<JSONParser>)
-                        document_ok = parser.parse(json, chars.size() - offsets[i], document);
-                    else
-                        document_ok = parser.parse(json, document);
+                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1]};
+                    document_ok = parser.parse(json, document);
                 }
 
                 bool added_to_column = false;
@@ -489,7 +478,6 @@ private:
     }
 
     template <typename JSONParser>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     static bool moveToElementByIndex(typename JSONParser::Element & element, Int64 index, std::string_view & out_key)
     {
         if (element.isArray())
@@ -552,7 +540,7 @@ private:
         size_t max_size = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            size_t size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
+            size_t size = offsets[i] - offsets[i - 1];
             max_size = std::max(max_size, size);
         }
         if (max_size)

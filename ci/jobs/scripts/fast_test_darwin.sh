@@ -39,7 +39,11 @@ print_host_state() {
 
 print_host_state start
 
-# SIP blocks disabling `bluetoothd`, whose restart loop makes `WirelessRadioManagerd` grow to 1-1.5 cores; it ignores SIGTERM.
+# The runners' Bluetooth chip never boots (`bluetoothd` logs `reason=1214, context="chip boot failure"`), so launchd
+# restarts `bluetoothd` every 10 seconds and `WirelessRadioManagerd` redoes more work on every restart: it burns 1-1.5
+# cores after two days of uptime. Killing it drops that backlog and launchd starts it again; it ignores SIGTERM. SIP does
+# not allow disabling `bluetoothd`. The runner `user_data` installs a LaunchDaemon doing the same every hour; this covers
+# runners provisioned without it.
 sudo killall -9 WirelessRadioManagerd
 
 for i in $(seq 2 21); do

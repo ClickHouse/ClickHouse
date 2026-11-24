@@ -542,7 +542,7 @@ struct ColumnFunction::ReducedColumns
 
     struct KeyHash
     {
-        size_t operator()(const Key & key) const { return (std::hash<const void *>{}(key.first) << 1) | static_cast<size_t>(key.second); }
+        size_t operator()(const Key & key) const { return std::hash<const void *>{}(key.first) * 2 + key.second; }
     };
 
     UnorderedMapWithMemoryTracking<Key, ColumnWithTypeAndName, KeyHash> columns;

@@ -5,7 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/CancellationBudget.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>

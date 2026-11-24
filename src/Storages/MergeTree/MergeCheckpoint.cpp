@@ -135,7 +135,7 @@ void MergeCheckpointState::write(WriteBuffer & out) const
         const auto it = statistics.find(column.name);
         writeBinary(it != statistics.end(), out);
         if (it != statistics.end())
-            it->second->serialize(out, LATEST_STATISTICS_FILE_VERSION);
+            it->second->serialize(out);
     }
     writeBinary(minmax_index.has_value(), out);
     if (minmax_index)

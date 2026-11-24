@@ -136,7 +136,6 @@
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
-    M(ParquetMetadataCacheOffsetIndexHits, "Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.", ValueType::Number) \
     M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataUpdateMicroseconds, "Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).", ValueType::Microseconds) \
@@ -1879,7 +1878,6 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetReadMinMaxFromStatistics, "The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)", ValueType::Number) \
     M(ParquetReadPages, "The total number of Parquet data pages read", ValueType::Number) \
     M(ParquetPrunedPages, "The total number of pages pruned from parquet data via column index", ValueType::Number) \
-    M(ParquetColumnChunksPagesLocatedFromHeaders, "Number of Parquet column chunks without an offset index whose pages holding the rows read by lazy materialization were located from their page headers, so that only those pages were read", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
     M(ParquetDecodingTaskBatches, "Task groups sent to a thread pool by parquet reader", ValueType::Number) \
     M(ParquetColumnDataReadAheadRowGroups, "Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads", ValueType::Number) \
@@ -2485,8 +2483,8 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     Int64 curr_cpu_wait_microseconds = static_cast<Int64>(load(OSCPUWaitMicroseconds));
     Int64 curr_cpu_virtual_time_microseconds = static_cast<Int64>(load(OSCPUVirtualTimeMicroseconds));
 
-    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - static_cast<Int64>(prev_cpu_wait_microseconds.load(std::memory_order_acquire));
-    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - static_cast<Int64>(prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire));
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds.load(std::memory_order_acquire);
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire);
 
     if (reset)
     {

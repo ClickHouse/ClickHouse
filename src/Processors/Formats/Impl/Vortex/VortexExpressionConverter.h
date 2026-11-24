@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include "config.h"
 
 #if USE_VORTEX
@@ -13,6 +12,13 @@
 #include <string_view>
 #include <Formats/ColumnNameMaps.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+
+namespace arrow
+{
+class DataType;
+class Field;
+class Schema;
+}
 
 namespace DB
 {
@@ -52,7 +58,7 @@ public:
     /// the query parses a string constant with (see `ComparisonParams`).
     VortexExpressionConverter(
         const Block & header_,
-        const ArrowIPC::ArrowSchema & file_schema_,
+        const arrow::Schema & file_schema_,
         const FormatSettings & format_settings_,
         const FormatSettings & comparison_format_settings_,
         const ColumnNameMap * file_column_names_ = nullptr);
@@ -70,7 +76,7 @@ private:
     struct ResolvedColumn
     {
         VortexExpressionPtr expr;
-        const ArrowIPC::ArrowField * field = nullptr;
+        std::shared_ptr<arrow::Field> field;
         DataTypePtr cmp_type;
     };
     enum class TypeMatch
@@ -85,19 +91,19 @@ private:
     /// Whether reading a non-null value of `arrow_type` as `cmp_type` always yields a non-null
     /// value. Not so for a string read as a nullable number, for example: a malformed string is
     /// cast to NULL, while the scan still sees the original non-null string.
-    [[nodiscard]] bool conversionPreservesNulls(const DataTypePtr & cmp_type, const ArrowIPC::ArrowType & arrow_type) const;
+    [[nodiscard]] bool conversionPreservesNulls(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const;
 
     /// Whether the two types describe the same set of values. Only then does a comparison mean the
     /// same thing on both sides. `UInt64` in the header against `I64` in the file is the trap: the
     /// same bits, but a different order.
-    [[nodiscard]] bool typesMatchForFilterPushdown(const DataTypePtr & cmp_type, const ArrowIPC::ArrowType & arrow_type) const;
+    [[nodiscard]] bool typesMatchForFilterPushdown(const DataTypePtr & cmp_type, const arrow::DataType & arrow_type) const;
 
     /// Builds a literal in the file column's own type. `value` is converted into `cmp_type` first,
     /// exactly or not at all. Returns null when the value does not fit, and the atom is then not
     /// pushed down. A floating-point zero always becomes `+0.0`, and `is_float_zero`, when given,
     /// tells whether the literal is such a zero.
     VortexExpressionPtr makeLiteral(
-        const ArrowIPC::ArrowType & file_type,
+        const arrow::DataType & file_type,
         const DataTypePtr & cmp_type,
         const Field & value,
         const DataTypePtr & value_type,
@@ -153,7 +159,7 @@ private:
     [[nodiscard]] VortexExpressionPtr convertBareBooleanColumn(const RPNBuilderTreeNode & node) const;
 
     const Block & header;
-    const ArrowIPC::ArrowSchema & file_schema;
+    const arrow::Schema & file_schema;
     const FormatSettings & format_settings;
     const FormatSettings & comparison_format_settings;
     const ColumnNameMap * file_column_names;

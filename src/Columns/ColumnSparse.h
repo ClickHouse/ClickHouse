@@ -32,15 +32,7 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnSparse>, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
     {
-        /// The underlying columns may be shared with other owners (e.g. the original
-        /// sparse column that supplied `offsets_` via `getOffsetsPtr`). `assumeMutable`
-        /// here would `chassert(use_count() == 1)` and abort. Bypass via `const_cast`
-        /// + `getPtr` — the result is returned as `Ptr` (immutable) and any mutation
-        /// must go through `IColumn::mutate`, which deep-clones shared sub-columns.
-        return Base::create(
-            const_cast<IColumn *>(values_.get())->getPtr(),
-            const_cast<IColumn *>(offsets_.get())->getPtr(),
-            size_);
+        return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
     }
 
     template <typename TColumnPtr>
@@ -52,9 +44,7 @@ public:
 
     static Ptr create(const ColumnPtr & values_)
     {
-        /// The one-argument constructor appends a default value, so unlike the other immutable
-        /// overloads it must not borrow a potentially shared input column.
-        return Base::create(IColumn::mutate(values_));
+        return Base::create(values_->assumeMutable());
     }
 
     template <typename TColumnPtr>

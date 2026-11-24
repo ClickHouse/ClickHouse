@@ -692,7 +692,7 @@ The codec is a good fit for ClickHouse because the expensive part (the scan) is 
 
 #### Applying the codec {#quantized-codecs-declaring}
 
-Specify the `Quantized(...)` codec for the `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)` / `Array(Int8)` / `Array(UInt8)`) column.
+Specify the `Quantized(...)` codec for the `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)`) column.
 
 ```sql
 SET enable_quantized_codec = 1;
@@ -713,17 +713,13 @@ The codec cannot be added or changed later using `ALTER TABLE`.
 Each quantization method has different size/accuracy trade-offs.
 The `dimensions` argument is the vector length.
 
-- `Quantized('rabitq', dimensions)` — one sign bit per coordinate plus an unbiased cosine-correction factor (`dimensions/8 + 4` bytes). A small, `popcount`-cheap, strong default. Estimates the cosine distance only, see below for `L2Distance`.
-- `Quantized('turboquant', dimensions)` — two bits per coordinate (a 1-bit MSE code and a 1-bit residual code) for higher-fidelity candidates (`dimensions/4 + 4` bytes). Estimates the cosine distance only, see below for `L2Distance`.
+- `Quantized('rabitq', dimensions)` — one sign bit per coordinate plus an unbiased cosine-correction factor (`dimensions/8 + 4` bytes). A small, `popcount`-cheap, strong default. `cosineDistance` only.
+- `Quantized('turboquant', dimensions)` — two bits per coordinate (a 1-bit MSE code and a 1-bit residual code) for higher-fidelity candidates (`dimensions/4 + 4` bytes). `cosineDistance` only.
 - `Quantized('int8', dimensions)` — one `Int8` code per coordinate plus the vector norm (`dimensions + 4` bytes); the largest but most faithful flat code. Supports `L2Distance` and `cosineDistance`.
 - `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: keeps only the `leading_dimensions` leading coordinates, as `Int8` (with a per-vector scale) or `BFloat16`. Tiny codes for embeddings trained with Matryoshka Representation Learning. Supports `L2Distance` and `cosineDistance`.
 - `Quantized('product', dimensions, nbits, m)` — Product Quantization: a per-part codebook trained with k-means; each vector becomes `m` codes of `nbits` bits (so `dimensions` must be a multiple of `m`). The most compact option and highest recall per byte, at the cost of a training step during insert. Supports `L2Distance` and `cosineDistance`.
 
 `rabitq` and `turboquant` require `dimensions` to be a multiple of 8.
-
-For `Array(Int8)` and `Array(UInt8)` columns, methods `int8` and `prefix` with format `int8` are not supported, as their codes are not smaller than the original vectors.
-`UInt8` embeddings are typically signed values shifted by 128. Methods `rabitq` and `turboquant` assume vectors scattered around the origin, so for `Array(UInt8)` columns they subtract 128 from each element of the stored vectors and of the reference vector before encoding.
-As a consequence, the shortlist ranks by the cosine distance of the shifted vectors, whereas the final result is rescored by the exact `cosineDistance` of the original vectors.
 
 #### Using the codec {#quantized-codecs-searching}
 
@@ -741,10 +737,7 @@ SETTINGS vector_search_use_quantized_codes = 1;
 Setting `vector_search_use_quantized_codes = 1` lets the optimizer rewrite the query into a two-phase scan.
 The setting is off by default.
 Without it, the same query runs as a regular exact scan against the original vectors.
-All methods support distance functions `cosineDistance` and `L2Distance`.
-Methods `int8`, `prefix` and `product` estimate both distances.
-Methods `rabitq` and `turboquant` do not store the vector norms and estimate only the cosine distance: for `L2Distance`, the shortlist is ranked by the cosine distance and the result is rescored by the exact `L2Distance`.
-The returned distances are exact, but the recall depends on how much the vector norms vary. For normalized vectors, both rankings are the same.
+All methods support distance function `cosineDistance`, methods `int8`, `prefix` and `product` additionally support `L2Distance` as distance function.
 
 Setting `vector_search_index_fetch_multiplier` specifies how many candidates are shortlisted relative to the query's `LIMIT`.
 Larger multipliers improve recall at the cost of more rescoring.

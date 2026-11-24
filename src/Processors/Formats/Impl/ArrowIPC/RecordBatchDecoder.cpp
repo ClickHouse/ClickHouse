@@ -413,34 +413,20 @@ MutableColumnPtr deserializeOpaqueBinaryLeaf(
     return out;
 }
 
-void RecordBatchDecoder::setBatchNodes(const flatbuf::RecordBatch * batch)
-{
-    if (!batch)
-    {
-        current_nodes = nullptr;
-        current_num_nodes = 0;
-        current_length = 0;
-        return;
-    }
-    const auto * nodes = batch->nodes();
-    /// The nodes are a vector of structs, stored contiguously (and aligned, see `isFlatBuffersVectorAligned8`).
-    current_nodes = nodes ? reinterpret_cast<const flatbuf::FieldNode *>(nodes->Data()) : nullptr;
-    current_num_nodes = nodes ? nodes->size() : 0;
-    current_length = batch->length();
-}
-
 const flatbuf::FieldNode & RecordBatchDecoder::nextNode()
 {
-    if (node_index >= current_num_nodes)
+    const auto * nodes = current_batch->nodes();
+    if (!nodes || node_index >= nodes->size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has fewer field nodes than the schema requires");
-    return current_nodes[node_index++];
+    return *nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index++));
 }
 
 const flatbuf::FieldNode & RecordBatchDecoder::peekNode(size_t offset) const
 {
-    if (node_index + offset >= current_num_nodes)
+    const auto * nodes = current_batch->nodes();
+    if (!nodes || node_index + offset >= nodes->size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has fewer field nodes than the schema requires");
-    return current_nodes[node_index + offset];
+    return *nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index + offset));
 }
 
 Int64 RecordBatchDecoder::peekNextNodeLength() const
@@ -674,7 +660,7 @@ std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleM
         if (isInvisible(invisible_rows, i))
             continue;
 
-        const size_t range_begin = std::min<size_t>(static_cast<size_t>(base) + (i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1]), child_rows);
+        const size_t range_begin = std::min<size_t>(static_cast<size_t>(base) + (i == 0 ? 0 : offsets[i - 1]), child_rows);
         const size_t range_end = std::min<size_t>(static_cast<size_t>(base) + offsets[i], child_rows);
         if (range_begin < range_end)
             memset(mask.data() + range_begin, 0, range_end - range_begin);
@@ -1786,7 +1772,7 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
             ? static_cast<size_t>(std::upper_bound(dictionary.offsets.begin(), dictionary.offsets.end(), static_cast<size_t>(index))
                 - dictionary.offsets.begin())
             : 0;
-        const size_t segment_start = segment_index == 0 ? 0 : dictionary.offsets[static_cast<ssize_t>(segment_index) - 1];
+        const size_t segment_start = segment_index == 0 ? 0 : dictionary.offsets[segment_index - 1];
         const size_t index_in_segment = static_cast<size_t>(index) - segment_start;
         const FieldDictionaryValues & segment = segments[segment_index];
         if (segment.null_entries && segment.null_entries->getUInt(index_in_segment))
@@ -2418,38 +2404,6 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     return result;
 }
 
-RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeExternalBatch(
-    const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
-{
-    if (batch.length < 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow record batch has a negative length {}", batch.length);
-
-    target_types = target_types_;
-    current_nodes = batch.nodes.data();
-    current_num_nodes = batch.nodes.size();
-    current_length = batch.length;
-    node_index = 0;
-    buffer_index = 0;
-    variadic_index = 0;
-    variadic_counts = batch.variadic_counts;
-    buffer_slices = batch.buffers;
-    total_buffer_bytes = 0;
-    for (const auto & slice : buffer_slices)
-        total_buffer_bytes += static_cast<size_t>(slice.length);
-
-    DecodedColumns result;
-    result.reserve(schema.fields.size());
-    for (const ArrowField & field : schema.fields)
-    {
-        expectNextNodeLength(static_cast<size_t>(batch.length), fmt::format("column '{}'", field.name));
-        result.push_back(
-            decodeBatchColumn(field, /*target_hint=*/nullptr, normalizedName(field.name), /*list_depth=*/0, /*read_undeclared_nulls=*/true));
-    }
-
-    finishBatch();
-    return result;
-}
-
 DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field, const DictionaryUse & use,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
@@ -2481,7 +2435,7 @@ void RecordBatchDecoder::beginBatch(
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch.length());
 
     target_types = target_types_;
-    setBatchNodes(&batch);
+    current_batch = &batch;
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2505,7 +2459,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool read_undeclared_nulls,
     ColumnUInt8::Ptr * decoded_null_map)
 {
-    const size_t batch_rows = static_cast<size_t>(current_length);
+    const size_t batch_rows = static_cast<size_t>(current_batch->length());
 
     DecodedColumn decoded;
     decoded.name = field.name;
@@ -2578,7 +2532,7 @@ void RecordBatchDecoder::finishBatch()
 {
     /// Decoded and skipped fields must consume every declared node, buffer, and variadic count.
     /// Surplus entries indicate that the batch layout does not match the schema.
-    const size_t total_nodes = current_num_nodes;
+    const size_t total_nodes = current_batch->nodes() ? current_batch->nodes()->size() : 0;
     if (node_index != total_nodes || buffer_index != buffer_slices.size() || variadic_index != variadic_counts.size())
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -2586,7 +2540,7 @@ void RecordBatchDecoder::finishBatch()
             "the record batch layout does not match the schema",
             node_index, total_nodes, buffer_index, buffer_slices.size(), variadic_index, variadic_counts.size());
 
-    setBatchNodes(nullptr);
+    current_batch = nullptr;
     target_types = nullptr;
     buffer_slices.clear();
 }
@@ -2829,7 +2783,7 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
 
     /// Walk the schema with `advanceField` so buffer spans match decoding. Counts come from field types
     /// and variadic counts; the body is not read. Placeholder slices let `nextBuffer` advance the cursor.
-    setBatchNodes(&batch);
+    current_batch = &batch;
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2867,7 +2821,7 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
         reachable.assign(num_buffers, 1);
     }
 
-    setBatchNodes(nullptr);
+    current_batch = nullptr;
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2881,7 +2835,7 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
     const size_t total_nodes = batch.nodes() ? batch.nodes()->size() : 0;
     const size_t total_buffers = batch.buffers() ? batch.buffers()->size() : 0;
 
-    setBatchNodes(&batch);
+    current_batch = &batch;
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2905,7 +2859,7 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
     const bool exact = node_index == total_nodes && buffer_index == total_buffers
         && variadic_index == variadic_counts.size();
 
-    setBatchNodes(nullptr);
+    current_batch = nullptr;
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;

@@ -762,9 +762,7 @@ postgres::ConnectionSSLParams StoragePostgreSQL::extractSSLParamsFromArguments(A
     return ssl_params;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(
-    const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_,
-    const RemoteDescriptionCaller & caller, bool require_table)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
@@ -797,7 +795,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     {
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-            configuration.addresses_expr, max_addresses, 5432, caller);
+            configuration.addresses_expr, max_addresses, 5432);
     }
 
     configuration.username = named_collection.getAny<String>({"username", "user"});
@@ -823,14 +821,13 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
     ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
-    const RemoteDescriptionCaller & caller, const StorageID * table_id, const ASTSetQuery * settings)
+    const StorageID * table_id, const ASTSetQuery * settings)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
             engine_args, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(
-            *named_collection, storage_settings, context, caller, /*require_table=*/ true);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
     else
     {
@@ -870,8 +867,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-            configuration.addresses_expr, max_addresses, 5432, caller);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
         if (configuration.addresses.size() == 1)
         {
             configuration.host = configuration.addresses[0].first;
@@ -907,8 +903,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
 
         auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), &postgresql_settings,
-            globCaller("Table engine 'PostgreSQL'"), &args.table_id, args.storage_def->settings);
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
 
         postgresql_settings.loadFromQuery(*args.storage_def);
 

@@ -17,7 +17,6 @@
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-enrollment-token-create",
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
@@ -41,7 +40,6 @@
         "group": "Facturation",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
-          "products/cloud/api-reference/billing/inference-usage-cost-get",
           "products/cloud/api-reference/billing/active-balances-get",
           "products/cloud/api-reference/billing/credit-balances-get"
         ]
@@ -236,8 +234,6 @@
       "products/cloud/api-reference/clickstack/click-stack-get-alert",
       "products/cloud/api-reference/clickstack/click-stack-update-alert",
       "products/cloud/api-reference/clickstack/click-stack-delete-alert",
-      "products/cloud/api-reference/clickstack/click-stack-silence-alert",
-      "products/cloud/api-reference/clickstack/click-stack-unsilence-alert",
       "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
       "products/cloud/api-reference/clickstack/click-stack-create-webhook",
       "products/cloud/api-reference/clickstack/click-stack-validate-webhook",
@@ -279,7 +275,6 @@
       "GET /v1/organizations/{organizationId}/postgres/{postgresId}/backups",
       "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
       "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}",
-      "products/cloud/api-reference/postgres/postgres-blocking-queries-get-list",
       "GET /v1/organizations/{organizationId}/postgres/{postgresId}/logs"
     ]
   }

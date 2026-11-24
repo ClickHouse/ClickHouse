@@ -18,10 +18,10 @@ where	8
 616200	6162
 616200	61620000
 -- inequality per algorithm
-inequality <	21
-inequality >	21
+ie_join <	21
+ie_join >	21
 hash <	21
-inequality < swapped	21
+ie_join < swapped	21
 -- semi / anti
 oracle semi	4
 semi	4
@@ -92,7 +92,7 @@ two elements	8
 full_sorting_merge	8
 swapped sides	8
 null-safe	8
-inequality <	21
+ie_join <	21
 anti	1
 -- nested tuples with a String element on each side
 8

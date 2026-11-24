@@ -136,12 +136,10 @@ def forget_test_process_group(pgid: int) -> None:
 
 # Exit code returned by `clickhouse-test` when the run was aborted early via
 # `stop_testing` and no more specific cause was claimed - an observed server death
-# (a `<Fatal>` line, or a failed liveness probe with nothing listening on the
-# probed port any more) or a generic catastrophic abort; any other failed
-# liveness probe uses `HUNG_CHECK_EXIT_CODE`. Distinct from the generic failure
-# code 1 so the job side can populate the synthetic "Server died" leaf without
-# fragile log-line matching. Kept in sync with
-# `ci/jobs/scripts/functional_tests_results.py`.
+# or a generic catastrophic abort; a failed liveness probe uses
+# `HUNG_CHECK_EXIT_CODE` instead. Distinct from the generic failure code 1 so the
+# job side can populate the synthetic "Server died" leaf without fragile log-line
+# matching. Kept in sync with `ci/jobs/scripts/functional_tests_results.py`.
 STOP_TESTING_EXIT_CODE = 2
 
 # Exit code returned when the run stopped *gracefully* because the global time
@@ -162,8 +160,7 @@ GLOBAL_TIME_LIMIT_EXIT_CODE = 3
 MAX_FAILURES_EXIT_CODE = 4
 
 # Exit code returned when the run stopped because a `check_server_liveness`
-# probe failed while the probed listener was still held or its state could not
-# be told. The probe establishes only that the check failed - it also fails
+# probe failed. The probe establishes only that the check failed - it also fails
 # on a non-200 *response* - so this must NOT be conflated with
 # `STOP_TESTING_EXIT_CODE`, which the job side reports as "Server died". Kept in
 # sync with `HUNG_CHECK_EXIT_CODE` in
@@ -1938,7 +1935,6 @@ class SettingsRandomizer:
         )[0],
         "output_format_parquet_write_checksums": lambda: random.random() > 0.2,
         "output_format_parquet_use_alp_encoding": lambda: random.random() < 0.2,
-        "output_format_parquet_use_data_page_v2": lambda: random.random() < 0.5,
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
@@ -4141,10 +4137,11 @@ class TestCase:
                         or "Attempt to read after eof" in stderr
                     )
                     and "Received exception from server" not in stderr
-                ):
                     # Only a server that is really gone stops the whole run: a
                     # stalled but live server keeps the plain exit-code failure.
-                    reason = probed_server_failure(self.args) or reason
+                    and probed_server_is_gone(self.args)
+                ):
+                    reason = FailureReason.LIVENESS_CHECK_FAILED
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
@@ -4667,16 +4664,13 @@ class TestCase:
                     # A server that is unresponsive but still holds its
                     # listening socket is stalled, not dead - do not stop the
                     # run for it; the parent hung check owns that verdict.
-                    reason = probed_server_failure(self.args)
-                    if reason is not None:
+                    if probed_server_is_gone(self.args):
                         return TestResult(
                             self.name,
                             TestStatus.FAIL,
-                            reason,
+                            FailureReason.LIVENESS_CHECK_FAILED,
                             0.0,
-                            "\nServer died\n"
-                            if reason == FailureReason.SERVER_DIED
-                            else "\nServer liveness check failed\n",
+                            "\nServer liveness check failed\n",
                         )
 
             self.runs_count += 1
@@ -4817,13 +4811,20 @@ class TestCase:
             exc_description = self.add_info_about_settings(
                 self.get_description_from_exception_info(sys.exc_info())
             )
-            reason = probed_server_failure(self.args)
+            if probed_server_is_gone(self.args):
+                return TestResult(
+                    self.name,
+                    TestStatus.FAIL,
+                    FailureReason.LIVENESS_CHECK_FAILED,
+                    total_time,
+                    exc_description,
+                )
+            # Server is alive (answering, or silent but still holding its
+            # listening socket) - this was a transient network error or a stall.
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
-                # Server is alive (answering, or silent but still holding its
-                # listening socket) - this was a transient network error or a stall.
-                reason or FailureReason.CONNECTION_ERROR,
+                FailureReason.CONNECTION_ERROR,
                 total_time,
                 exc_description,
             )
@@ -4864,7 +4865,7 @@ class TestCase:
             # outer handler in run() classifies it as CONNECTION_ERROR — a
             # silent swallow would let a test stay OK while leaving its
             # database behind, hiding the bug.
-            if probed_server_failure(args) is None:
+            if not probed_server_is_gone(args):
                 raise
             # Server died between the test finishing and cleanup running.
             # The test's database is moot; the hung-check or the next test
@@ -5377,7 +5378,7 @@ class StopTesting(Exception):
     benign, expected stop after the time budget was reached,
     `MAX_FAILURES_EXIT_CODE` means too many tests failed (real failures, server
     still alive) so the run stopped early, and `HUNG_CHECK_EXIT_CODE` means a
-    `check_server_liveness` probe failed and the server was not shown to be gone.
+    `check_server_liveness` probe failed.
     """
 
     def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
@@ -5810,9 +5811,7 @@ def run_tests_array(
                     try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
                     print_sql_stacktraces(args)
                     print_c_stacktraces(args)
-                    if not is_concurrent:
-                        # A parallel worker must not SIGTERM the parent, which stops the run.
-                        stop_tests()
+                    stop_tests()
                     stop_testing.set()
                     raise StopTesting(
                         f"ClickHouse server died during test '{test_case.name}'"
@@ -6097,19 +6096,21 @@ def probed_server_process(
     return True, _pid_owning_sockets(inodes), inodes
 
 
-def probed_server_failure(args, max_retries=10) -> Optional[FailureReason]:
-    """Why the run must stop for a server that does not answer, or None while it is there.
+def probed_server_is_gone(args, max_retries=10) -> bool:
+    """Did the liveness probe fail *and* is the server it talks to really gone?
 
-    `SERVER_DIED` when nothing listens on the probed endpoint any more, `LIVENESS_CHECK_FAILED`
-    when that cannot be told (no `/proc`, a server on another host), None when the probe answers
-    or the listener is still held (a stall, which the parent hung check owns).
+    The same live-vs-gone split `HungCheckMonitor` makes in the parent loop, for
+    the worker side.  A failed probe alone only says the server is not
+    answering, and a sanitizer build can stop the world for minutes and then
+    carry on; turning every failed probe into a global abort would keep killing
+    such runs at the old `~165 s` latency no matter what the parent monitor
+    decides.  Without positive evidence of a live listener (no `/proc`, a
+    server on another host) the answer is "gone", as in the parent monitor.
     """
     if check_server_liveness(args, max_retries=max_retries):
-        return None
+        return False
     alive, _, _ = probed_server_process(args)
-    if alive is True:
-        return None
-    return FailureReason.SERVER_DIED if alive is False else FailureReason.LIVENESS_CHECK_FAILED
+    return alive is not True
 
 
 class HungCheckMonitor:
@@ -6126,7 +6127,7 @@ class HungCheckMonitor:
     So the verdict is split by the evidence that is actually available:
 
       * the server process is gone: abort on the first failed probe, at the
-        same latency as before, and report it as a death (`server_gone`);
+        same latency as before;
       * the process is still there: keep probing, and only call it a hang once
         the server has stayed silent for `GRACE_WITH_LIVE_PROCESS`.
 
@@ -6181,8 +6182,6 @@ class HungCheckMonitor:
         # answered, and a restart answering inside that lag would then read as
         # an unseen swap on the next failed probe.
         self.answering_holder_inodes = None
-        # Set when `is_hung` returns True because the probed server is gone rather than silent.
-        self.server_gone = False
 
     @staticmethod
     def _listener_changed(
@@ -6229,7 +6228,6 @@ class HungCheckMonitor:
                         "during the silence - the original server is gone and "
                         "was replaced; reporting it dead."
                     )
-                    self.server_gone = True
                     return True
                 print(
                     "Server answered the liveness check again after "
@@ -6253,10 +6251,7 @@ class HungCheckMonitor:
         unresponsive_for = time() - self.unresponsive_since
 
         alive, server_pid, inodes = probed_server_process(self.args)
-        if alive is False or self._grace_holder_replaced(inodes):
-            self.server_gone = True
-            return True
-        if alive is None:
+        if not alive or self._grace_holder_replaced(inodes):
             return True
         if self.grace_holder_inodes is None:
             # First failed probe of this silent stretch.  The probe itself
@@ -6271,7 +6266,6 @@ class HungCheckMonitor:
                     "hands since it last answered - the server the tests were "
                     "talking to is gone and was replaced; reporting it dead."
                 )
-                self.server_gone = True
                 return True
             # Pin the grace to the listener it is being granted for.
             self.grace_holder_inodes = inodes
@@ -6381,11 +6375,6 @@ def prepare_protocols(args):
 def check_server_started(args):
     print("Connecting to ClickHouse server...", end="")
 
-    # The last error the server itself answered with, as opposed to a failure to
-    # reach it at all. A server that answers every connection with an error is
-    # running and is not hung, so the caller must not report it as unresponsive.
-    check_server_started.last_server_error = ""
-
     sys.stdout.flush()
     retry_count = args.server_check_retries
     query = "SELECT version(), (SELECT value FROM system.build_options WHERE name = 'GIT_HASH'), (SELECT value FROM system.build_options WHERE name = 'GIT_BRANCH')"
@@ -6411,15 +6400,6 @@ def check_server_started(args):
 
             # HTTPError:
             # Code: 503. Code: 439. DB::Exception: Cannot schedule a task: failed to start the thread (threads=2, jobs=2). (CANNOT_SCHEDULE_TASK)
-            # Only an HTTP response is an answer from the server; a transport
-            # failure means it was not reached, so it must not leave an earlier
-            # answer standing. Keep only the outcome of the last retry.
-            # The server body can span several lines, with the error name on the
-            # last one; fold it into one line, so that a reader of the log that
-            # matches the line with the marker also sees the error name.
-            check_server_started.last_server_error = (
-                " ".join(str(e).split()) if isinstance(e, HTTPError) else ""
-            )
             if args.hung_check:
                 print("Connection error, will retry: ", str(e))
             else:
@@ -6429,11 +6409,9 @@ def check_server_started(args):
             sleep(0.5)
             continue
         except TimeoutError:
-            check_server_started.last_server_error = ""
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
-            check_server_started.last_server_error = ""
             print(
                 "\nUnexpected exception, will not retry: ",
                 type(e).__name__,
@@ -7036,15 +7014,10 @@ def do_run_tests(
                 # conclude, so it is not started once a stop is already pending.
                 if args.hung_check and not stop_testing.is_set():
                     if hung_check_monitor.is_hung():
-                        if hung_check_monitor.server_gone:
-                            print("Hung check failed: the server is gone")
-                            stop_cause = STOP_TESTING_EXIT_CODE
-                        else:
-                            print("Hung check failed: server liveness check failed")
-                            stop_cause = HUNG_CHECK_EXIT_CODE
+                        print("Hung check failed: server liveness check failed")
                         # Claim before collecting: the sweep below can block for the
                         # whole lldb budget.
-                        try_claim_stop_cause(stop_exit_code, stop_cause)
+                        try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
                         print_sql_stacktraces(args)
                         print_c_stacktraces(args)
                         stop_testing.set()
@@ -7410,21 +7383,7 @@ def main(args):
     tests_start_time = time()
 
     if not check_server_started(args):
-        # A server that answered every connection with an error is running: it
-        # rejected the query, it did not fail to receive it. Reporting that as
-        # "not responding" is what makes the stress-test hung check file it as a
-        # deadlock. The case seen in CI is a global memory tracker sitting far
-        # above the memory the process really uses, which fails every
-        # allocation, down to the zero-byte check at the start of a connection,
-        # with `MEMORY_LIMIT_EXCEEDED`.
-        server_error = getattr(check_server_started, "last_server_error", "")
-        if server_error:
-            msg = (
-                "Server rejects queries. Cannot query the server version: "
-                + server_error
-            )
-        else:
-            msg = "Server is not responding. Cannot query the server version."
+        msg = "Server is not responding. Cannot query the server version."
         if args.hung_check:
             print(msg)
             # The probe that just failed is HTTP; this dump goes over TCP.
@@ -7804,12 +7763,6 @@ ORDER BY (test_name, callee_offset)
         # Some queries may execute in background for some time after test was finished. This is normal.
         print("Checking the hung queries: ", end="")
         hung_count = 0
-        # A rejection of the polling query is not necessarily the terminal
-        # outcome: when earlier probes saw running queries, the check goes on to
-        # collect stacktraces and to recheck the processlist. So it is only
-        # recorded here, and the `Server rejects queries.` marker is printed
-        # once, after the final outcome is known.
-        polling_rejection = None
         try:
             deadline = datetime.now() + timedelta(seconds=90)
             while datetime.now() < deadline:
@@ -7829,10 +7782,6 @@ ORDER BY (test_name, callee_offset)
                     attrs=["bold"],
                 )
             )
-            # An HTTP response is an answer from the server: it rejected the
-            # query, it was not unreachable and it is not hung.
-            if isinstance(e, HTTPError):
-                polling_rejection = e
             exit_code.value = 1
 
         processlist = ""
@@ -7845,11 +7794,9 @@ ORDER BY (test_name, callee_offset)
                 # can time out under sanitizers.  Re-check whether the queries
                 # are still running — if they finished in the meantime, it was
                 # not a real hang.
-                recheck_error = None
                 try:
                     hung_count = get_processlist_size(args)
-                except Exception as recheck_e:
-                    recheck_error = recheck_e
+                except Exception:
                     hung_count = -1
                 if hung_count != 0:
                     print(
@@ -7861,20 +7808,6 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
-                    # The recheck is the terminal query here, and its outcome
-                    # supersedes an earlier rejection of the polling query.
-                    # When the server answered it with an error, it rejected
-                    # the query and is not hung: print the marker, so that the
-                    # stress test names the failure after the rejection. A
-                    # transport failure, or a recheck that still sees running
-                    # queries, stays on the deadlock path. It is printed before
-                    # the dumps below, which can outlast the deadline.
-                    polling_rejection = None
-                    if isinstance(recheck_error, HTTPError):
-                        print(
-                            "Server rejects queries. Cannot get the processlist size: "
-                            + " ".join(str(recheck_error).split())
-                        )
                     # stdout is a pipe and the dumps below can outlast the deadline.
                     sys.stdout.flush()
                     # The query that failed is an expensive aggregate over
@@ -7913,16 +7846,6 @@ ORDER BY (test_name, callee_offset)
             exit_code.value = 1
         elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
-
-        # The rejection of the polling query was the terminal outcome: nothing
-        # after it found running queries or failed in another way. Print the
-        # same marker the startup probe prints, so that the stress test names
-        # the failure after the rejection and not after a deadlock.
-        if polling_rejection is not None and not processlist:
-            print(
-                "Server rejects queries. Cannot get the processlist size: "
-                + " ".join(str(polling_rejection).split())
-            )
 
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
@@ -9011,36 +8934,9 @@ if __name__ == "__main__":
         )
         args.encrypted_storage = False
 
-    def print_runner_query_rejection(e):
-        # A query of the runner itself, such as one collecting the build flags
-        # right after the startup probe, or creating the database, was answered
-        # with an error. The server rejected it, it was not unreachable and it
-        # is not hung: print the same marker as the startup probe and the
-        # processlist query, so that the stress test does not file the hung
-        # check as a deadlock. The `HTTPError` can be wrapped into other
-        # exceptions on the way up (e.g. `RuntimeError`, then `StopTesting`, by
-        # the database setup), so look for it through the exception chain.
-        if not args.hung_check:
-            return
-        seen = set()
-        while e is not None and id(e) not in seen:
-            if isinstance(e, HTTPError):
-                print(
-                    "Server rejects queries. A query of the test runner was rejected: "
-                    + " ".join(str(e).split())
-                )
-                sys.stdout.flush()
-                return
-            seen.add(id(e))
-            e = e.__cause__ or e.__context__
-
     try:
         main(args)
-    except HTTPError as e:
-        print_runner_query_rejection(e)
-        raise
     except StopTesting as e:
-        print_runner_query_rejection(e)
         print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(e.exit_code)

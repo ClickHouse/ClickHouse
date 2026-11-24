@@ -37,8 +37,3 @@ using full reversed	3	0
 using left	3	0
 using types	Nullable(Bool)	Nullable(Bool)
 using types	Nullable(Bool)	Nullable(Bool)
-plain anti rf	2
-plain anti rf built	1	1
-nullable anti rf	2
-lc anti rf	2
-right anti rf	2

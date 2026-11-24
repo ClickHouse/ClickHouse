@@ -981,16 +981,6 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            /// 999:59:59, the largest `Time` value.
-            constexpr Int64 max_time_seconds = 999 * 3600 + 59 * 60 + 59;
-            const bool out_of_range = element.isInt64()
-                ? element.getInt64() < -max_time_seconds || element.getInt64() > max_time_seconds
-                : element.getUInt64() > static_cast<UInt64>(max_time_seconds);
-            if (out_of_range)
-            {
-                error = fmt::format("value {} is out of bounds of type Time", jsonElementToStringForError<JSONParser>(element, format_settings));
-                return false;
-            }
             value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
@@ -1534,10 +1524,7 @@ public:
         }
 
         auto & col_lc = assert_cast<ColumnLowCardinality &>(column);
-        /// `cloneEmpty` after `removeNullable` yields a fresh uniquely-owned column. Cloning first and then
-        /// calling `removeNullable` would return the inner column still referenced by the freshly cloned
-        /// `Nullable` wrapper, so the following `assumeMutable` would trip `chassert(use_count() == 1)`.
-        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn())->cloneEmpty();
+        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn()->cloneEmpty())->assumeMutable();
         if (!nested->insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
             return false;
 

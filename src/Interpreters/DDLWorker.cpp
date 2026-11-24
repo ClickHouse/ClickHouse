@@ -1150,9 +1150,7 @@ bool DDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordinatio
 
     /// If too many nodes in task queue (> max_tasks_in_queue), delete oldest one
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    /// Subtract rather than add, so that a huge `max_tasks_in_queue` does not wrap around.
-    const UInt32 current_max_id = max_id.load(std::memory_order_relaxed);
-    bool node_is_outside_max_window = entry_number < current_max_id && current_max_id - entry_number > max_tasks_in_queue;
+    bool node_is_outside_max_window = entry_number + max_tasks_in_queue < max_id.load(std::memory_order_relaxed);
 
     return node_lifetime_is_expired || node_is_outside_max_window;
 }

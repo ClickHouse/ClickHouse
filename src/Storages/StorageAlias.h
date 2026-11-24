@@ -202,11 +202,6 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsParallelInsert();
     }
-    bool isInsertOrderSensitive() const override
-    {
-        auto target = tryGetTargetTable();
-        return !target || target->isInsertOrderSensitive();
-    }
     bool supportsDeduplication() const override
     {
         auto target = tryGetTargetTable();
@@ -271,19 +266,14 @@ public:
         return target->getStoragePolicy();
     }
 
-    SerializationInfoByName getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override
-    {
-        auto target = tryGetTargetTable();
-        return target ? target->getSerializationHints(metadata_snapshot) : IStorage::getSerializationHints(metadata_snapshot);
-    }
-
-    std::optional<SerializationInfoByName> tryGetSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override
+    SerializationInfoByName getSerializationHints() const override { auto target = tryGetTargetTable(); return target ? target->getSerializationHints() : IStorage::getSerializationHints(); }
+    std::optional<SerializationInfoByName> tryGetSerializationHints() const override
     {
         auto target = tryGetTargetTable();
         if (!target)
             return std::nullopt;
 
-        return target->getSerializationHints(metadata_snapshot);
+        return target->getSerializationHints();
     }
 
     ActionLock getActionLock(StorageActionBlockType type) override

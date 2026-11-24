@@ -190,7 +190,7 @@ This is an expert-level setting which should only be used for debugging by devel
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "The change was backported to 26.10 and is recorded there."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}]}]}/>
 
 Only affects the `dpsub` join order algorithm. Makes it aware of the sort order of the joined tables: for each inner equi-join it chooses between a hash join and `full_sorting_merge` by cost, and keeps partial plans whose result is sorted by a join key that a later join can use.
 
@@ -399,7 +399,7 @@ Only takes effect when `query_plan_direct_read_from_text_index` is enabled.
 
 <SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "The change was backported to 26.10 and is recorded there."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "dpsub,greedy"},{"label": "`dpsub` is now the default join order algorithm; queries with more than 12 relations fall back to `greedy`."}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "greedy"},{"label": "New experimental setting."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` is now the default join order algorithm; queries with more than 12 relations fall back to `greedy`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "New experimental setting."}]}]}/>
 
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
  - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
@@ -414,7 +414,7 @@ Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,gree
 
 <SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "The change was backported to 26.10 and is recorded there."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "c"},{"label": "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}]}]}/>
 
 Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
 decide which join reorderings are valid. The following values are available:
@@ -491,19 +491,17 @@ Use lazy materialization optimization for reading Parquet and Vortex files from 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "Also copies filter conjuncts onto integer, Date and Decimal columns of Parquet reads, which skip row groups by their statistics."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."}]}]}/>
 
 Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
 on the other side can use them.
 
-Applies when the filter and the read are separated from the join only by expression and filter
-steps, and when the copied conjunct compares a constant (including `IN` with a constant set) with
-either a primary key column of a `MergeTree` read, or a column of a `Parquet` read (`file`, `url`,
-object storage that is not a data lake) of an integer of up to 64 bits, `Date`, `Date32` or `Decimal` type without a
-default expression, whose row groups the read can skip by min/max statistics. A predicate below a
-nested join or below `DISTINCT`, or a comparison between two key columns, is left alone: it could
-not drive pruning on the other side, so copying it would only add work.
+Applies when the filter and the `MergeTree` read are separated from the join only by expression
+and filter steps, and when the copied conjunct compares a primary key column with a constant
+(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
+comparison between two key columns, is left alone: it could not drive primary key pruning on the
+other side, so copying it would only add work.
 
 Only takes effect if `query_plan_enable_optimizations` is 1.
 
@@ -632,9 +630,9 @@ Replace a filter step with an expression step when the filter condition is alway
 
 **Aliases**: `optimize_read_in_window_order`
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Enable by default again: the sorting now scatters the merged stream by the `PARTITION BY` columns, so the window functions run in parallel. This also applies to the alias `optimize_read_in_window_order`."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Disable this logic by default. This also applies to the alias `optimize_read_in_window_order`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Disable this logic by default. This also applies to the alias `optimize_read_in_window_order`."}]}]}/>
 
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.

@@ -72,8 +72,6 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
-A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. The block is made smaller still when the codec could compress it to more than 512 MiB, which only a chain of expanding codecs does. Data written in larger blocks by older versions cannot be read.
-
 ## max_consume_snapshots {#max_consume_snapshots}
 
 <ExperimentalBadge/>

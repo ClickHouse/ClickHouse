@@ -1,4 +1,3 @@
-#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -16,7 +15,6 @@
 
 #include <limits>
 #include <optional>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -150,8 +148,7 @@ public:
         return result;
     }
 
-    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments[0].column->onlyNull())
             return makeNullable(std::make_shared<DataTypeUInt64>())->createColumnConstWithDefaultValue(input_rows_count);
@@ -203,7 +200,7 @@ public:
                         T num = data[i];
                         UInt64 magnitude = 0;
                         if constexpr (std::is_signed_v<T>)
-                            magnitude = num < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(num)) : static_cast<UInt64>(num);
+                            magnitude = num < 0 ? -static_cast<UInt64>(num) : static_cast<UInt64>(num);
                         else
                             magnitude = static_cast<UInt64>(num);
                         Int64 offset = getClampedInt64(*offset_column, i);

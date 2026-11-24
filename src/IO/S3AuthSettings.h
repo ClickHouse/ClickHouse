@@ -24,7 +24,6 @@ struct S3AuthSettingsImpl;
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, SecretString) \
-    M(CLASS_NAME, S3RequestPayer) \
     M(CLASS_NAME, S3UriStyle)
 
 S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, DECLARE_SETTING_TRAIT)
@@ -61,8 +60,6 @@ struct S3AuthSettings
     void updateIfChanged(const S3AuthSettings & settings);
     [[nodiscard]] bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
     [[nodiscard]] NormalizedHTTPHeaderEntries getHeaders() const;
-    /// The `x-amz-request-payer` header for `request_payer`; empty when it is `none`.
-    [[nodiscard]] HTTPHeaderEntries getRequestPayerHeaders() const;
 
     /// Clear request-auth material that may have been merged in from the server `<s3>`/endpoint config (generic
     /// headers, per-request access headers, and the SSE-C key / SSE-KMS config), so a credential-restricted

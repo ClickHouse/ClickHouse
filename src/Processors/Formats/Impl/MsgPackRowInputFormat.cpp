@@ -470,12 +470,9 @@ bool MsgPackVisitor::start_map(uint32_t size) // NOLINT
 
 bool MsgPackVisitor::start_map_key() // NOLINT
 {
-    /// Use `getColumn(0)` to obtain a direct `IColumn &` rather than `getColumns()[0]`,
-    /// which returns a `ColumnPtr` by value and bumps `use_count` to 2; the subsequent
-    /// `WrappedPtr::operator*` would then trip `assumeMutableRef`'s `use_count() == 1` check.
-    IColumn & key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumn(0);
+    auto key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[0];
     auto key_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getKeyType();
-    info_stack.push(Info{key_column, key_type, false, std::nullopt, nullptr});
+    info_stack.push(Info{*key_column, key_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -487,10 +484,9 @@ bool MsgPackVisitor::end_map_key() // NOLINT
 
 bool MsgPackVisitor::start_map_value() // NOLINT
 {
-    /// Same `getColumn` vs `getColumns()[i]` distinction as in `start_map_key`.
-    IColumn & value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumn(1);
+    auto value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[1];
     auto value_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getValueType();
-    info_stack.push(Info{value_column, value_type, false, std::nullopt, nullptr});
+    info_stack.push(Info{*value_column, value_type, false, std::nullopt, nullptr});
     return true;
 }
 

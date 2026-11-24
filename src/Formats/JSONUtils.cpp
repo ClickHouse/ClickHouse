@@ -40,9 +40,7 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
 
         char * pos = in.position();
-        /// Signed: a stray closing bracket in malformed input takes the depth below zero, and the
-        /// `balance == 0` test below then behaves as it did when this wrapped.
-        Int64 balance = 0;
+        size_t balance = 0;
         bool quotes = false;
         size_t number_of_rows = 0;
         bool need_more_data = true;
@@ -141,9 +139,7 @@ namespace JSONUtils
     template <const char opening_bracket, const char closing_bracket>
     void skipRowForJSONEachRowImpl(ReadBuffer & in)
     {
-        /// Signed: a stray closing bracket in malformed input takes the depth below zero, and the
-        /// `balance == 0` test below then behaves as it did when this wrapped.
-        Int64 balance = 0;
+        size_t balance = 0;
         bool quotes = false;
         while (!in.eof())
         {

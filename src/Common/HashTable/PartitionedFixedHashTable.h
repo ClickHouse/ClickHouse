@@ -2,7 +2,6 @@
 
 #include <bit>
 #include <type_traits>
-#include <base/sanitizer_defs.h>
 #include <Common/CacheLine.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/FixedHashSet.h>
@@ -64,9 +63,7 @@ public:
     /// For example, with 16-byte cells and 16 buckets, the multiples of 256 are 64 lines apart,
     /// so all of them land in bucket 0.
     /// XOR with a constant cannot move a small line number into the top bits.
-    /// The multiply is Fibonacci hashing and wraps by design, which is how it mixes the low bits of
-    /// `line` into the top ones.
-    static size_t ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW bucketOfKey(key_type key)
+    static size_t ALWAYS_INLINE bucketOfKey(key_type key)
     {
         if constexpr (NUM_BUCKETS == 1)
             return 0;

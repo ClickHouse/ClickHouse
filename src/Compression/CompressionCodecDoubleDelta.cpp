@@ -7,7 +7,6 @@
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
-#include <base/sanitizer_defs.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -277,10 +276,8 @@ UInt64 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
     return (items_count * max_item_size_bits + 7) / 8;
 }
 
-/// Double delta coding is modular arithmetic by definition: the deltas wrap around, and the
-/// decoder recovers the original values by wrapping back.
 template <typename ValueType>
-UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest)
+UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     // Since only unsigned int has granted 2-complement overflow handling,
     // we are doing math here only on unsigned types.
@@ -367,7 +364,7 @@ UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UI
 }
 
 template <typename ValueType>
-UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;

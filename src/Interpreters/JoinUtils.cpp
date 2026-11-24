@@ -132,7 +132,7 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::DIRECT:
                 /// Only over a key-value right table, and only for the strictness it already has.
                 break;
-            case JoinAlgorithm::INEQUALITY:
+            case JoinAlgorithm::IE_JOIN:
                 /// Only for an inequality `ON` condition, which no rewrite introduces.
                 break;
             case JoinAlgorithm::DEFAULT:

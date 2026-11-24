@@ -1060,9 +1060,7 @@ void StorageRabbitMQ::publisherCleanupFunc()
 
 void StorageRabbitMQ::scheduleStreamingTasksImpl()
 {
-    /// Until the setup is done `connectionFunc` keeps retrying it and schedules the streaming task once it succeeds.
-    if (initialized)
-        streaming_task->schedule();
+    streaming_task->schedule();
 }
 
 

@@ -3,7 +3,6 @@
 #if USE_SILK
 
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 
 #include <Poco/Exception.h>
 #include <Poco/Net/StreamSocket.h>
@@ -23,11 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace FailPoints
-{
-    extern const char silk_fiber_socket_send_timeout_expires_after_write[];
 }
 }
 
@@ -131,11 +125,6 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
 
     while (total < length)
     {
-        /// Checked before the next write is submitted: a write in flight completes into `future`, `bytes_written`
-        /// and `iov` of this iteration, so it must not be abandoned by a throw.
-        if (has_timeout && remaining.totalMicroseconds() <= 0)
-            throw Poco::TimeoutException("Send timed out", peerAddress().toString());
-
         throttleSend(static_cast<size_t>(length - total), getBlocking());
 
         uint64_t bytes_written = 0;
@@ -146,6 +135,9 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
         int r = 0;
         if (has_timeout)
         {
+            if (remaining.totalMicroseconds() <= 0)
+                throw Poco::TimeoutException("Send timed out", peerAddress().toString());
+
             const Poco::Timestamp started;
             r = silk::FiberFuture::waitWithTimeout(
                 &future,
@@ -160,14 +152,6 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
 
             const Poco::Timespan elapsed = Poco::Timestamp() - started;
             remaining = (elapsed < remaining) ? (remaining - elapsed) : Poco::Timespan(0);
-
-            /// As if the fiber resumed after the send timeout, which is not deterministic otherwise.
-            /// Tests only: the pause blocks the scheduler thread.
-            fiu_do_on(DB::FailPoints::silk_fiber_socket_send_timeout_expires_after_write,
-            {
-                remaining = Poco::Timespan(0);
-                DB::FailPointInjection::pauseFailPoint(DB::FailPoints::silk_fiber_socket_send_timeout_expires_after_write);
-            });
         }
         else
         {

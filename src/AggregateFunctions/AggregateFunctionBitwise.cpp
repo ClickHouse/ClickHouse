@@ -14,7 +14,6 @@
 #include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
 #include <base/extended_types.h>
-#include <base/sanitizer_defs.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -146,7 +145,7 @@ private:
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <bool add_if_zero>
-    static void NO_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW
+    static void NO_INLINE
     ), addManyConditionalImpl, MULTITARGET_FUNCTION_BODY((Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end) /// NOLINT
     {
         /// The flag is applied as an arithmetic all-ones/all-zeros mask: unlike a branch or a

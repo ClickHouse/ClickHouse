@@ -1,5 +1,5 @@
-import concurrent.futures
 import pytest
+import threading
 import time
 
 from helpers.cluster import ClickHouseCluster
@@ -160,19 +160,20 @@ def test_status_counts(start_cluster):
         )
 
     def metrics_during_load(in_progress_status):
-        """The status metrics computed while `d_slow` is in `in_progress_status`, or None if its load ended first; a failed reload raises its own exception."""
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            reload = executor.submit(node.query, "SYSTEM RELOAD DICTIONARY d_slow;")
+        """The status metrics computed while `d_slow` is in `in_progress_status`, or None if its load ended first."""
+        reload = threading.Thread(target=lambda: node.query("SYSTEM RELOAD DICTIONARY d_slow;"))
+        reload.start()
+        try:
             while get_dictionary_status("d_slow") != in_progress_status:
-                if reload.done():
-                    reload.result()
+                if not reload.is_alive():
                     return None
                 time.sleep(0.05)
             # One client call, so that the status is read right after the metrics are computed.
             *rows, status = node.query(
                 f"SYSTEM RELOAD ASYNCHRONOUS METRICS; {STATUS_METRICS_QUERY}; {dictionary_status_query('d_slow')};"
             ).strip().splitlines()
-            reload.result()
+        finally:
+            reload.join()
         return parse_status_metrics(rows) if status == in_progress_status else None
 
     def check_during_load(in_progress_status, expected_delta, prepare=lambda: None):

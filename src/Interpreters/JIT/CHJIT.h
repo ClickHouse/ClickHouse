@@ -8,8 +8,6 @@
 #include <atomic>
 #include <mutex>
 
-#include <Interpreters/JIT/callJITFunction.h>
-
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Target/TargetMachine.h>
@@ -131,15 +129,6 @@ void resetSortDescriptionJITInstance();
 /// Registers the targets of LLVM that the server compiles for, the host's and, with the GPU engine, NVPTX, once: the
 /// registry of LLVM is not synchronized, so a target is registered by no other means, and is looked up after this.
 void initializeLLVMTargets();
-
-void setJITFunctionTag(llvm::Function & function, UInt32 tag);
-
-/// Lets `callJITFunction` call `function` through a pointer of type `F`.
-template <typename F>
-void setJITFunctionType(llvm::Function & function)
-{
-    setJITFunctionTag(function, jitFunctionTag<F>());
-}
 
 }
 

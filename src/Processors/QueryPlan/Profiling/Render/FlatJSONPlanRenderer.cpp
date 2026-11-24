@@ -43,7 +43,6 @@ std::string_view jsonKey(MetricGroupKey key)
         case MetricGroupKey::Output: return "Output";
         case MetricGroupKey::InputLeft: return "InputLeft";
         case MetricGroupKey::InputRight: return "InputRight";
-        case MetricGroupKey::RuntimeFilter: return "RuntimeFilter";
     }
 }
 
@@ -100,16 +99,6 @@ std::string_view jsonKey(MetricKey key)
         case MetricKey::Median: return "Median";
         case MetricKey::Max: return "Max";
         case MetricKey::Sum: return "Sum";
-
-        case MetricKey::FilterType: return "Type";
-        case MetricKey::ReplacedFilterType: return "Replaced";
-        case MetricKey::Reason: return "Reason";
-        case MetricKey::SetBits: return "SetBits";
-        case MetricKey::RowsChecked: return "RowsChecked";
-        case MetricKey::RowsPassed: return "RowsPassed";
-        case MetricKey::PassRate: return "PassRate";
-        case MetricKey::RowsSkipped: return "RowsSkipped";
-        case MetricKey::RowsBeforeReady: return "RowsBeforeReady";
     }
 }
 

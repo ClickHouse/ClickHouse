@@ -27,9 +27,6 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const Parquet::
  * */
 std::optional<VectorWithMemoryTracking<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const Parquet::parq::SchemaElement & schema_element);
 
-/// Identifies everything besides the values that the two functions above read from `schema_element`.
-String parquetHashKind(const Parquet::parq::SchemaElement & schema_element);
-
 }
 
 #endif

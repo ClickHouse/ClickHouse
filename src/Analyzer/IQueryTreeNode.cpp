@@ -1,5 +1,4 @@
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <typeinfo>
@@ -181,23 +180,8 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
       * For weak nodes there is special handling. If we visit weak node first time we update hash state with weak node content and register
       * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
       */
-    size_t & hashed_nodes = getTreeHashWorkCounter();
-
-    /// Analysis passes hash trees in per-key loops, so a long analysis observes query cancellation here.
-    static constexpr size_t cancellation_check_period = 1 << 16;
-
-    /// A constant has no children and only `convertToNullable` changes its value, so its hash without the alias is computed once.
-    const auto * constant_node = as<ConstantNode>();
-    const bool use_constant_hash_cache = constant_node && !(compare_options.compare_aliases && !alias.empty());
-    if (use_constant_hash_cache && constant_node->cached_tree_hash)
-    {
-        /// Counts as one hashed node, as without the cache.
-        if (++hashed_nodes % cancellation_check_period == 0)
-            CurrentThread::checkIfNotCancelled();
-        return *constant_node->cached_tree_hash;
-    }
-
     HashState hash_state;
+    size_t & hashed_nodes = getTreeHashWorkCounter();
 
     std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;
 
@@ -209,6 +193,8 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         const auto [node_to_process, is_weak_node] = nodes_to_process.back();
         nodes_to_process.pop_back();
 
+        /// Analysis passes hash trees in per-key loops, so a long analysis observes query cancellation here.
+        static constexpr size_t cancellation_check_period = 1 << 16;
         if (++hashed_nodes % cancellation_check_period == 0)
             CurrentThread::checkIfNotCancelled();
 
@@ -250,10 +236,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         }
     }
 
-    auto tree_hash = getSipHash128AsPair(hash_state);
-    if (use_constant_hash_cache)
-        constant_node->cached_tree_hash = tree_hash;
-    return tree_hash;
+    return getSipHash128AsPair(hash_state);
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const

@@ -1421,10 +1421,6 @@ Put crc32 checksums in parquet page headers.
 Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
 )", 0, \
         {"26.11", false, false, "New setting."}) \
-    DECLARE(Bool, output_format_parquet_use_data_page_v2, false, R"(
-Write Parquet data pages as `DataPageV2` instead of `DataPage` (V1). `DataPageV2` stores the repetition and definition levels uncompressed, so that readers can get nulls and array sizes without decompressing the values, records the numbers of rows and nulls in the page header, and starts pages at row boundaries. Some Parquet readers do not support `DataPageV2`.
-)", 0, \
-        {"26.12", false, false, "New setting."}) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd', 'bzip2', 'xz'.
 )", 0) \

@@ -700,7 +700,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
         /// With only the hash there is no If-Match, so nothing else pins this GET: an empty response
         /// ETag fails too.
-        if (version_id.empty() && expected_etag_hash && getCacheTokenHash(String(response_etag)) != expected_etag_hash)
+        if (version_id.empty() && expected_etag_hash && getETagHash(String(response_etag)) != expected_etag_hash)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                 "S3 object {}/{} was replaced during read (expected etag hash {}, got etag {}); retry the query",

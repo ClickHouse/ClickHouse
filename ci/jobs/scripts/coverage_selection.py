@@ -512,12 +512,13 @@ def rank_candidates(
 
 
 def protect_selection(
-    changed, failed, candidates, normalize, config=SELECTION_CONFIG
+    changed, failed, candidates, normalize, config=SELECTION_CONFIG, drift=()
 ):
     records = {}
     for source, tests in (
         ("changed", changed),
         ("previously_failed", failed),
+        ("merge_queue_drift", drift),
     ):
         for test in tests:
             name = normalize(test)

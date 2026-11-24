@@ -119,10 +119,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override
     {
-        if (this->result_type->isDefaultInsertTrivial())
-            to.insertDefault();
-        else
-            this->result_type->insertDefaultInto(to);
+        to.insertDefault();
     }
 };
 

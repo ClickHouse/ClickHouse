@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/sanitizer_defs.h>
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
 #include <Common/Exception.h>
@@ -184,8 +183,7 @@ public:
         rank_count[0] = static_cast<UInt32>(initial_value);
     }
 
-    /// The counts are modulo 2^32: a corrupted state can take one below zero.
-    NO_SANITIZE_UNSIGNED_OVERFLOW void update(UInt8 cur_rank, UInt8 new_rank)
+    void update(UInt8 cur_rank, UInt8 new_rank)
     {
         --rank_count[cur_rank];
         ++rank_count[new_rank];
@@ -202,7 +200,7 @@ public:
     }
 
     /// Adds deltas[i] to the count of rank i, modulo 2^32 like `update`.
-    NO_SANITIZE_UNSIGNED_OVERFLOW void addToRankCounts(const Int32 * deltas)
+    void addToRankCounts(const Int32 * deltas)
     {
         for (size_t i = 0; i < size; ++i)
             rank_count[i] += static_cast<UInt32>(deltas[i]);
@@ -292,9 +290,8 @@ struct RankWidth<UInt64>
 
 /// The maximum of two groups of 8 registers of `width` bits; bit i of `raised` is set when register i of rhs is above that of lhs.
 /// Even and odd registers are compared apart, so that every field has free bits above it for the borrow of the subtraction.
-/// The multiplication that gathers the flags overflows on purpose: only the bits it moves into one byte are kept.
 template <UInt8 width>
-NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 & raised)
+UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 & raised)
 {
     static_assert(width >= 5 && 8 * width <= 64);
     constexpr size_t slot = 2 * width;
@@ -561,9 +558,8 @@ private:
     /// Update maximum rank for current bucket.
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
     /// A rank from another state is checked: a corrupted state can have ranks above `max_rank`, the last index of `rank_count`.
-    /// `zeros` is modulo 2^32, like the rank counts: a corrupted state can take it below zero.
     template <bool check_rank = false>
-    NO_SANITIZE_UNSIGNED_OVERFLOW void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
+    void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
     {
         UInt8 cur_rank = rank_store.get(bucket);
 

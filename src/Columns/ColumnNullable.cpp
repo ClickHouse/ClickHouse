@@ -39,17 +39,12 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    /// Use the const `ColumnPtr` accessors (`getNestedColumnPtr`, `getNullMapColumnPtr`) so we go through
-    /// `immutable_ptr::operator->`/`operator*` rather than the `WrappedPtr`'s mutable accessors. The latter
-    /// call `assumeMutableRef`, which now `chassert(use_count() == 1)`. When this constructor is reached via
-    /// `ColumnNullable::create(const ColumnPtr &, const ColumnPtr &)`, the caller still holds an immutable
-    /// reference to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
-    nested_column = getNestedColumnPtr()->convertToFullColumnIfConst();
+    nested_column = getNestedColumn().convertToFullColumnIfConst();
 
-    if (!getNestedColumnPtr()->canBeInsideNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumnPtr()->getName());
+    if (!getNestedColumn().canBeInsideNullable())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
 
-    if (isColumnConst(*getNullMapColumnPtr()))
+    if (isColumnConst(*null_map))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
@@ -599,8 +594,8 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
     {
         /// Shift all NULL values to the beginning.
 
-        ssize_t read_idx = static_cast<ssize_t>(res.size()) - 1;
-        ssize_t write_idx = static_cast<ssize_t>(res.size()) - 1;
+        ssize_t read_idx = res.size() - 1;
+        ssize_t write_idx = res.size() - 1;
 
         while (read_idx >= 0 && !isNullAt(res[read_idx]))
         {
@@ -700,8 +695,8 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             if (limit && first > limit)
                 break;
 
-            ssize_t read_idx = static_cast<ssize_t>(last) - 1;
-            ssize_t write_idx = static_cast<ssize_t>(last) - 1;
+            ssize_t read_idx = last - 1;
+            ssize_t write_idx = last - 1;
             ssize_t begin_idx = static_cast<ssize_t>(first) - 1;
 
             while (read_idx > begin_idx && !isNullAt(res[read_idx]))
@@ -846,12 +841,8 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
 
 void ColumnNullable::shrinkToFit()
 {
-    /// `shrinkToFit` is best-effort. Skip subcolumns that are still shared
-    /// to avoid violating the `assumeMutableRef` deep ownership check.
-    if (std::as_const(nested_column)->use_count() == 1)
-        getNestedColumn().shrinkToFit();
-    if (std::as_const(null_map)->use_count() == 1)
-        getNullMapColumn().shrinkToFit();
+    getNestedColumn().shrinkToFit();
+    getNullMapColumn().shrinkToFit();
 }
 
 void ColumnNullable::ensureOwnership()

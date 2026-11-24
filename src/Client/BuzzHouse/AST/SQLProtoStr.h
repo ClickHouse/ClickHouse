@@ -21,7 +21,6 @@ void AggregateParamToString(String & ret, const AggregateParam &);
 void CreateDatabaseToString(String & ret, const CreateDatabase &);
 void CreateTableToString(String & ret, const CreateTable &);
 void BackupOutToString(String & ret, const BackupOut &);
-void SQLColumnDefClausesToString(String & ret, const ColumnDef &);
 void SQLExprToString(String & ret, const Expr &);
 void SQLQueryToString(String & ret, const SQLQuery &);
 

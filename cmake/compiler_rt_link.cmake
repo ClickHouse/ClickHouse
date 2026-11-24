@@ -36,13 +36,13 @@ elseif (SANITIZE STREQUAL "thread")
         "${COMPILER_RT_DIR}/libclang_rt_tsan.a"
         "${COMPILER_RT_DIR}/libclang_rt_tsan_cxx.a"
     )
-elseif (SANITIZE STREQUAL "undefined" OR ENABLE_CFI_DIAGNOSTICS)
+elseif (SANITIZE STREQUAL "undefined")
     set (SANITIZER_RUNTIMES
         "${COMPILER_RT_DIR}/libclang_rt_ubsan_standalone.a"
         "${COMPILER_RT_DIR}/libclang_rt_ubsan_standalone_cxx.a"
     )
 endif()
-if (SANITIZE OR ENABLE_CFI_DIAGNOSTICS)
+if (SANITIZE)
     # Tell clang not to inject its own (host-system) sanitizer runtime — we
     # provide ours.
     list (APPEND SANITIZER_RUNTIMES "-fno-sanitize-link-runtime")

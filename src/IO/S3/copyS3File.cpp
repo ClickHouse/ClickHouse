@@ -294,10 +294,10 @@ namespace
                                            outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
         }
 
-        void checkObjectAfterUpload(const S3::Client & client)
+        void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(client, dest_bucket, dest_key, {}, "Immediately after upload");
+            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
@@ -515,7 +515,7 @@ namespace
                 performMultipartUpload();
 
             if (request_settings[S3RequestSetting::check_objects_after_upload])
-                checkObjectAfterUpload(*client_ptr);
+                checkObjectAfterUpload();
         }
 
     private:
@@ -692,7 +692,6 @@ namespace
             size_t src_offset_,
             size_t src_size_,
             size_t src_object_size_,
-            const std::shared_ptr<const S3::Client> & dest_client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
@@ -717,7 +716,6 @@ namespace
             , offset(src_offset_)
             , size(src_size_)
             , src_object_size(src_object_size_)
-            , dest_client_ptr(dest_client_ptr_)
             /// Native multipart copy is disabled for `S3Express` buckets: there `Client::doRequest` forces
             /// `CreateMultipartUpload` to use a flexible checksum, but the copy path does not propagate the per-part
             /// checksums returned by `UploadPartCopy` into `CompleteMultipartUpload`, which then fails. Large objects
@@ -763,9 +761,8 @@ namespace
 
             bool copied = use_single_operation_copy ? performSingleOperationCopy() : performMultipartUploadCopy();
 
-            /// The source client may be refused by the destination, e.g. for lacking its `x-amz-request-payer`.
             if (copied && request_settings[S3RequestSetting::check_objects_after_upload])
-                checkObjectAfterUpload(*dest_client_ptr);
+                checkObjectAfterUpload();
             return copied;
         }
 
@@ -775,7 +772,6 @@ namespace
         size_t offset;
         size_t size;
         size_t src_object_size;
-        std::shared_ptr<const S3::Client> dest_client_ptr;
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
@@ -1057,7 +1053,6 @@ namespace
             src_offset,
             src_size,
             src_object_size,
-            dest_s3_client,
             dest_bucket,
             dest_key,
             settings,

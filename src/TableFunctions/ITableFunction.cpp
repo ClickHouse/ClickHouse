@@ -339,9 +339,8 @@ void ITableFunction::appendNamedArgumentIndexes(
         if (is_wrapper(arguments[i]->as<FunctionNode>()))
             result.push_back(i);
 
-    for (size_t i = arguments.size(); i > 0;)
+    for (size_t i = arguments.size(); i-- > 0;)
     {
-        --i;
         const auto * function_node = arguments[i]->as<FunctionNode>();
         if (!function_node)
             break;

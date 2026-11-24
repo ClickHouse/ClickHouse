@@ -23,7 +23,6 @@ std::string_view toString(MetricGroupKey key)
         case MetricGroupKey::Output: return "Output rows";
         case MetricGroupKey::InputLeft: return "Input (left)";
         case MetricGroupKey::InputRight: return "Input (right)";
-        case MetricGroupKey::RuntimeFilter: return "Runtime filter";
     }
 }
 
@@ -77,16 +76,6 @@ std::string_view toString(MetricKey key)
         case MetricKey::Median: return "median";
         case MetricKey::Max: return "max";
         case MetricKey::Sum: return "sum";
-
-        case MetricKey::FilterType: return "type";
-        case MetricKey::ReplacedFilterType: return "replaced";
-        case MetricKey::Reason: return "reason";
-        case MetricKey::SetBits: return "set bits";
-        case MetricKey::RowsChecked: return "checked";
-        case MetricKey::RowsPassed: return "passed";
-        case MetricKey::PassRate: return "pass rate";
-        case MetricKey::RowsSkipped: return "skipped";
-        case MetricKey::RowsBeforeReady: return "before ready";
     }
 }
 
@@ -110,9 +99,6 @@ MetricFormat formatOf(MetricKey key)
         case MetricKey::Unnamed:
         case MetricKey::Compressed:
         case MetricKey::Storage:
-        case MetricKey::FilterType:
-        case MetricKey::ReplacedFilterType:
-        case MetricKey::Reason:
             return MetricFormat::Raw;
 
         case MetricKey::EstimatedNDV:
@@ -130,10 +116,6 @@ MetricFormat formatOf(MetricKey key)
         case MetricKey::Blocks:
         case MetricKey::Estimated:
         case MetricKey::Actual:
-        case MetricKey::RowsChecked:
-        case MetricKey::RowsPassed:
-        case MetricKey::RowsSkipped:
-        case MetricKey::RowsBeforeReady:
             return MetricFormat::Quantity;
 
         case MetricKey::InputBytes:
@@ -157,8 +139,6 @@ MetricFormat formatOf(MetricKey key)
         case MetricKey::MatchRate:
         case MetricKey::TimeShare:
         case MetricKey::SortTimeShare:
-        case MetricKey::SetBits:
-        case MetricKey::PassRate:
             return MetricFormat::Percent;
 
         case MetricKey::Fanout:

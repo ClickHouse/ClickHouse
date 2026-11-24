@@ -18,13 +18,27 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.fast_test,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
-        # Rerun the PR's targeted selection (its changed tests and the tests
-        # covering its changed lines) against the merge group state, so a PR that
-        # was tested against an older `master` is re-validated on the state it
-        # will actually merge into - catching a PR that breaks a test it touches
-        # or covers once combined with the `master` commits ahead of it in the
-        # queue. The queue is meant to fail fast: both jobs stop at 3 failed
-        # tests, and at 30 minutes from their start without failing.
+        # Reruns the PR's new/changed stateless tests against the merge group
+        # state, catching semantic conflicts with `master` changes that landed
+        # after the PR's last CI run (e.g. a new randomized setting in
+        # `tests/clickhouse-test`). Also reruns the tests that `master` added or
+        # changed after the PR's last CI run, which the PR may break (see
+        # `Targeting.get_merge_queue_drift_tests`). Self-skips when there are no
+        # such tests.
+        *JobConfigs.stateless_tests_flaky_mq_jobs,
+        # Rerun the targeted selection of the PR (its changed tests and the tests
+        # covering its changed lines) against the merge group state. A PR tested
+        # against an older `master` can break tests that landed after its last CI
+        # run, e.g. https://github.com/ClickHouse/ClickHouse/pull/117198 broke two
+        # `test_storage_delta` tests added to `master` meanwhile, and
+        # https://github.com/ClickHouse/ClickHouse/pull/123832 merged an
+        # integration test already broken by a `master` change. The changed
+        # stateless tests and those `master` changed after the PR's last CI run
+        # are left to the flaky check above; the integration job reruns the
+        # integration test modules `master` changed (see
+        # `Targeting.get_merge_queue_drift_tests`). The queue is meant to fail
+        # fast: both jobs stop at 3 failed tests, and at 30 minutes from their
+        # start without failing.
         *JobConfigs.stateless_tests_targeted_mq_jobs,
         *JobConfigs.integration_test_targeted_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a
@@ -41,7 +55,7 @@ workflow = Workflow.Config(
         JobConfigs.tidy_changed_files_job,
         # The cross-compiled builds that pull requests do not run, see
         # `MERGE_QUEUE_SPECIAL_BUILD_TYPES`. They need nothing but the source,
-        # so they start right away.
+        # so they start right away and end before the flaky check.
         *JobConfigs.special_build_mq_jobs,
     ],
     artifacts=[

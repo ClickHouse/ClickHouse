@@ -33,9 +33,6 @@ namespace
 template <typename Value>
 struct QuantileReservoirSamplerDeterministic
 {
-    /// The second argument is a determinator of the sampling, not a weight: only its low 64 bits are hashed.
-    static constexpr bool second_argument_is_determinator = true;
-
     using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 

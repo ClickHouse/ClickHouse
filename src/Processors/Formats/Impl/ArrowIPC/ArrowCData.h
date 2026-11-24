@@ -5,8 +5,6 @@
 #if USE_ARROW
 
 #include <Columns/IColumn_fwd.h>
-#include <Processors/Formats/Impl/ArrowIPC/RecordBatchDecoder.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 
@@ -63,11 +61,6 @@ struct FormatSettings;
 
 namespace DB::ArrowIPC
 {
-struct ArrowSchema;
-}
-
-namespace DB::ArrowIPC
-{
 
 /// Exports the schema of a record batch with the columns `names` of types `types`, as a struct whose
 /// fields are the columns. The Arrow types are the ones the native `Arrow` output format writes with
@@ -86,20 +79,6 @@ void exportRecordBatchToC(
     size_t begin,
     size_t end,
     ::ArrowArray & out);
-
-/// Parses the schema of a record batch exported to the Arrow C data interface (a struct whose fields are the
-/// columns) into the Arrow-free description of the native reader. `schema` is not released.
-ArrowIPC::ArrowSchema importSchemaFromC(const ::ArrowSchema & schema);
-
-/// Decodes a record batch of `schema` exported to the Arrow C data interface (a struct array whose children are
-/// the columns) into ClickHouse columns, as the native `Arrow` format decodes a record batch message. Takes
-/// ownership of `array`, which is released before returning, and marks it released. The buffers are not copied
-/// before decoding. Dictionary-encoded fields are not supported.
-RecordBatchDecoder::DecodedColumns importRecordBatchFromC(
-    ::ArrowArray & array,
-    const ArrowIPC::ArrowSchema & schema,
-    const FormatSettings & settings,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
 
 }
 

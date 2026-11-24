@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -18,7 +17,6 @@
 #include <type_traits>
 #include <limits>
 #include <memory>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -87,7 +85,6 @@ constexpr std::string_view regrKindName(RegrKind kind)
 /// the whole of their range - UInt64 spans up to 2^64 - and wrapping it would not merely lose
 /// precision, it would flip the sign of the slope.
 template <typename T>
-NO_SANITIZE_UNSIGNED_OVERFLOW
 Float64 exactDelta(T value, T shift)
 {
     if constexpr (is_integer<T>)
@@ -274,7 +271,7 @@ struct RegrMoments
         sxy += rhs.sxy + dx * rhs.sy + dy * rhs.sx + rhs_count * dx * dy;
         sx += rhs.sx + rhs_count * dx;
         sy += rhs.sy + rhs_count * dy;
-        count = common::addIgnoreOverflow(count, rhs.count);
+        count += rhs.count;
     }
 
     void write(WriteBuffer & buf) const
@@ -573,8 +570,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        /// The count is a modular `UInt64` sum, e.g. for a state multiplied by a large number with repeated merges.
-        data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
+        data(place).count += data(rhs).count;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override

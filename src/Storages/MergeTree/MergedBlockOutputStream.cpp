@@ -550,13 +550,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         if (isFullPartStorage(new_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings, getStatisticsFileVersion(*new_part->storage.getSettings()));
+            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
             written_files.emplace_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings, getStatisticsFileVersion(*new_part->storage.getSettings()));
+            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }

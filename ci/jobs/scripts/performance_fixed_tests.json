@@ -63,7 +63,7 @@
     "histogram",
     "iceberg_delete_manifests",
     "iceberg_manifest_entries",
-    "inequality_join_selectivity_key_choice",
+    "ie_join_selectivity_key_choice",
     "if_transform_strings_to_enum",
     "information_value",
     "injective_functions_inside_uniq",

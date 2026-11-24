@@ -300,9 +300,7 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
     if (backoff_settings.min_read_latency_ms == 0 || pool_settings.do_not_steal_tasks)
         return;
 
-    /// Compared after the division (which is exact for this comparison): the settings are not bounded, so converting them
-    /// to nanoseconds could overflow.
-    if (info.nanoseconds / 1000000 < backoff_settings.min_read_latency_ms)
+    if (info.nanoseconds < backoff_settings.min_read_latency_ms * 1000000)
         return;
 
     std::lock_guard lock(mutex);
@@ -315,7 +313,7 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
     if (throughput >= backoff_settings.max_throughput)
         return;
 
-    if (backoff_state.time_since_prev_event.elapsed() / 1000000 < backoff_settings.min_interval_between_events_ms)
+    if (backoff_state.time_since_prev_event.elapsed() < backoff_settings.min_interval_between_events_ms * 1000000)
         return;
 
     backoff_state.time_since_prev_event.restart();

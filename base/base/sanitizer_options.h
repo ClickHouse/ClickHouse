@@ -8,7 +8,7 @@
 
 #include <base/sanitizer_defs.h>
 
-#if defined(SANITIZER) || defined(CFI_DIAGNOSTICS)
+#ifdef SANITIZER
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
@@ -121,8 +121,7 @@ const char * __tsan_default_suppressions()
 }
 #endif
 
-/// `CFI_DIAGNOSTICS` builds report CFI violations through the UBSan runtime.
-#if defined(UNDEFINED_BEHAVIOR_SANITIZER) || defined(CFI_DIAGNOSTICS)
+#ifdef UNDEFINED_BEHAVIOR_SANITIZER
 const char * __ubsan_default_options()
 {
     return "print_stacktrace=1 max_allocation_size_mb=32768 allocator_may_return_null=1";

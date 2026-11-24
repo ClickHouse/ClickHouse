@@ -4,8 +4,8 @@
 -- subset of the groups. Without these guards each of the cases below returned wrong
 -- results (fewer rows or wrong values), as pinned by the expected outputs.
 --
--- The top-level `INSERT ... SELECT` forms of these shapes (where the optimization also
--- applies without aggregate functions) are covered by
+-- The top-level `INSERT ... SELECT` forms of these shapes (where
+-- `OptimizeTrivialGroupByLimitPass` applies the settings-based rewrite) are covered by
 -- test `04840_trivial_group_by_limit_projection_guards`. This test runs them as
 -- subqueries, where the planner applies the kept-keys cutoff.
 

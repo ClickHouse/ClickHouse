@@ -125,9 +125,8 @@ public:
 
         std::unordered_set<std::string_view> seen;
         entries.reserve(history.size());
-        for (size_t i = history.size(); i > 0;)
+        for (size_t i = history.size(); i-- > 0;)
         {
-            --i;
             if (!seen.insert(history[i]).second)
                 continue;
             entries.push_back(Entry{i, toDisplay(history[i])});
@@ -243,9 +242,8 @@ private:
 
         /// Bottom-up like skim and fzf: the best match is the lowest row, right above the count and the prompt.
         std::string frame = moveToTop();
-        for (size_t row = list_rows; row > 0;)
+        for (size_t row = list_rows; row-- > 0;)
         {
-            --row;
             frame += "\x1b[2K";
             size_t pos = offset + row;
             if (pos >= matches.size())

@@ -113,9 +113,6 @@ struct MatchedTrees
     using Matches = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Match>;
 };
 
-/// an alias has the value of its child
-const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node);
-
 /// `max_size_for_sets_from_tuple_to_compare` bounds the cost of comparing `IN`-clause sets
 /// (`ColumnSet` wrapping a `FutureSetFromTuple`) by content hash. Zero disables content-hash
 /// comparison for such sets entirely — two sets are never considered equal. A non-zero value

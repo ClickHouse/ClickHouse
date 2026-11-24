@@ -10,8 +10,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Interpreters/Context.h>
 
-#include <base/arithmeticOverflow.h>
-
 
 namespace DB
 {
@@ -58,8 +56,7 @@ public:
 
         const auto & src_data = typeid_cast<const ColumnDateTime &>(col_src).getData();
         for (size_t i = 0; i < input_rows_count; ++i)
-            /// A timestamp before `epoch` has no meaningful Snowflake ID; keep the historical wrapped value.
-            res_data[i] = common::subIgnoreOverflow(static_cast<UInt64>(src_data[i]) * 1000, epoch) << time_shift;
+            res_data[i] = (static_cast<UInt64>(src_data[i]) * 1000 - epoch) << time_shift;
         return col_res;
     }
 };

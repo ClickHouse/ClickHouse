@@ -295,7 +295,7 @@ static void buildJoinClauseImpl(
     if (function_node)
     {
         function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryCall())
+        if (!function_node->isOrdinaryFunction())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
@@ -499,7 +499,7 @@ static void buildJoinClause(
     if (function_node)
     {
         function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryCall())
+        if (!function_node->isOrdinaryFunction())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",

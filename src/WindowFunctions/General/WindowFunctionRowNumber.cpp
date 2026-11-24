@@ -1,8 +1,9 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -36,13 +37,13 @@ public:
 
 }
 
-void registerWindowFunctionRowNumber(WindowFunctionFactory & factory);
-void registerWindowFunctionRowNumber(WindowFunctionFactory & factory)
+void registerWindowFunctionRowNumber(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionRowNumber(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionRowNumber>(name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionRowNumber>(name, argument_types, parameters));
         }, {.description = R"DOCS_MD(
 Numbers the current row within its partition starting from 1.
 
@@ -99,7 +100,7 @@ FROM salaries;
 5. │ Michael Stanley │ 150000 │          5 │
    └─────────────────┴────────┴────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

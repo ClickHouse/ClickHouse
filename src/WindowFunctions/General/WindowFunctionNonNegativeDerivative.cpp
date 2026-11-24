@@ -1,3 +1,4 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -7,7 +8,7 @@
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -125,13 +126,13 @@ private:
 
 }
 
-void registerWindowFunctionNonNegativeDerivative(WindowFunctionFactory & factory);
-void registerWindowFunctionNonNegativeDerivative(WindowFunctionFactory & factory)
+void registerWindowFunctionNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionNonNegativeDerivative>(name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionNonNegativeDerivative>(name, argument_types, parameters));
         }, {.description = R"DOCS_MD(
 Computes the non-negative derivative of `metric_column` with respect to `timestamp_column`.
 This is a ClickHouse-specific window function, not part of standard SQL.
@@ -214,7 +215,7 @@ ORDER BY ts ASC;
 4. │ 2024-01-01 00:00:30 │     130 │              2.5 │
    └─────────────────────┴─────────┴──────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}});
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 }
 
 }

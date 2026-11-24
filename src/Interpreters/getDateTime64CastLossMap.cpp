@@ -215,7 +215,7 @@ ColumnPtr getDateTime64CastLossMap(
             auto result = ColumnUInt8::create(array.size(), UInt8(0));
             auto & rows = result->getData();
             for (size_t row = 0; row < rows.size(); ++row)
-                for (size_t element = offsets[static_cast<ssize_t>(row) - 1]; element < offsets[row]; ++element)
+                for (size_t element = offsets[row - 1]; element < offsets[row]; ++element)
                     rows[row] |= values[element];
             return result;
         }

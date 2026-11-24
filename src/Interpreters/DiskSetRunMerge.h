@@ -5,7 +5,6 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/PODArray.h>
 #include <base/sort.h>
-#include <base/sanitizer_defs.h>
 
 #include <algorithm>
 #include <limits>
@@ -451,9 +450,8 @@ private:
     }
 
     /// Returns `lhs` if `condition` holds and `rhs` otherwise, without a branch.
-    /// The mask is the negation of `condition` modulo 2^N, which wraps around on purpose.
     template <typename T>
-    NO_SANITIZE_UNSIGNED_OVERFLOW static T selectWithoutBranch(bool condition, T lhs, T rhs)
+    static T selectWithoutBranch(bool condition, T lhs, T rhs)
     {
         if constexpr (sizeof(T) <= sizeof(UInt64))
         {

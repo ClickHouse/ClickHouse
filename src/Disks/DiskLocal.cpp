@@ -85,6 +85,9 @@ UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64
 
 }
 
+std::mutex DiskLocal::reservation_mutex;
+
+
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
 
 class DiskLocalReservation : public IReservation
@@ -111,7 +114,7 @@ public:
 
     void update(UInt64 new_size) override
     {
-        std::lock_guard lock(disk->reservation_mutex);
+        std::lock_guard lock(DiskLocal::reservation_mutex);
         disk->reserved_bytes -= size;
         size = new_size;
         disk->reserved_bytes += size;
@@ -121,7 +124,7 @@ public:
     {
         try
         {
-            std::lock_guard lock(disk->reservation_mutex);
+            std::lock_guard lock(DiskLocal::reservation_mutex);
             if (disk->reserved_bytes < size)
             {
                 disk->reserved_bytes = 0;
@@ -204,7 +207,7 @@ ReservationPtr DiskLocal::reserveAndGetUnreservedSpace(
 
 bool DiskLocal::tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints, UInt64 & unreserved_space)
 {
-    std::lock_guard lock(reservation_mutex);
+    std::lock_guard lock(DiskLocal::reservation_mutex);
 
     auto available_space = getAvailableSpace();
 
@@ -311,7 +314,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
 
 std::optional<UInt64> DiskLocal::getUnreservedSpace() const
 {
-    std::lock_guard lock(reservation_mutex);
+    std::lock_guard lock(DiskLocal::reservation_mutex);
     auto available_space = *getAvailableSpace();
     available_space -= std::min(available_space, reserved_bytes);
     return available_space;

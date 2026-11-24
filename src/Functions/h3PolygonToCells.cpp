@@ -14,7 +14,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/CancellationBudget.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 

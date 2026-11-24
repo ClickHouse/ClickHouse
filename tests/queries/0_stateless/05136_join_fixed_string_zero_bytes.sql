@@ -30,10 +30,10 @@ SELECT '-- matched pairs keep the original bytes';
 SELECT hex(x), hex(y) FROM fs JOIN s ON fs.x = s.y ORDER BY ALL SETTINGS join_algorithm = 'hash';
 
 SELECT '-- inequality per algorithm';
-SELECT 'inequality <', count() FROM fs JOIN s ON fs.x < s.y AND fs.i > s.j SETTINGS join_algorithm = 'inequality';
-SELECT 'inequality >', count() FROM fs JOIN s ON fs.x > s.y AND fs.i > s.j SETTINGS join_algorithm = 'inequality';
+SELECT 'ie_join <', count() FROM fs JOIN s ON fs.x < s.y AND fs.i > s.j SETTINGS join_algorithm = 'ie_join';
+SELECT 'ie_join >', count() FROM fs JOIN s ON fs.x > s.y AND fs.i > s.j SETTINGS join_algorithm = 'ie_join';
 SELECT 'hash <', count() FROM fs JOIN s ON fs.x < s.y SETTINGS join_algorithm = 'hash';
-SELECT 'inequality < swapped', count() FROM s JOIN fs ON s.y > fs.x AND s.j < fs.i SETTINGS join_algorithm = 'inequality';
+SELECT 'ie_join < swapped', count() FROM s JOIN fs ON s.y > fs.x AND s.j < fs.i SETTINGS join_algorithm = 'ie_join';
 
 SELECT '-- semi / anti';
 SELECT 'oracle semi', count() FROM (SELECT x FROM fs, s GROUP BY x HAVING countIf(x = y) > 0);
@@ -52,7 +52,7 @@ SELECT count() FROM (SELECT toNullable(x) AS x FROM fs) AS fsn JOIN s ON fsn.x =
 SELECT '-- FixedString(3) vs FixedString(5)';
 SELECT countIf(x = z), countIf(x < z) FROM fs, fs5;
 SELECT count() FROM fs JOIN fs5 ON fs.x = fs5.z SETTINGS join_algorithm = 'hash';
-SELECT count() FROM fs JOIN fs5 ON fs.x < fs5.z AND fs.i > fs5.k SETTINGS join_algorithm = 'inequality';
+SELECT count() FROM fs JOIN fs5 ON fs.x < fs5.z AND fs.i > fs5.k SETTINGS join_algorithm = 'ie_join';
 
 SELECT '-- USING';
 SELECT count() FROM fs JOIN (SELECT y AS x FROM s) AS s2 USING (x) SETTINGS join_algorithm = 'hash';
@@ -76,7 +76,7 @@ SELECT 'two elements', count() FROM fs JOIN s ON (fs.x, fs.i) = (s.y, s.j + 1) S
 SELECT 'full_sorting_merge', count() FROM fs JOIN s ON (fs.x, fs.i) = (s.y, s.j + 1) SETTINGS join_algorithm = 'full_sorting_merge';
 SELECT 'swapped sides', count() FROM s JOIN fs ON (s.y, s.j + 1) = (fs.x, fs.i) SETTINGS join_algorithm = 'hash';
 SELECT 'null-safe', count() FROM fs JOIN s ON (fs.x, fs.i) <=> (s.y, s.j + 1) SETTINGS join_algorithm = 'hash';
-SELECT 'inequality <', count() FROM fs JOIN s ON tuple(fs.x) < tuple(s.y) AND fs.i > s.j SETTINGS join_algorithm = 'inequality';
+SELECT 'ie_join <', count() FROM fs JOIN s ON tuple(fs.x) < tuple(s.y) AND fs.i > s.j SETTINGS join_algorithm = 'ie_join';
 SELECT 'anti', count() FROM fs LEFT ANTI JOIN s ON tuple(fs.x) = tuple(s.y) SETTINGS join_algorithm = 'hash';
 
 SELECT '-- nested tuples with a String element on each side';

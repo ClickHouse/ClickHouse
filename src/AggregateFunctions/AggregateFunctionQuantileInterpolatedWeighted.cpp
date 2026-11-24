@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -7,7 +6,6 @@
 #include <Core/Field.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -17,7 +15,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
@@ -59,24 +56,16 @@ struct QuantileInterpolatedWeighted
             ++map[x];
     }
 
-    /// A weight is a number of occurrences: a sum that does not fit is rejected instead of wrapping around, which would
-    /// make the state forget the dominant value.
-    static void addWeight(Weight & sum, Weight weight)
-    {
-        if (common::addOverflow(sum, weight, sum))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileInterpolatedWeighted` does not fit UInt64");
-    }
-
     void add(const Value & x, Weight weight)
     {
         if (!isNaN(x))
-            addWeight(map[x], weight);
+            map[x] += weight;
     }
 
     void merge(const QuantileInterpolatedWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
-            addWeight(map[pair.getKey()], pair.getMapped());
+            map[pair.getKey()] += pair.getMapped();
     }
 
     void serialize(WriteBuffer & buf) const
@@ -120,8 +109,7 @@ private:
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     template <typename T>
-    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
-    T getImpl(Float64 level) const
+    [[nodiscard]] T getImpl(Float64 level) const
     {
         size_t size = map.size();
 
@@ -195,8 +183,6 @@ private:
                     else
                     {
                         idx = mid;
-                        if (mid == 0)
-                            break;
                         end = mid - 1;
                     }
                 }
@@ -285,22 +271,21 @@ private:
                 }
                 else
                 {
-                    /// The smallest index whose next pair reaches `level`. Half-open: `end` is the
-                    /// last candidate rather than one past the tested one, so `mid` stays below it
-                    /// and `end = mid` replaces an `end = mid - 1` that underflowed to `SIZE_MAX`
-                    /// whenever `mid` was 0 - the `mid > size` guard was there to catch exactly that
-                    /// wrapped value on the next iteration, and is no longer needed.
                     size_t start = 0;
                     size_t end = size - 1;
-                    while (start < end)
+                    while (start <= end)
                     {
-                        const size_t mid = start + (end - start) / 2;
+                        size_t mid = start + (end - start) / 2;
+                        if (mid > size)
+                            break;
                         if (level > value_weight_pairs[mid + 1].second)
                             start = mid + 1;
                         else
-                            end = mid;
+                        {
+                            idx = mid;
+                            end = mid - 1;
+                        }
                     }
-                    idx = start;
                 }
             }
 

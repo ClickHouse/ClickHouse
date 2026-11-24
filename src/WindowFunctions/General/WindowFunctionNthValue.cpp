@@ -1,8 +1,9 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/IColumn.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -52,7 +53,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The offset for function {} must be in [1, {}], {} given", getName(), INT64_MAX, offset);
 
             if (offset > bounds.frame_end[i] - bounds.frame_start[i])
-                result_type->insertDefaultInto(result);
+                result.insertDefault();
             else
                 arguments.at(0, bounds.frame_start[i] + offset - 1).appendTo(result);
         }
@@ -62,13 +63,13 @@ public:
 
 }
 
-void registerWindowFunctionNthValue(WindowFunctionFactory & factory);
-void registerWindowFunctionNthValue(WindowFunctionFactory & factory)
+void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionNthValue>(name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionNthValue>(name, argument_types, parameters));
         }, {.description = R"DOCS_MD(
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
@@ -133,7 +134,7 @@ SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_h
 7. │ Michael Stanley │ 100000 │ Charles Juarez       │
    └─────────────────┴────────┴──────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

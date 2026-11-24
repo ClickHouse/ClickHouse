@@ -982,21 +982,18 @@ namespace
         skipWhitespaceIfAny(buf);
 
         DataTypes nested_types;
-        size_t num_elements = 0;
+        bool first = true;
         bool have_invalid_nested_type = false;
         while (!buf.eof() && *buf.position() != ')')
         {
-            if (num_elements)
+            if (!first)
             {
                 if (!checkChar(',', buf))
                     return nullptr;
                 skipWhitespaceIfAny(buf);
-
-                /// A one-element tuple can be written with a trailing comma: (1,).
-                if (num_elements == 1 && !buf.eof() && *buf.position() == ')')
-                    break;
             }
-            ++num_elements;
+            else
+                first = false;
 
             auto nested_type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, depth + 1);
             if (nested_type)

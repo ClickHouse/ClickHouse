@@ -37,7 +37,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregationCall())
+        if (!function_node || !function_node->isAggregateFunction())
             return;
 
         if (!assert_no_aggregates_place_message.empty())

@@ -16,7 +16,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -52,7 +51,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
     {
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
-        column_with_type.type = f.getResultType();
+        column_with_type.type = f.aggregate_function->getResultType();
         column_with_type.column = column_with_type.type->createColumn();
 
         result.insert(column_with_type);
@@ -274,7 +273,7 @@ static void serializeWindowFunctions(
         for (const auto & argument_name : func.argument_names)
             ctx.writeColumnName(argument_name);
 
-        writeStringBinary(func.getFunctionName(), out);
+        writeStringBinary(func.aggregate_function->getName(), out);
 
         /// Serialize the parameters the planner preserved, not `aggregate_function->getParameters()`:
         /// some parametric aggregates (e.g. `groupArrayMovingSum`, `groupArrayMovingAvg`,
@@ -329,25 +328,14 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
         for (auto & param : func.function_parameters)
             param = readFieldBinary(in);
 
-        if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
-        {
-            func.general_function = WindowFunctionFactory::instance().get(
-                function_name,
-                NullsAction::EMPTY,
-                func.argument_types,
-                func.function_parameters);
-        }
-        else
-        {
-            AggregateFunctionProperties properties;
-            func.aggregate_function = AggregateFunctionFactory::instance().get(
-                function_name,
-                NullsAction::EMPTY,
-                func.argument_types,
-                func.function_parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
-        }
+        AggregateFunctionProperties properties;
+        func.aggregate_function = AggregateFunctionFactory::instance().get(
+            function_name,
+            NullsAction::EMPTY,
+            func.argument_types,
+            func.function_parameters,
+            properties,
+            AggregateFunctionStateVariant::Window);
     }
 
     return window_functions;

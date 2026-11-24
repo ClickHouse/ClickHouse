@@ -8,7 +8,7 @@ struct Settings;
 
 /// Adjusts the copy of the initiator's settings that an interserver sender is about to serialize into a
 /// secondary query: `MultiplexedConnections` and `HedgedConnections` for `SELECT`, `RemoteInserter` for
-/// distributed `INSERT`. `Connection::sendQuery` serializes only the settings marked as changed, so the
+/// distributed `INSERT`. `Connection::sendQuery` serializes only the settings marked as changed, so both
 /// adjustments below are about that flag rather than about the values.
 ///
 /// - Values derived from `compatibility` are demoted to unchanged. They still select this side's network
@@ -45,15 +45,5 @@ void markAggregationMethodSettingsChanged(Settings & settings);
 /// legacy method, while the initiator takes the packed one, and the two methods put a 12-byte key into
 /// different buckets.
 bool aggregationMethodSettingsDifferFromInitiator(const Settings & initiator_settings, const Settings & settings);
-
-/// For the server of a secondary query. Returns whether the initiator passed `group_by_overflow_mode`
-/// (`initiator_settings`), and `settings`, the settings of the query after the server applied its settings
-/// constraints, have the same value but do not mark it as changed: the constraints drop a passed value that is
-/// equal to the current one. The server must mark it as changed again, because an explicit mode other than `any`
-/// forbids the cap on groups of a trivial `GROUP BY ... LIMIT` (see `getTrivialGroupByLimit`). Without the mark,
-/// the shard would cap the groups and suppress the `throw` of the user, for example when a nested `SETTINGS` clause
-/// or the profile of the remote user enables `optimize_trivial_group_by_limit_query`. A value that the
-/// constraints changed is not restored.
-bool explicitGroupByOverflowModeIsLost(const Settings & initiator_settings, const Settings & settings);
 
 }

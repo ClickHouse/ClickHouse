@@ -12,7 +12,3 @@ DROP TABLE t_distinct_const;
 
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT length(s) FROM (SELECT DISTINCT number AS k, repeat('a', 1000000) AS s FROM numbers(100000) ORDER BY s LIMIT 1) SETTINGS optimize_distinct_in_order = 1, max_block_size = 65409) WHERE explain ILIKE '%DistinctSortedStreamTransform%';
 SELECT length(s) FROM (SELECT DISTINCT number AS k, repeat('a', 1000000) AS s FROM numbers(100000) ORDER BY s LIMIT 1) SETTINGS optimize_distinct_in_order = 1, max_memory_usage = '1Gi', max_block_size = 65409;
-
--- A constant before a distinct column in the sorting prefix: one run per row.
-SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT length(s) FROM (SELECT DISTINCT repeat('a', 1000000) AS s, number AS k FROM numbers(100000) ORDER BY s, k LIMIT 1) SETTINGS optimize_distinct_in_order = 1, max_block_size = 65409) WHERE explain ILIKE '%DistinctSortedStreamTransform%';
-SELECT length(s) FROM (SELECT DISTINCT repeat('a', 1000000) AS s, number AS k FROM numbers(100000) ORDER BY s, k LIMIT 1) SETTINGS optimize_distinct_in_order = 1, max_memory_usage = '1Gi', max_block_size = 65409, max_execution_time = 30;

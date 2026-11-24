@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <base/types.h>
-#include <base/sanitizer_defs.h>
 #include <Common/Exception.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -123,7 +122,6 @@ private:
         return result;
     }
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     static std::string convertNumber(const std::string & number, const Int64 from_base, const Int64 to_base)
     {
         if (from_base < 2 || from_base > 36 || to_base < 2 || to_base > 36)

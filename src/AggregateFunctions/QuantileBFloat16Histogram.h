@@ -1,24 +1,15 @@
 #pragma once
 
 #include <base/types.h>
-#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <Common/Exception.h>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int INCORRECT_DATA;
-}
 
 /** `bfloat16` is a 16-bit floating point data type that is the same as the corresponding most significant 16 bits of the `float`.
   * https://en.wikipedia.org/wiki/Bfloat16_floating-point_format
@@ -66,24 +57,16 @@ struct QuantileBFloat16Histogram
         add(x, 1);
     }
 
-    /// A weight is a number of occurrences: a sum that does not fit is rejected instead of wrapping around, which would
-    /// move the quantile to another bucket.
-    static void addWeight(Weight & sum, Weight weight)
-    {
-        if (common::addOverflow(sum, weight, sum))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileBFloat16Weighted` does not fit UInt64");
-    }
-
     void add(const Value & x, Weight w)
     {
         if (!isNaN(x))
-            addWeight(data[toBFloat16(x)], w);
+            data[toBFloat16(x)] += w;
     }
 
     void merge(const QuantileBFloat16Histogram & rhs)
     {
         for (const auto & pair : rhs.data)
-            addWeight(data[pair.getKey()], pair.getMapped());
+            data[pair.getKey()] += pair.getMapped();
     }
 
     void serialize(WriteBuffer & buf) const
@@ -93,16 +76,7 @@ struct QuantileBFloat16Histogram
 
     void deserialize(ReadBuffer & buf)
     {
-        /// Entry by entry, so that a malformed count does not allocate the table before any entry arrives.
-        typename Data::Reader reader(buf);
-        while (reader.next())
-        {
-            const auto & pair = reader.get();
-            /// `add` skips NaNs, and the finalization relies on that (a NaN does not convert to an integer result).
-            if ((pair.first & 0x7FFF) > 0x7F80)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "NaN in the state of quantileBFloat16");
-            data[pair.first] = pair.second;
-        }
+        data.read(buf);
     }
 
     [[nodiscard]] Value get(Float64 level) const

@@ -37,6 +37,14 @@ namespace FailPoints
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+
+    /// The streams of these columns are known only after reading the serialization prefixes:
+    /// the structure of dynamic types and the number of buckets of non-basic `Map`s are stored there.
+    bool streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
+    {
+        return column.getTypeInStorage()->hasDynamicStructure()
+            || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
+    }
 }
 
 namespace ErrorCodes
@@ -929,11 +937,6 @@ void MergeTreeReaderWide::accumulateRowsForColumnsCache(
         if (!accumulated)
         {
             accumulated = column->cloneEmpty();
-            /// The copy must own its data: otherwise `insertRangeFrom` lets a `ColumnAggregateFunction`
-            /// (also nested in a `Tuple`, `Array`, ...) share the states of the column being read by
-            /// keeping a reference to it, which keeps the whole column alive in the cache and makes it
-            /// shared while the following granules are read into it.
-            accumulated->ensureOwnership();
             /// The rows this read is going to append to the copy - the rest of the run, up to the
             /// end of the stripe - not the whole stripe: after `PREWHERE` filtered granules out, a
             /// run is often a single granule, and reserving a stripe for each of them would
@@ -1353,40 +1356,35 @@ void MergeTreeReaderWide::deserializePrefix(
             };
         }
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
-        /// A sample read only lists the streams and their sizes, so it must not enable this callback's prefix-time
-        /// optimizations: they read column data a sample read never uses.
-        if (!settings.read_only_column_sample)
-        {
-            deserialize_settings.has_uniform_marks_callback =
-                [&](const ISerialization::SubstreamPath & substream_path,
+        deserialize_settings.has_uniform_marks_callback =
+            [&](const ISerialization::SubstreamPath & substream_path,
                 size_t max_transitions) -> bool
-            {
-                /// Wide parts with a final mark have a trailing position after the
-                /// suffix, so a single per-part dictionary shows up as <= 2 distinct
-                /// positions in the dictionary stream (data mark + final mark).
-                /// Without a final mark, the same check must be stricter: a true
-                /// single-dictionary part has only one distinct position, while a part
-                /// with one dictionary in the main stream and another in the suffix can
-                /// still look like "2 positions".
-                /// This is only a necessary condition; `SerializationLowCardinality`
-                /// still checks the `DictionaryKeys` stream reaches EOF after the
-                /// first dictionary.
-                const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
-                const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
-                    ? max_transitions
-                    : max_transitions - 1;
+        {
+            /// Wide parts with a final mark have a trailing position after the
+            /// suffix, so a single per-part dictionary shows up as <= 2 distinct
+            /// positions in the dictionary stream (data mark + final mark).
+            /// Without a final mark, the same check must be stricter: a true
+            /// single-dictionary part has only one distinct position, while a part
+            /// with one dictionary in the main stream and another in the suffix can
+            /// still look like "2 positions".
+            /// This is only a necessary condition; `SerializationLowCardinality`
+            /// still checks the `DictionaryKeys` stream reaches EOF after the
+            /// first dictionary.
+            const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
+            const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
+                ? max_transitions
+                : max_transitions - 1;
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                    name_and_type, substream_path, ".bin",
-                    data_part_info_for_read->getChecksums(), storage_settings);
-                if (!stream_name)
-                    return false;
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin",
+                data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                return false;
 
-                /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
-                auto & stream = getOrAddStream(substream_path, *stream_name);
-                return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
-            };
-        }
+            /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
+            auto & stream = getOrAddStream(substream_path, *stream_name);
+            return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
+        };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
 }
@@ -1624,12 +1622,6 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-}
-
-bool MergeTreeReaderWide::streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
-{
-    return column.getTypeInStorage()->hasDynamicStructure()
-        || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
 }
 
 std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()

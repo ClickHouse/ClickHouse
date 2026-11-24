@@ -45,6 +45,7 @@ public:
 
     static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
     {
+        DataTypeAggregateFunction::checkSupportedFunctions(nested_);
         return nested_->getStateType();
     }
 

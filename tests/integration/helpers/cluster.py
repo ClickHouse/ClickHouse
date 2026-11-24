@@ -229,7 +229,11 @@ DEFAULT_THREAD_FUZZER_SETTINGS = {
 
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-SANITIZER_SIGN = "=================="
+# Lines of a sanitizer report in the stderr of a ClickHouse process, as a `grep` basic regular expression. AddressSanitizer and ThreadSanitizer open a report with a line of `=`, but MemorySanitizer (`==PID==WARNING: MemorySanitizer: ...`) and UndefinedBehaviorSanitizer (`file:line:column: runtime error: ...`, then `SUMMARY: UndefinedBehaviorSanitizer: ...`) do not, so the report lines themselves are matched too. The sanitizer name alone is not enough: AddressSanitizer may print `==PID==AddressSanitizer: failed to intercept ...` at startup.
+SANITIZER_SIGN = r"==================\|\(ERROR\|WARNING\|SUMMARY\): [A-Za-z]*Sanitizer:\|Sanitizer: CHECK failed\|: runtime error: "
+SANITIZER_SIGN_RE = re.compile(r"==================|(ERROR|WARNING|SUMMARY): [A-Za-z]*Sanitizer:|Sanitizer: CHECK failed|: runtime error: ")
+# For `docker.log`, which also has the output of other services: Go programs such as MinIO print `panic: runtime error: ...`, so only the lines that name a sanitizer count there.
+DOCKER_LOG_SANITIZER_SIGN_RE = re.compile(r"==================|(ERROR|WARNING|SUMMARY): [A-Za-z]*Sanitizer:|Sanitizer: CHECK failed")
 
 CLICKHOUSE_START_COMMAND = (
     "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
@@ -4806,7 +4810,7 @@ class ClickHouseCluster:
                 # Search for sinitizer signs in docker.log if it's still empty
                 with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
-                        if SANITIZER_SIGN in line:
+                        if DOCKER_LOG_SANITIZER_SIGN_RE.search(line):
                             sanitizer_assert_instance = line.split("|")[0].strip()
                             break
 
@@ -4823,7 +4827,7 @@ class ClickHouseCluster:
                     if not os.path.exists(keeper_stderr):
                         continue
                     with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
+                        if any(SANITIZER_SIGN_RE.search(line) for line in f):
                             sanitizer_assert_instance = f"zoo{i}"
                             logging.error(
                                 "Sanitizer in Keeper instance zoo%s log %s",
@@ -6641,11 +6645,6 @@ class ClickHouseInstance:
             latest_version_seccomp_config_path = self.latest_version_seccomp_config_path()
             if p.exists(latest_version_seccomp_config_path):
                 os.remove(latest_version_seccomp_config_path)
-        delay_merges_after_startup_config_path = (
-            self.delay_merges_after_startup_config_path()
-        )
-        if p.exists(delay_merges_after_startup_config_path):
-            os.remove(delay_merges_after_startup_config_path)
         self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
@@ -6660,18 +6659,6 @@ class ClickHouseInstance:
 
     def latest_version_seccomp_config_path(self):
         return p.join(self.config_d_dir, "zz_seccomp_latest_version.xml")
-
-    def delay_merges_after_startup_config_path(self):
-        return p.join(self.config_d_dir, "0_common_delay_merges_after_startup.xml")
-
-    def write_delay_merges_after_startup_config(self):
-        # Tests expect background merges right after a restart. Older versions do not know the setting,
-        # so it is written only for the server built from these sources.
-        with open(self.delay_merges_after_startup_config_path(), "w") as f:
-            f.write(
-                f"<{self.config_root_name}><merge_tree><delay_merges_after_startup_seconds>0"
-                f"</delay_merges_after_startup_seconds></merge_tree></{self.config_root_name}>\n"
-            )
 
     def restart_with_latest_version(
         self,
@@ -6711,8 +6698,6 @@ class ClickHouseInstance:
                 f.write(
                     f"<{self.config_root_name}><seccomp>{self.seccomp_config_for_latest_version}</seccomp></{self.config_root_name}>\n"
                 )
-        if self.copy_common_configs:
-            self.write_delay_merges_after_startup_config()
         self.exec_in_container(
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
@@ -7096,12 +7081,6 @@ class ClickHouseInstance:
                 self.config_d_dir,
                 self.with_installed_binary,
             )
-        if (
-            self.copy_common_configs
-            and not self.with_installed_binary
-            and not self.cluster.with_dolor
-        ):
-            self.write_delay_merges_after_startup_config()
 
         if not self.cluster.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)

@@ -2,15 +2,12 @@
 
 #include <Formats/ColumnNameMaps.h>
 #include <exception>
-#include <functional>
-#include <map>
 #include <mutex>
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Common/PODArray_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -251,24 +248,6 @@ private:
     std::mutex join_runtime_filter_mutex;
     bool join_runtime_filter_key_condition_built TSA_GUARDED_BY(join_runtime_filter_mutex) = false;
     std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition TSA_GUARDED_BY(join_runtime_filter_mutex);
-
-public:
-    using SetHashes = std::shared_ptr<const VectorWithMemoryTracking<UInt64>>;
-
-    /// Hashes of an `IN` set column, computed by `compute` once per query. `hash_kind` must identify all their other inputs.
-    SetHashes getOrComputeSetHashes(const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute);
-
-private:
-    struct SetHashesEntry
-    {
-        /// Keeps the column alive, so that its address is not reused by another column.
-        ColumnPtr set_column;
-        std::once_flag computed;
-        SetHashes hashes;
-    };
-
-    std::mutex set_hashes_mutex;
-    std::map<std::pair<const IColumn *, String>, std::shared_ptr<SetHashesEntry>> set_hashes;
 
 public:
     /// True if the format may skip rows of the file.

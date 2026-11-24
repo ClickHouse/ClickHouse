@@ -172,9 +172,9 @@ Two settings control when spilling starts:
 
 - `max_bytes_before_external_set` sets a threshold in bytes of total query memory. It defaults to `0`
   (disabled).
-- `max_bytes_ratio_before_external_set` sets a fraction of available memory under the query's
-  `max_memory_usage` and the server or user limits, measured at the start of execution. It defaults to
-  `0.5`, half of the available memory, and has no effect when no limit applies.
+- `max_bytes_ratio_before_external_set` sets a fraction of available memory under server or user
+  limits, measured at the start of execution. It defaults to `0.5`, half of the available memory, and
+  has no effect when neither limit applies.
 
 When both thresholds apply, the smaller is used. A set is written to disk only once it takes at least
 16 MiB, or the threshold if it is smaller. For example, this query writes the set to disk once the set
@@ -193,7 +193,9 @@ the memory that the set keeps when it is on disk, such as its Bloom filter, exce
 written to disk, and most of its memory is released for the rest of the query, such as an aggregation that
 grows after the set is built.
 
-These thresholds do not cap memory usage. Leave room for other query processing and the spill itself.
+`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
+set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
+other query processing and the spill itself.
 
 A set on disk keeps a Bloom filter of its keys in memory, so that lookups of keys that are not in the set
 can skip reading the disk. `max_bytes_for_external_set_bloom_filter` limits the memory of the filter,
