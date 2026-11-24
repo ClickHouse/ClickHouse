@@ -741,28 +741,6 @@ bool hasNonStrippableInlineSettings(const ASTPtr & ast)
     return false;
 }
 
-/// Nested SETTINGS clauses are preserved in oracle clones. In particular, a
-/// nested thread-count setting overrides the single-thread pin in
-/// `makeOracleContext`, reopening the nested-pipeline lifetime race which that
-/// pin is intended to avoid. The top-level clause is stripped uniformly, so it
-/// remains safe to allow there.
-bool hasNestedThreadSettings(const ASTPtr & ast, const ASTPtr & top_level_settings)
-{
-    if (!ast)
-        return false;
-    if (ast != top_level_settings)
-    {
-        if (const auto * set_query = ast->as<ASTSetQuery>())
-            for (const auto & change : set_query->changes)
-                if (change.name == "max_threads" || change.name == "max_insert_threads" || change.name == "max_final_threads")
-                    return true;
-    }
-    for (const auto & child : ast->children)
-        if (hasNestedThreadSettings(child, top_level_settings))
-            return true;
-    return false;
-}
-
 /// True if `clause` defines an alias that is referenced anywhere else in the
 /// SELECT. ClickHouse aliases are visible query-wide, so an oracle rewrite
 /// that removes or replaces such a clause (TLP's reference query drops WHERE
@@ -1163,14 +1141,13 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                 /// A stored definition (view body, column default, row policy) is expanded into the
                 /// query the oracle rewrites, so it must pass the same screens as the outer AST — the
                 /// outer AST only names the view/column, so checking it alone cannot compensate. A
-                /// view `SELECT x FROM t SETTINGS max_threads = 4`, an arbitrary-match join, a nested
-                /// thread setting, or a WITH TOTALS modifier hidden in a definition would otherwise
-                /// survive expansion and defeat the corresponding guard.
+                /// non-strippable inline setting, an arbitrary-match join, or a WITH TOTALS modifier
+                /// hidden in a definition would otherwise survive expansion and defeat the
+                /// corresponding guard.
                 for (const auto & definition : definitions)
                     if (hasNonDeterministicFunctionsImpl(definition, context)
                         || hasNonDeterministicJoinAnywhere(definition, context->getSettingsRef()[Setting::join_default_strictness])
                         || hasNonStrippableInlineSettings(definition)
-                        || hasNestedThreadSettings(definition, nullptr)
                         || hasGroupByTotalsModifierAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesNonDeterministicEngineAnywhere(definition, context)
@@ -3085,12 +3062,6 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasNonStrippableInlineSettings(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: query carries inline settings that cannot be stripped safely");
-        return false;
-    }
-
-    if (hasNestedThreadSettings(query_ast, select->settings()))
-    {
-        LOG_TRACE(logger, "Oracle skip: query carries nested thread-count settings");
         return false;
     }
 

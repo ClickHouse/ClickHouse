@@ -73,15 +73,16 @@ std::span<const PinnedSetting> oraclePinnedSettings()
         p.push_back({"max_result_bytes", Field(UInt64(MAX_ORACLE_OUTPUT_SIZE)), "oracle result byte cap (throws)"});
         p.push_back({"result_overflow_mode", Field(String("throw")), "result cap must throw, not truncate"});
 
-        /// Run oracle sub-queries single-threaded so the nested pipeline cannot have
-        /// background-pool workers running while the caller tears the pipeline down. TSan
-        /// caught a heap-use-after-free that fired exactly in that window; constraining the
-        /// nested execution to the caller thread closes the race. Do NOT raise these without
-        /// the dedicated TSan-soak validation milestone.
-        p.push_back({"max_threads", Field(UInt64(1)), "single-thread pin closes a pipeline-teardown UAF (TSan)"});
-        p.push_back({"max_insert_threads", Field(UInt64(1)), "single-thread pin (see max_threads)"});
-        p.push_back({"max_final_threads", Field(UInt64(1)), "single-thread pin (see max_threads)"});
-        p.push_back({"output_format_parallel_formatting", Field(false), "single-thread pin (see max_threads)"});
+        /// Parallelism is deliberately NOT pinned. An earlier revision pinned `max_threads`
+        /// (and the sibling parallelism knobs) to 1 to dodge a nested-pipeline-teardown
+        /// heap-use-after-free TSan caught. The root cause was the nested sub-query running on
+        /// the caller's (fuzzed query) thread group; `OracleExec::switchToThreadGroupOf` now runs
+        /// every sub-query on `ThreadGroup::createForQuery(oracle_context)` under an RAII
+        /// `ThreadGroupSwitcher`, so its workers are owned and joined under the sub-query's own
+        /// group, and the blocking `executeQuery` drains the pipeline before that switcher is
+        /// destroyed — the window the pin guarded no longer exists. Pinning single-thread also
+        /// blinded the oracle to every parallel-execution bug, so running at the default thread
+        /// count is intentional coverage.
 
         /// `SET implicit_transaction=1` would wrap oracle statements in a transaction under which
         /// DDL / unsupported statement kinds throw NOT_IMPLEMENTED, silently disabling every fixture
