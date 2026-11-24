@@ -10,15 +10,21 @@ SET use_skip_indexes_on_data_read = 0;
 SET use_query_condition_cache = 0;
 SET use_statistics_for_part_pruning = 0;
 SET explain_query_plan_default = 'legacy';
+-- A `max_rows_to_read` limit turns off index analysis at read time.
+SET max_rows_to_read = 0;
 
 {#- Each check prints the predicate, the count with index analysis at planning time and at read time,
-    the count of a full scan, and the parts and granules selected by each index (planning time). -#}
+    the count of a full scan, and the parts and granules selected by each index (planning time).
+    Skip indexes are listed by name, as the order of their analysis depends on their file sizes. -#}
 {% macro check(table, predicate) -%}
 SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}',
     (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
     (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_skip_indexes_on_data_read = 1),
     (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
-    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE match(trimLeft(explain), '^(Min-Max|Partition|Statistics|PrimaryKey|Skip|Name:|Parts:|Granules:)'))
+    (SELECT arrayStringConcat(arrayConcat([s[1]], arraySort(x -> (startsWith(x, 'Name: <Combined'), x), arrayPopFront(s))), ' Skip ')
+     FROM (SELECT splitByString(' Skip ', arrayStringConcat(groupArray(trimLeft(explain)), ' ')) AS s
+           FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }})
+           WHERE match(trimLeft(explain), '^(Min-Max|Partition|Statistics|PrimaryKey|Skip|Name:|Parts:|Granules:)')))
 FORMAT TSVRaw;
 {%- endmacro %}
 
