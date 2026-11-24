@@ -2348,6 +2348,7 @@ Possible values:
         {"25.9", false, false, "New setting"}) \
     DECLARE(Bool, use_skip_indexes_for_disjunctions, true, R"(
 Evaluate WHERE filters with mixed AND and OR conditions using skip indexes. Example: WHERE A = 5 AND (B = 5 OR C = 5).
+The primary key takes part too, so `WHERE pk = 5 OR B = 5` skips granules using the primary key and a skip index on `B`.
 If disabled, skip indexes are still used to evaluate WHERE conditions but they must only contain AND-ed clauses.
 
 Possible values:

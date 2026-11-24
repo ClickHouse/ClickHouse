@@ -1,0 +1,12 @@
+<test>
+    <create_query>
+        CREATE TABLE pk_or_skip_index (k UInt64, b UInt64, c UInt64, INDEX ib b TYPE minmax GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0
+    </create_query>
+    <fill_query>INSERT INTO pk_or_skip_index SELECT number, number, intHash64(number) FROM numbers(50000000)</fill_query>
+
+    <query>SELECT count() FROM pk_or_skip_index WHERE k = 5 OR b = 45000000 SETTINGS use_query_condition_cache = 0</query>
+    <query>SELECT sum(c) FROM pk_or_skip_index WHERE k IN (5, 20000000) OR b = 45000000 SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS pk_or_skip_index</drop_query>
+</test>

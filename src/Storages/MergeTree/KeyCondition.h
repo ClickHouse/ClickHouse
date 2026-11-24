@@ -536,6 +536,9 @@ public:
     /// Does the filter condition have any ORs?
     [[nodiscard]] bool hasOnlyConjunctions() const;
 
+    /// Each atom that has a position in the filter RPN, as a condition of just that atom over the same key.
+    [[nodiscard]] std::vector<std::pair<size_t, KeyCondition>> getAtomConditionsWithPositions() const;
+
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<BloomFilterData::Hashes(size_t column_idx, const ColumnPtr &)> hash_many);
 

@@ -478,6 +478,19 @@ public:
     /// Returns limits and leaf_limits that should be applied during part processing.
     static RowLimits getRowLimits(const Context & context, const SelectQueryInfo & query_info);
 
+    /// Writes into `partial_eval_results` the marks of `ranges` where an atom of the primary key condition cannot be true,
+    /// so that `mergePartialResultsForDisjunctions` takes the primary key into account.
+    static void recordPrimaryKeyResultsForDisjunctions(
+        const IMergeTreeDataPartInfoForReader & part,
+        const MarkRanges & ranges,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const KeyCondition & rpn_template_for_eval_result,
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
+        const Settings & settings,
+        PartialDisjunctionResult & partial_eval_results,
+        LoggerPtr log);
+
     static MarkRanges mergePartialResultsForDisjunctions(
         const IMergeTreeDataPartInfoForReader & part_info,
         const MarkRanges & ranges,

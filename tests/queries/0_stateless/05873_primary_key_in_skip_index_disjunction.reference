@@ -1,0 +1,25 @@
+k = 111 OR b = 111	2	2	2	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 2/158
+k IN (5, 6000, 9999) OR b = 4321	4	4	4	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 6/158
+(k BETWEEN 1000 AND 1100 AND c > 500) OR b = 7000	49	49	49	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 4/158
+k < 100 OR (b > 9950 AND c < 500)	100	100	100	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 2/158
+NOT (k >= 50) OR b = 1234	51	51	51	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 2/158
+(k = 10 OR a = 5000) AND (b = 3000 OR k > 9990)	0	0	0	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ia Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 0/158
+k = 3 OR a = 2000 OR b = 50	2	2	2	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ia Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 4/158
+intDiv(k, 4000) = 1 OR b = 20	4001	4001	4001	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 65/158
+k = 111.5 OR b = 111	1	1	1	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158 Skip Name: <Combined skip indexes> Parts: 3/3 Granules: 1/158
+k % 7 = 3 OR b = 5	1430	1430	1430	Min-Max Parts: 3/3 Granules: 158/158 Partition Parts: 3/3 Granules: 158/158 PrimaryKey Parts: 3/3 Granules: 158/158 Skip Name: ib Parts: 3/3 Granules: 158/158
+k < 100 AND (b = 5 OR c = 7)	0	0	0	Min-Max Parts: 1/3 Granules: 63/158 Partition Parts: 1/1 Granules: 63/63 PrimaryKey Parts: 1/1 Granules: 2/63 Skip Name: ib Parts: 1/1 Granules: 2/2
+(k = 5 OR k > 9990) AND b > 100	1	1	1	Min-Max Parts: 2/3 Granules: 95/158 Partition Parts: 2/2 Granules: 95/95 PrimaryKey Parts: 2/2 Granules: 3/95 Skip Name: ib Parts: 1/2 Granules: 2/3
+2
+128
+k2 = 17 OR b = 5555	10	10	10	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 28/157
+(k1 = 5 AND k2 < 100) OR b = 8000	89	89	89	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 4/157
+k2 IN (1, 2, 3) OR b < 50	74	74	74	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 25/157
+ts = toDateTime('2026-03-03 10:00:00', 'UTC') OR b = 100	2	2	2	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 2/157
+toDate(ts) = '2026-03-05' OR b > 9990	1450	1450	1450	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 25/157
+k IS NULL OR b = 5000	100	100	100	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 4/157
+k < 10 OR b = 9000	10	10	10	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 4/157
+k = 111 OR b = 111	2	2	2	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 5/157
+a = 5 OR b = 50	1	1	1	PrimaryKey Parts: 1/1 Granules: 157/157 Skip Name: ia Parts: 1/1 Granules: 157/157 Skip Name: ib Parts: 1/1 Granules: 157/157 Skip Name: <Combined skip indexes> Parts: 1/1 Granules: 8/157
+2
+320

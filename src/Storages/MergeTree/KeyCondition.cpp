@@ -2113,6 +2113,52 @@ bool KeyCondition::hasOnlyConjunctions() const
     return std::ranges::none_of(rpn, [](const RPNElement & element) { return element.function == RPNElement::FUNCTION_OR; });
 }
 
+std::vector<std::pair<size_t, KeyCondition>> KeyCondition::getAtomConditionsWithPositions() const
+{
+    std::vector<std::pair<size_t, KeyCondition>> res;
+    std::optional<KeyCondition> without_rpn;
+
+    for (const auto & element : rpn)
+    {
+        if (!element.position_in_filter_rpn)
+            continue;
+
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+            case RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+            case RPNElement::FUNCTION_POINT_IN_POLYGON:
+            case RPNElement::FUNCTION_ATOM_GROUP:
+            case RPNElement::ALWAYS_FALSE:
+                break;
+            case RPNElement::FUNCTION_UNKNOWN:
+            case RPNElement::FUNCTION_NOT:
+            case RPNElement::FUNCTION_AND:
+            case RPNElement::FUNCTION_OR:
+            case RPNElement::ALWAYS_TRUE:
+                continue;
+        }
+
+        if (!without_rpn)
+        {
+            without_rpn.emplace(*this);
+            without_rpn->rpn.clear();
+        }
+
+        KeyCondition atom = *without_rpn;
+        atom.rpn.push_back(element);
+        if (!atom.alwaysUnknownOrTrue())
+            res.emplace_back(*element.position_in_filter_rpn, std::move(atom));
+    }
+
+    return res;
+}
+
 
 DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 

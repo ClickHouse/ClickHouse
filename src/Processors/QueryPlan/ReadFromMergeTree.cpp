@@ -3431,6 +3431,58 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
     return true;
 }
 
+/// Whether an `OR` of the filter combines a primary key atom with another condition: elsewhere the primary key
+/// cannot drop a granule in the disjunction merge that its own analysis does not drop.
+bool primaryKeyAtomIsInMixedDisjunction(const KeyCondition & primary_key_condition, const KeyCondition & rpn_template)
+{
+    using RPNElement = KeyCondition::RPNElement;
+    const auto & rpn = rpn_template.getRPN();
+
+    VectorWithMemoryTracking<bool> is_primary_key_atom(rpn.size(), false);
+    for (const auto & [position, atom_condition] : primary_key_condition.getAtomConditionsWithPositions())
+        if (position < rpn.size())
+            is_primary_key_atom[position] = true;
+
+    struct Operand
+    {
+        bool has_primary_key_atom = false;
+        bool has_other_condition = false;
+    };
+    VectorWithMemoryTracking<Operand> stack;
+
+    for (size_t position = 0; position < rpn.size(); ++position)
+    {
+        switch (rpn[position].function)
+        {
+            case RPNElement::FUNCTION_UNKNOWN:
+                stack.push_back({.has_primary_key_atom = is_primary_key_atom[position], .has_other_condition = !is_primary_key_atom[position]});
+                break;
+            case RPNElement::FUNCTION_NOT:
+                /// The merge evaluates `NOT` as true.
+                stack.back() = {};
+                break;
+            case RPNElement::FUNCTION_AND:
+            case RPNElement::FUNCTION_OR:
+            {
+                const Operand right = stack.back();
+                stack.pop_back();
+                Operand & left = stack.back();
+                left.has_primary_key_atom |= right.has_primary_key_atom;
+                left.has_other_condition |= right.has_other_condition;
+                if (rpn[position].function == RPNElement::FUNCTION_OR && left.has_primary_key_atom && left.has_other_condition)
+                    return true;
+                break;
+            }
+            default:
+                /// Constants.
+                stack.push_back({});
+                break;
+        }
+    }
+
+    return false;
+}
+
 }
 
 /// Whether a JOIN runtime filter on `_part_starting_offset + _part_offset` can prune granules: the global row indexes
@@ -3730,8 +3782,11 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
         }
     }
 
+    /// The primary key takes part in the disjunction analysis like one more skip index.
+    const bool primary_key_takes_part = primaryKeyAtomIsInMixedDisjunction(
+        indexes.key_condition->generateUnsubstituted(), indexes.key_condition_rpn_template->generateUnsubstituted());
     indexes.use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
-                                                    && skip_indexes.useful_indices.size() > 1
+                                                    && skip_indexes.useful_indices.size() + (primary_key_takes_part ? 1 : 0) > 1
                                                     && !indexes.key_condition_rpn_template->generateUnsubstituted().hasOnlyConjunctions()
                                                     && MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(
                                                         indexes.key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
@@ -6411,6 +6466,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
                 indexes->key_condition_rpn_template,
+                indexes->key_condition,
                 indexes->use_skip_indexes_for_disjunctions,
                 context->getIndexMarkCache(),
                 context->getIndexUncompressedCache(),
@@ -6432,6 +6488,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
             UsefulSkipIndexes{},
             indexes->key_condition_rpn_template,
+            /*primary_key_condition=*/ nullptr,
             /*use_for_disjunctions=*/false,
             context->getIndexMarkCache(),
             context->getIndexUncompressedCache(),
@@ -6451,6 +6508,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
             UsefulSkipIndexes{},
             indexes->key_condition_rpn_template,
+            /*primary_key_condition=*/ nullptr,
             /*use_for_disjunctions=*/false,
             context->getIndexMarkCache(),
             context->getIndexUncompressedCache(),

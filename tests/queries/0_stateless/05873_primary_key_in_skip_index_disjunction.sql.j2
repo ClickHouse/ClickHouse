@@ -1,0 +1,103 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the EXPLAIN output differs
+
+-- The primary key takes part in `use_skip_indexes_for_disjunctions`: a primary key condition OR-ed with
+-- a skip index condition skips the granules where neither can be true.
+
+SET use_skip_indexes = 1;
+SET use_skip_indexes_for_disjunctions = 1;
+SET use_skip_indexes_on_data_read = 0;
+SET use_query_condition_cache = 0;
+SET use_statistics_for_part_pruning = 0;
+SET explain_query_plan_default = 'legacy';
+
+{#- Each check prints the predicate, the count with index analysis at planning time and at read time,
+    the count of a full scan, and the parts and granules selected by each index (planning time). -#}
+{% macro check(table, predicate) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}',
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_skip_indexes_on_data_read = 1),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE match(trimLeft(explain), '^(Min-Max|Partition|Statistics|PrimaryKey|Skip|Name:|Parts:|Granules:)'))
+FORMAT TSVRaw;
+{%- endmacro %}
+
+{% set table_settings = "index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, max_bytes_to_merge_at_max_space_in_pool = 1, use_const_adaptive_granularity = 1, add_minmax_index_for_numeric_columns = 0" -%}
+
+-- One-column key, three partitions.
+CREATE TABLE t_pk (k UInt32, a UInt32, b UInt32, c UInt32, INDEX ia a TYPE minmax, INDEX ib b TYPE minmax)
+ENGINE = MergeTree ORDER BY k PARTITION BY intDiv(k, 4000) SETTINGS {{ table_settings }};
+INSERT INTO t_pk SELECT number, number + intHash32(number) % 100, 10000 - number, intHash32(number) % 1000 FROM numbers(10000)
+SETTINGS max_insert_threads = 1, max_block_size = 65536;
+
+{{ check('t_pk', "k = 111 OR b = 111") }}
+{{ check('t_pk', "k IN (5, 6000, 9999) OR b = 4321") }}
+{{ check('t_pk', "(k BETWEEN 1000 AND 1100 AND c > 500) OR b = 7000") }}
+{{ check('t_pk', "k < 100 OR (b > 9950 AND c < 500)") }}
+{{ check('t_pk', "NOT (k >= 50) OR b = 1234") }}
+{{ check('t_pk', "(k = 10 OR a = 5000) AND (b = 3000 OR k > 9990)") }}
+-- The primary key and two skip indexes.
+{{ check('t_pk', "k = 3 OR a = 2000 OR b = 50") }}
+-- The partition expression is folded per part.
+{{ check('t_pk', "intDiv(k, 4000) = 1 OR b = 20") }}
+-- The primary key folds `k = 111.5` to false.
+{{ check('t_pk', "k = 111.5 OR b = 111") }}
+-- No primary key atom: the skip index alone cannot skip granules.
+{{ check('t_pk', "k % 7 = 3 OR b = 5") }}
+-- A primary key atom that no OR combines with another condition: the mode stays off.
+{{ check('t_pk', "k < 100 AND (b = 5 OR c = 7)") }}
+{{ check('t_pk', "(k = 5 OR k > 9990) AND b > 100") }}
+
+-- Read-time index analysis reads only the two matching granules.
+SELECT count() FROM t_pk WHERE k = 111 OR b = 111 SETTINGS use_skip_indexes_on_data_read = 1, log_comment = '05873_read_time';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05873_read_time' AND type = 'QueryFinish';
+
+-- Two-column key.
+CREATE TABLE t_two (k1 UInt32, k2 UInt32, b UInt32, INDEX ib b TYPE minmax)
+ENGINE = MergeTree ORDER BY (k1, k2) SETTINGS {{ table_settings }};
+INSERT INTO t_two SELECT intDiv(number, 1000), intHash32(number) % 1000, number FROM numbers(10000)
+SETTINGS max_insert_threads = 1, max_block_size = 65536;
+
+{{ check('t_two', "k2 = 17 OR b = 5555") }}
+{{ check('t_two', "(k1 = 5 AND k2 < 100) OR b = 8000") }}
+{{ check('t_two', "k2 IN (1, 2, 3) OR b < 50") }}
+
+-- A predicate on the key `(toDate(ts), ts)` is a group of atoms.
+CREATE TABLE t_group (ts DateTime('UTC'), b UInt32, INDEX ib b TYPE minmax)
+ENGINE = MergeTree ORDER BY (toDate(ts), ts) SETTINGS {{ table_settings }};
+INSERT INTO t_group SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL number MINUTE, 10000 - number FROM numbers(10000)
+SETTINGS max_insert_threads = 1, max_block_size = 65536;
+
+{{ check('t_group', "ts = toDateTime('2026-03-03 10:00:00', 'UTC') OR b = 100") }}
+{{ check('t_group', "toDate(ts) = '2026-03-05' OR b > 9990") }}
+
+-- Nullable key.
+CREATE TABLE t_null (k Nullable(UInt32), b UInt32, INDEX ib b TYPE minmax)
+ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1, {{ table_settings }};
+INSERT INTO t_null SELECT if(number % 100 = 0, NULL, number), number FROM numbers(10000)
+SETTINGS max_insert_threads = 1, max_block_size = 65536;
+
+{{ check('t_null', "k IS NULL OR b = 5000") }}
+{{ check('t_null', "k < 10 OR b = 9000") }}
+
+-- Skip indexes with GRANULARITY 4: the verdict of an index granule applies to each of its granules.
+CREATE TABLE t_g4 (k UInt32, a UInt32, b UInt32, INDEX ia a TYPE minmax GRANULARITY 4, INDEX ib b TYPE minmax GRANULARITY 4)
+ENGINE = MergeTree ORDER BY k SETTINGS {{ table_settings }};
+INSERT INTO t_g4 SELECT number, number + intHash32(number) % 100, 10000 - number FROM numbers(10000)
+SETTINGS max_insert_threads = 1, max_block_size = 65536;
+
+{{ check('t_g4', "k = 111 OR b = 111") }}
+{{ check('t_g4', "a = 5 OR b = 50") }}
+
+SELECT count() FROM t_g4 WHERE k = 111 OR b = 111 SETTINGS use_skip_indexes_on_data_read = 1, log_comment = '05873_read_time_g4';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05873_read_time_g4' AND type = 'QueryFinish';
+
+DROP TABLE t_pk;
+DROP TABLE t_two;
+DROP TABLE t_group;
+DROP TABLE t_null;
+DROP TABLE t_g4;

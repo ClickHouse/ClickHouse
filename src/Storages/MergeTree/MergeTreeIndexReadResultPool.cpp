@@ -49,6 +49,7 @@ namespace FailPoints
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UsefulSkipIndexes skip_indexes_,
     ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
+    ConditionTemplate<KeyCondition>::Ptr primary_key_condition_,
     bool use_for_disjunctions_,
     MarkCachePtr mark_cache_,
     UncompressedCachePtr uncompressed_cache_,
@@ -62,6 +63,7 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
     , key_condition_rpn_template(std::move(key_condition_rpn_template_))
+    , primary_key_condition(std::move(primary_key_condition_))
     , use_for_disjunctions(use_for_disjunctions_)
     , mark_cache(std::move(mark_cache_))
     , uncompressed_cache(std::move(uncompressed_cache_))
@@ -190,6 +192,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     if (rpn_template_for_part)
     {
+        if (primary_key_condition)
+            MergeTreeDataSelectExecutor::recordPrimaryKeyResultsForDisjunctions(
+                *part_info, ranges, metadata_snapshot, primary_key_condition->generateForPart(*part_info), *rpn_template_for_part,
+                /*pk_to_minmax_slot=*/ nullptr, context->getSettingsRef(), partial_eval_results, log);
+
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                             *part_info, ranges, *rpn_template_for_part,
                             partial_eval_results, reader_settings, log);

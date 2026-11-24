@@ -1556,6 +1556,10 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
 
         if (rpn_template_for_part)
         {
+            recordPrimaryKeyResultsForDisjunctions(
+                part, ranges.ranges, metadata_snapshot, params.key_condition.generateForPart(part), *rpn_template_for_part,
+                params.pk_to_minmax_slot, params.settings, partial_eval_results, log);
+
             ranges.ranges = mergePartialResultsForDisjunctions(*part_for_skip_indexes,
                                 ranges.ranges, *rpn_template_for_part,
                                 partial_eval_results, reader_settings, log);
@@ -3514,30 +3518,31 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     if (index_helper->isVectorSimilarityIndex())
         read_hints.vector_search_results.reset();
 
-    auto create_update_partial_disjunction_result_fn = [&](size_t range_begin) -> KeyCondition::UpdatePartialDisjunctionResultFn
+    auto create_update_partial_disjunction_result_fn = [&](size_t range_begin, size_t range_end) -> KeyCondition::UpdatePartialDisjunctionResultFn
     {
         if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
         {
             /// One bit per element of the RPN template per mark.
             const size_t rpn_size = key_condition_rpn_template->getRPN().size();
-            return [range_begin, rpn_size, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            return [range_begin, range_end, rpn_size, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
             {
                 /// Index conditions may have extra condition-local RPN nodes after rewrites.
                 /// `mergePartialResultsForDisjunctions` reads only positions from
                 /// `key_condition_rpn_template`, so leave extra positions at the default.
-                if (is_unknown || position >= rpn_size)
+                if (is_unknown || element_result || position >= rpn_size)
                     return;
 
-                const auto bit_index = (range_begin * rpn_size) + position;
-                if (bit_index >= partial_disjunction_result.size())
+                const auto last_bit_index = ((range_end - 1) * rpn_size) + position;
+                if (last_bit_index >= partial_disjunction_result.size())
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Partial disjunction result bit index {} is out of range, bitset size: {}, mark: {}, position: {}",
-                        bit_index, partial_disjunction_result.size(), range_begin, position);
+                        last_bit_index, partial_disjunction_result.size(), range_end - 1, position);
                 }
 
-                partial_disjunction_result[bit_index] = element_result;
+                for (size_t mark = range_begin; mark < range_end; ++mark)
+                    partial_disjunction_result[(mark * rpn_size) + position] = false;
             };
         }
         return nullptr;
@@ -3568,7 +3573,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 for (size_t mark = range.begin; mark < range.end; ++mark)
                 {
-                    if (may_be_true_on_range(mark, mark + 1, create_update_partial_disjunction_result_fn(mark)))
+                    if (may_be_true_on_range(mark, mark + 1, create_update_partial_disjunction_result_fn(mark, mark + 1)))
                     {
                         if (res.empty() || mark - res.back().end > min_marks_for_seek)
                             res.push_back(MarkRange(mark, mark + 1));
@@ -3763,15 +3768,15 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
                 else
                 {
-                    size_t range_begin = std::max(ranges[i].begin, index_mark * skip_index_granularity);
-                    bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(range_begin));
-
-                    if (!may_be_true)
-                        continue;
-
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * skip_index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+
+                    bool may_be_true = condition->mayBeTrueOnGranule(
+                        granule, create_update_partial_disjunction_result_fn(data_range.begin, data_range.end));
+
+                    if (!may_be_true)
+                        continue;
 
                     if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
@@ -3923,6 +3928,44 @@ bool MergeTreeDataSelectExecutor::useSkipIndexesForDisjunctions(
         && key_condition_rpn_template != nullptr
         && isRPNSizeAllowedForSkipIndexesForDisjunctions(
             key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
+}
+
+void MergeTreeDataSelectExecutor::recordPrimaryKeyResultsForDisjunctions(
+    const IMergeTreeDataPartInfoForReader & part,
+    const MarkRanges & ranges,
+    const StorageMetadataPtr & metadata_snapshot,
+    const KeyCondition & key_condition,
+    const KeyCondition & rpn_template_for_eval_result,
+    const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
+    const Settings & settings,
+    PartialDisjunctionResult & partial_eval_results,
+    LoggerPtr log)
+{
+    const size_t rpn_size = rpn_template_for_eval_result.getRPN().size();
+    for (const auto & [position, atom_condition] : key_condition.getAtomConditionsWithPositions())
+    {
+        /// As for the results of skip indexes, see `filterMarksUsingIndex`.
+        if (position >= rpn_size)
+            continue;
+
+        const MarkRanges atom_ranges = markRangesFromPKRange(
+            part, ranges, /*part_starting_offset_in_query=*/ 0, metadata_snapshot, atom_condition,
+            /*part_offset_condition=*/ nullptr, /*total_offset_condition=*/ nullptr, /*exact_ranges=*/ nullptr,
+            pk_to_minmax_slot, settings, log);
+
+        /// Both are sorted.
+        const auto * atom_range = atom_ranges.begin();
+        for (const auto & range : ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                while (atom_range != atom_ranges.end() && atom_range->end <= mark)
+                    ++atom_range;
+                if (atom_range == atom_ranges.end() || mark < atom_range->begin)
+                    partial_eval_results[(mark * rpn_size) + position] = false;
+            }
+        }
+    }
 }
 
 /// Evaluate the predicate condition using the saved partial results.
