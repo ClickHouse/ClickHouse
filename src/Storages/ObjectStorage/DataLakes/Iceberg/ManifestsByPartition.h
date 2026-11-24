@@ -22,7 +22,7 @@ public:
     ManifestsByPartition(const ManifestFileCacheKeys & parent_manifests, Int32 partition_spec_id, const DataTypes & partition_types);
 
     /// The manifests that hold only the partition `partition_value`, newest first.
-    const ManifestFileCacheKeys & get(const Row & partition_value) const;
+    [[nodiscard]] const ManifestFileCacheKeys & get(const Row & partition_value) const;
 
 private:
     /// The serialized value of each partition field, or unset for null.
