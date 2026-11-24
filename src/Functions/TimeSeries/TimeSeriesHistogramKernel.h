@@ -251,6 +251,24 @@ private:
         Int32 origin_schema,
         Int32 target_schema);
 
+    /// Drops zero-length spans, moving their offsets to the next span: `addBuckets` cannot walk them.
+    static void removeEmptySpans(std::vector<TimeSeriesHistogramSpan> & spans) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    {
+        size_t num_spans = 0;
+        Int32 skipped_offset = 0;
+        for (const auto & span : spans)
+        {
+            if (span.length == 0)
+            {
+                skipped_offset += span.offset;
+                continue;
+            }
+            spans[num_spans++] = TimeSeriesHistogramSpan{span.offset + skipped_offset, span.length};
+            skipped_offset = 0;
+        }
+        spans.resize(num_spans);
+    }
+
     /// The port of `addBuckets`: adds the spans_b/buckets_b buckets to spans_a/buckets_a, creating missing
     /// buckets; B's buckets with an absolute upper limit <= `threshold` are ignored, `negative` subtracts.
     static std::pair<std::vector<TimeSeriesHistogramSpan>, std::vector<Float64>> addBuckets( /// STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -335,6 +353,27 @@ inline void TimeSeriesFloatHistogram::validateDecodedLayout() const
     };
     check_span_value_consistency(positive_spans, positive_buckets);
     check_span_value_consistency(negative_spans, negative_buckets);
+
+    /// Bucket indices stay within the custom bounds, or far inside Int32 so that the span offsets the kernel computes cannot overflow.
+    static constexpr Int64 max_exponential_bucket_index = (1LL << 30) - 1;
+    const Int64 min_index = usesCustomBuckets() ? 0 : -max_exponential_bucket_index;
+    const Int64 max_index = usesCustomBuckets() ? static_cast<Int64>(custom_values.size()) : max_exponential_bucket_index;
+    auto check_bucket_indices = [&](const std::vector<TimeSeriesHistogramSpan> & spans) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    {
+        Int64 index = 0;
+        for (size_t n = 0; n < spans.size(); ++n)
+        {
+            if (n > 0 && spans[n].offset < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram span number {} has a negative offset {}", n + 1, spans[n].offset);
+            index += spans[n].offset;
+            if (index < min_index || index + static_cast<Int64>(spans[n].length) > max_index + 1)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram span number {} has bucket indices out of range", n + 1);
+            index += spans[n].length;
+        }
+    };
+    check_bucket_indices(positive_spans);
+    if (!usesCustomBuckets())
+        check_bucket_indices(negative_spans);
 }
 
 inline TimeSeriesFloatHistogram TimeSeriesFloatHistogram::fromPayloadTupleRow(
@@ -1363,6 +1402,7 @@ inline std::pair<std::vector<TimeSeriesHistogramSpan>, std::vector<Float64>> Tim
     const std::vector<Float64> & buckets_b) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     const bool exponential_schema = schema >= HISTOGRAM_EXPONENTIAL_SCHEMA_MIN && schema <= HISTOGRAM_EXPONENTIAL_SCHEMA_MAX;
+    removeEmptySpans(spans_a);
 
     Int64 i_span = -1;
     Int64 i_bucket = -1;
@@ -1846,6 +1886,7 @@ TimeSeriesFloatHistogram::kahanAddBuckets(
     const std::vector<Float64> * compensation_buckets_b) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     const bool exponential_schema = schema >= HISTOGRAM_EXPONENTIAL_SCHEMA_MIN && schema <= HISTOGRAM_EXPONENTIAL_SCHEMA_MAX;
+    removeEmptySpans(spans_a);
 
     Int64 i_span = -1;
     Int64 i_bucket = -1;
