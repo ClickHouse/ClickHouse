@@ -10,7 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -25,11 +25,11 @@ struct CapturedStep
     String id;
     String type;
     String description;
-    std::vector<String> details;
+    VectorWithMemoryTracking<String> details;
 
     /// Ids of this step's children, and of the roots of any plans it has already built
     /// (`getBuiltChildPlans`).
-    std::vector<String> children;
+    VectorWithMemoryTracking<String> children;
 
     std::optional<AnalyzedStepData> statistics;
 
@@ -53,7 +53,7 @@ struct CapturedPlan
     /// Id of the root node
     String root_id;
     /// Output columns
-    std::vector<String> output;
+    VectorWithMemoryTracking<String> output;
     /// Execution totals
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
@@ -62,7 +62,7 @@ struct CapturedPlan
     /// was not collected from one the step does not have.
     CollectedStatistics collected;
 
-    std::vector<CapturedStep> nodes;
+    VectorWithMemoryTracking<CapturedStep> nodes;
 
     /// Reads a walked plan into a `CapturedPlan`. The walk gives the shape; each step is read
     /// here for what it says about itself.
