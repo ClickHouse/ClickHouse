@@ -83,7 +83,12 @@ old_part()
         CREATE TABLE part_check (d Date, k UInt64) ENGINE = MergeTree(d, k, 8192);
         INSERT INTO part_check VALUES ('2020-01-01', 1), ('2020-01-02', 2);
         ALTER TABLE part_check DETACH PARTITION 202001;"
-    find "${WORK_DIR}/$1" -type d -path '*/detached/*' | head -n 1
+    local dir
+    dir=$(find "${WORK_DIR}/$1" -type d -path '*/detached/*' | head -n 1)
+    # The files of a detached part have no write permission. The cases below rewrite them, and the
+    # test does not always run as root (the Fast test does not).
+    chmod -R u+w "$dir"
+    echo "$dir"
 }
 
 attach()
