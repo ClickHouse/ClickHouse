@@ -1980,11 +1980,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// Like `tryPushDownFilter`, refuse the whole filter when it has a stateful function:
         /// copying even its stateless conjuncts would change the input stream of the stateful
         /// function that stays above the JOIN. The same holds for a stateful function in an
-        /// `ARRAY JOIN` above the wrapped table: it is evaluated before `WHERE`, on the rows the
-        /// wrap returns.
+        /// `ARRAY JOIN` or a `JOIN ON` condition above the wrapped table: it is evaluated before
+        /// `WHERE`, on the rows the wrap returns.
         if (filter_push_down_enabled && can_prefilter_wrapped_table && parent_query->hasWhere()
             && !hasStatefulFunctionInExpression(parent_query->getWhere())
-            && !hasStatefulArrayJoinOverTable(parent_query->getJoinTreeNode(), original_table_expression))
+            && !hasStatefulJoinExpressionOverTable(parent_query->getJoinTreeNode(), original_table_expression))
         {
             wrap_where = parent_query->getWhere()->clone();
             removeExpressionsThatDoNotDependOnTableIdentifiers(wrap_where, original_table_expression, query_context);

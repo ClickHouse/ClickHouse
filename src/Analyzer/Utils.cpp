@@ -867,7 +867,7 @@ bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const Que
     return true;
 }
 
-bool hasStatefulArrayJoinOverTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
+bool hasStatefulJoinExpressionOverTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
 {
     std::vector<QueryTreeNodePtr> stack = {join_tree};
     while (!stack.empty())
@@ -879,6 +879,16 @@ bool hasStatefulArrayJoinOverTable(const QueryTreeNodePtr & join_tree, const Que
 
         if (const auto * join = node->as<JoinNode>())
         {
+            const auto contains_table = [&](const TableExpressionNodePtr & side)
+            {
+                return std::ranges::any_of(
+                    extractTableExpressions(side),
+                    [&](const auto & expression) { return expression.get() == table.get(); });
+            };
+
+            if ((contains_table(join->getLeftTableExpressionNodeTyped()) || contains_table(join->getRightTableExpressionNodeTyped()))
+                && hasStatefulFunctionInExpression(join->getJoinExpression()))
+                return true;
             stack.push_back(join->getLeftTableExpressionNode());
             stack.push_back(join->getRightTableExpressionNode());
         }

@@ -144,12 +144,12 @@ TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join
 /// JOIN containing it without changing JOIN semantics.
 bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table);
 
-/** Return true when an `ARRAY JOIN` above `table` in the join tree has a stateful function
-  * (`rowNumberInAllBlocks`, `runningDifference`, ...) in its expressions. Filtering `table`
-  * below such an `ARRAY JOIN` changes the rows that the stateful function observes, and so
-  * the number of rows the `ARRAY JOIN` produces.
+/** Return true when an `ARRAY JOIN` or a `JOIN` above `table` in the join tree has a stateful
+  * function (`rowNumberInAllBlocks`, `runningDifference`, ...) in its `ARRAY JOIN` expressions or
+  * its `JOIN ON` condition. Filtering `table` below it changes the rows that the stateful function
+  * observes, and so the rows that the `ARRAY JOIN` produces or the `JOIN` matches.
   */
-bool hasStatefulArrayJoinOverTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table);
+bool hasStatefulJoinExpressionOverTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table);
 
 /// Extract left table expression from join tree.
 TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node);
