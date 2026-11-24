@@ -11,11 +11,13 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 
 #include <algorithm>
+#include <map>
 #include <unordered_set>
 
 namespace ProfileEvents
@@ -595,21 +597,33 @@ void MergeTreeReadersChain::finalizeCompletedPrewhereGranule()
 namespace
 {
 
-/// Rows whose patch version `versions` raised above `versions_before` take the row of `patched` (of the `Nullable` or
-/// `LowCardinality(Nullable)` type `patched_type`): NULL becomes the row of `defaults`, other values are cast to `type`.
+/// Rows whose patch version `versions` raised above `versions_before` take the row of `patched`: a NULL, of `parent_null_map` if set, else
+/// of `patched` (then `Nullable` or `LowCardinality(Nullable)`), becomes the row of `defaults`, other values are cast to `type`.
 ColumnPtr mergePatchedRows(
     const ColumnPtr & column, const ColumnPtr & patched, const DataTypePtr & patched_type, const ColumnPtr & defaults,
-    const DataTypePtr & type, const IColumn::Versions & versions_before, const IColumn::Versions & versions)
+    const DataTypePtr & type, const IColumn::Versions & versions_before, const IColumn::Versions & versions,
+    const ColumnPtr & parent_null_map)
 {
-    auto full = removeSpecialRepresentations(patched->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
-    const auto & nullable = assert_cast<const ColumnNullable &>(*full);
-
+    auto full = removeSpecialRepresentations(patched->convertToFullColumnIfConst());
     IColumn::Filter has_value(full->size());
-    for (size_t row = 0; row < full->size(); ++row)
-        has_value[row] = versions[row] > versions_before[row] && !nullable.isNullAt(row);
+    ColumnPtr values;
+    if (parent_null_map)
+    {
+        const auto & is_null = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
+        for (size_t row = 0; row < full->size(); ++row)
+            has_value[row] = versions[row] > versions_before[row] && !is_null[row];
+        values = castColumn({full->filter(has_value, -1), patched_type, ""}, type);
+    }
+    else
+    {
+        full = full->convertToFullColumnIfLowCardinality();
+        const auto & nullable = assert_cast<const ColumnNullable &>(*full);
+        for (size_t row = 0; row < full->size(); ++row)
+            has_value[row] = versions[row] > versions_before[row] && !nullable.isNullAt(row);
+        auto values_type = removeNullable(removeLowCardinality(patched_type));
+        values = castColumn({nullable.getNestedColumnPtr()->filter(has_value, -1), values_type, ""}, type);
+    }
 
-    auto values_type = removeNullable(removeLowCardinality(patched_type));
-    auto values = castColumn({nullable.getNestedColumnPtr()->filter(has_value, -1), values_type, ""}, type);
     auto current = removeSpecialRepresentations(column->convertToFullColumnIfConst());
     auto full_defaults = removeSpecialRepresentations(defaults->convertToFullColumnIfConst());
 
@@ -697,6 +711,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     auto apply_patches_converting_old_nulls = [&](ColumnForPatch::Order order)
     {
         const auto & columns_in_part = merge_tree_reader->getColumnsToRead();
+        const auto & requested_columns = merge_tree_reader->getColumns();
         ColumnsForPatches columns_for_other_patches;
         Columns defaults;
         for (size_t i = 0; i < patch_readers.size(); ++i)
@@ -708,6 +723,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             Block header;
             Columns current;
             std::vector<std::pair<size_t, IColumn::Versions>> versions_before;
+            std::map<size_t, NameAndTypePair> parent_of;
             for (const auto & column_for_patch : columns_for_patches[i])
             {
                 if (column_for_patch.order != order)
@@ -716,8 +732,19 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                 size_t pos = result_header.getPositionByName(column_for_patch.column_name);
                 const auto & type = result_header.getByPosition(pos).type;
                 auto type_in_patch = patch_readers[i]->getColumnTypeInPatch(column_for_patch.column_name);
-                if (!read_columns[pos] || !type_in_patch || !isNullableOrLowCardinalityNullable(type_in_patch)
-                    || isNullableOrLowCardinalityNullable(type))
+                if (!read_columns[pos] || !type_in_patch)
+                    continue;
+
+                /// A subcolumn takes the NULL of its column from that column in the patch, see `addPatchPartsColumns`.
+                std::optional<NameAndTypePair> parent;
+                if (const auto & requested = *std::next(requested_columns.begin(), pos); requested.isSubcolumn())
+                {
+                    auto parent_type = patch_readers[i]->getColumnTypeInPatch(requested.getNameInStorage());
+                    if (parent_type && parent_type->isNullable() && !isNullableOrLowCardinalityNullable(requested.getTypeInStorage()))
+                        parent.emplace(requested.getNameInStorage(), parent_type);
+                }
+
+                if (!parent && (!isNullableOrLowCardinalityNullable(type_in_patch) || isNullableOrLowCardinalityNullable(type)))
                     continue;
 
                 /// Before the conversions, only a column the part does not store, or one a pending mutation drops, holds the
@@ -746,6 +773,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                 current[pos] = read_columns[pos];
                 read_columns[pos] = type_in_patch->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
                 header.getByPosition(pos).type = type_in_patch;
+                if (parent)
+                    parent_of.emplace(pos, *parent);
             }
 
             if (versions_before.empty())
@@ -756,12 +785,37 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             applyPatches(header, read_columns, result.patch_versions_block, /*min_version=*/ {}, patch_max_version, selected,
                 {order}, result.columns_for_patches);
 
+            std::map<String, ColumnPtr> parent_null_maps;
+            for (const auto & [pos, parent] : parent_of)
+            {
+                if (parent_null_maps.contains(parent.name))
+                    continue;
+
+                Block parent_header{{parent.type, parent.name}};
+                Columns parent_columns{
+                    parent.type->createColumnConstWithDefaultValue(read_columns[pos]->size())->convertToFullColumnIfConst()};
+                ColumnsForPatches parent_selected(columns_for_patches.size());
+                parent_selected[i].emplace_back(parent.name, order);
+                Block parent_versions;
+                Block patch_virtuals = result.columns_for_patches;
+                addPatchVirtuals(patch_virtuals, result_header.cloneWithColumns(read_columns));
+                applyPatches(parent_header, parent_columns, parent_versions, /*min_version=*/ {}, patch_max_version, parent_selected,
+                    {order}, patch_virtuals);
+
+                auto patched_parent = removeSpecialRepresentations(parent_columns.front()->convertToFullColumnIfConst());
+                parent_null_maps.emplace(parent.name, assert_cast<const ColumnNullable &>(*patched_parent).getNullMapColumnPtr());
+            }
+
             for (const auto & [pos, before] : versions_before)
             {
                 const auto & column = result_header.getByPosition(pos);
                 const auto & versions = addDataVersionForColumn(result.patch_versions_block, column.name, before.size(), source_data_version);
+                ColumnPtr parent_null_map;
+                if (auto it = parent_of.find(pos); it != parent_of.end())
+                    parent_null_map = parent_null_maps.at(it->second.name);
                 read_columns[pos] = mergePatchedRows(
-                    current[pos], read_columns[pos], header.getByPosition(pos).type, defaults[pos], column.type, before, versions);
+                    current[pos], read_columns[pos], header.getByPosition(pos).type, defaults[pos], column.type, before, versions,
+                    parent_null_map);
             }
         }
 

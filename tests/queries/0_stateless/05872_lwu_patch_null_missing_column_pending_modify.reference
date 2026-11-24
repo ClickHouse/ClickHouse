@@ -74,6 +74,23 @@ done y v1 stored	1
 done y v1	1	7
 done y v1	2	5
 done y v1	3	7
+pending xs v1	1	0
+xs v1	1	7	[7,7]	{'k':7}	7	7	seven	7	7
+xs v1	2	\N	[]	{}	\N	\N	\N	\N	5
+xs v1	3	7	[7,7]	{'k':7}	7	7	seven	7	7
+xs v1 where	1
+xs v1 where	3
+xs v1 prewhere	1	7	[7,7]
+xs v1 prewhere	2	\N	[]
+xs v1 prewhere	3	7	[7,7]
+xs v1 full	1	(7,[7,7],{'k':7},7,'seven',(7),7)	7	42
+xs v1 full	2	(NULL,[],{},NULL,NULL,NULL,5)	\N	42
+xs v1 full	3	(7,[7,7],{'k':7},7,'seven',(7),7)	7	42
+done xs v1	1	
+done xs v1 stored	1
+done xs v1	1	7	[7,7]	{'k':7}	7	7	seven	7	7
+done xs v1	2	\N	[]	{}	\N	\N	\N	\N	5
+done xs v1	3	7	[7,7]	{'k':7}	7	7	seven	7	7
 killed v1 patch type	LowCardinality(Nullable(String))
 killed v1 patch type	LowCardinality(Nullable(String))
 killed v1 patch type	Nullable(String)
@@ -176,6 +193,23 @@ done y v2 stored	1
 done y v2	1	7
 done y v2	2	5
 done y v2	3	7
+pending xs v2	1	0
+xs v2	1	7	[7,7]	{'k':7}	7	7	seven	7	7
+xs v2	2	\N	[]	{}	\N	\N	\N	\N	5
+xs v2	3	7	[7,7]	{'k':7}	7	7	seven	7	7
+xs v2 where	1
+xs v2 where	3
+xs v2 prewhere	1	7	[7,7]
+xs v2 prewhere	2	\N	[]
+xs v2 prewhere	3	7	[7,7]
+xs v2 full	1	(7,[7,7],{'k':7},7,'seven',(7),7)	7	42
+xs v2 full	2	(NULL,[],{},NULL,NULL,NULL,5)	\N	42
+xs v2 full	3	(7,[7,7],{'k':7},7,'seven',(7),7)	7	42
+done xs v2	1	
+done xs v2 stored	1
+done xs v2	1	7	[7,7]	{'k':7}	7	7	seven	7	7
+done xs v2	2	\N	[]	{}	\N	\N	\N	\N	5
+done xs v2	3	7	[7,7]	{'k':7}	7	7	seven	7	7
 killed v2 patch type	LowCardinality(Nullable(String))
 killed v2 patch type	LowCardinality(Nullable(String))
 killed v2 patch type	Nullable(String)

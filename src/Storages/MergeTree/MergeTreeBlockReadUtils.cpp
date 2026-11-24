@@ -474,6 +474,12 @@ void addPatchPartsColumns(
             /// Add requested column name, not the column name in patch, for correct query analysis and applying patches.
             /// This column name will be translated to the column name in patch in MergeTree reader.
             patch_columns_to_read_set.insert(column_name);
+
+            /// A subcolumn cannot show a NULL of its `Nullable` column: an old patch also provides that column.
+            if (column_in_storage.isSubcolumn() && !patch_parts[i].perform_alter_conversions
+                && patch_part_columns.getPhysical(column_name_in_patch).type->isNullable()
+                && !isNullableOrLowCardinalityNullable(column_in_storage.getTypeInStorage()))
+                patch_columns_to_read_set.insert(column_in_storage.getNameInStorage());
         }
 
         if (has_lightweight_delete && patch_part_columns.has(RowExistsColumn::name))

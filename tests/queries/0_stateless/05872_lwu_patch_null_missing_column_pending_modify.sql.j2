@@ -14,6 +14,12 @@ SET enable_nullable_tuple_type = 1;
     ('v', 'Nullable(String)', "'old'", 'Variant(String, UInt64)', "'abc'", "'u'", 'v, isNull(v)'),
     ('dyn', 'Nullable(String)', "'old'", 'Dynamic', "'abc'", "'u'", 'dyn, isNull(dyn)'),
     ('y', 'Nullable(Tuple(a UInt64))', 'tuple(1)', 'Tuple(a UInt64)', 'tuple(7)', 'tuple(5)', 'y.a'),
+    ('xs', 'Nullable(Tuple(a Nullable(UInt64), b Array(UInt64), c Map(String, UInt64), d Variant(UInt64, String), e LowCardinality(Nullable(String)), f Nullable(Tuple(g UInt64)), h UInt64))',
+     "tuple(1, [1], map('k', 1), 1::UInt64, 'one', tuple(1), 1)",
+     'Tuple(a Nullable(UInt64), b Array(UInt64), c Map(String, UInt64), d Variant(UInt64, String), e LowCardinality(Nullable(String)), f Nullable(Tuple(g UInt64)), h UInt64)',
+     "tuple(7, [7, 7], map('k', 7), 7::UInt64, 'seven', tuple(7), 7)",
+     "tuple(NULL, [], map(), NULL, NULL, NULL, 5)",
+     'xs.a, xs.b, xs.c, xs.d, xs.d.UInt64, xs.e, xs.f.g, xs.h'),
 ] -%}
 
 {% for version in ['v1', 'v2'] -%}
@@ -34,6 +40,10 @@ SETTINGS alter_sync = 0, mutations_sync = 0;
 -- A newer update writes a NULL that the new type holds.
 UPDATE t_pending_{{ col }}_{{ version }} SET {{ col }} = NULL WHERE id = 3;
 {% endif -%}
+{% if col == 'xs' -%}
+-- A column named like the null map of xs does not change how xs is read.
+ALTER TABLE t_pending_{{ col }}_{{ version }} ADD COLUMN `xs.null` UInt8 DEFAULT 42;
+{% endif -%}
 SELECT 'pending {{ col }} {{ version }}',
     (SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_pending_{{ col }}_{{ version }}' AND NOT is_done),
     (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_pending_{{ col }}_{{ version }}'
@@ -41,6 +51,11 @@ SELECT 'pending {{ col }} {{ version }}',
 SELECT '{{ col }} {{ version }}', id, {{ expr }} FROM t_pending_{{ col }}_{{ version }} ORDER BY id;
 {% if col == 's' -%}
 SELECT '{{ col }} {{ version }} prewhere', id FROM t_pending_{{ col }}_{{ version }} PREWHERE s = 'abc' ORDER BY id;
+{% endif -%}
+{% if col == 'xs' -%}
+SELECT '{{ col }} {{ version }} where', id FROM t_pending_{{ col }}_{{ version }} WHERE xs.a = 7 ORDER BY id;
+SELECT '{{ col }} {{ version }} prewhere', id, xs.a, xs.b FROM t_pending_{{ col }}_{{ version }} PREWHERE xs.h IN (5, 7) ORDER BY id;
+SELECT '{{ col }} {{ version }} full', id, xs, xs.a, `xs.null` FROM t_pending_{{ col }}_{{ version }} ORDER BY id;
 {% endif -%}
 DROP TABLE t_pending_{{ col }}_{{ version }} SYNC;
 
