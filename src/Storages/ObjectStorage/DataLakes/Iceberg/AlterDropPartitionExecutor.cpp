@@ -57,6 +57,7 @@ extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+extern const int DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN;
 }
 
 namespace Setting
@@ -713,7 +714,17 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
                 components.path_resolver, object_storage, context))
             files_for_cleanup.push_back(*statistics_file_path);
 
-    committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    try
+    {
+        committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
+    }
+    catch (...)
+    {
+        /// The catalog may have published the new snapshot, which then references these files.
+        if (getCurrentExceptionCode() == ErrorCodes::DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN)
+            files_for_cleanup.clear();
+        throw;
+    }
     if (!committed)
         return false;
 

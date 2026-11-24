@@ -295,7 +295,9 @@ public:
     /// True when the catalog writes the first metadata file itself on create. The client must not prewrite it.
     [[nodiscard]] virtual bool writesInitialMetadata() const { return false; }
 
-    /// Updates metadata in catalog.
+    /// Updates metadata in catalog. Returns false on a commit conflict, after which the caller may retry.
+    /// Throws `DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN` when the catalog may have applied the commit,
+    /// e.g. its response was lost: the caller must then keep the files the new snapshot references.
     /// `base_catalog_metadata_location` is the metadata pointer the commit was built on, exactly as the catalog returned it.
     /// Catalogs that only store a pointer (e.g. Glue) reject the commit unless the pointer still names it.
     [[nodiscard]] virtual bool updateMetadata(
