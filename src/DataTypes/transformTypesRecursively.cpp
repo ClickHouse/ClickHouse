@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/Utils.h>
 #include <Formats/SchemaInferenceUtils.h>
 
 #include <unordered_set>
@@ -192,15 +193,6 @@ void transformTypesRecursively(
 
 namespace
 {
-
-bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives)
-{
-    for (size_t i = 0; i + 1 < alternatives.size(); ++i)
-        for (size_t j = i + 1; j < alternatives.size(); ++j)
-            if (alternatives[i]->equals(*alternatives[j]))
-                return true;
-    return false;
-}
 
 DataTypePtr replaceNestedTypesInPairImpl(
     const DataTypePtr & left,

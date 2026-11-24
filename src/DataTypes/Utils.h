@@ -42,13 +42,16 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
 /** Returns true if a column of type `from` must be cast to type `to`. `IDataType::equals` ignores time zones, custom names
   * and `AggregateFunction` state versions, so equal types that differ in those are cast too, unless they differ in `Bool`
-  * or `SimpleAggregateFunction(f, Bool)` (their casts change values) or in an aggregate function or its parameters:
+  * or `SimpleAggregateFunction(f, Bool)` (their casts change values), in an aggregate function or its parameters:
   * `AggregateFunction(quantile, UInt64)` equals `AggregateFunction(quantiles(0.9), UInt64)` although their states finalize
-  * to different types.
+  * to different types, or in a `Variant` with `equals`-equal alternatives, whose positions do not pair them by name.
   */
 bool needsConvertingCast(const IDataType & from, const IDataType & to);
 
 /// Returns true if `from` equals `to` and a cast between them only relabels the column, in the sense of `needsConvertingCast`.
 bool isRelabellingCast(const IDataType & from, const IDataType & to);
+
+/// Returns true if two of the `Variant` alternatives are `equals`-equal, so equal Variants may pair them in several ways.
+bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives);
 
 }

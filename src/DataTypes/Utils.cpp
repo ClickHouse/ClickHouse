@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/TypeTree.h>
 
 namespace DB
@@ -406,6 +407,9 @@ static void appendNamesKeptByRelabelling(const IDataType & type, bool in_argumen
         }
         else if (WhichDataType(child).isUInt8())
             names.push_back(child.getName() == "Bool" || isSimpleAggregateFunctionOfBool(child) ? child.getName() : "");
+        else if (const auto * variant = typeid_cast<const DataTypeVariant *>(&child);
+                 variant && hasEqualsAmbiguousAlternatives(variant->getVariants()))
+            names.push_back(child.getName());
         else
             names.emplace_back();
     });
@@ -428,6 +432,15 @@ bool needsConvertingCast(const IDataType & from, const IDataType & to)
     if (!from.equals(to))
         return true;
     return from.getName() != to.getName() && getNamesKeptByRelabelling(from) == getNamesKeptByRelabelling(to);
+}
+
+bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives)
+{
+    for (size_t i = 0; i + 1 < alternatives.size(); ++i)
+        for (size_t j = i + 1; j < alternatives.size(); ++j)
+            if (alternatives[i]->equals(*alternatives[j]))
+                return true;
+    return false;
 }
 
 }

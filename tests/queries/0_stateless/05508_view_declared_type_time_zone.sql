@@ -108,6 +108,8 @@ SELECT CAST(x AS Variant(DateTime('UTC'), String)) FROM t_var;
 SELECT CAST(quantilesState(0.9)(number)::Variant(AggregateFunction(quantiles(0.9), UInt64), String) AS Variant(AggregateFunction(quantiles(0.1), UInt64), String)) FROM numbers(100); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST([2::UInt8]::Variant(Array(UInt8), String) AS Variant(Array(Bool), String)); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(CAST(quantilesState(0.9)(number), 'Variant(AggregateFunction(0, quantiles(0.9), UInt64), String)') AS Variant(AggregateFunction(1, quantile, UInt64), String)) FROM numbers(5); -- { serverError CANNOT_CONVERT_TYPE }
+-- Alternatives that differ only by the time zone cannot be paired by position: London is the second alternative here and the first in the target.
+SELECT CAST(CAST(toDateTime(1767225600, 'Europe/London') AS Variant(DateTime('Asia/Tokyo'), DateTime('Europe/London'))) AS Variant(DateTime('Europe/London'), DateTime('Pacific/Honolulu'))) SETTINGS allow_suspicious_variant_types = 1; -- { serverError CANNOT_CONVERT_TYPE }
 
 SELECT 'AggregateFunction state version';
 CREATE TABLE t_vaf (x Variant(AggregateFunction(0, uniq, UInt64), String)) ENGINE = Memory;
