@@ -1,0 +1,18 @@
+Expression
+  Aggregating
+    Expression
+      Filter
+        Expression
+          ReadFromSystemNumbers
+1
+Expression
+  Aggregating
+    Expression
+      Filter
+        ReadFromSystemNumbers
+Expression
+  Aggregating
+    Expression
+      Filter
+        Expression
+          ReadFromSystemNumbers

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ListWithMemoryTracking.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -14,7 +15,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
+void optimizePrimaryKeyConditionAndLimit(const Stack & stack, size_t max_expanded_ast_elements)
 {
     const auto & frame = stack.back();
 
@@ -42,6 +43,16 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         return filter_dag;
     };
 
+    /// Index analysis walks the condition once per path.
+    auto add_composed_filter = [&](ActionsDAG filter_dag, const String & column_name)
+    {
+        auto composed = compose(std::move(filter_dag));
+        const auto * node = composed.tryFindInOutputs(column_name);
+        if (max_expanded_ast_elements && node && getExpandedTreeSize(*node, max_expanded_ast_elements) > max_expanded_ast_elements)
+            return;
+        source_step_with_filter->addFilter(std::move(composed), column_name);
+    };
+
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
     const auto & storage_row_level_filter = source_step_with_filter->getRowLevelFilter();
     if (storage_row_level_filter)
@@ -57,7 +68,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            source_step_with_filter->addFilter(compose(filter_step->getExpression().clone()), filter_step->getFilterColumnName());
+            add_composed_filter(filter_step->getExpression().clone(), filter_step->getFilterColumnName());
             expression_dags.push_back(&filter_step->getExpression());
         }
         else if (auto * limit_step = typeid_cast<LimitStep *>(iter->node->step.get()))
@@ -100,7 +111,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
 
             /// The fused element filter is just a filter right above the join.
             if (const auto & element_filter = array_join_step->getElementFilter())
-                source_step_with_filter->addFilter(compose(element_filter->clone()), array_join_step->getElementFilterColumnName());
+                add_composed_filter(element_filter->clone(), array_join_step->getElementFilterColumnName());
         }
         else if (auto * object_filter_step = typeid_cast<ObjectFilterStep *>(iter->node->step.get()))
         {

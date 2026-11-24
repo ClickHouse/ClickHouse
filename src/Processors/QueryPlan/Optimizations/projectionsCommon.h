@@ -50,7 +50,7 @@ struct QueryDAG
     /// to be set on a `FilterStep` that replaces them.
     std::optional<bool> optimize_constant_columns_after_filter;
 
-    bool build(QueryPlan::Node & node);
+    bool build(QueryPlan::Node & node, size_t max_expanded_ast_elements);
 
 private:
     bool buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & filter_nodes);

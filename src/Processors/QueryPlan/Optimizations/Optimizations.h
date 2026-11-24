@@ -117,6 +117,7 @@ struct Optimization
         bool legacy_array_join_function_nondeterministic_evaluation = false;
         bool enable_lazy_columns_replication = false;
         bool filter_push_down_below_limit_by = true;
+        size_t max_expanded_ast_elements{};
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -346,7 +347,7 @@ struct Frame
 using Stack = VectorWithMemoryTracking<Frame>;
 
 /// Second pass optimizations
-void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+void optimizePrimaryKeyConditionAndLimit(const Stack & stack, size_t max_expanded_ast_elements);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(

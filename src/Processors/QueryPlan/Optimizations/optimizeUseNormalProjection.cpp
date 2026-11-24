@@ -43,6 +43,7 @@ namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
     extern const SettingsFloat optimize_projection_skip_index_ratio;
@@ -452,7 +453,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     QueryDAG query;
     {
         auto & child = iter->node->children[iter->next_child - 1];
-        if (!query.build(*child))
+        if (!query.build(*child, context->getSettingsRef()[Setting::max_expanded_ast_elements]))
             return reject_all("the steps between the read and its consumer cannot be rewritten onto a projection");
 
         if (need_parent_part_offset)

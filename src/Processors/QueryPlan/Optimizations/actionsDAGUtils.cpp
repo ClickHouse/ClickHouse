@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -1116,6 +1117,54 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
 VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
 {
     return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
+}
+
+using ExpandedTreeSizes = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t>;
+
+static void computeExpandedTreeSizes(const ActionsDAG::NodeRawConstPtrs & roots, ExpandedTreeSizes & sizes, size_t limit)
+{
+    const size_t cap = std::min(limit, std::numeric_limits<size_t>::max() / 4) + 1;
+    visitNodesPostOrder(
+        roots,
+        [&](const ActionsDAG::Node * node)
+        {
+            /// An alias is not a node of the query tree.
+            size_t size = node->type == ActionsDAG::ActionType::ALIAS ? 0 : 1;
+            for (const auto * child : node->children)
+                size = std::min(size + sizes.at(child), cap);
+            sizes.emplace(node, size);
+        },
+        [&](const ActionsDAG::Node * node) { return sizes.contains(node); });
+}
+
+size_t getExpandedTreeSize(const ActionsDAG::Node & node, size_t limit)
+{
+    ExpandedTreeSizes sizes;
+    computeExpandedTreeSizes({&node}, sizes, limit);
+    return sizes.at(&node);
+}
+
+size_t getExpandedTreeSizeAfterMerge(const ActionsDAG & first, const ActionsDAG & second, const ActionsDAG::Node & node, size_t limit)
+{
+    ExpandedTreeSizes sizes;
+    computeExpandedTreeSizes(first.getOutputs(), sizes, limit);
+
+    /// Bind the inputs of `second` to the outputs of `first` as `ActionsDAG::mergeInplace` does.
+    UnorderedMapWithMemoryTracking<std::string_view, ListWithMemoryTracking<const ActionsDAG::Node *>> first_outputs;
+    for (const auto * output : first.getOutputs())
+        first_outputs[output->result_name].push_back(output);
+
+    for (const auto * input : second.getInputs())
+    {
+        auto it = first_outputs.find(input->result_name);
+        if (it == first_outputs.end() || it->second.empty())
+            continue;
+        sizes.emplace(input, sizes.at(it->second.front()));
+        it->second.pop_front();
+    }
+
+    computeExpandedTreeSizes({&node}, sizes, limit);
+    return sizes.at(&node);
 }
 
 }

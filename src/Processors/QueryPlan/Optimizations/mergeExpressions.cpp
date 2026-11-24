@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
@@ -84,6 +85,12 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
             return 0;
 
+        /// The optimizations that analyze a filter condition walk it once per path.
+        const size_t limit = settings.max_expanded_ast_elements;
+        const auto * filter_node = parent_actions.tryFindInOutputs(parent_filter->getFilterColumnName());
+        if (limit && filter_node && getExpandedTreeSizeAfterMerge(child_actions, parent_actions, *filter_node, limit) > limit)
+            return 0;
+
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
         /// merge can drag materialize wrappers from a UNION child into the filter (#78166); folding through
         /// them is left to the `FilterStep` constructor below, which does it after `deduplicateSubtrees` -
@@ -127,6 +134,13 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
             return 0;
 
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());
+        if (const size_t limit = settings.max_expanded_ast_elements)
+        {
+            const auto & parent_condition = parent_actions.findInOutputs(parent_filter->getFilterColumnName());
+            if (1 + getExpandedTreeSize(child_filter_node, limit) + getExpandedTreeSizeAfterMerge(child_actions, parent_actions, parent_condition, limit) > limit)
+                return 0;
+        }
+
         if (child_filter->removesFilterColumn())
             removeFromOutputs(child_actions, child_filter_node);
 
