@@ -1516,8 +1516,9 @@ public:
         const size_t workers = std::max<size_t>(task_to_host_map->getWorkerAddresses().size(), 1);
         const UInt64 dispatch_threads = context->getSettingsRef()[Setting::distributed_plan_task_dispatch_threads];
         const size_t sender_threads = dispatch_threads == 0 ? workers : std::min<size_t>(dispatch_threads, workers);
+        /// No free threads: the batches usually go out at the start, and an idle sender would hold a global pool thread until the query ends.
         task_senders.emplace(CurrentMetrics::DistributedPlanTaskDispatchThreads, CurrentMetrics::DistributedPlanTaskDispatchThreadsActive,
-            CurrentMetrics::DistributedPlanTaskDispatchThreadsScheduled, sender_threads, sender_threads, /*queue_size=*/ 0);
+            CurrentMetrics::DistributedPlanTaskDispatchThreadsScheduled, sender_threads, /*max_free_threads=*/ 0, /*queue_size=*/ 0);
         QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
