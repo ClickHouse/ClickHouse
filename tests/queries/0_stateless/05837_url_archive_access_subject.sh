@@ -7,9 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 set -e
 
-# The access check of an archive read names the archive, not the member. A filtered grant written on the
-# literal `archive::member` string matched before this version, because `:` is allowed in a `URL` grant
-# subject, and it no longer matches: the object that is fetched is the archive.
+# The access check of an archive read names the archive, not the member, and the read goes through the
+# web object storage, which follows redirects without the per-hop grant check of `StorageURL`. An ad-hoc
+# read therefore needs the unfiltered `READ ON URL` as well, like a wildcard read; a filtered grant written
+# on the literal `archive::member` string never matched the archive in the first place, because `::` is
+# not part of the fetched URL. The access subject of the *rows* is still the archive: the grant on it is
+# what authorizes the read, the unfiltered grant is what the redirect-following reader demands on top.
 coproc ARCHIVE_HTTP {
     exec python3 -u - <<'EOF'
 import io
@@ -92,30 +95,13 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE ROLE ${role};
     CREATE USER OR REPLACE ${user} IDENTIFIED WITH no_password;
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${user};
-    GRANT READ ON URL('http://127.0.0.1:${PORT}/a.zip::eod.csv') TO ${user}"
+    GRANT READ ON URL TO ${user}"
 
-# The Replicated access storage re-serializes grants as SQL with the filter dropped while
-# `enable_read_write_grants` is off (the default), so a filtered `READ ON URL` turns unfiltered there and
-# every source-grant refusal below would silently turn into a successful read. Probe for that once: the
-# URL is covered by no filter at all, so a user holding only filtered grants cannot read it.
-if ${CLICKHOUSE_CLIENT} --user="${user}" --query \
-    "SELECT 1 FROM url('http://127.0.0.1:${PORT}/probe.csv', 'CSV', 'x UInt64')" 2>&1 \
-    | grep -q 'necessary to have the grant READ ON URL'; then
-    filters_are_effective=1
-else
-    # The read failed, but for another reason than the missing grant (e.g. the file does not exist on this
-    # mock): the grant check did not refuse, so the filters are not effective in this environment.
-    filters_are_effective=0
-fi
 
-echo "--- a grant on the literal member string does not cover the archive read"
-if [ "$filters_are_effective" = "1" ]; then
-    ${CLICKHOUSE_CLIENT} --user="${user}" --query \
-        "SELECT sum(c1) FROM url('http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
-        | grep -o 'necessary to have the grant READ ON URL' | head -1
-else
-    echo "skipped: source-grant filters are not effective on this server (replicated access storage)"
-fi
+echo "--- without the grant on the archive the read is refused"
+${CLICKHOUSE_CLIENT} --user="${user}" --query \
+    "SELECT sum(c1) FROM url('http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
+    | grep -o 'necessary to have the grant READ ON URL' | head -1
 
 echo "--- while a grant on the archive does"
 ${CLICKHOUSE_CLIENT} --multiquery --query "
@@ -126,34 +112,22 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query \
 
 echo "--- and taking it back brings the refusal back"
 ${CLICKHOUSE_CLIENT} --query "REVOKE ${role} FROM ${user}"
-if [ "$filters_are_effective" = "1" ]; then
-    ${CLICKHOUSE_CLIENT} --user="${user}" --query \
-        "SELECT sum(c1) FROM url('http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
-        | grep -o 'necessary to have the grant READ ON URL' | head -1
-else
-    echo "skipped: source-grant filters are not effective on this server (replicated access storage)"
-fi
+${CLICKHOUSE_CLIENT} --user="${user}" --query \
+    "SELECT sum(c1) FROM url('http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
+    | grep -o 'necessary to have the grant READ ON URL' | head -1
 
 echo "--- a grant with spaces around the separator never matched"
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON URL('http://127.0.0.1:${PORT}/a.zip :: eod.csv') TO ${user}"
-if [ "$filters_are_effective" = "1" ]; then
-    ${CLICKHOUSE_CLIENT} --user="${user}" --query \
-        "SELECT sum(c1) FROM url('http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
-        | grep -o 'necessary to have the grant READ ON URL' | head -1
-else
-    echo "skipped: source-grant filters are not effective on this server (replicated access storage)"
-fi
+${CLICKHOUSE_CLIENT} --user="${user}" --query \
+    "SELECT sum(c1) FROM url('http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
+    | grep -o 'necessary to have the grant READ ON URL' | head -1
 
 # `urlCluster` reads the same source through the same access subject, on the initiator and on the shard,
 # so it needs its own arm: a check that only `url` reaches would still pass the cases above.
 echo "--- urlCluster names the archive as well"
-if [ "$filters_are_effective" = "1" ]; then
-    ${CLICKHOUSE_CLIENT} --user="${user}" --query \
-        "SELECT sum(c1) FROM urlCluster('test_shard_localhost', 'http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
-        | grep -o 'necessary to have the grant READ ON URL' | head -1
-else
-    echo "skipped: source-grant filters are not effective on this server (replicated access storage)"
-fi
+${CLICKHOUSE_CLIENT} --user="${user}" --query \
+    "SELECT sum(c1) FROM urlCluster('test_shard_localhost', 'http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
+    | grep -o 'necessary to have the grant READ ON URL' | head -1
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT READ ON URL('http://127.0.0.1:${PORT}/a.zip') TO ${role};
     GRANT ${role} TO ${user}"

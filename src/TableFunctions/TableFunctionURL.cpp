@@ -485,11 +485,11 @@ StoragePtr TableFunctionURL::getStorage(
         if (!skip_experimental_gate && configuration.http_method.empty() && urlPathNeedsIndexPageListing(url))
             checkExperimentalURLWildcardFromIndexPages();
         /// The web object storage follows redirects without the per-hop check of `StorageURL`, so a filtered
-        /// `READ ON URL` cannot bound a wildcard read: that path needs the grant on the whole source, as in
-        /// master. A stored definition is exempt the same way as the gate above: it was written under the
-        /// grants of the table, and a replay cannot demand a fresh source grant without dropping the table.
-        /// A literal archive URL is not a wildcard read: its access subject stays the archive, as documented.
-        if (!is_replayed_table_definition && !archive_pattern.has_value())
+        /// `READ ON URL` cannot bound any read through it - a wildcard listing or an archive fetch alike, the
+        /// redirect of an archive URL included: this path needs the grant on the whole source, as in master.
+        /// A stored definition is exempt the same way as the gate above: it was written under the grants of
+        /// the table, and a replay cannot demand a fresh source grant without dropping the table.
+        if (!is_replayed_table_definition)
             checkWholeSourceAccessForURLWildcard(context);
         auto object_storage_configuration
             = createWebObjectStorageConfiguration(source, format_, structure, compression_method_, context);
@@ -576,10 +576,10 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         {
             if (needs_index_page_listing && !skip_experimental_gate)
                 checkExperimentalURLWildcardFromIndexPages();
-            /// Same whole-source grant as `getStorage`, for the wildcard listing path only: the structure
-            /// inference reads the source too, and an ad-hoc call has no table grants to fall back on.
-            if (needs_index_page_listing)
-                checkWholeSourceAccessForURLWildcard(context);
+            /// Same whole-source grant as `getStorage`, for every read through the web object storage -
+            /// a wildcard listing and an archive fetch alike: the structure inference reads the source too,
+            /// and an ad-hoc call has no table grants to fall back on.
+            checkWholeSourceAccessForURLWildcard(context);
 
             auto object_storage_configuration
                 = createWebObjectStorageConfiguration(filename, format, structure, compression_method, context);

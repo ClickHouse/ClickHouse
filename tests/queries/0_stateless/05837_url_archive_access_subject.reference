@@ -1,11 +1,7 @@
---- a grant on the literal member string does not cover the archive read
-necessary to have the grant READ ON URL
+--- without the grant on the archive the read is refused
 --- while a grant on the archive does
 3
 --- and taking it back brings the refusal back
-necessary to have the grant READ ON URL
 --- a grant with spaces around the separator never matched
-necessary to have the grant READ ON URL
 --- urlCluster names the archive as well
-necessary to have the grant READ ON URL
 3

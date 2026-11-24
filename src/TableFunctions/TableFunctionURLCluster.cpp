@@ -2,6 +2,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Common/Exception.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
@@ -15,6 +17,18 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+namespace
+{
+    /// The web object storage behind the index pages follows redirects without the per-hop grant check of
+    /// `StorageURL`, so a filtered `READ ON URL` cannot bound this read: the grant on the whole source is
+    /// needed, exactly as in `TableFunctionURL`.
+    void checkWholeSourceAccessForURLWildcard(const ContextPtr & context)
+    {
+        context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::URL));
+    }
+}
+
 
 ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
@@ -72,6 +86,13 @@ StoragePtr TableFunctionURLCluster::getStorage(
         /// setting gates. A literal path is expanded locally and needs no listing.
         if (needs_index_page_listing && !skip_experimental_gate)
             checkExperimentalURLWildcardFromIndexPages();
+
+        /// The web object storage behind both the initiator and the workers follows redirects without the
+        /// per-hop grant check of `StorageURL`, so a filtered `READ ON URL` cannot bound this read, exactly as
+        /// for `url`: the whole-source grant is needed. A stored definition is exempt, as for `url`: it is read
+        /// under the grants on the table.
+        if (!is_replayed_table_definition)
+            checkWholeSourceAccessForURLWildcard(context);
 
         /// `structure` has no corresponding `getStorage` argument. It is the value parsed by
         /// `ITableFunctionFileLike` together with the source, format, and compression arguments.
