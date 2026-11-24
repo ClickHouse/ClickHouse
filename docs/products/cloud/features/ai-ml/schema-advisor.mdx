@@ -17,7 +17,7 @@ In ClickHouse, the schema decides how a table is stored: the primary key, the `O
 and a better compression codec can cut the storage a table uses. 
 Making that change on a production table requires that you have a plan, validation on the plan, and a rollout with as little downtime as possible.
 
-Schema Advisor helps you with that work. Recommendations come from your query logs in [Monitoring](/products/cloud/features/monitoring/cloud-console), based on deterministic tests, not AI-generated.
+Schema Advisor helps you with that work. Recommendations come from your query logs in [Monitoring](/products/cloud/features/monitoring/recommendations#schema-recommendations), based on deterministic tests, not AI-generated.
 If you want to action those recommendations, then Schema Advisor proposes the plan to help you get there.
 A durable workflow executes the SQL and you approve each step before the workflow continues.
 
@@ -39,8 +39,7 @@ Sign in to the Cloud console, select your organization, and open **Preview featu
 
 <Step title="Request access to Schema Advisor">
 
-Find **Schema Advisor**, select **Learn more**, and then select **Request access**. We will email you when access is turned on.
-
+Find **Schema Advisor**, select **Learn more**, and then select **Request access**. We will email you when access is turned on. 
 Some previews are hidden for some organizations. Contact [Cloud Support](https://clickhouse.com/support/program) if Schema Advisor is missing from the list.
 
 </Step>
@@ -75,14 +74,14 @@ Once you're ready to apply the recommendation, click **Generate implementation p
 
 ## Impact analysis {#impact-analysis}
 
-Schema Advisor builds a plan and shows the SQL for every step. After you approve, the workflow runs it against a sample of the table:
+Schema Advisor builds a plan and shows the SQL for every step. After you approve, the workflow executes.
 
-1. It keeps a sample of the current table. That sample is the baseline.
-2. It builds a candidate table with the proposed schema.
-3. It replays the queries that run most often on that table, once on the baseline and once on the candidate.
-4. It shows those runs side by side, so you can compare the current schema with the new one.
+1. We take a sample of the production table as the baseline table. Today that sample size is 10,000,000 rows. 
+2. Reading from the baseline, we build a candidate table with the proposed schema.
+3. We replay the queries that run most often on that production table with the baseline and candidate tables 3 times.
+4. The results are showed those runs side by side, averaged out across the queries. The metrics compared are: query time, rows scanned, and data read.
 
-You choose where the analysis runs:
+You can choose where the analysis runs:
 
 - **In the current service.** The analysis uses the service you are already in.
 - **In an isolated service.** Schema Advisor creates a separate ephemeral service restored from your latest backup. You must have backups set up to use this. 
@@ -90,9 +89,9 @@ The benchmarking queries run on that copy of the data. This is separate from a [
 
 ## Deploy a change {#deploy-a-change}
 
-You can deploy after impact analysis, or skip the analysis and deploy directly. Impact analysis is the recommended path. Depending on the change type, the execution looks different.
+If you like the results of the impact analysis, you can deploy after. Else you can dismiss the recommendation. Depending on the change type, the execution will look different.
 
-- **Full table rebuild.** These are examples of a full rebuild: changing the sort order, or changing the primary key.
+- **Full table rebuild.** These schema changes require a full rebuild: changing the sort order, or changing the primary key.
 Schema Advisor creates the new table, copies the data, checks the copy, and then swaps it into place with [`EXCHANGE TABLES`](/sql-reference/statements/exchange).
 The exchange is atomic, so the production name points at the new table with no downtime.
 Schema Advisor shows the exact statement, and the workflow runs it after you approve it.
