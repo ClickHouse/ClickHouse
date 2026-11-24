@@ -341,14 +341,15 @@ ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatistics
 
 ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
 {
+    const UInt128 key = sipHash128(path.data(), path.size());
     std::lock_guard lock(mutex);
-    if (auto it = read_ranges_by_path.find(path); it != read_ranges_by_path.end())
-        return it->second;
+    if (auto it = read_ranges_by_path.find(key); it != read_ranges_by_path.end())
+        return *it->second;
     /// A file takes a unit of the limit as a range does.
     if (!reserve(1))
         return not_registered;
-    /// References to the elements of an unordered map stay valid when it grows.
-    return read_ranges_by_path[path];
+    auto read_ranges = std::make_unique<ReadRanges>();
+    return *read_ranges_by_path.emplace(key, std::move(read_ranges)).first->second;
 }
 
 size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)

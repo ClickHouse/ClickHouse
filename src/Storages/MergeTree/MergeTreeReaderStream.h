@@ -6,8 +6,9 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <base/defines.h>
 #include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/HashTable/Hash.h>
 #include <absl/container/btree_map.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <absl/container/flat_hash_map.h>
 
 #include <mutex>
 
@@ -73,7 +74,14 @@ private:
     const bool duplicated;
 
     std::mutex mutex;
-    UnorderedMapWithMemoryTracking<String, ReadRanges> read_ranges_by_path TSA_GUARDED_BY(mutex);
+    /// By the `sipHash128` of the path, which takes less than the path. The values do not move when the map grows.
+    absl::flat_hash_map<
+        UInt128,
+        std::unique_ptr<ReadRanges>,
+        UInt128TrivialHash,
+        std::equal_to<>,
+        AllocatorWithMemoryTracking<std::pair<const UInt128, std::unique_ptr<ReadRanges>>>>
+        read_ranges_by_path TSA_GUARDED_BY(mutex);
     /// Given out for the files looked up once the counting stopped, which then take nothing.
     ReadRanges not_registered;
 };
