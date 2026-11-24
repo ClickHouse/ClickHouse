@@ -24,3 +24,5 @@ Expression
           ReadFromSystemNumbers
 Condition: true
 └──ReadFromMergeTree (default.t_05872)
+8192
+0

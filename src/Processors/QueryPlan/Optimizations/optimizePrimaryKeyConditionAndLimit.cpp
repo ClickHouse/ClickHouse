@@ -44,13 +44,15 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack, size_t max_expande
     };
 
     /// Index analysis walks the condition once per path.
+    /// A filter that is not added ends the walk, like a step it cannot see through: the source takes its filters as complete.
     auto add_composed_filter = [&](ActionsDAG filter_dag, const String & column_name)
     {
         auto composed = compose(std::move(filter_dag));
         const auto * node = composed.tryFindInOutputs(column_name);
         if (max_expanded_ast_elements && node && getExpandedTreeSize(*node, max_expanded_ast_elements) > max_expanded_ast_elements)
-            return;
+            return false;
         source_step_with_filter->addFilter(std::move(composed), column_name);
+        return true;
     };
 
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
@@ -68,7 +70,8 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack, size_t max_expande
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            add_composed_filter(filter_step->getExpression().clone(), filter_step->getFilterColumnName());
+            if (!add_composed_filter(filter_step->getExpression().clone(), filter_step->getFilterColumnName()))
+                break;
             expression_dags.push_back(&filter_step->getExpression());
         }
         else if (auto * limit_step = typeid_cast<LimitStep *>(iter->node->step.get()))
@@ -111,7 +114,8 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack, size_t max_expande
 
             /// The fused element filter is just a filter right above the join.
             if (const auto & element_filter = array_join_step->getElementFilter())
-                add_composed_filter(element_filter->clone(), array_join_step->getElementFilterColumnName());
+                if (!add_composed_filter(element_filter->clone(), array_join_step->getElementFilterColumnName()))
+                    break;
         }
         else if (auto * object_filter_step = typeid_cast<ObjectFilterStep *>(iter->node->step.get()))
         {
