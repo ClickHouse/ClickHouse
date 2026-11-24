@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FailPoint.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Core/UUID.h>
 #include <IO/SharedThreadPools.h>
@@ -24,6 +25,7 @@ namespace ProfileEvents
 {
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
+    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
 }
 
 namespace DB
@@ -1182,6 +1184,7 @@ void MergeTreeReaderWide::registerReadRanges()
     if (!read_ranges_registry)
         return;
 
+    ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
     std::lock_guard lock(ranges_read_mutex);
     for (auto & [stream_name, stream_ranges] : ranges_read)
     {

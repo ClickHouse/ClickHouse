@@ -11,15 +11,8 @@
 #include <filesystem>
 #include <IO/ByteRangeSet.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 
 namespace fs = std::filesystem;
-
-namespace ProfileEvents
-{
-    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
-}
 
 namespace DB
 {
@@ -400,10 +393,8 @@ void ReadRangesRegistry::registerRanges(ReadRanges & file_ranges, CompressedBloc
     if (ranges.empty())
         return;
 
-    Stopwatch watch;
     const size_t bytes = file_ranges.add(ranges);
     (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
-    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, watch.elapsedNanoseconds());
 }
 
 void MergeTreeReaderStream::setRangesReadSink(CompressedBlockRanges * ranges_read_)
