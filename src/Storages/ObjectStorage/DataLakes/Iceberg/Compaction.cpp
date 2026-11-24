@@ -88,7 +88,7 @@ struct ManifestFilePlan
 struct DataFilePlan
 {
     IcebergDataObjectInfoPtr data_object_info;
-    std::shared_ptr<ManifestFilePlan> manifest_list;
+    std::vector<std::shared_ptr<ManifestFilePlan>> manifests;
     std::shared_ptr<const Iceberg::PartitionSpecification> partition_specification;
 
     Iceberg::IcebergPathFromMetadata patched_path;
@@ -290,12 +290,13 @@ static Plan getPlan(
                 /// from the compacted table. The map still deduplicates the same data file
                 /// referenced from multiple snapshots' manifest lists.
                 const auto & data_file_path = data_file->parsed_entry->file_path_key;
+                const auto & manifest_plan = manifest_files[manifest_file.manifest_file_path];
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(data_file_path))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
-                        .manifest_list = manifest_files[manifest_file.manifest_file_path],
+                        .manifests = {manifest_plan},
                         .partition_specification = data_file->common_partition_specification,
                         .patched_path = plan.generator.generateDataFileName()});
                     plan.path_to_data_file[data_file_path] = data_file_ptr;
@@ -304,6 +305,8 @@ static Plan getPlan(
                 else
                 {
                     data_file_ptr = plan.path_to_data_file[data_file_path];
+                    if (std::ranges::find(data_file_ptr->manifests, manifest_plan) == data_file_ptr->manifests.end())
+                        data_file_ptr->manifests.push_back(manifest_plan);
                 }
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(data_file_ptr);
             }
@@ -456,7 +459,8 @@ static void writeDataFiles(
             /// The bounds must describe the stored values.
             if (write_orc)
                 ORC::replaceTimestampsStoredAsEpoch(chunk);
-            data_file->manifest_list->statistics.update(chunk);
+            for (const auto & manifest : data_file->manifests)
+                manifest->statistics.update(chunk);
             if (delete_file_transform)
                 delete_file_transform->transform(chunk);
             if (column_sketches)
@@ -473,7 +477,8 @@ static void writeDataFiles(
         }
         output_format->flush();
         output_format->finalize();
-        data_file->manifest_list->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
+        for (const auto & manifest : data_file->manifests)
+            manifest->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
         write_buffer->finalize();
         auto file_bytes = write_buffer->count();
         if (file_bytes == 0 && !data_file->patched_path.empty())
@@ -1206,7 +1211,8 @@ static bool writeMetadataFiles(
         {
             const auto & partition = plan.partitions[i];
             for (const auto & data_file : partition)
-                grouped_by_manifest_files_result[data_file->manifest_list].emplace_back(data_file->patched_path, i);
+                for (const auto & manifest : data_file->manifests)
+                    grouped_by_manifest_files_result[manifest].emplace_back(data_file->patched_path, i);
         }
 
         auto partition_spec_id = initial_metadata_object->getValue<Int32>(f_default_spec_id);

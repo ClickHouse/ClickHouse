@@ -11,8 +11,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestMerge.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
+
+#include <cmath>
 
 namespace DB::Setting
 {
@@ -153,6 +156,21 @@ std::optional<SinglePartition> getSinglePartition(const Row & partition_value, c
     return result;
 }
 
+bool isSamePartition(const Row & lhs, const Row & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    for (size_t i = 0; i < lhs.size(); ++i)
+    {
+        if (!accurateEquals(lhs[i], rhs[i]))
+            return false;
+        if (lhs[i].getType() == Field::Types::Float64 && rhs[i].getType() == Field::Types::Float64
+            && std::signbit(lhs[i].safeGet<Float64>()) != std::signbit(rhs[i].safeGet<Float64>()))
+            return false;
+    }
+    return true;
+}
+
 }
 
 SingleInsertDataFiles::SingleInsertDataFiles(Row partition_value_, const MultipleFileWriter & writer_, std::optional<Int32> sort_order_id_)
@@ -268,7 +286,10 @@ void MergeWindowDataFiles::addManifest(const ManifestFileCacheKey & manifest)
             files.begin(),
             files.end(),
             [&](const auto & file)
-            { return file->resolved_schema_id != schema_id || Poco::icompare(file->parsed_entry->file_format, write_format) != 0; }))
+            {
+                return file->resolved_schema_id != schema_id || Poco::icompare(file->parsed_entry->file_format, write_format) != 0
+                    || !isSamePartition(file->normalized_partition_key_value, partition_value);
+            }))
         return;
 
     replaced_manifest_paths.insert(manifest.manifest_file_path.serialize());

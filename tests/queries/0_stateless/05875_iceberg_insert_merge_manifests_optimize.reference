@@ -1,0 +1,14 @@
+--- before OPTIMIZE
+1	1
+1	3
+2	10
+--- after OPTIMIZE
+1	1
+1	3
+2	10
+3
+--- insert after OPTIMIZE
+1	1
+1	3
+1	4
+2	10
