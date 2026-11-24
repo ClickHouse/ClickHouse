@@ -38,9 +38,9 @@ enum class StoreMethod
     SCALAR_GRID,
 
     /// Data are stored in two columns:
-    /// - `group` (UInt64),
+    /// - `tags` (Array(Tuple(String, String)), sorted by tag name),
     /// - `values` (Array(Nullable(Float64))).
-    /// Values of each row are aligned to the time grid. Each value of `group` can appear only once in the output.
+    /// Values of each row are aligned to the time grid. Each value of `tags` can appear only once in the output.
     /// VECTOR_GRID is produced by functions like last_over_time() or rate() in a prometheus query.
     /// Can be used with types ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     VECTOR_GRID,
@@ -49,11 +49,12 @@ enum class StoreMethod
     /// The layout follows the samples table of the TimeSeries table (see fromRangeSelector()).
     /// The samples keep the types they have in the table because raw data can be big: the aggregate functions accept
     /// any of these types, and the result is converted to `ConverterContext::result_timestamp_type` and Float64 later.
-    /// A `group` can appear in multiple rows: the aggregate functions consuming the samples merge the rows of a group.
+    /// An `id` can appear in multiple rows: the aggregate functions consuming the samples merge the rows of an `id`.
+    /// The tags of the time series are in a separate subquery, see `SQLQueryPiece::series`.
     /// Both can be used only with type ResultType::RANGE_VECTOR.
 
     /// Data are stored in two columns:
-    /// - `group` (UInt64),
+    /// - `id` (the identifier of a time series),
     /// - `samples` (Array(Tuple(timestamp, value)): the samples of a time series sorted by timestamp, where `timestamp` has
     ///   the type of the timestamps in the TimeSeries table and `value` has the type of the values in the table (Float64 or Float32)).
     /// A row usually holds one time bucket of the samples table.
@@ -61,7 +62,7 @@ enum class StoreMethod
     SAMPLES,
 
     /// Data are stored in three columns, one sample per row:
-    /// - `group` (UInt64),
+    /// - `id` (the identifier of a time series),
     /// - `timestamp` and `value` (the same types as the elements of `samples` in SAMPLES).
     /// TIMESTAMP_AND_VALUE is produced by selectors over a table storing one sample per row
     /// (a table of a version before TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES).
@@ -103,12 +104,17 @@ struct SQLQueryPiece
     /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, SAMPLES, TIMESTAMP_AND_VALUE].
     /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (Float64) with a single row.
     /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(Float64)) with a single row.
-    /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(Float64))).
-    /// If `store_method` is SAMPLES then the SELECT query outputs two columns `group` (UInt64), `samples`.
-    /// If `store_method` is TIMESTAMP_AND_VALUE then the SELECT query outputs three columns `group` (UInt64), `timestamp`, `value`
-    /// (see the comments for these store methods for the types of `samples`, `timestamp` and `value`).
+    /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `tags`, `values` (Array(Nullable(Float64))).
+    /// If `store_method` is SAMPLES then the SELECT query outputs two columns `id`, `samples`.
+    /// If `store_method` is TIMESTAMP_AND_VALUE then the SELECT query outputs three columns `id`, `timestamp`, `value`
+    /// (see the comments for these store methods for the types of `tags`, `samples`, `timestamp` and `value`).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
+
+    /// `series` is used only if `store_method` is SAMPLES or TIMESTAMP_AND_VALUE: the name of a subquery outputting two columns
+    /// `id` and `tags` with the tags of the time series of `select_query`; it can also contain time series without samples in the range
+    /// (any time series matching the selector) and an `id` in multiple rows.
+    String series;
 };
 
 String getPromQLText(const SQLQueryPiece & query_piece, const ConverterContext & context);

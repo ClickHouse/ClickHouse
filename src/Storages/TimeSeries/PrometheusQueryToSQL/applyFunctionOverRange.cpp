@@ -12,6 +12,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/joinSeriesTags.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -240,21 +241,25 @@ SQLQueryPiece applyFunctionOverRange(
     const auto * fixed_at_node = getFixedAtModifier(argument);
     const auto aggregation_range = getRangeAggregationRange(argument, node_range, context);
 
-    /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
+    /// A range vector made from a scalar has no `tags` column. The result is still a vector grid with one series without
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
     const bool from_scalar = (argument.store_method == StoreMethod::CONST_SCALAR)
         || (argument.store_method == StoreMethod::SINGLE_SCALAR) || (argument.store_method == StoreMethod::SCALAR_GRID);
+
+    /// The samples read by a selector are aggregated by `id`, then the tags are joined (see joinSeriesTags).
+    const bool from_selector = (argument.store_method == StoreMethod::SAMPLES) || (argument.store_method == StoreMethod::TIMESTAMP_AND_VALUE);
+    const char * key_column = from_selector ? ColumnNames::ID : ColumnNames::Tags;
 
     SelectQueryBuilder builder;
 
     if (from_scalar)
     {
-        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
-        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.push_back(timeSeriesNoTagsToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Tags);
     }
     else
     {
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(key_column));
     }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
@@ -281,7 +286,7 @@ SQLQueryPiece applyFunctionOverRange(
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (!from_scalar)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(key_column));
 
     if (argument.select_query)
     {
@@ -293,8 +298,11 @@ SQLQueryPiece applyFunctionOverRange(
     SQLQueryPiece res = argument;
     res.node = node;
     res.scalar_value = {};
+    res.series.clear();
 
     res.select_query = builder.getSelectQuery();
+    if (from_selector)
+        res.select_query = joinSeriesTags(std::move(res.select_query), argument.series, {ColumnNames::Values}, context);
     res.type = ResultType::INSTANT_VECTOR;
     res.store_method = StoreMethod::VECTOR_GRID;
     res.start_time = start_time;

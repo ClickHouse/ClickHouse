@@ -179,18 +179,18 @@ SQLQueryPiece applyLabelManipulationFunction(
         case StoreMethod::SCALAR_GRID:
         {
             /// For const scalar:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
+            /// SELECT f(0, 'arg2', 'arg3', ...) AS tags, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
             ///
             /// For single scalar:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
+            /// SELECT f(0, 'arg2', 'arg3', ...) AS tags, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
             ///
             /// For scalar grid:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, values
+            /// SELECT f(0, 'arg2', 'arg3', ...) AS tags, values
             /// FROM <scalar_grid>
             SelectQueryBuilder builder;
 
             ASTs group_function_args;
-            group_function_args.push_back(timeSeriesNoTagsGroupToAST());
+            group_function_args.push_back(timeSeriesNoTagsToAST());
 
             size_t array_argument_index = impl_info->array_argument_index;
             insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
@@ -201,7 +201,7 @@ SQLQueryPiece applyLabelManipulationFunction(
             group_function->arguments->children = std::move(group_function_args);
 
             builder.select_list.push_back(std::move(group_function));
-            builder.select_list.back()->setAlias(ColumnNames::Group);
+            builder.select_list.back()->setAlias(ColumnNames::Tags);
 
             ASTPtr values;
             if (first_argument.store_method == StoreMethod::SCALAR_GRID)
@@ -244,7 +244,7 @@ SQLQueryPiece applyLabelManipulationFunction(
         case StoreMethod::VECTOR_GRID:
         {
             /// Step 1:
-            /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, anyForEach(values) AS values
+            /// SELECT f(tags, 'arg2', 'arg3', ...) AS new_group, anyForEach(values) AS values
             /// FROM <vector_grid>
             /// GROUP BY new_group
             /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(<vector_grid>.values)), new_group) = 0
@@ -256,7 +256,7 @@ SQLQueryPiece applyLabelManipulationFunction(
                 SelectQueryBuilder builder;
 
                 ASTs group_function_args;
-                group_function_args.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                group_function_args.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
                 size_t array_argument_index = impl_info->array_argument_index;
                 insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
@@ -286,14 +286,14 @@ SQLQueryPiece applyLabelManipulationFunction(
             }
 
             /// Step 2:
-            /// SELECT new_group AS group, values
+            /// SELECT new_group AS tags, values
             /// FROM step1
             ASTPtr column_renaming_query;
             {
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-                builder.select_list.back()->setAlias(ColumnNames::Group);
+                builder.select_list.back()->setAlias(ColumnNames::Tags);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 

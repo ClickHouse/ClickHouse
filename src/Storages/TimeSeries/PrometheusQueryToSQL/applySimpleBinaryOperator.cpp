@@ -72,11 +72,11 @@ namespace
         /// Name of the subquery with the rows of this side.
         String table_name;
 
-        /// The metric name `__name__` is already dropped from `group` of the argument.
+        /// The metric name `__name__` is already dropped from `tags` of the argument.
         bool metric_name_dropped_from_argument = false;
 
-        /// `group` with the `on(tags)` or `ignoring(tags)` matching rules applied, the key of the JOIN at step 3.
-        /// Basically it's either timeSeriesRemoveAllTagsExcept(group, <on_tags>) or timeSeriesRemoveTags(group, <ignoring_tags>).
+        /// `tags` with the `on(tags)` or `ignoring(tags)` matching rules applied, the key of the JOIN at step 3.
+        /// Basically it's either timeSeriesRemoveAllTagsExcept(tags, <on_tags>) or timeSeriesRemoveTags(tags, <ignoring_tags>).
         ASTPtr join_group;
 
         /// Normally the metric name `__name__` isn't in `join_group` - it's dropped,
@@ -84,7 +84,7 @@ namespace
         bool metric_name_dropped_from_join_group = false;
 
         /// The rows of the argument are known to be unique by `join_group`,
-        /// because `join_group` is the same as `group`.
+        /// because `join_group` is the same as `tags`.
         bool is_join_group_unique = false;
 
         /// The column `original_group` is selected at steps 1-2 and used at step 3.
@@ -131,7 +131,7 @@ namespace
         bool is_side_many = left_side ? group_left : group_right;
         bool is_side_one = !is_side_many;
 
-        /// Apply the `on(tags)` or `ignoring(tags)` matching rules to the `group` column.
+        /// Apply the `on(tags)` or `ignoring(tags)` matching rules to the `tags` column.
         /// The join_group is always computed with `drop_metric_name=true` because the two sides typically
         /// have different metric names (e.g., `foo` and `bar`), so keeping `__name__` in the JOIN key
         /// would prevent any matches.
@@ -139,14 +139,14 @@ namespace
         side.metric_name_dropped_from_join_group = side.metric_name_dropped_from_argument;
         side.join_group = transformGroupASTForBinaryOperator(
             operator_node,
-            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            make_intrusive<ASTIdentifier>(ColumnNames::Tags),
             /* drop_metric_name = */ true,
             side.metric_name_dropped_from_join_group);
 
-        /// If `join_group` is the same as `group` then we know it's unique.
-        side.is_join_group_unique = (tryGetIdentifierName(side.join_group.get()) == ColumnNames::Group);
+        /// If `join_group` is the same as `tags` then we know it's unique.
+        side.is_join_group_unique = (tryGetIdentifierName(side.join_group.get()) == ColumnNames::Tags);
 
-        /// `original_group` is `group` of the argument, it's selected at steps 1-2 and used at step 3 to make the result group:
+        /// `original_group` is `tags` of the argument, it's selected at steps 1-2 and used at step 3 to make the result group:
         /// - on the side "many" always,
         /// - on the left side of a one-to-one match if the metric name should be kept in the result but was dropped from `join_group`
         ///   (e.g. `a > b`: `join_group` has no `__name__` while the result must keep `__name__` of `a`).
@@ -186,13 +186,13 @@ namespace
         return tags_to_copy;
     }
 
-    /// Makes `extra_labels_group` of the side "one" of a many-to-one match: `group` reduced to the extra labels copied to the result.
+    /// Makes `extra_labels_group` of the side "one" of a many-to-one match: `tags` reduced to the extra labels copied to the result.
     ASTPtr getExtraLabelsGroup(const std::vector<std::string_view> & tags_to_copy)
     {
-        /// timeSeriesRemoveAllTagsExcept(group, extra_labels)
+        /// timeSeriesRemoveAllTagsExcept(tags, extra_labels)
         return makeASTFunction(
             "timeSeriesRemoveAllTagsExcept",
-            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            make_intrusive<ASTIdentifier>(ColumnNames::Tags),
             make_intrusive<ASTLiteral>(Array{tags_to_copy.begin(), tags_to_copy.end()}));
     }
 
@@ -460,8 +460,8 @@ namespace
 
         /// Steps 1-2:
         /// new_left / new_right:
-        /// SELECT [group AS original_group,] [timeSeriesRemoveAllTagsExcept(group, extra_labels) AS extra_labels_group,]
-        ///        timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
+        /// SELECT [tags AS original_group,] [timeSeriesRemoveAllTagsExcept(tags, extra_labels) AS extra_labels_group,]
+        ///        timeSeriesRemoveAllTagsExcept(tags, on_tags) AS join_group,
         ///        values | anyForEach(values) AS values
         ///        [, arrayMap(c -> toUInt8(least(c, 2)), <counts>) AS value_counts]
         /// FROM left / right
@@ -474,8 +474,8 @@ namespace
 
             if (side.use_original_group)
             {
-                /// group AS original_group
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                /// tags AS original_group
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
                 builder.select_list.back()->setAlias(ColumnNames::OriginalGroup);
             }
 
@@ -524,24 +524,24 @@ namespace
 
         /// Step 3:
         /// if without grouping:
-        /// SELECT timeSeriesRemoveTag(join_group, '__name__') AS group,
+        /// SELECT timeSeriesRemoveTag(join_group, '__name__') AS tags,
         ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
         /// FROM left INNER ANY | LEFT SEMI JOIN right
         /// ON left.join_group = right.join_group
         /// [WHERE timeSeriesThrowDuplicateSeriesIf(arrayExists((l, r) -> greatest(l, r) >= 2 AND least(l, r) >= 1,
         ///                                                    left.value_counts, right.value_counts), left.join_group) = 0]
-        /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(values)), group) = 0]
+        /// [GROUP BY tags HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(values)), tags) = 0]
         ///
         /// if with group_left/group_right:
-        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTag(side_many.original_group, '__name__'), side_one.extra_labels_group, extra_labels) AS group,
+        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTag(side_many.original_group, '__name__'), side_one.extra_labels_group, extra_labels) AS tags,
         ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
         /// FROM left INNER ANY | LEFT/RIGHT SEMI | INNER ALL JOIN right
         /// ON left.join_group = right.join_group
         /// [WHERE timeSeriesThrowDuplicateSeriesIf(arrayExists((v, c) -> isNotNull(v) AND c >= 2,
         ///                                                    side_many.values, side_one.value_counts), left.join_group) = 0]
-        /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(values)), group) = 0]
+        /// [GROUP BY tags HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(values)), tags) = 0]
         ///
-        /// If the grouping is applied then `values` becomes `anyForEach(arrayMap(...))`: series with the same result `group`
+        /// If the grouping is applied then `values` becomes `anyForEach(arrayMap(...))`: series with the same result `tags`
         /// are merged step by step and an exception is thrown only if two of them have values at the same step.
         ASTPtr result_ast;
         bool metric_name_dropped_from_result = false;
@@ -560,7 +560,7 @@ namespace
             bool right_has_multiple_rows_per_join_group
                 = !sides[1].is_join_group_unique && (!sides[1].merge_by_join_group || sides[1].use_extra_labels_group);
 
-            /// Two rows of the JOIN can get the same result `group`, then they must be merged step by step.
+            /// Two rows of the JOIN can get the same result `tags`, then they must be merged step by step.
             /// It happens if the left side of a one-to-one match has several rows with the same `join_group` (it isn't merged),
             /// the functions making the result group set it in other cases.
             bool check_no_duplicate_groups = one_to_one && left_has_multiple_rows_per_join_group;
@@ -594,7 +594,7 @@ namespace
             }
 
             builder.select_list.push_back(std::move(new_group));
-            builder.select_list.back()->setAlias(ColumnNames::Group);
+            builder.select_list.back()->setAlias(ColumnNames::Tags);
 
             ASTPtr values = makeResultValues(apply_function_to_ast, left, right);
 
@@ -623,8 +623,8 @@ namespace
 
             if (check_no_duplicate_groups)
             {
-                builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                builder.having = makeNoDuplicateSeriesPerStepCheck(std::move(values_for_check), make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+                builder.having = makeNoDuplicateSeriesPerStepCheck(std::move(values_for_check), make_intrusive<ASTIdentifier>(ColumnNames::Tags));
             }
 
             result_ast = builder.getSelectQuery();

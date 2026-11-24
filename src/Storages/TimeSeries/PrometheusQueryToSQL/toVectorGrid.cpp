@@ -33,11 +33,11 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
     {
         case StoreMethod::EMPTY:
         {
-            /// SELECT * FROM null('group UInt64, values Array(Nullable(Float64))')
+            /// SELECT * FROM null('tags Array(Tuple(String, String)), values Array(Nullable(Float64))')
             SelectQueryBuilder builder;
             builder.select_list.push_back(make_intrusive<ASTAsterisk>());
 
-            String structure = fmt::format("{} UInt64, {} Array(Nullable(Float64))", ColumnNames::Group, ColumnNames::Values);
+            String structure = fmt::format("{} Array(Tuple(String, String)), {} Array(Nullable(Float64))", ColumnNames::Tags, ColumnNames::Values);
 
             builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -61,14 +61,14 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
         case StoreMethod::SINGLE_SCALAR:
         {
             /// For const scalar:
-            /// SELECT CAST(0, 'UInt64') AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
+            /// SELECT CAST([], 'Array(Tuple(String, String))') AS tags, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
             ///
             /// For single scalar:
-            /// SELECT CAST(0, 'UInt64') AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
+            /// SELECT CAST([], 'Array(Tuple(String, String))') AS tags, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
             SelectQueryBuilder builder;
 
-            builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
-            builder.select_list.back()->setAlias(ColumnNames::Group);
+            builder.select_list.push_back(timeSeriesNoTagsToAST());
+            builder.select_list.back()->setAlias(ColumnNames::Tags);
 
             ASTPtr value = (query_piece.store_method == StoreMethod::CONST_SCALAR)
                 ? timeSeriesScalarToAST(query_piece.scalar_value)
@@ -98,12 +98,12 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
 
         case StoreMethod::SCALAR_GRID:
         {
-            /// SELECT CAST(0, 'UInt64') AS group, values
+            /// SELECT CAST([], 'Array(Tuple(String, String))') AS tags, values
             /// FROM <scalar_grid>
             SelectQueryBuilder builder;
 
-            builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
-            builder.select_list.back()->setAlias(ColumnNames::Group);
+            builder.select_list.push_back(timeSeriesNoTagsToAST());
+            builder.select_list.back()->setAlias(ColumnNames::Tags);
 
             builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 

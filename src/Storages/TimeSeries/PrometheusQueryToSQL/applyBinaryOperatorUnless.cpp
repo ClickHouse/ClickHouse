@@ -42,7 +42,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
     String right = context.subqueries.back().name;
 
     /// Step 1:
-    /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
+    /// SELECT timeSeriesRemoveAllTagsExcept(tags, on_tags) AS join_group,
     ///        groupBitOrForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
     /// GROUP BY join_group
     /// FROM right
@@ -54,7 +54,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
         bool right_metric_name_dropped = right_argument.metric_name_dropped;
         builder.select_list.push_back(transformGroupASTForBinaryOperator(
             operator_node,
-            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            make_intrusive<ASTIdentifier>(ColumnNames::Tags),
             /*drop_metric_name=*/ true,
             right_metric_name_dropped));
         builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
@@ -72,10 +72,10 @@ SQLQueryPiece applyBinaryOperatorUnless(
     }
 
     /// Step 2:
-    /// SELECT group,
+    /// SELECT tags,
     ///        if(notEmpty(join_presence), arrayMap(x, y -> if(y = 0, x, NULL), values, join_presence), values) AS values
     /// FROM left LEFT ANY JOIN step1
-    /// ON timeSeriesRemoveAllTagsExcept(group, on_tags) == join_group
+    /// ON timeSeriesRemoveAllTagsExcept(tags, on_tags) == join_group
     ///
     ASTPtr step2;
     {
@@ -84,14 +84,14 @@ SQLQueryPiece applyBinaryOperatorUnless(
             left,
             transformGroupASTForBinaryOperator(
                 operator_node,
-                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                make_intrusive<ASTIdentifier>(ColumnNames::Tags),
                 /*drop_metric_name=*/ true,
                 left_metric_name_dropped),
             context);
 
         SelectQueryBuilder builder;
 
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
         builder.select_list.push_back(makeASTFunction(
             "if",

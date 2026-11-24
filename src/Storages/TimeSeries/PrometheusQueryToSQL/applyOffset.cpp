@@ -113,13 +113,13 @@ namespace
                 /// FROM <scalar_grid>
                 ///
                 /// For vector grid:
-                /// SELECT group,
+                /// SELECT tags,
                 ///        arrayResize([], <count_of_time_steps>, values[1])) AS values
                 /// FROM <vector_grid>
                 SelectQueryBuilder builder;
 
                 if (expression.store_method == StoreMethod::VECTOR_GRID)
-                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
                 auto new_values = makeASTFunction(
                     "arrayResize",

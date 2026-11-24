@@ -157,14 +157,16 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
     res.step = node_range.step;
     res.metric_name_dropped = true;
 
-    /// timeSeriesTagsToGroup(<tags>) AS group
-    ASTPtr group = makeASTFunction("timeSeriesTagsToGroup", makeTagsForAbsentFunction(function_node));
-    group->setAlias(ColumnNames::Group);
+    /// CAST(timeSeriesTagsToMap(<tags>), 'Array(Tuple(String, String))') AS tags
+    ASTs tags_args;
+    tags_args.push_back(makeTagsForAbsentFunction(function_node));
+    ASTPtr group = timeSeriesNormalizedTagsToAST(std::move(tags_args));
+    group->setAlias(ColumnNames::Tags);
 
     if (presence_grid.store_method == StoreMethod::EMPTY)
     {
         /// No series is present at any step, so the synthetic series has the value 1 at every step:
-        /// SELECT <group>, arrayResize([], <num_steps>, 1) AS values
+        /// SELECT <tags>, arrayResize([], <num_steps>, 1) AS values
         SelectQueryBuilder builder;
         builder.select_list.push_back(std::move(group));
         builder.select_list.push_back(makeASTFunction(
@@ -213,7 +215,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
 
     /// countForEach(values) is the number of series present at each step. The synthetic series has the value 1 where
     /// that number is zero and no value (NULL) where at least one series is present:
-    /// SELECT <group>,
+    /// SELECT <tags>,
     ///        arrayMap(x -> if(x = 0, 1, NULL), countForEach(values)) AS values
     /// FROM <presence_values>
     SelectQueryBuilder builder;

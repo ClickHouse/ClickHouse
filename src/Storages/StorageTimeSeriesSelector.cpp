@@ -126,15 +126,17 @@ DateTime64 convertToScale(DateTime64 timestamp, UInt32 timestamp_scale, UInt32 t
     return DateTime64{quotient};
 }
 
-/// Parses the value of the argument `return_columns` of the table function: 'samples' or 'timestamp_and_value'.
+/// Parses the value of the argument `return_columns` of the table function: 'samples', 'timestamp_and_value' or 'tags'.
 StorageTimeSeriesSelector::Configuration::ReturnColumns parseReturnColumns(std::string_view str, std::string_view function_name)
 {
     if (str == "samples")
         return StorageTimeSeriesSelector::Configuration::ReturnColumns::Samples;
     if (str == "timestamp_and_value")
         return StorageTimeSeriesSelector::Configuration::ReturnColumns::TimestampAndValue;
+    if (str == "tags")
+        return StorageTimeSeriesSelector::Configuration::ReturnColumns::Tags;
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Table function '{}' requires the argument 'return_columns' to be 'samples' or 'timestamp_and_value', got {}",
+        "Table function '{}' requires the argument 'return_columns' to be 'samples', 'timestamp_and_value' or 'tags', got {}",
         function_name, quoteString(str));
 }
 
@@ -145,6 +147,11 @@ bool isWithinRecentSamplesTTL(UInt64 recent_samples_ttl_seconds, Int64 now_secon
     static constexpr Int64 safety_margin_seconds = 60;
     const Int64 timestamp_seconds = convertToScale(timestamp, timestamp_scale, /* target_scale = */ 0, /* round_up = */ false).value;
     return timestamp_seconds >= now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds;
+}
+
+String timeBoundToString(const std::optional<DateTime64> & bound)
+{
+    return bound ? std::to_string(bound->value) : "NULL";
 }
 
 /// The smallest and the largest timestamps representable in the timestamp type of the table:
@@ -298,10 +305,17 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     UInt32 table_timestamp_scale = tryGetDecimalScale(*table_timestamp_type).value_or(0);
     UInt32 parameters_scale = getTimeScale(table_timestamp_scale, min_time_value.getType(), max_time_value.getType());
-    auto min_time = parseTimeSeriesTimestamp(resolveActiveAlternative(min_time_value), parameters_scale);
-    auto max_time = parseTimeSeriesTimestamp(resolveActiveAlternative(max_time_value), parameters_scale);
+    auto parse_bound = [&](const ConstantValue & value) -> std::optional<DateTime64>
+    {
+        auto resolved = resolveActiveAlternative(value);
+        if (resolved.isNull())
+            return std::nullopt;
+        return parseTimeSeriesTimestamp(resolved, parameters_scale);
+    };
+    auto min_time = parse_bound(min_time_value);
+    auto max_time = parse_bound(max_time_value);
 
-    /// The argument `return_columns` chooses the columns returning the samples: 'samples' or 'timestamp_and_value'.
+    /// The argument `return_columns` chooses the returned columns: 'samples', 'timestamp_and_value' or 'tags'.
     String return_columns_str = getStringConstArgument(args[argument_index++], context, "return_columns");
     auto return_columns = parseReturnColumns(return_columns_str, function_name);
 
@@ -330,9 +344,9 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     if (!node || (node->node_type != PrometheusQueryTree::NodeType::InstantSelector))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} is not an instant selector", quoteString(config.selector.toString()));
 
-    if (config.min_time > config.max_time)
+    if (config.min_time && config.max_time && (*config.min_time > *config.max_time))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Max time {} is less than min time {}",
-                        Field{config.max_time}, Field{config.min_time});
+                        Field{*config.max_time}, Field{*config.min_time});
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -351,22 +365,32 @@ VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
 
 namespace
 {
-    /// Makes an AST for the expression referencing a tag value.
-    ASTPtr tagNameToAST(const String & tag_name, const std::unordered_map<String, String> & column_name_by_tag_name)
+    /// A column of `tags_to_columns` can have any name, so it's qualified by the tags table: an alias of the query can't shadow it.
+    ASTPtr tagColumnToAST(const StorageID & tags_table_id, const String & column_name)
+    {
+        return make_intrusive<ASTIdentifier>(std::vector<String>{tags_table_id.database_name, tags_table_id.table_name, column_name});
+    }
+
+    /// Makes an AST for the expression referencing a tag value in a query reading the tags table.
+    ASTPtr tagNameToAST(
+        const String & tag_name, const std::unordered_map<String, String> & column_name_by_tag_name, const StorageID & tags_table_id)
     {
         if (tag_name == TimeSeriesTagNames::MetricName)
             return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
 
         auto it = column_name_by_tag_name.find(tag_name);
         if (it != column_name_by_tag_name.end())
-            return make_intrusive<ASTIdentifier>(it->second);
+            return tagColumnToAST(tags_table_id, it->second);
 
         /// arrayElement() can be used to extract a value from a Map too.
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
 
-    ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
+    ASTPtr matcherToAST(
+        const PrometheusQueryTree::Matcher & matcher,
+        const std::unordered_map<String, String> & column_name_by_tag_name,
+        const StorageID & tags_table_id)
     {
         std::string_view function_name;
         bool is_regexp = false;
@@ -392,16 +416,19 @@ namespace
                 /// A single term is an equality, which the text index on tags can serve too.
                 if (terms->size() == 1)
                     return makeASTFunction(add_not ? "notEquals" : "equals",
-                        tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(std::move(terms->front())));
+                        tagNameToAST(matcher.label_name, column_name_by_tag_name, tags_table_id),
+                        make_intrusive<ASTLiteral>(std::move(terms->front())));
 
                 ASTs literals;
                 for (auto & term : *terms)
                     literals.push_back(make_intrusive<ASTLiteral>(std::move(term)));
                 return makeASTFunction(add_not ? "notIn" : "in",
-                    tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
+                    tagNameToAST(matcher.label_name, column_name_by_tag_name, tags_table_id),
+                    makeASTFunction("tuple", std::move(literals)));
             }
         }
-        ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
+        ASTPtr res = makeASTFunction(
+            function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name, tags_table_id), make_intrusive<ASTLiteral>(value));
         if (add_not)
             res = makeASTFunction("not", res);
         return res;
@@ -491,7 +518,7 @@ namespace
     ///
     /// The join is a merge join over both tables read in the order of `id` (see StorageTimeSeriesSelector::applySettingsForSelectIDsQuery):
     /// no set is built, the reading stops as soon as the query has enough rows, and the expressions of the SELECT list see only
-    /// the time series passing the filter (`timeSeriesStoreTags` registers the tags of the time series it's applied to).
+    /// the time series passing the filter.
     /// With `metric_id_ranges` the time ranges table is read by its primary key over the ranges of the selected metrics, and the time series
     /// with identifiers outside the ranges (written with another id generator) are kept without filtering by time.
     void addTimeRangesTableJoin(
@@ -584,13 +611,14 @@ namespace
     ASTPtr makeWhereFilterForTagsTable(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
+        const StorageID & tags_table_id,
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
         const DataTypePtr & table_timestamp_type)
     {
         ASTs asts;
         for (const auto & matcher : matchers)
-            asts.push_back(matcherToAST(matcher, column_name_by_tag_name));
+            asts.push_back(matcherToAST(matcher, column_name_by_tag_name, tags_table_id));
 
         if (asts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
@@ -601,17 +629,26 @@ namespace
         return makeASTForLogicalAnd(std::move(asts));
     }
 
-    /// Makes `SELECT id FROM null('id <type>')`: a query returning no ids, with the result type of `makeSelectQueryFromTagsTable`.
+    /// The column with the ids in the query made by StorageTimeSeriesSelector::makeSelectIDsQuery.
+    constexpr const char * SERIES_ID_COLUMN = "series_id";
+
+    /// The tags column of makeSelectQueryFromTagsTable; an alias `tags` would shadow the tags table's column in the WHERE clause.
+    constexpr const char * SERIES_TAGS_COLUMN = "series_tags";
+
+    /// Makes `SELECT id, series_tags FROM null('id <type>, series_tags Array(Tuple(String, String))')`: a query returning no ids,
+    /// with the result type of `makeSelectQueryFromTagsTable` with `select_tags` set.
     ASTPtr makeSelectNoIDsQuery(const DataTypePtr & table_id_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         auto select_list_exp = make_intrusive<ASTExpressionList>();
         select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(SERIES_TAGS_COLUMN));
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
 
         auto table_exp = make_intrusive<ASTTableExpression>();
-        table_exp->table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(fmt::format("{} {}", TimeSeriesColumnNames::ID, table_id_type->getName())));
+        table_exp->table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(fmt::format(
+            "{} {}, {} Array(Tuple(String, String))", TimeSeriesColumnNames::ID, table_id_type->getName(), SERIES_TAGS_COLUMN)));
         table_exp->children.emplace_back(table_exp->table_function);
         auto table = make_intrusive<ASTTablesInSelectQueryElement>();
         table->table_expression = table_exp;
@@ -629,28 +666,35 @@ namespace
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
         const std::optional<TimeSeriesIDRanges> & metric_id_ranges,
-        const DataTypePtr & table_timestamp_type)
+        const DataTypePtr & table_timestamp_type,
+        bool select_tags)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)
+        /// SELECT id [, CAST(timeSeriesTagsToMap(tags, '__name__', metric_name, tag_name1, tag_column1, ...), 'Array(Tuple(String, String))') AS series_tags]
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            ASTs args;
-            args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
-            args.push_back(make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName));
-            args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
 
-            for (const auto & [tag_name, column_name] : column_name_by_tag_name)
+            if (select_tags)
             {
-                args.push_back(make_intrusive<ASTLiteral>(tag_name));
-                args.push_back(make_intrusive<ASTIdentifier>(column_name));
+                ASTs tags_args;
+                tags_args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+                tags_args.push_back(make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName));
+                tags_args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+
+                for (const auto & [tag_name, column_name] : column_name_by_tag_name)
+                {
+                    tags_args.push_back(make_intrusive<ASTLiteral>(tag_name));
+                    tags_args.push_back(tagColumnToAST(tags_table_id, column_name));
+                }
+
+                select_list.push_back(timeSeriesNormalizedTagsToAST(std::move(tags_args)));
+                select_list.back()->setAlias(SERIES_TAGS_COLUMN);
             }
 
-            select_list.push_back(makeASTFunction("timeSeriesStoreTags", std::move(args)));
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
 
@@ -671,7 +715,8 @@ namespace
 
         /// WHERE <filter>
         {
-            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type);
+            auto where_filter = makeWhereFilterForTagsTable(
+                matchers, column_name_by_tag_name, tags_table_id, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -857,7 +902,7 @@ namespace
         /// WHERE <time range conditions> AND (id IN <select_query_from_tags_table>)
         ///
         /// where <select_query_from_tags_table> is roughly:
-        ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
+        ///   SELECT id FROM tags_table WHERE <matchers>
         /// with the time ranges table joined to filter the time series by time (see addTimeRangesTableJoin).
         {
             auto where_filter = makeWhereFilterForSamplesTable(
@@ -1098,7 +1143,7 @@ namespace
                     && ((matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ) || (matcher.matcher_type == PrometheusQueryTree::MatcherType::RE)))
                     name_matcher_only.push_back(matcher);
                 else
-                    other_matcher_conditions.push_back(matcherToAST(matcher, column_name_by_tag_name));
+                    other_matcher_conditions.push_back(matcherToAST(matcher, column_name_by_tag_name, tags_table_id));
             }
 
             ASTPtr counterexample = makeIDOutOfRangeCondition(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), metric_id_range);
@@ -1109,7 +1154,9 @@ namespace
             }
 
             ASTPtr probe_where = makeASTForLogicalAnd(
-                {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type),
+                {makeWhereFilterForTagsTable(
+                    name_matcher_only, column_name_by_tag_name, tags_table_id, time_ranges_table_id, time_range_to_filter_ids,
+                    table_timestamp_type),
                  std::move(counterexample)});
 
             /// SELECT id FROM tags_table WHERE <probe_where>
@@ -1214,13 +1261,13 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
             matchers, getIDGenerator(time_series_settings, tags_table_metadata->getColumns(), table_id_type), table_id_type);
         select_query = makeSelectQueryFromTagsTable(
             tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), time_ranges_table_id, time_range_to_filter_ids,
-            metric_id_ranges, table_timestamp_type);
+            metric_id_ranges, table_timestamp_type, /* select_tags = */ true);
     }
 
-    /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
+    /// Alias the returned `id` so callers can reference the column by a fixed name.
     const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
     auto & select = typeid_cast<ASTSelectQuery &>(*select_with_union.list_of_selects->children.at(0));
-    select.select()->children.at(0)->setAlias("series_id");
+    select.select()->children.at(0)->setAlias(SERIES_ID_COLUMN);
 
     return select_query;
 }
@@ -1242,6 +1289,38 @@ void StorageTimeSeriesSelector::readImpl(
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
+    if (config.return_columns == Configuration::ReturnColumns::Tags)
+    {
+        /// The tags of the time series in the id set the other modes read the samples of (filtered by stored time ranges, not by samples):
+        /// SELECT _CAST(series_id, '<id type>') AS id, series_tags AS tags FROM (<the query made by makeSelectIDsQuery>)
+        ASTPtr select_ids_query = makeSelectIDsQuery(
+            *time_series_storage, time_series_storage->getTargetTableID(ViewTarget::Tags, context), *time_series_settings,
+            config.table_timestamp_type, config.table_id_type, matchers, config.min_time, config.max_time, config.time_scale, context);
+
+        auto select_query = make_intrusive<ASTSelectQuery>();
+        auto select_list_exp = make_intrusive<ASTExpressionList>();
+        select_list_exp->children.push_back(makeASTFunction(
+            "_CAST", make_intrusive<ASTIdentifier>(SERIES_ID_COLUMN), make_intrusive<ASTLiteral>(config.table_id_type->getName())));
+        select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::ID);
+        select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(SERIES_TAGS_COLUMN));
+        select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, makeTablesInSelectQuery(make_intrusive<ASTSubquery>(std::move(select_ids_query))));
+        ASTPtr select_tags_query = wrapIntoSelectWithUnionQuery(std::move(select_query));
+
+        LOG_DEBUG(log, "Building SQL for the tags of selector: {}", config.selector.toString());
+        LOG_DEBUG(log, "Will execute query:\n{}", select_tags_query->formatForLogging());
+
+        auto tags_context = Context::createCopy(context);
+        applySettingsForSelectIDsQuery(*tags_context);
+
+        auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+        InterpreterSelectQueryAnalyzer interpreter(select_tags_query, tags_context, options, column_names);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        query_plan = std::move(interpreter).extractQueryPlan();
+        return;
+    }
+
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
     auto samples_table_kind = ViewTarget::Samples;
 
@@ -1254,14 +1333,14 @@ void StorageTimeSeriesSelector::readImpl(
     if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
     {
         /// If the start of the range is within the TTL, the whole range is: the recent samples table keeps everything after that.
-        if (isWithinRecentSamplesTTL(recent_samples_ttl_seconds, std::time(nullptr), config.min_time, config.time_scale)
+        if (config.min_time && isWithinRecentSamplesTTL(recent_samples_ttl_seconds, std::time(nullptr), *config.min_time, config.time_scale)
             && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
         {
             samples_table_kind = ViewTarget::RecentSamples;
             if (time_series_settings->hasBucketedSamples())
                 bucket_step_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_bucket_step_seconds];
             LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
-                      quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
+                      quoteString(config.selector.toString()), timeBoundToString(config.min_time), timeBoundToString(config.max_time));
         }
     }
 
@@ -1276,7 +1355,7 @@ void StorageTimeSeriesSelector::readImpl(
     {
         /// No timestamp of the table is in the time range. Nothing is read - an uninitialized query plan reads from an empty source.
         LOG_DEBUG(log, "Selector {} time range [{}, {}] contains no timestamp of the table: returning no samples",
-                  quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
+                  quoteString(config.selector.toString()), timeBoundToString(config.min_time), timeBoundToString(config.max_time));
         return;
     }
     const TableTimeRange time_range_to_filter_samples = table_time_range;
@@ -1336,7 +1415,7 @@ void StorageTimeSeriesSelector::readImpl(
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges,
-        config.table_timestamp_type);
+        config.table_timestamp_type, /* select_tags = */ false);
 
     if (whole_metric_id_range_condition)
     {

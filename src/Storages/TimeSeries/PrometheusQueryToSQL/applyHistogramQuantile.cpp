@@ -55,13 +55,13 @@ SQLQueryPiece applyHistogramQuantile(
 
     /// Step 1: Extract le tags, group by non-le labels (keeping __name__ so that
     /// distinct histograms remain separate), and compute quantile.
-    /// SELECT timeSeriesRemoveTag(group, 'le') AS new_group,
+    /// SELECT timeSeriesRemoveTag(tags, 'le') AS new_group,
     ///        quantilePrometheusHistogramForEach(phi)(
     ///            arrayResize(CAST([] AS Array(Float64)), length(values),
-    ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan)),
+    ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(tags, 'le')), nan)),
     ///            values) AS values
     /// FROM <subquery>
-    /// WHERE isNotNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')))
+    /// WHERE isNotNull(toFloat64OrNull(timeSeriesExtractTag(tags, 'le')))
     /// GROUP BY new_group
     ASTPtr aggregation_query;
     {
@@ -76,7 +76,7 @@ SQLQueryPiece applyHistogramQuantile(
         /// enforcing the no-duplicate-labelset rule via timeSeriesThrowDuplicateSeriesIf.
         auto new_group_expr = makeASTFunction(
             "timeSeriesRemoveTag",
-            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            make_intrusive<ASTIdentifier>(ColumnNames::Tags),
             make_intrusive<ASTLiteral>("le"));
         new_group_expr->setAlias(ColumnNames::NewGroup);
         builder.select_list.push_back(std::move(new_group_expr));
@@ -132,7 +132,7 @@ SQLQueryPiece applyHistogramQuantile(
                 makeASTFunction("ifNull",
                     makeASTFunction("toFloat64OrNull",
                         makeASTFunction("timeSeriesExtractTag",
-                            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                            make_intrusive<ASTIdentifier>(ColumnNames::Tags),
                             make_intrusive<ASTLiteral>("le"))),
                     make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN())));
 
@@ -156,7 +156,7 @@ SQLQueryPiece applyHistogramQuantile(
         builder.where = makeASTFunction("isNotNull",
             makeASTFunction("toFloat64OrNull",
                 makeASTFunction("timeSeriesExtractTag",
-                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Tags),
                     make_intrusive<ASTLiteral>("le"))));
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
@@ -170,7 +170,7 @@ SQLQueryPiece applyHistogramQuantile(
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.back()->setAlias(ColumnNames::Tags);
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 

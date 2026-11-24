@@ -129,7 +129,7 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
         builder.from_table = context.subqueries.back().name;
 
         ASTPtr new_group = transformGroupASTForAggregationOperator(
-            left_aggregation, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, res.metric_name_dropped);
+            left_aggregation, make_intrusive<ASTIdentifier>(ColumnNames::Tags), /*drop_metric_name=*/true, res.metric_name_dropped);
 
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
@@ -151,7 +151,7 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
         aggregation_query = builder.getSelectQuery();
     }
 
-    /// Step 2: rename `new_group` back to `group` and drop empty grids (a WHERE, so `values` cannot bind to the input column
+    /// Step 2: rename `new_group` back to `tags` and drop empty grids (a WHERE, so `values` cannot bind to the input column
     /// under prefer_column_name_to_alias).
     {
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
@@ -159,7 +159,7 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
         SelectQueryBuilder builder;
         builder.from_table = context.subqueries.back().name;
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.back()->setAlias(ColumnNames::Tags);
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
         builder.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 

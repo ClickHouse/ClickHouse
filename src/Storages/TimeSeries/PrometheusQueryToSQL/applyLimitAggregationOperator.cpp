@@ -3,6 +3,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
@@ -31,7 +33,8 @@ namespace
     {
         if (std::isnan(scalar))
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Argument k of aggregation operator must not be NaN");
-        if (scalar > static_cast<ScalarType>(std::numeric_limits<UInt64>::max()))
+        /// The maximum of UInt64 rounds up to 2^64 as a ScalarType, so 2^64 itself is out of range.
+        if (scalar >= static_cast<ScalarType>(std::numeric_limits<UInt64>::max()))
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Argument k of aggregation operator is too large: {}", scalar);
         return (scalar < 0) ? 0 : static_cast<UInt64>(scalar);
     }
@@ -98,7 +101,7 @@ namespace
         /// The aggregate function selecting which series to keep at each time step (see Step 1 below).
         const char * aggregate_function_name;
 
-        /// Whether `timeSeriesGroupToSamplingKey(group)` should be passed to the aggregate function to provide deterministic "pseudo-random" sampling for `limitk`.
+        /// Whether `cityHash64(tags)` should be passed to the aggregate function to provide deterministic "pseudo-random" sampling for `limitk`.
         bool use_sampling_keys = false;
     };
 
@@ -150,15 +153,64 @@ SQLQueryPiece applyLimitAggregationOperator(
     auto res = vector_arg;
     res.node = operator_node;
 
-    /// The vector grid becomes a named subquery because Steps 1 and 3 both read it: Step 1
-    /// aggregates it to choose which series to keep, and Step 3 joins it with the chosen series
-    /// to build the result rows.
-    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_arg.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
-    String vector_grid = context.subqueries.back().name;
+    /// The aggregate functions identify a series by a UInt64 key, so the series are numbered in the order of their tags within
+    /// partitions by a hash of the tags:
+    ///
+    ///   SELECT tags, values, row_number() OVER (PARTITION BY cityHash64(tags) % 64 ORDER BY tags) * 64 + cityHash64(tags) % 64 AS series_key
+    ///   FROM <vector_arg>
+    ///
+    /// This query becomes a named subquery because Steps 1 and 3 both read it: Step 1 aggregates it to choose which series to keep,
+    /// and Step 3 joins it with the chosen series to build the result rows.
+    String vector_grid;
+    {
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_arg.select_query), SQLSubqueryType::TABLE});
+
+        SelectQueryBuilder builder;
+        builder.from_table = context.subqueries.back().name;
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+        static constexpr UInt64 num_partitions = 64;
+        auto partition = []
+        {
+            return makeASTFunction(
+                "modulo", makeASTFunction("cityHash64", make_intrusive<ASTIdentifier>(ColumnNames::Tags)), make_intrusive<ASTLiteral>(num_partitions));
+        };
+
+        auto partition_by = make_intrusive<ASTExpressionList>();
+        partition_by->children.push_back(partition());
+
+        auto order_by = make_intrusive<ASTExpressionList>();
+        auto order_by_element = make_intrusive<ASTOrderByElement>();
+        order_by_element->children.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+        order_by_element->direction = 1;
+        order_by_element->nulls_direction = 1;
+        order_by->children.push_back(std::move(order_by_element));
+
+        auto window_definition = make_intrusive<ASTWindowDefinition>();
+        window_definition->partition_by = partition_by;
+        window_definition->children.push_back(std::move(partition_by));
+        window_definition->order_by = order_by;
+        window_definition->children.push_back(std::move(order_by));
+
+        auto row_number = makeASTFunction("row_number");
+        row_number->setIsWindowFunction(true);
+        row_number->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
+        row_number->window_definition = window_definition;
+        row_number->children.push_back(std::move(window_definition));
+
+        /// Unique: the partition is the remainder of the key.
+        builder.select_list.push_back(makeASTFunction(
+            "plus", makeASTFunction("multiply", std::move(row_number), make_intrusive<ASTLiteral>(num_partitions)), partition()));
+        builder.select_list.back()->setAlias(ColumnNames::SeriesKey);
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::MATERIALIZED_TABLE});
+        vector_grid = context.subqueries.back().name;
+    }
 
     /// Step 1: choose up to k series to keep at each time step within each aggregation group.
     ///
-    ///   SELECT timeSeries<TopK|BottomK|LimitK>Masks(<k>, group[, timeSeriesGroupToSamplingKey(group)], values) AS selected_groups
+    ///   SELECT timeSeries<TopK|BottomK|LimitK>Masks(<k>, series_key[, cityHash64(tags)], values) AS selected_groups
     ///   FROM <vector_grid>
     ///   [GROUP BY <by_tags_expr>]
     ///
@@ -172,13 +224,13 @@ SQLQueryPiece applyLimitAggregationOperator(
         if (impl_info->use_sampling_keys)
             aggregate_function = makeASTFunction(impl_info->aggregate_function_name,
                 std::move(k),
-                make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+                make_intrusive<ASTIdentifier>(ColumnNames::SeriesKey),
+                makeASTFunction("cityHash64", make_intrusive<ASTIdentifier>(ColumnNames::Tags)),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
         else
             aggregate_function = makeASTFunction(impl_info->aggregate_function_name,
                 std::move(k),
-                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                make_intrusive<ASTIdentifier>(ColumnNames::SeriesKey),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         builder.select_list.push_back(std::move(aggregate_function));
@@ -188,7 +240,7 @@ SQLQueryPiece applyLimitAggregationOperator(
         {
             bool metric_name_dropped_from_group = vector_arg.metric_name_dropped;
             ASTPtr by_tags_expr = transformGroupASTForAggregationOperator(
-                operator_node, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, metric_name_dropped_from_group);
+                operator_node, make_intrusive<ASTIdentifier>(ColumnNames::Tags), /*drop_metric_name=*/true, metric_name_dropped_from_group);
             builder.group_by.push_back(std::move(by_tags_expr));
         }
 
@@ -223,16 +275,16 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     /// Step 3: keep only the chosen series and mask their values at non-chosen time steps with NULLs.
     ///
-    ///   SELECT group,
+    ///   SELECT tags,
     ///          arrayMap((x, m) -> if(m, x, NULL), values, steps_mask) AS values
     ///   FROM <vector_grid>
-    ///   ANY INNER JOIN step2 ON group = join_group
+    ///   ANY INNER JOIN step2 ON series_key = join_group
     ///
     /// `steps_mask` is passed to `arrayMap` as a second array rather than captured by the lambda, because captured columns are replicated per array element.
     {
         SelectQueryBuilder builder;
 
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
         builder.select_list.push_back(makeASTFunction("arrayMap",
             makeASTLambda({"x", "m"},
@@ -245,8 +297,7 @@ SQLQueryPiece applyLimitAggregationOperator(
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         /// If the grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
-        /// here a second time, which is still correct because group ids are the same within one query,
-        /// and so are the sampling keys used by `limitk`.
+        /// here a second time, which is still correct because `series_key` is made from the tags.
         builder.from_table = vector_grid;
 
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step2_query), SQLSubqueryType::TABLE});
@@ -255,7 +306,7 @@ SQLQueryPiece applyLimitAggregationOperator(
         /// `join_group` values are unique (each series is selected by exactly one aggregation group), so ANY INNER JOIN cannot duplicate series rows.
         builder.join_strictness = JoinStrictness::Any;
         builder.join_on = makeASTFunction("equals",
-            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            make_intrusive<ASTIdentifier>(ColumnNames::SeriesKey),
             make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
         res.select_query = builder.getSelectQuery();

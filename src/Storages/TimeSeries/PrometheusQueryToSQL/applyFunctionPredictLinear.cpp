@@ -13,6 +13,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/joinSeriesTags.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 #include <iterator>
@@ -185,21 +186,25 @@ SQLQueryPiece applyFunctionPredictLinear(
     const auto aggregation_range = getRangeAggregationRange(range_argument, node_range, context);
     const size_t result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
-    /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
+    /// A range vector made from a scalar has no `tags` column. The result is still a vector grid with one series without
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
     const bool from_scalar = (range_argument.store_method == StoreMethod::CONST_SCALAR)
         || (range_argument.store_method == StoreMethod::SINGLE_SCALAR) || (range_argument.store_method == StoreMethod::SCALAR_GRID);
+
+    /// The samples read by a selector are aggregated by `id`, then the tags are joined (see joinSeriesTags).
+    const bool from_selector = (range_argument.store_method == StoreMethod::SAMPLES) || (range_argument.store_method == StoreMethod::TIMESTAMP_AND_VALUE);
+    const char * key_column = from_selector ? ColumnNames::ID : ColumnNames::Tags;
 
     SelectQueryBuilder builder;
 
     if (from_scalar)
     {
-        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
-        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.push_back(timeSeriesNoTagsToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Tags);
     }
     else
     {
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(key_column));
     }
 
     ASTPtr regression = addParametersToAggregateFunction(
@@ -242,7 +247,7 @@ SQLQueryPiece applyFunctionPredictLinear(
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (!from_scalar)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(key_column));
 
     if (range_argument.select_query)
     {
@@ -255,8 +260,11 @@ SQLQueryPiece applyFunctionPredictLinear(
     res.store_method = StoreMethod::VECTOR_GRID;
     res.scalar_value = {};
     res.node = function_node;
+    res.series.clear();
 
     res.select_query = builder.getSelectQuery();
+    if (from_selector)
+        res.select_query = joinSeriesTags(std::move(res.select_query), range_argument.series, {ColumnNames::Values}, context);
     res.type = ResultType::INSTANT_VECTOR;
     res.start_time = start_time;
     res.end_time = end_time;

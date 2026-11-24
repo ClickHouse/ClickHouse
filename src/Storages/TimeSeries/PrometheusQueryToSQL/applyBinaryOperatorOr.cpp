@@ -48,7 +48,7 @@ SQLQueryPiece applyBinaryOperatorOr(
 
     /// Step 1: Build the per-step presence mask per `join_group` on the left side.
     ///
-    /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
+    /// SELECT timeSeriesRemoveAllTagsExcept(tags, on_tags) AS join_group,
     ///        groupBitOrForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
     /// GROUP BY join_group
     /// FROM left
@@ -60,7 +60,7 @@ SQLQueryPiece applyBinaryOperatorOr(
         bool left_metric_name_dropped = left_argument.metric_name_dropped;
         builder.select_list.push_back(transformGroupASTForBinaryOperator(
             operator_node,
-            make_intrusive<ASTIdentifier>(ColumnNames::Group),
+            make_intrusive<ASTIdentifier>(ColumnNames::Tags),
             /*drop_metric_name=*/ true,
             left_metric_name_dropped));
         builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
@@ -81,10 +81,10 @@ SQLQueryPiece applyBinaryOperatorOr(
     /// where the left side has any value with the matching `join_group`.
     /// Rows whose `join_group` is absent from the left side pass through unchanged.
     ///
-    /// SELECT group,
+    /// SELECT tags,
     ///        if(notEmpty(join_presence), arrayMap(x, y -> if(x = 0, y, NULL), join_presence, values), values) AS values
     /// FROM step1 RIGHT ANY JOIN right
-    /// ON join_group == timeSeriesRemoveAllTagsExcept(group, on_tags)
+    /// ON join_group == timeSeriesRemoveAllTagsExcept(tags, on_tags)
     ///
     String step2;
     {
@@ -93,14 +93,14 @@ SQLQueryPiece applyBinaryOperatorOr(
             right,
             transformGroupASTForBinaryOperator(
                 operator_node,
-                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                make_intrusive<ASTIdentifier>(ColumnNames::Tags),
                 /*drop_metric_name=*/ true,
                 right_metric_name_dropped),
             context);
 
         SelectQueryBuilder builder;
 
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
         builder.select_list.push_back(makeASTFunction(
             "if",
@@ -140,7 +140,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     /// picking element-wise non-NULL where both sides have a row.
     ///
     /// SELECT
-    ///   if(notEmpty(left.values), left.group, step2.group) AS group,
+    ///   if(notEmpty(left.values), left.tags, step2.tags) AS tags,
     ///   multiIf(
     ///     notEmpty(left.values) AND notEmpty(step2.values),
     ///        arrayMap((a, b) -> if(isNotNull(a), a, b), left.values, step2.values),
@@ -148,7 +148,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     ///        left.values,
     ///     step2.values) AS values
     /// FROM left FULL ALL JOIN step2
-    /// ON left.group == step2.group
+    /// ON left.tags == step2.tags
     ///
     ASTPtr step3;
     {
@@ -157,9 +157,9 @@ SQLQueryPiece applyBinaryOperatorOr(
         builder.select_list.push_back(makeASTFunction(
             "if",
             makeASTFunction("empty", make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values})),
-            make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Group}),
-            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Group})));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
+            make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Tags}),
+            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Tags})));
+        builder.select_list.back()->setAlias(ColumnNames::Tags);
 
         builder.select_list.push_back(makeASTFunction(
             "multiIf",
@@ -185,7 +185,7 @@ SQLQueryPiece applyBinaryOperatorOr(
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         /// If the left grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
-        /// here a second time, which is still correct because group ids are the same within one query.
+        /// here a second time, which is still correct because it returns the same rows.
         builder.from_table = left;
         builder.join_kind = JoinKind::Full;
         builder.join_strictness = JoinStrictness::All;
@@ -193,8 +193,8 @@ SQLQueryPiece applyBinaryOperatorOr(
 
         builder.join_on = makeASTFunction(
             "equals",
-            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Group}),
-            make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Group}));
+            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Tags}),
+            make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Tags}));
 
         step3 = builder.getSelectQuery();
     }

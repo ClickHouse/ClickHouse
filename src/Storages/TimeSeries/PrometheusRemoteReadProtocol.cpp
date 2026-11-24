@@ -18,6 +18,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -85,9 +87,16 @@ namespace
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
-    /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'samples')
-    /// GROUP BY timeSeriesIdToGroup(id) AS group
+    /// SELECT series.tags AS tags, per_id.samples AS samples
+    /// FROM
+    /// (
+    ///     SELECT id, timeSeriesGroupArray(samples) AS samples
+    ///     FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'samples')
+    ///     GROUP BY id
+    /// ) AS per_id
+    /// ANY INNER JOIN timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'tags') AS series
+    /// ON per_id.id = series.id
+    /// If the table stores one sample per row, the subquery uses timeSeriesGroupArray(timestamp, value) and 'timestamp_and_value'.
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
         bool table_has_bucketed_samples,
@@ -95,16 +104,30 @@ namespace
         Int64 min_time_ms,
         Int64 max_time_ms)
     {
-        auto select_query = make_intrusive<ASTSelectQuery>();
+        const char * per_id_alias = "per_id";
+        const char * series_alias = "series";
+        const String selector = labelMatchersToPromQL(label_matchers).toString();
+
+        /// timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, return_columns)
+        auto make_selector = [&](const String & return_columns)
+        {
+            return makeASTFunction(
+                "timeSeriesSelector",
+                make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
+                make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()),
+                make_intrusive<ASTLiteral>(selector),
+                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{min_time_ms, 3}),
+                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}),
+                make_intrusive<ASTLiteral>(return_columns));
+        };
+
+        auto per_id_select = make_intrusive<ASTSelectQuery>();
 
         {
-            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
+            /// SELECT id, timeSeriesGroupArray(samples) AS samples
             auto select_list_exp = make_intrusive<ASTExpressionList>();
 
-            select_list_exp->children.push_back(
-                makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group)));
-
-            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
+            select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
 
             if (table_has_bucketed_samples)
             {
@@ -120,21 +143,13 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
 
-            select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+            per_id_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
         }
 
         {
-            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, return_columns)
+            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'samples' | 'timestamp_and_value')
             auto table_exp = make_intrusive<ASTTableExpression>();
-            table_exp->table_function = makeASTFunction(
-                "timeSeriesSelector",
-                make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
-                make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()),
-                make_intrusive<ASTLiteral>(labelMatchersToPromQL(label_matchers).toString()),
-                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{min_time_ms, 3}),
-                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}),
-                make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
-
+            table_exp->table_function = make_selector(table_has_bucketed_samples ? "samples" : "timestamp_and_value");
             table_exp->children.emplace_back(table_exp->table_function);
 
             auto table = make_intrusive<ASTTablesInSelectQueryElement>();
@@ -144,20 +159,81 @@ namespace
             auto tables = make_intrusive<ASTTablesInSelectQuery>();
             tables->children.push_back(std::move(table));
 
-            select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+            per_id_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
         }
 
         {
-            /// GROUP BY timeSeriesIdToGroup(id) AS group
+            /// GROUP BY id
             auto group_by_list = make_intrusive<ASTExpressionList>();
-
-            group_by_list->children.push_back(
-                makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID)));
-
-            group_by_list->children.back()->setAlias(TimeSeriesColumnNames::Group);
-
-            select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_list));
+            group_by_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            per_id_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_list));
         }
+
+        auto select_query = make_intrusive<ASTSelectQuery>();
+
+        {
+            /// SELECT series.tags AS tags, per_id.samples AS samples
+            auto select_list_exp = make_intrusive<ASTExpressionList>();
+
+            select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(std::vector<String>{series_alias, TimeSeriesColumnNames::Tags}));
+            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
+
+            select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(std::vector<String>{per_id_alias, TimeSeriesColumnNames::Samples}));
+            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
+
+            select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+        }
+
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
+
+        {
+            /// FROM (<per_id_select>) AS per_id
+            auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+            auto list_of_selects = make_intrusive<ASTExpressionList>();
+            list_of_selects->children.push_back(std::move(per_id_select));
+            select_with_union_query->children.push_back(std::move(list_of_selects));
+            select_with_union_query->list_of_selects = select_with_union_query->children.back();
+
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
+            table_exp->subquery->setAlias(per_id_alias);
+            table_exp->children.push_back(table_exp->subquery);
+
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            table->table_expression = table_exp;
+            table->children.push_back(std::move(table_exp));
+
+            tables->children.push_back(std::move(table));
+        }
+
+        {
+            /// ANY INNER JOIN timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'tags') AS series
+            /// ON per_id.id = series.id
+            /// The table function can return a series more than once (from unmerged parts of the tags table), ANY joins one of them.
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->table_function = make_selector("tags");
+            table_exp->table_function->setAlias(series_alias);
+            table_exp->children.push_back(table_exp->table_function);
+
+            auto table_join = make_intrusive<ASTTableJoin>();
+            table_join->kind = JoinKind::Inner;
+            table_join->strictness = JoinStrictness::Any;
+            table_join->on_expression = makeASTFunction(
+                "equals",
+                make_intrusive<ASTIdentifier>(std::vector<String>{per_id_alias, TimeSeriesColumnNames::ID}),
+                make_intrusive<ASTIdentifier>(std::vector<String>{series_alias, TimeSeriesColumnNames::ID}));
+            table_join->children.push_back(table_join->on_expression);
+
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            table->table_expression = table_exp;
+            table->table_join = table_join;
+            table->children.push_back(table->table_expression);
+            table->children.push_back(table->table_join);
+
+            tables->children.push_back(std::move(table));
+        }
+
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
         return select_query;
     }

@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
 
@@ -19,7 +18,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesThrowDuplicateSeriesIf(condition, group) checks the `condition` and if it's true
+/// Function timeSeriesThrowDuplicateSeriesIf(condition, tags) checks the `condition` and if it's true
 /// throws an exception with the following message "Multiple series have the same tags <tags>,
 /// duplicate series in the same result set are not allowed".
 /// If the `condition` is false the function returns 0.
@@ -28,37 +27,39 @@ class FunctionTimeSeriesThrowDuplicateSeriesIf final : public IFunction
 public:
     static constexpr auto name = "timeSeriesThrowDuplicateSeriesIf";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesThrowDuplicateSeriesIf>(context); }
-
-    explicit FunctionTimeSeriesThrowDuplicateSeriesIf(ContextPtr context)
-        : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector())
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSeriesThrowDuplicateSeriesIf>(); }
 
     [[nodiscard]] String getName() const override { return name; }
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    /// Function timeSeriesThrowDuplicateSeriesIf uses information stored in the query context, it's deterministic in the scope of the current query.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
+    /// Constant arguments are passed as they are, the result is never constant.
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    [[nodiscard]] bool isStateful() const override { return true; }
+    /// Must not throw for the default values of a LowCardinality dictionary or for the rows behind a NULL.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    /// Evaluating at analysis time could throw for rows skipped by short-circuit evaluation.
     [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+
+    /// The check must see all the rows of a result set: a filter moved below it (e.g. a join runtime filter) would hide duplicates.
+    [[nodiscard]] bool isStateful() const override { return true; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override
     {
-        return "(NativeNumber, UInt64) -> UInt8";
+        return "(NativeNumber, Array(Tuple(String, String))) -> UInt8";
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -68,7 +69,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} must be called with two arguments: {}(condition, group)",
+                "Function {} must be called with two arguments: {}(condition, tags)",
                 name, name);
         }
 
@@ -80,7 +81,7 @@ public:
                 name, arguments[0].type->getName());
         }
 
-        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 1);
+        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForTags(name, arguments, 1);
     }
 
     [[nodiscard]] ColumnPtr
@@ -93,7 +94,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} must be called with two arguments: {}(condition, group)",
+                "Function {} must be called with two arguments: {}(condition, tags)",
                 name, name);
         }
 
@@ -102,13 +103,13 @@ public:
 
         if (pos != static_cast<size_t>(-1))
         {
-            auto group = arguments[1].column->getUInt(pos);
-            auto tags = tags_collector->getTagsByGroup(group);
+            auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagsFromArgument(name, arguments, 1);
+            chassert(pos < tags_vector.size());
 
             throw Exception(
                 ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                 "Multiple series have the same tags {}, duplicate series in the same result set are not allowed",
-                ContextTimeSeriesTagsCollector::toString(tags));
+                ContextTimeSeriesTagsCollector::toString(tags_vector[pos]));
         }
 
         return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
@@ -173,8 +174,6 @@ private:
 
         return static_cast<size_t>(-1); /// Not found.
     }
-
-    std::shared_ptr<const ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 
@@ -187,25 +186,25 @@ If the `condition` is false the function returns `0`.
 This function is similar to [throwIf()](/reference/functions/regular-functions/other-functions#throwIf),
 but uses a different error code and formats the error message differently.
     )";
-    FunctionDocumentation::Syntax syntax = "timeSeriesThrowDuplicateSeriesIf(condition, group)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesThrowDuplicateSeriesIf(condition, tags)";
     FunctionDocumentation::Arguments arguments = {
         {"condition",
          "Condition to check, usually contains function [count()](/reference/functions/aggregate-functions/count#count)",
          {"UInt8"}},
-        {"group", "Group of tags.", {"UInt64"}},
+        {"tags", "A set of tags.", {"Array(Tuple(String, String))"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
-        "One series per group",
+        "One series per set of tags",
         R"(
 CREATE TABLE test(tags Array(Tuple(String, String))) engine=Memory;
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, tags)
 FROM test
-GROUP BY timeSeriesTagsToGroup(tags);
+GROUP BY tags;
         )",
         "0",
     },
@@ -214,9 +213,9 @@ GROUP BY timeSeriesTagsToGroup(tags);
         R"(
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, tags)
 FROM test
-GROUP BY timeSeriesTagsToGroup(tags);
+GROUP BY tags;
         )",
         R"(
 Received exception:

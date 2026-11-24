@@ -55,12 +55,11 @@ def get_query_cache_hits():
     return int(node.query("SELECT sum(value) FROM system.events WHERE event = 'QueryCacheHits'"))
 
 
-def test_query_cache_rejected_by_default():
-    # The transpiled SQL contains non-deterministic timeSeries* functions, so the default
-    # query_cache_nondeterministic_function_handling = 'throw' must reject the query.
-    error = run_instant_query({"use_query_cache": 1}, expect_error=True)
-    assert "non-deterministic" in error
-    assert int(node.query("SELECT count() FROM system.query_cache")) == 0
+def test_query_cache_stores_by_default():
+    # The transpiled SQL contains only deterministic functions, so the default
+    # query_cache_nondeterministic_function_handling = 'throw' does not reject the query.
+    run_instant_query({"use_query_cache": 1})
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 1
 
 
 def test_query_cache_stores_and_hits():

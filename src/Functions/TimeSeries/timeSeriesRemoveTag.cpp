@@ -1,9 +1,10 @@
 #include <Functions/FunctionFactory.h>
 
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ContextTimeSeriesTagsCollector.h>
+#include <Functions/TimeSeries/TimeSeriesTagsTransforms.h>
 
 
 namespace DB
@@ -14,42 +15,35 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesRemoveTag(group, 'tag_name') removes a specified tag from a tags group,
-/// and returns the new tags group.
+/// Function timeSeriesRemoveTag(tags, 'tag_name') removes a specified tag from a set of tags,
+/// and returns the new set of tags.
 class FunctionTimeSeriesRemoveTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesRemoveTag";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesRemoveTag>(context); }
-    explicit FunctionTimeSeriesRemoveTag(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSeriesRemoveTag>(); }
 
     [[nodiscard]] String getName() const override { return name; }
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// Function timeSeriesRemoveTag uses information stored in the query context, it's deterministic in the scope of the current query.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
-
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    [[nodiscard]] bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    /// A NULL set of tags is treated as an empty set of tags.
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override
     {
-        return "(UInt64, const String) -> UInt64";
+        return "(Array(Tuple(String, String)), const String) -> Array(Tuple(String, String))";
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
-        return std::make_shared<DataTypeUInt64>();
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}));
     }
 
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
@@ -57,60 +51,53 @@ public:
         if (arguments.size() != 2)
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Function {} must be called with two arguments: {}(group, tag_to_remove)",
+                            "Function {} must be called with two arguments: {}(tags, tag_to_remove)",
                             name, name);
         }
-        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForGroup(name, arguments, 0);
+        TimeSeriesTagsFunctionHelpers::checkArgumentTypeForTags(name, arguments, 0);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForConstTagName(name, arguments, 1);
     }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
+        auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagsFromArgument(name, arguments, 0);
         auto tag_to_remove = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
 
-        auto new_groups = tags_collector->removeTag(old_groups, tag_to_remove);
-        chassert(new_groups.size() == input_rows_count);
+        TimeSeriesTagsTransforms::removeTag(tags_vector, tag_to_remove);
+        chassert(tags_vector.size() == input_rows_count);
 
-        return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(new_groups);
+        return TimeSeriesTagsFunctionHelpers::makeColumnForTagNamesAndValues(tags_vector);
     }
-
-private:
-    std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 
 REGISTER_FUNCTION(TimeSeriesRemoveTag)
 {
     FunctionDocumentation::Description description = R"(
-Removes a specified tag from a group of tags.
-If there is no such tag in the group then the group is returned unchanged.
+Removes a specified tag from a set of tags.
+If there is no such tag in the set of tags then the set of tags is returned unchanged.
 See also function [timeSeriesRemoveTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
 [timeSeriesRemoveAllTagsExcept()](/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 )";
-    FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTag(group, tag_to_remove)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesRemoveTag(tags, tag_to_remove)";
     FunctionDocumentation::Arguments arguments = {
-        {"group", "A group of tags.", {"UInt64"}},
-        {"tag_to_remove", "The name of a tag to remove from the group.", {"String"}}};
+        {"tags", "A set of tags.", {"Array(Tuple(String, String))"}},
+        {"tag_to_remove", "The name of a tag to remove from the set of tags.", {"String"}}};
     FunctionDocumentation::ReturnedValue returned_value = {
-        "A new group of tags without the specified tag.", {"UInt64"}
+        "A new set of tags without the specified tag.", {"Array(Tuple(String, String))"}
     };
     FunctionDocumentation::Examples examples = {
     {
         "Example",
         R"(
-SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS group_of_3,
-       timeSeriesRemoveTag(group_of_3, '__name__') AS group_of_2,
-       timeSeriesGroupToTags(group_of_2),
-       timeSeriesRemoveTag(group_of_2, 'env') AS group_of_1,
-       timeSeriesGroupToTags(group_of_1),
-       timeSeriesRemoveTag(group_of_1, 'region') AS empty_group,
-       timeSeriesGroupToTags(empty_group)
+SELECT timeSeriesRemoveTag([('__name__', 'http_requests_count'), ('env', 'dev'), ('region', 'eu')], '__name__') AS tags_of_2,
+       timeSeriesRemoveTag(tags_of_2, 'env') AS tags_of_1,
+       timeSeriesRemoveTag(tags_of_1, 'region') AS no_tags
         )",
         R"(
-┌─group_of_3─┬─group_of_2─┬─timeSeriesGroupToTags(group_of_2)─┬─group_of_1─┬─timeSeriesGroupToTags(group_of_1)─┬─empty_group─┬─timeSeriesGroupToTags(empty_group)─┐
-│          1 │          2 │ [('env','dev'),('region','eu')]   │          3 │ [('region','eu')]                 │           0 │ []                                 │
-└────────────┴────────────┴───────────────────────────────────┴────────────┴───────────────────────────────────┴─────────────┴────────────────────────────────────┘
+┌─tags_of_2───────────────────────┬─tags_of_1─────────┬─no_tags─┐
+│ [('env','dev'),('region','eu')] │ [('region','eu')] │ []      │
+└─────────────────────────────────┴───────────────────┴─────────┘
         )"
     }
     };

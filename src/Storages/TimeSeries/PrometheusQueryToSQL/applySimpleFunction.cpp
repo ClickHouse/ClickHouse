@@ -148,7 +148,7 @@ SQLQueryPiece applySimpleFunction(
     SelectQueryBuilder builder;
 
     if (res.store_method == StoreMethod::VECTOR_GRID)
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
     ASTPtr expression = apply_function_to_ast(std::move(function_args));
 
