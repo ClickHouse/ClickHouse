@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 #include <Poco/String.h>
 
@@ -55,6 +56,7 @@
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
 #include <Core/UUID.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -215,31 +217,63 @@ static ASTPtr buildSelectFromTableFunction(const boost::intrusive_ptr<ASTFunctio
     return result_select_query;
 }
 
+struct FailedSubqueryReadings
+{
+    /// The value of `starts_with_valid_select_or_explain` of each failed reading.
+    std::unordered_map<const char *, bool> starts_with_valid_select_or_explain;
+};
+
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     starts_with_valid_select_or_explain = false;
 
-    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
-    ParserExplainQuery explain;
-
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
-    const auto opening_bracket_pos = pos;
-    ++pos;
+    const char * const opening_bracket = pos->begin;
 
-    /// Lookahead for inner subquery
-    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+    /// The reading of a subquery depends only on where it starts, but a failed one is retried at the same
+    /// position by every enclosing alternative (a parenthesized expression, a tuple, a function argument,
+    /// a quantified comparison, a union element), and these alternatives nest. Without remembering the
+    /// failures, the parse time is exponential in the nesting depth of such brackets.
+    if (expected.failed_subquery_readings)
+    {
+        const auto & failed = expected.failed_subquery_readings->starts_with_valid_select_or_explain;
+        if (auto it = failed.find(opening_bracket); it != failed.end())
+        {
+            starts_with_valid_select_or_explain = it->second;
+            return false;
+        }
+    }
+
+    bool parsed = parseSubquery(pos, node, expected);
+    if (!parsed)
+    {
+        if (!expected.failed_subquery_readings)
+            expected.failed_subquery_readings = std::make_shared<FailedSubqueryReadings>();
+        expected.failed_subquery_readings->starts_with_valid_select_or_explain[opening_bracket] = starts_with_valid_select_or_explain;
+    }
+    return parsed;
+}
+
+bool ParserSubquery::parseSubquery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
+    ParserExplainQuery explain;
 
     /// A subquery in the FROM-first form, where the SELECT clause is omitted (`(FROM t)` means
     /// `(SELECT * FROM t)`), starts with a word that is also a valid unquoted column name: `from`.
     /// Unlike a leading `SELECT`, `EXPLAIN` or `VALUES`, that word is therefore not evidence that the
     /// parentheses hold a subquery at all. Where the contents read as an expression over a column
     /// named `from`, that older reading wins and these are not a subquery.
+    if (parenthesesHoldExpressionOverColumnNamedFrom(pos))
+        return false;
+    ++pos;
+
+    /// Lookahead for inner subquery
+    const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+
     const bool starts_with_from_clause
         = pos->type == TokenType::BareWord && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from");
-
-    if (starts_with_from_clause && parenthesesHoldExpressionOverColumnNamedFrom(opening_bracket_pos))
-        return false;
 
     ASTPtr result_node = nullptr;
 
@@ -465,7 +499,7 @@ namespace
 class ParserArrayOfJSONIdentifierAddition : public IParserBase
 {
 public:
-    String getLastArrayOfJSONSubcolumnIdentifier() const
+    [[nodiscard]] String getLastArrayOfJSONSubcolumnIdentifier() const
     {
         String subcolumn = ":`";
         for (size_t i = 0; i != last_array_level; ++i)
@@ -477,7 +511,7 @@ public:
     }
 
 protected:
-    const char * getName() const override { return "ParserArrayOfJSONIdentifierDelimiter"; }
+    [[nodiscard]] const char * getName() const override { return "ParserArrayOfJSONIdentifierDelimiter"; }
 
     bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {
@@ -1504,6 +1538,7 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
     errno = 0;    /// Functions strto* don't clear errno.
@@ -1948,6 +1983,8 @@ bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Exp
         return false;
 
     ++pos;
+    /// Nested collections do not go through `IParserBase::parse`, so their depth is counted here.
+    pos.increaseDepth();
     return true;
 }
 
@@ -2049,7 +2086,10 @@ bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expecte
             return false;
 
         if (node)
+        {
             collections.pop_back();
+            pos.decreaseDepth();
+        }
     }
 
     return true;
@@ -2089,6 +2129,7 @@ const char * ParserAlias::restricted_keywords[] =
     "BETWEEN",
     "CROSS",
     "PASTE",
+    "FETCH",
     "FINAL",
     "FORMAT",
     "FROM",
@@ -2115,6 +2156,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "SHUFFLE",
     "SIMILAR",
     "STREAM",
     "UNION",
@@ -2155,6 +2197,32 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
             if (0 == strcasecmp(name.data(), *keyword))
                 return false;
+
+        /// `LOCAL` before a join clause is the join-locality qualifier, not an alias: the join grammar
+        /// admits only these keywords between the qualifier and `JOIN`, so one of them following proves
+        /// the token belongs to the join. `GLOBAL` needs no check, it is a restricted keyword above.
+        if (0 == strcasecmp(name.data(), "LOCAL"))
+        {
+            static constexpr Keyword join_continuations[]
+                = {Keyword::NATURAL, Keyword::ANY,   Keyword::ALL,   Keyword::ASOF,  Keyword::SEMI,
+                   Keyword::ANTI,    Keyword::ONLY,  Keyword::INNER, Keyword::LEFT,  Keyword::RIGHT,
+                   Keyword::FULL,    Keyword::CROSS, Keyword::PASTE, Keyword::JOIN};
+
+            Expected peek_expected;
+
+            /// `LEFT` and `INNER` also introduce `ARRAY JOIN`, which is a sibling of the join clause
+            /// and carries no locality, so the alias stands in front of it.
+            Pos after_inner = pos;
+            ParserKeyword(Keyword::INNER).ignore(after_inner, peek_expected);
+            const bool array_join_follows
+                = ParserKeyword(Keyword::LEFT_ARRAY_JOIN).checkWithoutMoving(pos, peek_expected)
+                || ParserKeyword(Keyword::ARRAY_JOIN).checkWithoutMoving(after_inner, peek_expected);
+
+            if (!array_join_follows)
+                for (Keyword keyword : join_continuations)
+                    if (ParserKeyword(keyword).checkWithoutMoving(pos, peek_expected))
+                        return false;
+        }
 
         /// Special case: an implicit alias literally named COMMENT is only ambiguous
         /// when it is immediately followed by a string literal at the very end of the
@@ -2204,7 +2272,24 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto opos = pos;
         if (ParserExpression().parse(pos, lambda, expected))
         {
-            if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            auto * func = lambda->as<ASTFunction>();
+            if (!func || func->name != "lambda")
+            {
+                /// ParserExpression also takes an operator after `lambda(...)`, as in `APPLY lambda(tuple(x), f(x)) > 1`.
+                func = nullptr;
+                pos = opos;
+                ASTPtr name;
+                auto after_name = pos;
+                if (ParserIdentifier().parse(after_name, name, expected) && getIdentifierName(name) == "lambda"
+                    && after_name->type == TokenType::OpeningRoundBracket && ParserFunction().parse(pos, lambda, expected))
+                    func = lambda->as<ASTFunction>();
+
+                /// Only the plain call: a lambda drops parameters, `RESPECT NULLS`/`IGNORE NULLS` and `OVER`.
+                if (func && (func->parameters || func->getNullsAction() != NullsAction::EMPTY || func->isWindowFunction()))
+                    func = nullptr;
+            }
+
+            if (func && func->name == "lambda")
             {
                 if (!isASTLambdaFunction(*func))
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");

@@ -17,7 +17,7 @@ INSERT INTO logs_04891 VALUES
     ('2024-01-01 00:00:00', 'id=5', '{"size":"7"}', 'error', 5, '5', '15.5', NULL),
     ('2024-01-01 00:01:00', 'id=30', '{"size":"40"}', 'info', 30, '30', '-0.25', '');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04891';
 SET dialect = 'logsql';
 

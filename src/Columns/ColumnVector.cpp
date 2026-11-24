@@ -11,6 +11,7 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Core/AccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -35,7 +36,7 @@
 
 #include "config.h"
 
-#if USE_MULTITARGET_CODE || defined(__SSSE3__)
+#if USE_X86_64_MULTITARGET_CODE || defined(__SSSE3__)
 #    include <immintrin.h>
 #endif
 
@@ -45,7 +46,6 @@
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
-#include <llvm/IR/IRBuilder.h>
 #endif
 
 
@@ -54,7 +54,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -227,31 +226,20 @@ bool ColumnVector<T>::isComparatorCompilable() const
 template <typename T>
 llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs, llvm::Value *) const
 {
-    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
     if constexpr (std::is_integral_v<T>)
-    {
-        // a > b ? 1 : (a < b ? -1 : 0);
-
-        bool is_signed = std::is_signed_v<T>;
-
-        auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
-        auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);
-        auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
-
-        auto * lhs_greater_than_rhs = is_signed ? b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs);
-        auto * lhs_less_than_rhs = is_signed ? b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs);
-        auto * if_lhs_less_than_rhs_result = b.CreateSelect(lhs_less_than_rhs, lhs_less_than_rhs_result, lhs_equals_rhs_result);
-
-        return b.CreateSelect(lhs_greater_than_rhs, lhs_greater_than_rhs_result, if_lhs_less_than_rhs_result);
-    }
+        return compileIntegerComparator(builder, lhs, rhs, std::is_signed_v<T>);
     else
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method compileComparator is not supported for type {}", TypeName<T>);
-    }
 }
 
 #endif
+
+/// clang 23 folds the `Int8` truncation of the three-way compare into a `ucmp`/`scmp` intrinsic with an `Int8` result
+/// (llvm/llvm-project#196847), and the x86 backend scalarizes that form for 32- and 64-bit operands because integer
+/// promotion of `ucmp`/`scmp` was reverted (llvm/llvm-project#204978): the loop below turned into a `cmp`/`sbb` per row
+/// instead of a `vpcmp` per vector. Combining the `int` compare result with a value the compiler cannot see through
+/// keeps the truncation separate from the compare and restores the vectorized lowering on every x86 level.
+static volatile int compare_results_opaque_zero = 0;
 
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
@@ -265,16 +253,17 @@ void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
 {
     auto * result_data = compare_results.data();
     size_t num_rows = data.size();
+    const int opaque_zero = compare_results_opaque_zero;
     /// 2 independent loops, otherwise the compiler does not vectorize it
     if (direction < 0)
     {
         for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint) | opaque_zero);
     }
     else
     {
         for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint) | opaque_zero);
     }
 })
 )
@@ -336,7 +325,7 @@ void ColumnVector<T>::compareColumn(
         return;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
@@ -403,7 +392,7 @@ static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t
     size_t window_end = std::min(begin + window, end);
 
     size_t hit = 0;
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
     else
@@ -740,6 +729,21 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
         }
         return false;
     }
+
+    if constexpr (is_integer<T>)
+    {
+        /// NearestFieldType<T> is wider than T for narrow integers (e.g. Int64 for Int8),
+        /// so a plain static_cast<T> silently wraps out-of-range values (1944 -> -104 for Int8).
+        /// This corrupts data for narrow-integer Variant/Dynamic subcolumns: ColumnDynamic::insert
+        /// treats a successful tryInsert as "the value fit an existing variant" and never widens
+        /// it. Reject overflowing values so the caller can extend the Variant to a wider type.
+        T result{};
+        if (!accurate::convertNumeric<NearestFieldType<T>, T, /*strict=*/false>(value, result))
+            return false;
+        data.push_back(result);
+        return true;
+    }
+
     data.push_back(static_cast<T>(value));
     return true;
 }
@@ -753,11 +757,8 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
-    if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                        "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+    if (start > src_vec.data.size() || length > src_vec.data.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnVector<T>", start, length, src_vec.data.size());
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -918,6 +919,10 @@ constexpr bool COMPRESS_DWORDS = false;
 template <size_t ELEMENT_WIDTH>
 constexpr size_t COMPRESS_ROWS = ELEMENT_WIDTH == 1 ? 8 : (COMPRESS_DWORDS<ELEMENT_WIDTH> ? 32 : 16) / ELEMENT_WIDTH;
 
+/// One shuffle stores a whole vector of `COMPRESS_ROWS` elements from the current count, which can be past all selected rows.
+template <size_t ELEMENT_WIDTH>
+constexpr size_t COMPRESS_MAX_OVERWRITE = COMPRESS_ROWS<ELEMENT_WIDTH> * ELEMENT_WIDTH;
+
 /// For each mask of `COMPRESS_ROWS` rows, the control that moves the selected elements to the front: byte indices,
 /// or dword indices for `COMPRESS_DWORDS`.
 template <size_t ELEMENT_WIDTH>
@@ -942,7 +947,7 @@ alignas(16) constexpr auto compress_table = []
 }();
 
 /// Writes the rows of the block at `data_pos` selected by `mask` to `res` and returns their number. Mixed blocks are compressed
-/// with a table-driven byte shuffle. Up to `SIMD_ELEMENTS` elements from `res` may be written, past the returned count.
+/// with a table-driven byte shuffle. Up to `COMPRESS_MAX_OVERWRITE` bytes past the returned count may be written.
 /// `res` may alias `data_pos` if it is not ahead of it (filtering in place): each store ends within the rows already loaded.
 template <typename T, size_t SIMD_ELEMENTS>
 ALWAYS_INLINE size_t compressBlock(UInt64 mask, const T * data_pos, T * res)
@@ -1001,6 +1006,9 @@ ALWAYS_INLINE size_t compressBlock(UInt64 mask, const T * data_pos, T * res)
 template <typename T, typename Container, size_t SIMD_ELEMENTS>
 void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
+    /// The writes of `compressBlock` past the selected rows land in the right padding, so an exact `result_size_hint` is kept.
+    static_assert(Container::pad_right >= COMPRESS_MAX_OVERWRITE<sizeof(T)>);
+
     size_t current_offset = res_data.size();
     /// Use the capacity reserved from `result_size_hint` without reallocating.
     size_t reserve_size = res_data.capacity();
@@ -1012,25 +1020,17 @@ void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
     while (filt_pos < filt_end_aligned)
     {
         const UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-        /// `compressBlock` writes up to `SIMD_ELEMENTS` elements from `current_offset`.
-        if (reserve_size - current_offset >= SIMD_ELEMENTS)
+        /// Skipping empty blocks also keeps an empty array, which points to shared static memory, from being written.
+        if (mask)
         {
-            current_offset += compressBlock<T, SIMD_ELEMENTS>(mask, data_pos, res + current_offset);
-        }
-        else
-        {
-            /// Compress into a local buffer so an exact `result_size_hint` is not exceeded by the slack of the last blocks.
-            T block[SIMD_ELEMENTS];
-            const size_t count = compressBlock<T, SIMD_ELEMENTS>(mask, data_pos, block);
-            if (reserve_size - current_offset < count)
+            if (reserve_size - current_offset < static_cast<size_t>(std::popcount(mask))) [[unlikely]]
             {
                 reserve_size += alloc_size;
                 res_data.resize(reserve_size);
                 res = res_data.data();
                 alloc_size *= 2;
             }
-            memcpy(res + current_offset, block, count * sizeof(T));
-            current_offset += count;
+            current_offset += compressBlock<T, SIMD_ELEMENTS>(mask, data_pos, res + current_offset);
         }
 
         filt_pos += SIMD_ELEMENTS;
@@ -1193,7 +1193,7 @@ MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[may
     {
         for (size_t i = 0; i < size; ++i)
         {
-            size_t span_size = (offsets[i] - offsets[i - 1]);
+            size_t span_size = (offsets[i] - offsets[static_cast<ssize_t>(i) - 1]);
             if (!span_size)
                 continue;
             /// We will do block writes of "padding_elements" size from left to write, so writing more bytes than necessary is ok
@@ -1206,7 +1206,7 @@ MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[may
             it = result + offsets[i];
 
             if constexpr (use_window)
-                if (i + window_size - 1 < size && offsets[i] == offsets[i + window_size - 1])
+                if (i + window_size - 1 < size && offsets[i] == offsets[static_cast<ssize_t>(i + window_size) - 1])
                     i += window_size - 1;
         }
     }
@@ -1218,7 +1218,7 @@ MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[may
             std::fill(it, span_end, data[i]);
             it = span_end;
             if constexpr (use_window)
-                if (i + window_size - 1 < size && offsets[i] == offsets[i + window_size - 1])
+                if (i + window_size - 1 < size && offsets[i] == offsets[static_cast<ssize_t>(i + window_size) - 1])
                     i += window_size - 1;
         }
     }
@@ -1239,13 +1239,13 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     auto res = this->create(offsets.back());
 
-    /// This formula provides the optimum for a very simplified and probably wrong model for the number of additional checks (offsets[i] == offsets[i + window - 1])
+    /// This formula provides the optimum for a very simplified and probably wrong model for the number of additional checks (offsets[i] == offsets[static_cast<ssize_t>(i + window) - 1])
     /// The threshold of 16 is chosen experimentally, based on the case when all offsets are 0 and we spend no time doing actual copying (i.e. the overhead
     /// from these additional checks is pronounced the most).
     const size_t window_size = static_cast<size_t>(sqrt(1 + size / offsets.back()));
     bool use_window = window_size > 16;
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         if (use_window)
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
@@ -1514,7 +1514,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
     {
         /// VBMI optimization only applicable for (U)Int8 types

@@ -6,13 +6,21 @@
 #include <Core/UUID.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
+#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/IDatabase.h>
+#include <Poco/URI.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -35,14 +43,50 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
-    extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
+    extern const SettingsBool enable_object_storage_queue_hive_partitioning;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
+    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
+}
+
+namespace
+{
+
+#if USE_AWS_S3
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configuration & configuration, const ContextPtr & context)
+{
+    /// `S3::URI` keeps the user info in the endpoint or the bucket name, so such a URL is parsed again without it.
+    auto url = configuration.url;
+    if (!url.uri.getUserInfo().empty())
+    {
+        Poco::URI uri = url.uri;
+        uri.setUserInfo("");
+        url = S3::URI(
+            uri.toString(),
+            /*allow_archive_path_syntax*/ false,
+            /*keep_presigned_query_parameters*/ true,
+            /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+    }
+    return {configuration.getTypeName(), url.endpoint, url.bucket, configuration.getRawPath().path};
+}
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageAzureConfiguration & configuration, const ContextPtr &)
+{
+    String endpoint = configuration.getConnectionURLWithoutQuery();
+    const Poco::URI uri(endpoint);
+    if (uri.getScheme() != "http" && uri.getScheme() != "https")
+        return {};
+    return {configuration.getTypeName(), std::move(endpoint), configuration.getContainer(), configuration.getRawPath().path};
+}
+#endif
+
 }
 
 template <typename Configuration>
@@ -125,13 +169,15 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     if ((*queue_settings)[ObjectStorageQueueSetting::use_hive_partitioning])
     {
         if (!is_attach &&
-            !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_object_storage_queue_hive_partitioning])
+            !args.getLocalContext()->getSettingsRef()[Setting::enable_object_storage_queue_hive_partitioning])
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental 'use_hive_partitioning' setting is not enabled "
-                            "(the setting 'allow_experimental_object_storage_queue_hive_partitioning')");
+                            "(the setting 'enable_object_storage_queue_hive_partitioning')");
         }
     }
+
+    auto source = getQueueSource(*configuration, args.getLocalContext());
 
     /// In `exclusive` mode there is no coordination through Keeper: each server keeps the list of
     /// processed files only in its own memory. If two servers read the same path, both will read
@@ -157,7 +203,11 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         auto path = configuration->getPathForRead();
         path.path = args.getContext()->getMacros()->expand(path.path, info);
         configuration->setPathForRead(path);
+        /// Each server reads own path but they share same keeper_path so they should be considered the same.
+        source.path_pattern.clear();
     }
+
+    source.from_named_collection = configuration->initialized_from_named_collection;
 
     /// The S3 client is built once in the storage constructor and reused by background threads, so the
     /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE
@@ -165,6 +215,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
     const bool allow_server_credentials_in_user_queries
         = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
+    const bool strict_metadata_check = (args.is_restore_from_backup && !isSecondaryDDLReplay(args.getLocalContext()))
+        || !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
 
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
@@ -178,6 +230,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         format_settings,
         args.storage_def,
         args.mode,
+        std::move(source),
+        strict_metadata_check,
         /* keep_data_in_keeper */ false);
 }
 
@@ -185,22 +239,24 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
+    auto secret_arguments = s3TableEngineSecretArguments();
+    secret_arguments.secret_settings = S3Queue::settingsToHide();
     factory.registerStorage(
         "S3Queue",
         [](const StorageFactory::Arguments & args)
         {
             return createQueueStorage<StorageS3Configuration>(args);
         },
+        std::move(secret_arguments),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getS3QueueMoveDestinationAccess,
         },
         Documentation{
             .description = R"DOCS_MD(
-import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
-
 # S3Queue table engine
 
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/reference/engines/table-engines/integrations/rabbitmq) engines, but provides S3-specific features.
@@ -388,6 +444,8 @@ Default value: empty string.
 ### `after_processing_move_uri` {#after_processing_move_uri}
 
 URI of S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
+
+Setting it is the same data flow as `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`, so it requires the `WRITE` grant on the `S3` source. A grant limited by a URL filter is not enough, because the move writes keys that are built from `after_processing_move_prefix` and the source keys, not from the URI. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`. The move always parses the URI with automatic style detection, as the `s3` table function does with the default `s3_uri_style`, so the `uri_style` server setting and the `s3_uri_style` query setting do not apply to it.
 
 Possible values:
 
@@ -787,17 +845,21 @@ exception:
 void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
+    auto secret_arguments = azureTableEngineSecretArguments();
+    secret_arguments.secret_settings = AzureQueue::settingsToHide();
     factory.registerStorage(
         "AzureQueue",
         [](const StorageFactory::Arguments & args)
         {
             return createQueueStorage<StorageAzureConfiguration>(args);
         },
+        std::move(secret_arguments),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getAzureQueueMoveDestinationAccess,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -835,7 +897,7 @@ SETTINGS mode = 'unordered'
 
 ## Settings {#settings}
 
-The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](/reference/engines/table-engines/integrations/s3queue#settings).
+The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings](/reference/engines/table-engines/integrations/s3queue#settings).
 To get a list of settings, configured for the table, use `system.azure_queue_settings` table. Available from `24.10`.
 
 Below are the settings only compatible with AzureQueue and not applicable for S3Queue.
@@ -843,6 +905,8 @@ Below are the settings only compatible with AzureQueue and not applicable for S3
 ### `after_processing_move_connection_string` {#after_processing_move_connection_string}
 
 Connection string for Azure Blob Storage to move successfully processed files to, if the destination is another Azure container.
+
+Setting it requires the `WRITE` grant on the `AZURE` source. A grant limited by a URL filter is not enough, because a move has no single blob path and writes keys that are built from `after_processing_move_prefix` and the source keys. `ALTER TABLE ... MODIFY SETTING` also requires `SELECT` on the table. The destination must be allowed by `remote_url_allow_hosts`.
 
 Possible values:
 
@@ -853,6 +917,8 @@ Default value: empty string.
 ### `after_processing_move_container` {#after_processing_move_container}
 
 Container name to move successfully processed files to, if the destination is another Azure container.
+
+Changing it redirects the move to another container of the same account, so it needs the same grants as `after_processing_move_connection_string`: the `WRITE` grant on the `AZURE` source without a URL filter, and `SELECT` on the table for `ALTER TABLE ... MODIFY SETTING`.
 
 Possible values:
 

@@ -6,14 +6,19 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/StorageURL.h>
 #include <IO/CompressionMethod.h>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <Poco/URI.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -107,6 +112,7 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
         return;
     }
 
+    options.explicit_request_settings = getExplicitRequestSettings();
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
@@ -173,16 +179,30 @@ void StorageObjectStorageConfiguration::initialize(
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
     {
-        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
-        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
-            ? storage_settings[DataLakeStorageSetting::disk].value
+        const auto storage_settings = configuration_to_initialize.getDataLakeSettings();
+        disk_name = (*storage_settings)[DataLakeStorageSetting::disk].changed
+            ? (*storage_settings)[DataLakeStorageSetting::disk].value
             : "";
     }
+    if (engine_args.empty() && table_id)
+    {
+        if (!disk_name.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table engine arguments cannot be omitted when `disk` is set: the catalog assigns an absolute "
+                "table location, while `disk` requires a path relative to its own root. "
+                "Specify the path in the table engine arguments explicitly");
+
+        engine_args = configuration_to_initialize.completeEngineArgsFromCatalog(*table_id, local_context);
+    }
+
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
-    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
+    else if (auto named_collection = tryGetNamedCollectionWithOverrides(
+                 engine_args, local_context, true, nullptr, table_id, /* settings= */ nullptr, configuration_to_initialize.is_replayed_definition))
     {
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
+        configuration_to_initialize.initialized_from_named_collection = true;
 
         /// A base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from the named
         /// collection. Materialize the resolved URL back into the engine args as a `url='...'`
@@ -192,7 +212,11 @@ void StorageObjectStorageConfiguration::initialize(
         /// out of the persisted arguments.
         if (!configuration_to_initialize.url_overridden_by_base_setting.empty())
             StorageURL::overrideURLInEngineArgs(
-                engine_args, configuration_to_initialize.url_overridden_by_base_setting, local_context, /*skip_userinfo=*/ true);
+                engine_args,
+                configuration_to_initialize.url_overridden_by_base_setting,
+                local_context,
+                /*skip_userinfo=*/ true,
+                configuration_to_initialize.is_replayed_definition);
     }
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
@@ -248,6 +272,28 @@ String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescrip
     auto columns_str = columns.getAllPhysical().toString();
     hash.update(columns_str.data(), columns_str.size());
     return getSipHash128AsHexString(hash);
+}
+
+StorageObjectStorageConfiguration::Paths StorageObjectStorageConfiguration::getPaths() const
+{
+    SharedLockGuard lock(paths_mutex);
+    return getPathsImpl();
+}
+
+void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
+{
+    std::lock_guard lock(paths_mutex);
+    setPathsImpl(paths);
+}
+
+void StorageObjectStorageConfiguration::addPath(const Path & path)
+{
+    std::lock_guard lock(paths_mutex);
+    auto paths = getPathsImpl();
+    if (std::ranges::find(paths, path.path, &Path::path) != paths.end())
+        return;
+    paths.push_back(path);
+    setPathsImpl(paths);
 }
 
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
@@ -367,6 +413,66 @@ const StorageObjectStorageConfiguration::Path & StorageObjectStorageConfiguratio
     return read_path;
 }
 
+String StorageObjectStorageConfiguration::getURIForAccessCheck(const String & write_path) const
+{
+    /// The URI as the user typed it, which passed the source access check, e.g. `http://host/bucket/data/{_partition_id}.tsv`,
+    /// and the path inside the storage that it names, e.g. `data/{_partition_id}.tsv`.
+    const String granted_uri(getRawURI());
+    const String granted_path = getRawPath().path;
+
+    /// When the URI is the path itself, e.g. for `azureBlobStorage`, the path is used as is: parsing it as a URI
+    /// would decode escapes like `%41`, which are literal characters of the path.
+    if (granted_uri == granted_path)
+        return write_path;
+
+    /// The path is replaced in the parsed URI, not in the typed string, because the typed URI can spell the path
+    /// differently from the decoded path that is written to, e.g. `%7B_partition_id%7D` for `{_partition_id}`.
+    try
+    {
+        Poco::URI uri(granted_uri);
+        /// The decoded path component of the URI, e.g. `/bucket/data/{_partition_id}.tsv`.
+        String granted_uri_path = uri.getPath();
+        /// `setSchemaHash` expands `{_schema_hash}` in the getRawPath().path, but not in the getRawURI().
+        /// So we need to replace the SCHEMA_HASH_WILDCARD in the granted_uri_path with the schema_hash.
+        if (!schema_hash.empty())
+            boost::replace_all(granted_uri_path, SCHEMA_HASH_WILDCARD, schema_hash);
+
+        /// The URI path and the storage path end the same way, but each can have its own prefix. The URI path has
+        /// the bucket of a path-style S3 URI, e.g. `/bucket/` in `http://host/bucket/data/x.tsv`. The storage path
+        /// has the prefix that a server-level `url_scheme_mappers` entry adds when its `to` contains a path:
+        ///
+        ///     <url_scheme_mappers>
+        ///         <minio><to>http://host/root/{bucket}</to></minio>
+        ///     </url_scheme_mappers>
+        ///
+        /// maps `minio://data/x.tsv` to the key `data/x.tsv` in the bucket `root`, while the URI as the user typed it,
+        /// which grants are matched against, has only the path `/x.tsv`. The two are aligned on their longest common
+        /// suffix, and the result keeps the form the user typed.
+        size_t common_suffix_size = 0;
+        while (common_suffix_size < granted_uri_path.size() && common_suffix_size < granted_path.size()
+               && granted_uri_path[granted_uri_path.size() - 1 - common_suffix_size]
+                   == granted_path[granted_path.size() - 1 - common_suffix_size])
+            ++common_suffix_size;
+
+        const String uri_path_prefix = granted_uri_path.substr(0, granted_uri_path.size() - common_suffix_size);
+        const String storage_path_prefix = granted_path.substr(0, granted_path.size() - common_suffix_size);
+        /// The write path comes from the storage path, so it keeps its prefix, unless it was renamed into it.
+        if (!write_path.starts_with(storage_path_prefix))
+            return {};
+
+        /// `setPath` decodes its argument, but the write path is already decoded, so a `%` in it is a literal character.
+        /// URI prefix plus the rest of write_path, encoded, put into the URI path.
+        String encoded_write_uri_path;
+        Poco::URI::encode(uri_path_prefix + write_path.substr(storage_path_prefix.size()), "", encoded_write_uri_path);
+        uri.setPath(encoded_write_uri_path);
+        return uri.toString();
+    }
+    catch (const Poco::Exception &)
+    {
+        return {};
+    }
+}
+
 StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPathForWrite(const std::string & partition_id) const
 {
     auto raw_path = getRawPath();
@@ -443,6 +549,11 @@ bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
 bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs() const
 {
     return getPathInArchive().find_first_of("*?{") != std::string::npos;
+}
+
+std::string StorageObjectStorageConfiguration::getMetadataLocationURI() const
+{
+    return Iceberg::makeIcebergLocationURI(getTypeName(), getNamespace(), getRawPath().path);
 }
 
 std::string StorageObjectStorageConfiguration::getPathInArchive() const

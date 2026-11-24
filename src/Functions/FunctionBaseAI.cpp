@@ -1,45 +1,43 @@
 #include <Functions/FunctionBaseAI.h>
-#include <Functions/AI/AIDuplicateCache.h>
+#include <Functions/AI/AIFunctionOutputCache.h>
+
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
-#include <Common/ProfileEvents.h>
-#include <base/scope_guard.h>
-#include <Common/Exception.h>
-#include <Common/NetException.h>
-#include <Poco/Net/NetException.h>
-#include <algorithm>
-#include <exception>
-#include <mutex>
-#include <sstream>
-#include <thread>
-#include <unordered_map>
-#include <utility>
-#include <Common/logger_useful.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/RemoteHostFilter.h>
-#include <Poco/URI.h>
-#include <Poco/Net/IPAddress.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeMap.h>
-#include <IO/ConnectionTimeouts.h>
-#include <IO/HTTPCommon.h>
-#include <Interpreters/ProcessList.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <Core/Settings.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/Exception.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/ProfileEvents.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/ConnectionTimeouts.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <base/scope_guard.h>
+
+#include <Poco/Net/IPAddress.h>
+#include <Poco/URI.h>
+
+#include <algorithm>
+#include <chrono>
+#include <future>
 #include <limits>
+#include <optional>
+#include <utility>
 
 namespace ProfileEvents
 {
-    extern const Event AIInputTokens;
-    extern const Event AIOutputTokens;
-    extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
-    extern const Event AIReusedIdenticalInputs;
+    extern const Event AIRepeatedOutputCacheHits;
+    extern const Event AIRepeatedOutputCacheMisses;
 }
 
 namespace DB
@@ -47,20 +45,27 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
+    extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests_per_thread;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
     extern const SettingsString ai_function_text_default_credentials;
     extern const SettingsBool ai_function_allow_insecure_endpoint;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool ai_function_allow_sql_named_collections;
+}
+
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
-    extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
-    extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
+    extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -182,6 +187,33 @@ AIParamSpecs FunctionBaseAI::allParams() const
 namespace
 {
 
+constexpr auto cancellation_check_interval = std::chrono::milliseconds(100);
+
+/// Waits for a submitted request. Throws once the query is killed or exceeds its time limit,
+/// so a request queued behind other queries' requests does not hold the query.
+template <typename Response>
+std::optional<Response> waitForRequest(std::future<std::optional<Response>> & request, const AIQuotaTracker & quota)
+{
+    while (request.wait_for(cancellation_check_interval) != std::future_status::ready)
+        quota.throwIfCancelled();
+    return request.get();
+}
+
+/// Waits for the submitted requests to finish, until the query is killed or exceeds its time limit.
+/// The tasks own everything they use, so they may outlive the query.
+template <typename Response>
+void drainRequests(VectorWithMemoryTracking<std::future<std::optional<Response>>> & requests, const AIQuotaTracker & quota)
+{
+    for (auto & request : requests)
+    {
+        if (!request.valid())
+            continue;
+        while (request.wait_for(cancellation_check_interval) != std::future_status::ready)
+            if (quota.isCancelled())
+                return;
+    }
+}
+
 const Field & getResolvedAIParam(const AIParamValues & values, std::string_view key)
 {
     auto it = values.find(key);
@@ -257,12 +289,17 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
 
     context->checkAccess(AccessType::NAMED_COLLECTION, credentials);
     const auto & collection = NamedCollectionFactory::instance().get(credentials);
+    if (!context->getServerSettings()[ServerSetting::ai_function_allow_sql_named_collections]
+        && collection->getSourceId() != NamedCollection::SourceId::CONFIG)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "AI named collection '{}' is not defined in the server configuration file, and the server setting "
+            "'ai_function_allow_sql_named_collections' is disabled", credentials);
 
     AIParams params;
     params.collection.collection_name = credentials;
     params.collection.provider = collection->getOrDefault<String>("provider", "");
     params.collection.endpoint = collection->getOrDefault<String>("endpoint", "");
-    params.collection.api_key = collection->getOrDefault<String>("api_key", "");
+    params.collection.api_key = collection->getOrDefault<SecretString>("api_key");
     params.collection.api_version = collection->getOrDefault<String>("api_version", "");
 
     if (params.collection.provider.empty())
@@ -270,7 +307,17 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     if (params.collection.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
-    const Poco::URI endpoint_uri(params.collection.endpoint);
+    /// The endpoint can carry a secret, so the error below names only the collection.
+    Poco::URI endpoint_uri;
+    try
+    {
+        endpoint_uri = Poco::URI(params.collection.endpoint);
+    }
+    catch (const Poco::SyntaxException &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' has a malformed endpoint", credentials);
+    }
+
     context->getRemoteHostFilter().checkURL(endpoint_uri);
 
     /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
@@ -279,10 +326,10 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         && !isLoopbackHost(endpoint_uri.getHost())
         && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI named collection '{}' uses an insecure endpoint '{}': prompts and the API key would be sent to a "
+            "AI named collection '{}' uses an insecure endpoint: prompts and the API key would be sent to a "
             "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
             "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
-            credentials, params.collection.endpoint);
+            credentials);
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.
@@ -312,57 +359,62 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     return params;
 }
 
-UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt)
+AIRequestPolicy FunctionBaseAI::makeRequestPolicy(const ContextPtr & context)
 {
-    constexpr UInt64 max_retry_delay_ms = 60'000;
-    UInt64 delay_ms = std::min(initial_delay_ms, max_retry_delay_ms);
-    for (UInt64 i = 0; i < attempt && delay_ms < max_retry_delay_ms; ++i)
-        delay_ms = std::min(delay_ms * 2, max_retry_delay_ms);
-    return delay_ms;
-}
+    const auto & settings = context->getSettingsRef();
 
-bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
-{
-    try
-    {
-        std::rethrow_exception(exception);
-    }
-    catch (const AIProviderHTTPException & exception)
-    {
-        return isRetriableHTTPError(exception.getHTTPStatus());
-    }
-    catch (const NetException &)
-    {
-        /// ClickHouse-level network error (e.g. a DNS failure raised by the HTTP connection pool).
-        return true;
-    }
-    catch (const Poco::Net::NetException &)
-    {
-        /// Connection refused/reset, TLS connect failure, or an unreachable advertised address.
-        return true;
-    }
-    catch (const Poco::TimeoutException &)
-    {
-        /// Connect or receive timeout.
-        return true;
-    }
-    catch (const Poco::IOException & exception)
-    {
-        /// Write-side transient I/O failure, e.g. a broken pipe (`EPIPE`) when the peer resets the
-        /// connection mid-request. Out-of-file-descriptors (`EMFILE`) is not retriable.
-        return exception.code() != POCO_EMFILE;
-    }
-    catch (...)
-    {
-        /// Ok: any other exception is a deterministic and non-retrieable error, e.g. a malformed
-        /// provider response, bad configuration, JSON parse failure, etc.
-        return false;
-    }
+    AIRequestPolicy policy;
+    policy.timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
+    policy.timeouts.receive_timeout
+        = Poco::Timespan(static_cast<int64_t>(settings[Setting::ai_function_request_timeout_sec].value) /*s*/, 0 /*us*/);
+    policy.max_retries = settings[Setting::ai_function_max_retries].value;
+    policy.retry_initial_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
+    policy.throw_on_error = settings[Setting::ai_function_throw_on_error].value;
+
+    constexpr UInt64 max_retries_limit = 5;
+    constexpr UInt64 retry_initial_delay_ms_limit = 10'000;
+    if (policy.max_retries > max_retries_limit)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'ai_function_max_retries' is {}, the maximum is {}", policy.max_retries, max_retries_limit);
+    if (policy.retry_initial_delay_ms > retry_initial_delay_ms_limit)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'ai_function_retry_initial_delay_ms' is {}, the maximum is {}", policy.retry_initial_delay_ms, retry_initial_delay_ms_limit);
+
+    return policy;
 }
 
 void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & processed) const
 {
     column.insertData(processed.data(), processed.size());
+}
+
+void FunctionBaseAI::checkHasUser(const ContextPtr & context)
+{
+    if (context->getUserID())
+        return;
+
+    /// A background operation is retried, and its failure is visible only in the logs and system tables.
+    context->addOrUpdateWarningMessage(
+        Context::WarningType::AI_FUNCTION_IN_BACKGROUND_OPERATION,
+        PreformattedMessage::create(
+            "A background operation (merge, mutation or `Buffer` flush) failed because it evaluates an AI function, "
+            "which is executed only in queries run by a user. {}Remove the AI function from the table's keys, TTL, "
+            "skip indexes, projections, `DEFAULT` and `MATERIALIZED` columns and constraints.",
+            context->getCurrentQueryId().empty() ? "" : fmt::format("Last failed task: {}. ", context->getCurrentQueryId())));
+
+    throw Exception(ErrorCodes::ACCESS_DENIED,
+        "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
+}
+
+void FunctionBaseAI::throwIfNotAllowed(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::allow_ai_functions])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AI functions are disabled. Set `allow_ai_functions` to enable them");
+
+    if (context->isAnalyzingBackgroundExpressions())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "AI functions cannot be used in expressions executed in the background: mutations, keys, TTL, skip indexes "
+            "and projections. Use a lightweight `UPDATE` or `INSERT ... SELECT` instead");
 }
 
 AIParamSpecs FunctionBaseAI::embeddingParams()
@@ -376,292 +428,223 @@ AIParamSpecs FunctionBaseAI::embeddingParams()
 namespace
 {
 
-bool reuseEntryStillPending(const AIReuseEntryPtr & entry)
-{
-    std::lock_guard lock(entry->mutex);
-    return entry->kind == AIReuseKind::Pending;
-}
-
-struct EmbeddingReuseSlot
-{
-    AIReuseKey key;
-    AIReuseEntryPtr entry;
-    bool owned = false;
-};
-
-void publishOwnedEmbeddings(
-    AIDuplicateCache & cache,
-    VectorWithMemoryTracking<EmbeddingReuseSlot> & slots,
-    const VectorWithMemoryTracking<size_t> & owned_positions,
-    FunctionBaseAI::EmbeddingResult & owned_result,
-    std::exception_ptr failure)
-{
-    for (size_t j = 0; j < owned_positions.size(); ++j)
-    {
-        EmbeddingReuseSlot & slot = slots[owned_positions[j]];
-        if (!reuseEntryStillPending(slot.entry))
-            continue;
-
-        const bool has_status = j < owned_result.statuses.size();
-        const auto status = has_status ? owned_result.statuses[j] : FunctionBaseAI::EmbeddingInputStatus::Unset;
-        if (status == FunctionBaseAI::EmbeddingInputStatus::Embedded)
-        {
-            cache.publishSuccessEmbedding(slot.key, slot.entry, std::move(owned_result.embeddings[j]));
-        }
-        else if (status == FunctionBaseAI::EmbeddingInputStatus::QuotaSkipped)
-        {
-            cache.publishQuotaSkip(slot.key, slot.entry);
-        }
-        else if (status == FunctionBaseAI::EmbeddingInputStatus::ProviderFailed)
-        {
-            cache.publishProviderFailure(slot.key, slot.entry, nullptr);
-        }
-        else
-        {
-            cache.publishProviderFailure(slot.key, slot.entry, failure);
-            if (!failure)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Embedding input was left without a reuse status");
-        }
-    }
-}
-
-}
-
-void FunctionBaseAI::embedTexts(
-    IAIProvider & provider,
+void embedTextsWithoutCache(
+    const std::shared_ptr<IAIProvider> & provider,
     const String & model,
     UInt64 dimensions,
     const String & function_name,
+    const String & query_id,
+    const String & initial_query_id,
     const VectorWithMemoryTracking<std::string_view> & inputs,
     size_t max_batch_size,
-    UInt64 max_retries,
-    UInt64 retry_delay_ms,
-    bool throw_on_error,
-    AIQuotaTracker & quota,
-    const ConnectionTimeouts & timeouts,
-    EmbeddingResult & result,
-    AIDuplicateCache * input_cache,
-    UInt128 cache_prefix,
-    size_t reserved_bytes,
-    QueryStatus * process_list)
+    size_t max_concurrent_requests,
+    const AIRequestPolicy & policy,
+    const AIQuotaTrackerPtr & quota,
+    FunctionBaseAI::EmbeddingResult & result)
 {
-    if (input_cache && !inputs.empty())
+    result.embeddings.resize(inputs.size());
+
+    /// Equivalent to (n + max_batch_size - 1) / max_batch_size but can't overflow
+    const size_t num_batches = inputs.empty() ? 0 : 1 + (inputs.size() - 1) / max_batch_size;
+    const size_t concurrency = std::min(max_concurrent_requests, num_batches);
+
+    /// Batches go out in waves of size `concurrency` and each completed wave is applied before the next
+    /// one starts, so at most that many of this call's requests are in flight at a time.
+    VectorWithMemoryTracking<std::future<std::optional<AIEmbeddingResponse>>> wave;
+    wave.reserve(concurrency);
+
+    /// Wait for all waves to complete on error, so that API-call and request counts are recorded
+    /// They were already dispatched and billed either way. A cancelled query does not wait.
+    SCOPE_EXIT_SAFE({ drainRequests(wave, *quota); });
+
+    for (size_t wave_begin = 0; wave_begin < num_batches; wave_begin += concurrency)
     {
-        UInt64 reused = 0;
-        SCOPE_EXIT({
-            ProfileEvents::increment(ProfileEvents::AIReusedIdenticalInputs, reused);
-        });
+        const size_t wave_end = std::min(wave_begin + concurrency, num_batches);
 
-        /// One slot per input. A repeated key in this call shares the first claim: claiming the
-        /// same key again on this thread, before it is published, waits for itself.
-        VectorWithMemoryTracking<EmbeddingReuseSlot> slots;
-        slots.reserve(inputs.size());
-        VectorWithMemoryTracking<size_t> owned_positions;
-        owned_positions.reserve(inputs.size());
-        std::unordered_map<AIReuseKey, size_t, AIReuseKeyHash> first_index; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-
-        /// Publish every owned placeholder if this call leaves early, so waiters do not stay pending.
-        SCOPE_EXIT({
-            const std::exception_ptr failure = std::current_exception();
-            for (size_t position : owned_positions)
-            {
-                EmbeddingReuseSlot & slot = slots[position];
-                if (!reuseEntryStillPending(slot.entry))
-                    continue;
-                try
-                {
-                    input_cache->publishProviderFailure(slot.key, slot.entry, failure);
-                }
-                catch (...) // NOLINT(bugprone-empty-catch) A scope-guard destructor must not throw.
-                {
-                }
-            }
-        });
-
-        for (size_t i = 0; i < inputs.size(); ++i)
+        wave.clear();
+        /// fire off `concurrency` batches at a time
+        for (size_t batch = wave_begin; batch < wave_end; ++batch)
         {
-            const AIReuseKey key = hashAIReuseKey(cache_prefix, inputs[i]);
-            if (auto it = first_index.find(key); it != first_index.end())
+            /// Once the quota is exhausted nothing more is issued, so the batch's slot stays an
+            /// empty future and its inputs stay empty.
+            if (quota->checkQuotas())
             {
-                slots.push_back(EmbeddingReuseSlot{key, slots[it->second].entry, false});
+                wave.emplace_back();
                 continue;
             }
 
-            auto [entry, owned] = input_cache->claim(key, reserved_bytes);
-            const size_t index = slots.size();
-            slots.push_back(EmbeddingReuseSlot{key, std::move(entry), owned});
-            if (owned)
-                owned_positions.push_back(index);
-            first_index.emplace(key, index);
+            const size_t begin = batch * max_batch_size;
+            const size_t end = std::min(begin + max_batch_size, inputs.size());
+
+            AIEmbeddingRequest ai_embedding_request;
+            ai_embedding_request.model = model;
+            ai_embedding_request.dimensions = dimensions;
+            ai_embedding_request.function_name = function_name;
+            ai_embedding_request.query_id = query_id;
+            ai_embedding_request.initial_query_id = initial_query_id;
+            ai_embedding_request.inputs.reserve(end - begin);
+            for (size_t k = begin; k < end; ++k)
+                ai_embedding_request.inputs.emplace_back(inputs[k]);
+
+            wave.push_back(submitAIRequest(provider, std::move(ai_embedding_request), policy, quota));
         }
 
-        VectorWithMemoryTracking<std::string_view> owned_inputs;
-        owned_inputs.reserve(owned_positions.size());
-        for (size_t position : owned_positions)
-            owned_inputs.push_back(inputs[position]);
-
-        EmbeddingResult owned_result;
-        try
+        /// get the results for our `concurrency` batches
+        for (size_t k = 0; k < wave.size(); ++k)
         {
-            if (!owned_inputs.empty())
+            const size_t begin = (wave_begin + k) * max_batch_size;
+            const size_t end = std::min(begin + max_batch_size, inputs.size());
+
+            /// Nothing when no request was issued for this batch, or when it failed and
+            /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
+            std::optional<AIEmbeddingResponse> ai_embedding_response;
+            if (wave[k].valid())
+                ai_embedding_response = waitForRequest(wave[k], *quota);
+
+            if (!ai_embedding_response)
             {
-                embedTexts(
-                    provider, model, dimensions, function_name, owned_inputs, max_batch_size, max_retries, retry_delay_ms,
-                    throw_on_error, quota, timeouts, owned_result, nullptr, {}, 0, nullptr);
+                result.texts_skipped += end - begin;
+                continue;
             }
-        }
-        catch (...)
-        {
-            publishOwnedEmbeddings(*input_cache, slots, owned_positions, owned_result, std::current_exception());
-            throw;
-        }
 
-        if (owned_result.embeddings.size() != owned_positions.size() || owned_result.statuses.size() != owned_positions.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Embedding reuse lost alignment with the owned inputs");
+            chassert(ai_embedding_response->embeddings.size() == end - begin,
+                "Number of inputs does not match number of output embeddings");
 
-        publishOwnedEmbeddings(*input_cache, slots, owned_positions, owned_result, nullptr);
-
-        result.embeddings.resize(inputs.size());
-        result.statuses.resize(inputs.size());
-        std::exception_ptr first_error;
-        for (size_t i = 0; i < slots.size(); ++i)
-        {
-            AIReuseOutcome outcome = input_cache->wait(slots[i].entry, process_list);
-            if (!slots[i].owned && (outcome.kind == AIReuseKind::Success || outcome.kind == AIReuseKind::ProviderFailure))
-                ++reused;
-
-            if (outcome.kind == AIReuseKind::Success)
+            for (size_t j = 0; j < ai_embedding_response->embeddings.size(); ++j)
             {
-                result.embeddings[i] = std::move(outcome.embedding);
-                result.statuses[i] = EmbeddingInputStatus::Embedded;
+                result.embeddings[begin + j] = std::move(ai_embedding_response->embeddings[j]);
                 ++result.texts_embedded;
             }
-            else if (outcome.kind == AIReuseKind::ProviderFailure)
-            {
-                result.statuses[i] = EmbeddingInputStatus::ProviderFailed;
-                if (outcome.exception)
-                {
-                    if (!first_error)
-                        first_error = outcome.exception;
-                }
-                else
-                {
-                    ++result.texts_skipped;
-                }
-            }
-            else if (outcome.kind == AIReuseKind::QuotaSkip)
-            {
-                result.statuses[i] = EmbeddingInputStatus::QuotaSkipped;
-                ++result.texts_skipped;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "AI input reuse entry was still pending after wait");
-            }
         }
+    }
+}
+}
 
-        if (first_error)
-            std::rethrow_exception(first_error);
+void FunctionBaseAI::embedTexts(
+    const std::shared_ptr<IAIProvider> & provider,
+    const String & model,
+    UInt64 dimensions,
+    const String & function_name,
+    const String & query_id,
+    const String & initial_query_id,
+    const VectorWithMemoryTracking<std::string_view> & inputs,
+    size_t max_batch_size,
+    size_t max_concurrent_requests,
+    const AIRequestPolicy & policy,
+    const AIQuotaTrackerPtr & quota,
+    EmbeddingResult & result,
+    AIFunctionOutputCache * output_cache)
+{
+    if (!output_cache)
+    {
+        embedTextsWithoutCache(
+            provider, model, dimensions, function_name, query_id, initial_query_id, inputs, max_batch_size, max_concurrent_requests,
+            policy, quota, result);
         return;
     }
 
-    result.embeddings.resize(inputs.size());
-    result.statuses.assign(inputs.size(), EmbeddingInputStatus::Unset);
-
-    UInt64 api_calls = 0;
-    UInt64 input_tokens = 0;
-
-    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
+    UInt64 cache_hits = 0;
+    UInt64 cache_misses = 0;
     SCOPE_EXIT({
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, input_tokens);
+        ProfileEvents::increment(ProfileEvents::AIRepeatedOutputCacheHits, cache_hits);
+        ProfileEvents::increment(ProfileEvents::AIRepeatedOutputCacheMisses, cache_misses);
     });
 
-    for (size_t batch_start = 0; batch_start < inputs.size(); batch_start += max_batch_size)
+    result.embeddings.resize(inputs.size());
+
+    /// Only the distinct texts that are not in the cache are sent. `miss_of_input` maps an input to its
+    /// position in `misses`, or `no_miss` when the cache already had it.
+    static constexpr size_t no_miss = std::numeric_limits<size_t>::max();
+    VectorWithMemoryTracking<size_t> miss_of_input(inputs.size(), no_miss);
+    VectorWithMemoryTracking<std::string_view> misses;
+    VectorWithMemoryTracking<UInt128> miss_keys;
+    HashMap<UInt128, size_t, UInt128TrivialHash> miss_by_key;
+
+    for (size_t i = 0; i < inputs.size(); ++i)
     {
-        if (quota.checkQuotas())
+        const UInt128 key = AIFunctionOutputCache::hash(inputs[i]);
+        if (auto cached = output_cache->get(key))
         {
-            for (size_t k = batch_start; k < inputs.size(); ++k)
-                result.statuses[k] = EmbeddingInputStatus::QuotaSkipped;
-            result.texts_skipped += inputs.size() - batch_start;
-            break;
-        }
-
-        size_t batch_end = std::min(batch_start + max_batch_size, inputs.size());
-
-        AIEmbeddingRequest ai_embedding_request;
-        ai_embedding_request.model = model;
-        ai_embedding_request.dimensions = dimensions;
-        ai_embedding_request.function_name = function_name;
-        ai_embedding_request.inputs.reserve(batch_end - batch_start);
-        for (size_t k = batch_start; k < batch_end; ++k)
-            ai_embedding_request.inputs.emplace_back(inputs[k]);
-
-        AIEmbeddingResponse ai_embedding_response;
-        bool batch_ok = false;
-        bool quota_skipped = false;
-        for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
-        {
-            /// Reserve an API-call slot before each request; this also performs a quota check.
-            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
-            if (!quota.recordApiCall())
-            {
-                quota_skipped = true;
-                break;
-            }
-
-            try
-            {
-                /// Count the call before issuing it, so a failed request is still counted.
-                ++api_calls;
-                SCOPE_EXIT({
-                    input_tokens += ai_embedding_response.input_tokens;
-                    quota.recordTokens(ai_embedding_response.input_tokens, 0);
-                });
-                provider.embed(ai_embedding_request, timeouts, ai_embedding_response);
-                batch_ok = true;
-                break;
-            }
-            catch (...)
-            {
-                if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
-                {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
-                    continue;
-                }
-
-                if (!throw_on_error) /// Skip to next batch, this batch's inputs stay empty.
-                    break;
-
-                throw;
-            }
-        }
-
-        if (!batch_ok)
-        {
-            const EmbeddingInputStatus status = quota_skipped
-                ? EmbeddingInputStatus::QuotaSkipped
-                : EmbeddingInputStatus::ProviderFailed;
-            for (size_t k = batch_start; k < batch_end; ++k)
-                result.statuses[k] = status;
-            result.texts_skipped += batch_end - batch_start;
+            result.embeddings[i] = cached->embedding;
+            ++result.texts_embedded;
+            ++cache_hits;
             continue;
         }
 
-        chassert(ai_embedding_response.embeddings.size() == ai_embedding_request.inputs.size(),
-            "Number of inputs does not match number of output embeddings");
-
-        for (size_t k = 0; k < ai_embedding_response.embeddings.size(); ++k)
+        HashMap<UInt128, size_t, UInt128TrivialHash>::LookupResult it;
+        bool inserted = false;
+        miss_by_key.emplace(key, it, inserted);
+        if (inserted)
         {
-            result.embeddings[batch_start + k] = std::move(ai_embedding_response.embeddings[k]);
-            result.statuses[batch_start + k] = EmbeddingInputStatus::Embedded;
-            ++result.texts_embedded;
+            it->getMapped() = misses.size();
+            misses.push_back(inputs[i]);
+            miss_keys.push_back(key);
+            ++cache_misses;
         }
+        miss_of_input[i] = it->getMapped();
+    }
+
+    if (misses.empty())
+        return;
+
+    EmbeddingResult miss_result;
+    /// On a throw, keep the counts of the requests that completed visible to the caller, as without the cache.
+    bool counted = false;
+    SCOPE_EXIT({
+        if (!counted)
+        {
+            result.texts_embedded += miss_result.texts_embedded;
+            result.texts_skipped += miss_result.texts_skipped;
+        }
+    });
+
+    embedTextsWithoutCache(
+        provider, model, dimensions, function_name, query_id, initial_query_id, misses, max_batch_size, max_concurrent_requests,
+        policy, quota, miss_result);
+
+    counted = true;
+    /// The first input of each miss was counted as a miss above. A repeat of it in `inputs` is a hit when the
+    /// text was embedded, and a miss otherwise, since it got no embedding.
+    VectorWithMemoryTracking<UInt8> miss_seen(misses.size(), 0);
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        if (miss_of_input[i] == no_miss)
+            continue;
+
+        const size_t miss = miss_of_input[i];
+        const bool repeat = miss_seen[miss];
+        miss_seen[miss] = 1;
+
+        /// An empty embedding was not embedded (quota exhausted, or a failed request), and is not cached.
+        const auto & embedding = miss_result.embeddings[miss];
+        if (embedding.empty())
+        {
+            ++result.texts_skipped;
+            if (repeat)
+                ++cache_misses;
+            continue;
+        }
+        result.embeddings[i] = embedding;
+        ++result.texts_embedded;
+        if (repeat)
+            ++cache_hits;
+    }
+
+    for (size_t k = 0; k < misses.size(); ++k)
+    {
+        if (miss_result.embeddings[k].empty())
+            continue;
+        auto output = std::make_shared<AIFunctionOutput>();
+        output->embedding = std::move(miss_result.embeddings[k]);
+        output_cache->set(miss_keys[k], output);
     }
 }
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// Before resolving the credentials: their validation errors must not reveal a named collection.
+    checkHasUser(getContext());
+
     const auto & settings = getContext()->getSettingsRef();
     auto params = resolveAIParams(getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials]);
 
@@ -674,7 +657,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
     String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
-    auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+
+    /// Shared with the submitted requests so each one is self-contained and nothing dangles even
+    /// if this call stops waiting for a future it handed out.
+    std::shared_ptr<IAIProvider> provider = createAIProvider(
+        getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
     if (input_rows_count == 0)
         return result_type->createColumn();
@@ -689,255 +676,190 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         prompt_nullable = typeid_cast<const ColumnNullable *>(prompt_column.get());
     }
 
-    UInt64 timeout_sec = settings[Setting::ai_function_request_timeout_sec].value;
-    UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
-    UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
-
-    bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
-
     /// Shared across every AI function call in the query
     auto quota_tracker = getContext()->getAIQuotaTracker();
 
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
-    timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
+    const auto policy = makeRequestPolicy(getContext());
+
+    const String query_id = getContext()->getCurrentQueryId();
+    const String & initial_query_id = getContext()->getClientInfo().initial_query_id;
 
     auto result_col = removeNullable(result_type)->createColumn();
     auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
 
-    UInt64 total_api_calls = 0;
-    UInt64 total_input_tokens = 0;
-    UInt64 total_output_tokens = 0;
     UInt64 rows_processed = 0;
     UInt64 rows_skipped = 0;
-    UInt64 rows_reused = 0;
+    UInt64 cache_hits = 0;
+    UInt64 cache_misses = 0;
 
-    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
+    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error.
+    /// The per-request counters (`AIAPICalls`, `AIInputTokens`, `AIOutputTokens`) are incremented by
+    /// the submitted requests as they complete.
     SCOPE_EXIT({
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
-        ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
         ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
-        ProfileEvents::increment(ProfileEvents::AIReusedIdenticalInputs, rows_reused);
+        ProfileEvents::increment(ProfileEvents::AIRepeatedOutputCacheHits, cache_hits);
+        ProfileEvents::increment(ProfileEvents::AIRepeatedOutputCacheMisses, cache_misses);
     });
 
-    /// Null when `ai_function_reuse_identical` is off, so the default path does not hash or allocate.
-    /// The cache is taken from the query context: a subquery `SETTINGS` clause does not apply.
-    const auto input_cache = getContext()->getAIDuplicateCache();
-    UInt128 cache_prefix{};
-    if (input_cache)
-    {
-        String response_format_text;
-        if (response_format)
-        {
-            std::ostringstream response_format_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            response_format->stringify(response_format_stream);
-            response_format_text = response_format_stream.str();
-        }
-        cache_prefix = hashAIChatPrefix(
-            params.collection.provider,
-            params.collection.endpoint,
-            params.collection.api_version,
-            params.collection.api_key,
-            model,
-            temperature,
-            max_tokens,
-            system_prompt,
-            response_format_text);
-    }
-    QueryStatus * process_list = input_cache ? getContext()->getProcessListElement().get() : nullptr;
+    const size_t concurrency = std::min<UInt64>(settings[Setting::ai_function_max_concurrent_requests_per_thread].value, input_rows_count);
 
-    /// One provider call for a sanitized user message. Quota is checked here, not before a cache hit,
-    /// so a stored success is still returned after the quota is exhausted. Token totals are updated
-    /// inside the attempt, including when the attempt throws.
-    struct ChatCallResult
-    {
-        bool success = false;
-        bool quota_skipped = false;
-        String text;
-        std::exception_ptr exception;
-    };
+    /// Requests go out in waves of `concurrency` rows, and each completed wave is applied to the
+    /// result column in row order. A wave waits for its slowest request before the next one starts,
+    /// which gives up a little throughput next to a sliding window, but keeps row ordering, quota
+    /// accounting and error propagation identical to issuing the requests one at a time.
+    VectorWithMemoryTracking<std::future<std::optional<AIResponse>>> wave;
+    wave.reserve(concurrency);
 
-    auto call_chat = [&](const String & user_message) -> ChatCallResult
+    /// Used only with `output_cache`, per row of the current wave: the key of its input, its output (found in
+    /// the cache, or received in this wave), and the row of this wave that sent the same input.
+    static constexpr size_t no_row = std::numeric_limits<size_t>::max();
+    VectorWithMemoryTracking<UInt128> wave_keys;
+    VectorWithMemoryTracking<std::shared_ptr<AIFunctionOutput>> wave_outputs;
+    VectorWithMemoryTracking<size_t> wave_same_as;
+    HashMap<UInt128, size_t, UInt128TrivialHash> wave_sent_keys;
+
+    /// Wait for all waves to complete on error, so that API-call and request counts are recorded
+    /// They were already dispatched and billed either way. A cancelled query does not wait.
+    SCOPE_EXIT_SAFE({ drainRequests(wave, *quota_tracker); });
+
+    for (size_t wave_begin = 0; wave_begin < input_rows_count; wave_begin += concurrency)
     {
-        ChatCallResult out;
-        if (quota_tracker->checkQuotas())
+        const size_t wave_end = std::min(wave_begin + concurrency, input_rows_count);
+
+        wave.clear();
+        if (output_cache)
         {
-            out.quota_skipped = true;
-            return out;
+            wave_keys.assign(wave_end - wave_begin, UInt128{});
+            wave_outputs.assign(wave_end - wave_begin, nullptr);
+            wave_same_as.assign(wave_end - wave_begin, no_row);
+            wave_sent_keys.clear();
         }
 
-        for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
+        for (size_t row = wave_begin; row < wave_end; ++row)
         {
-            /// Reserve an API-call slot before each request; this also performs a quota check.
-            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
-            if (!quota_tracker->recordApiCall())
+            const size_t slot = row - wave_begin;
+
+            /// A NULL prompt produces NULL without a request, so the row's slot stays an empty future.
+            if (prompt_nullable && prompt_nullable->getNullMapData()[row])
             {
-                out.quota_skipped = true;
-                return out;
+                wave.emplace_back();
+                continue;
             }
 
-            try
+            String user_message = sanitizeForModel(buildUserMessage(arguments, row));
+
+            /// A repeated input is not sent again: it takes the cached output, or the output of the row
+            /// of this wave that sent it. This does not count against the quota.
+            if (output_cache)
             {
-                AIRequest ai_request;
-                ai_request.system_prompt = system_prompt;
-                ai_request.user_message = user_message;
-                ai_request.response_format = response_format;
-                ai_request.model = model;
-                ai_request.temperature = temperature;
-                ai_request.max_tokens = max_tokens;
-                ai_request.function_name = getName();
-
-                ++total_api_calls;
-
-                AIResponse ai_response;
-                SCOPE_EXIT({
-                    quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
-                    total_input_tokens += ai_response.input_tokens;
-                    total_output_tokens += ai_response.output_tokens;
-                });
-                provider->call(ai_request, timeouts, ai_response);
-
-                /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
-                /// interpolating it into an exception message that reaches the logs and `system.query_log`.
-                const String safe_finish_reason = sanitizeForLog(ai_response.raw_finish_reason);
-
-                /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
-                switch (ai_response.finish_reason)
+                wave_keys[slot] = AIFunctionOutputCache::hash(user_message);
+                wave_outputs[slot] = output_cache->get(wave_keys[slot]);
+                if (wave_outputs[slot])
                 {
-                    case FinishReason::Complete:
-                    case FinishReason::Unknown: /// Don't throw on Unknown, could be new valid reason in new API version
-                        break;
-                    case FinishReason::Truncated:
-                        /// Differentiate between model hitting our output cap and exhausting its context window
-                        throw Exception(
-                            ErrorCodes::AI_PROVIDER_RESPONSE_TRUNCATED,
-                            "AI provider returned a truncated response (finish_reason='{}'): {}",
-                            safe_finish_reason,
-                            ai_response.raw_finish_reason == "model_context_window_exceeded"
-                                ? "the model ran out of context window before completing its answer. "
-                                  "Reduce the input or use a model with a larger context window."
-                                : "the model hit the output token limit before completing its answer. "
-                                  "Increase max_tokens or reduce the input.");
-                    case FinishReason::ContentFilter:
-                        throw Exception(
-                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
-                            "AI provider withheld or filtered the response (finish_reason='{}'): the returned answer "
-                            "is incomplete.",
-                            safe_finish_reason);
-                    case FinishReason::RequiresAction:
-                        throw Exception(
-                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
-                            "AI provider stopped expecting further caller action (finish_reason='{}') instead of "
-                            "returning a completed answer.",
-                            safe_finish_reason);
-                }
-
-                out.text = postProcessResponse(ai_response.result);
-                out.success = true;
-                return out;
-            }
-            catch (...)
-            {
-                if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
-                {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
+                    ++cache_hits;
+                    wave.emplace_back();
                     continue;
                 }
 
-                if (!throw_on_error)
-                    return out;
+                /// Counted when the output of that row is known.
+                if (const auto * sent = wave_sent_keys.find(wave_keys[slot]))
+                {
+                    wave_same_as[slot] = sent->getMapped();
+                    wave.emplace_back();
+                    continue;
+                }
 
-                out.exception = std::current_exception();
-                return out;
+                ++cache_misses;
             }
+
+            /// Once the quota is exhausted a row keeps its default value without a request.
+            if (quota_tracker->checkQuotas())
+            {
+                wave.emplace_back();
+                continue;
+            }
+
+            if (output_cache)
+                wave_sent_keys[wave_keys[slot]] = slot;
+
+            AIChatRequest ai_request;
+            ai_request.system_prompt = system_prompt;
+            ai_request.user_message = std::move(user_message);
+            ai_request.response_format = response_format;
+            ai_request.model = model;
+            ai_request.temperature = temperature;
+            ai_request.max_tokens = max_tokens;
+            ai_request.function_name = getName();
+            ai_request.query_id = query_id;
+            ai_request.initial_query_id = initial_query_id;
+
+            wave.push_back(submitAIRequest(provider, std::move(ai_request), policy, quota_tracker));
         }
 
-        return out;
-    };
-
-    auto apply_outcome = [&](const AIReuseOutcome & outcome, bool count_reuse)
-    {
-        if (outcome.kind == AIReuseKind::Pending)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AI input reuse entry was still pending after wait");
-
-        if (count_reuse && outcome.kind != AIReuseKind::QuotaSkip)
-            ++rows_reused;
-
-        if (outcome.kind == AIReuseKind::Success)
+        for (size_t k = 0; k < wave.size(); ++k)
         {
-            insertProcessedResult(*result_col, outcome.text);
+            const size_t row = wave_begin + k;
+
+            /// A NULL prompt produces NULL without a request.
+            if (prompt_nullable && prompt_nullable->getNullMapData()[row])
+            {
+                result_col->insertDefault();
+                null_map_col->getData()[row] = 1;
+                continue;
+            }
+
+            /// A repeated input, see above. When the row that sent it got no output, neither does this one,
+            /// and it counts as a miss.
+            if (output_cache && (wave_outputs[k] || wave_same_as[k] != no_row))
+            {
+                const bool repeat_in_wave = wave_same_as[k] != no_row;
+                const auto & output = repeat_in_wave ? wave_outputs[wave_same_as[k]] : wave_outputs[k];
+                if (output)
+                {
+                    insertProcessedResult(*result_col, output->text);
+                    ++rows_processed;
+                    if (repeat_in_wave)
+                        ++cache_hits;
+                }
+                else
+                {
+                    result_col->insertDefault();
+                    ++rows_skipped;
+                    ++cache_misses;
+                }
+                continue;
+            }
+
+            /// Nothing when no request was issued because the API-call quota was exhausted, or when
+            /// the request failed and `ai_function_throw_on_error` is disabled; either way the row
+            /// keeps its default value.
+            std::optional<AIResponse> ai_response;
+            if (wave[k].valid())
+                ai_response = waitForRequest(wave[k], *quota_tracker);
+
+            if (!ai_response)
+            {
+                result_col->insertDefault();
+                ++rows_skipped;
+                continue;
+            }
+
+            String & response = ai_response->result;
+            if (response_format) /// Some models output whitespace around a structured reply
+                response = String(trimWhitespace(response));
+            String processed = postProcessResponse(arguments, response);
+            insertProcessedResult(*result_col, processed);
             ++rows_processed;
-            return;
-        }
 
-        if (outcome.exception)
-            std::rethrow_exception(outcome.exception);
-
-        result_col->insertDefault();
-        ++rows_skipped;
-    };
-
-    for (size_t i = 0; i < input_rows_count; ++i)
-    {
-        if (prompt_nullable && prompt_nullable->getNullMapData()[i])
-        {
-            result_col->insertDefault();
-            null_map_col->getData()[i] = 1;
-            continue;
-        }
-
-        const String user_message = sanitizeForModel(buildUserMessage(arguments, i));
-        if (!input_cache)
-        {
-            ChatCallResult call = call_chat(user_message);
-            AIReuseOutcome outcome;
-            if (call.quota_skipped)
-                outcome.kind = AIReuseKind::QuotaSkip;
-            else if (call.success)
+            if (output_cache)
             {
-                outcome.kind = AIReuseKind::Success;
-                outcome.text = std::move(call.text);
+                /// The other arguments are constant, so the processed response depends only on the input.
+                wave_outputs[k] = std::make_shared<AIFunctionOutput>();
+                wave_outputs[k]->text = std::move(processed);
+                output_cache->set(wave_keys[k], wave_outputs[k]);
             }
-            else
-            {
-                outcome.kind = AIReuseKind::ProviderFailure;
-                outcome.exception = std::move(call.exception);
-            }
-            apply_outcome(outcome, false);
-            continue;
         }
-
-        const AIReuseKey key = hashAIReuseKey(cache_prefix, user_message);
-        auto [entry, owned] = input_cache->claim(key, 0);
-        if (owned)
-        {
-            bool published = false;
-            /// Runs on every exit, including an exception from the quota check. Must not throw:
-            /// `publish` notifies before it updates the cache weight.
-            SCOPE_EXIT({
-                if (published || !reuseEntryStillPending(entry))
-                    return;
-                try
-                {
-                    input_cache->publishProviderFailure(key, entry, std::current_exception());
-                }
-                catch (...) // NOLINT(bugprone-empty-catch) A scope-guard destructor must not throw.
-                {
-                }
-            });
-
-            ChatCallResult call = call_chat(user_message);
-            if (call.quota_skipped)
-                input_cache->publishQuotaSkip(key, entry);
-            else if (call.success)
-                input_cache->publishSuccessText(key, entry, std::move(call.text));
-            else
-                input_cache->publishProviderFailure(key, entry, std::move(call.exception));
-            published = true;
-        }
-
-        apply_outcome(input_cache->wait(entry, process_list), !owned);
     }
 
     if (result_type->isNullable())

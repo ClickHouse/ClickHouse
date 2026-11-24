@@ -3,6 +3,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB
@@ -33,12 +34,14 @@ public:
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }
+    bool supportsStreaming() const override { return getNested()->supportsStreaming(); }
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
     bool canMoveConditionsToPrewhere() const override { return getNested()->canMoveConditionsToPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getNested()->supportedPrewhereColumns(); }
     bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getNested()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
+    bool isInsertOrderSensitive() const override { return getNested()->isInsertOrderSensitive(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
     bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
@@ -47,6 +50,8 @@ public:
     /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
     bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getNested()->supportsOptimizationToTupleElementSubcolumns(); }
+    bool supportsSubcolumnOptimizationWithFinal() const override { return getNested()->supportsSubcolumnOptimizationWithFinal(); }
+    bool hasBucketedMapSerialization() const override { return getNested()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
     /// `ReadFromMerge::getSelectedTables` prunes children by name based on this flag; a lazy
     /// `StorageTableProxy` around a delegating storage (`Distributed`, `Merge`, `Buffer`, `Alias`)
@@ -59,6 +64,15 @@ public:
     /// which materializes the nested table anyway.
     bool supportsTTL() const override { return getNested()->supportsTTL(); }
     bool supportsStatistics() const override { return getNested()->supportsStatistics(); }
+    /// The same holds for `DELETE`, `UPDATE` and `ALTER ... DELETE/UPDATE`: their interpreters probe
+    /// these on the catalog object before handing the mutation to `mutate` or `updateLightweight`.
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { return getNested()->getColumnSizes(columns, calculate_subcolumn_sizes); }
@@ -162,6 +176,7 @@ public:
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override { return getNested()->updateLightweight(commands, context); }
 
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
@@ -185,6 +200,7 @@ public:
     void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
+    bool hasUnreplicatedTableDataOnDisk() const override { return getNested()->hasUnreplicatedTableDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }

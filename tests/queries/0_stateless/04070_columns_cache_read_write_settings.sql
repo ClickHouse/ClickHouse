@@ -18,6 +18,10 @@ SELECT
     number * 2 AS number
 FROM numbers(5000);
 
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
+
 -- =============================================================================
 -- Test 1: All cache settings enabled (baseline)
 -- =============================================================================

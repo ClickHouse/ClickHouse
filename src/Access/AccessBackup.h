@@ -11,7 +11,7 @@ class AccessControl;
 enum class AccessEntityType : uint8_t;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
-class AccessRightsElements;
+class AccessRights;
 class IAccessStorage;
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
@@ -69,9 +69,9 @@ public:
     /// Loads access entities from the backup.
     void loadFromBackup();
 
-    /// Checks that the current user can do restoring.
-    /// Function loadFromBackup() must be called before that.
-    AccessRightsElements getRequiredAccess() const;
+    /// Returns the access required to restore the loaded entities.
+    /// `loadFromBackup` must be called first.
+    [[nodiscard]] AccessRights getRequiredAccess() const;
 
     /// Generates random IDs for access entities we're restoring to insert them into an access storage;
     /// and finds IDs of existing access entities which are used as dependencies.
@@ -79,7 +79,7 @@ public:
 
     /// Returns access entities loaded from backup and prepared for insertion into an access storage.
     /// Both functions loadFromBackup() and generateRandomIDsAndResolveDependencies() must be called before that.
-    AccessEntitiesToRestore getEntitiesToRestore(const String & data_path_in_backup) const;
+    [[nodiscard]] AccessEntitiesToRestore getEntitiesToRestore(const String & data_path_in_backup) const;
 
 private:
     const BackupPtr backup;

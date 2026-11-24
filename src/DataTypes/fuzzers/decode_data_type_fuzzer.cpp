@@ -1,6 +1,8 @@
 #include <base/types.h>
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromMemory.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -15,6 +17,12 @@
 #include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
+
+#include <Parsers/SecretArguments.h>
+
+/// No engine is registered, so the secrets of their arguments are shown.
+[[maybe_unused]] static const bool secret_arguments_finder_installed
+    = (DB::setSecretArgumentsFinder(&DB::NoSecretArgumentsFinder::instance()), true);
 
 using namespace DB;
 
@@ -63,7 +71,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         ///
         /// The fuzzer can be run as follows:
         ///   ../../../build_asan_fuzz/src/DataTypes/fuzzers/decode_data_type_fuzzer corpus \
-        ///       -dict=../../../tests/fuzz/dictionaries/binary_types.dict -jobs=8
+        ///       -dict=../../../tests/fuzz/binary_types.dict -jobs=8
 
         if (size < 1)
             return 0;

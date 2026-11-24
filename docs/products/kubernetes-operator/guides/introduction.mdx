@@ -67,17 +67,21 @@ spec:
 ### ClickHouse Keeper is required {#clickhouse-keeper-is-required}
 
 Every ClickHouseCluster requires a ClickHouse Keeper cluster for distributed coordination.
-The Keeper cluster must be referenced in the ClickHouseCluster spec using `keeperClusterRef`. By default the operator looks in the ClickHouseCluster namespace, but you can also set `keeperClusterRef.namespace` to point at a KeeperCluster in another watched namespace.
+Reference an operator-managed KeeperCluster in the ClickHouseCluster spec using `keeperClusterRef`. By default the operator looks in the ClickHouseCluster namespace, but you can also set `keeperClusterRef.namespace` to point at a KeeperCluster in another watched namespace.
+To use a Keeper ensemble the operator does not manage, list its servers in `externalKeeper` instead. See [Externally managed Keeper](/products/kubernetes-operator/guides/configuration#external-keeper).
 
 ###  One-to-One Keeper relationship {#one-to-one-keeper-relationship}
 
-Each ClickHouseCluster must have its own dedicated KeeperCluster. You can't share a single KeeperCluster between multiple ClickHouseClusters.
+By default, each ClickHouseCluster needs its own dedicated KeeperCluster.
 
-**Why?** The operator automatically generates a unique authentication key for each ClickHouseCluster to access its Keeper. This key is stored in a Secret and can't be shared.
+**Why?** The operator automatically generates a unique authentication key for each ClickHouseCluster to access its Keeper. This key is stored in a Secret.
 
 **Consequences**:
-- Multiple ClickHouseClusters can't reference the same KeeperCluster
+- Multiple ClickHouseClusters can't reference the same KeeperCluster without the setup below
 - Recreating a ClickHouseCluster requires recreating its KeeperCluster
+
+To share a single Keeper cluster, set a distinct `zookeeper.root` in `settings.extraConfig` for each ClickHouseCluster,
+and create that znode before ClickHouse starts. See [Externally managed Keeper](/products/kubernetes-operator/guides/configuration#external-keeper).
 
 <Note>
 Persistent Volumes aren't deleted automatically when ClickHouseCluster or KeeperCluster resources are deleted.

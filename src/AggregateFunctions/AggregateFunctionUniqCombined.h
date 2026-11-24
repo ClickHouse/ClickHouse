@@ -142,7 +142,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, ColumnType, K, HashValueType>>(argument_types_, params_, std::make_shared<DataTypeUInt64>())
     {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (std::is_same_v<HashValueType, UInt64>)
             return "uniqCombined64";
@@ -150,10 +150,7 @@ public:
             return "uniqCombined";
     }
 
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -335,7 +332,7 @@ public:
             num_args = arguments.size();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (std::is_same_v<HashValueType, UInt64>)
             return "uniqCombined64";
@@ -343,10 +340,7 @@ public:
             return "uniqCombined";
     }
 
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

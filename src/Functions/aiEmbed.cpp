@@ -1,10 +1,11 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
-#include <Functions/AI/AIDuplicateCache.h>
+#include <Functions/AI/AIFunctionOutputCache.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
@@ -22,11 +23,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 
-#include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 
 #include <string_view>
 
@@ -41,11 +39,8 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 ai_function_request_timeout_sec;
-    extern const SettingsUInt64 ai_function_max_retries;
-    extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
-    extern const SettingsBool ai_function_throw_on_error;
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
+    extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests_per_thread;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
 
@@ -62,30 +57,40 @@ class FunctionAiEmbed final : public IFunction
 public:
     static constexpr auto name = "aiEmbed";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiEmbed>(context); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        context->checkAccess(AccessType::aiEmbed);
+        return std::make_shared<FunctionAiEmbed>(context);
+    }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) {}
+    explicit FunctionAiEmbed(ContextPtr context_)
+        : context(context_)
+    {
+        FunctionBaseAI::throwIfNotAllowed(context);
+        output_cache = createAIFunctionOutputCache(context);
+    }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     /// func has side effects, f.e. each call updates quota, makes potentially expensive outside call, etc.
-    bool isStateful() const override { return true; }
+    [[nodiscard]] bool isStateful() const override { return true; }
 
     /// Unlike the other AI funcs, it's ok and actually preferable for
     /// optimizer to fold calls with same args together
-    bool isDeterministic() const override { return true; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isExpensive() const override { return true; }
 
     /// Handle Nullable cols explicitly, since setting this to true may call func with arbitrary input values
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -99,8 +104,11 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Before resolving the credentials: their validation errors must not reveal a named collection.
+        FunctionBaseAI::checkHasUser(getContext());
+
         const auto & settings = getContext()->getSettingsRef();
         auto params = FunctionBaseAI::resolveAIParams(
             getContext(), arguments, FunctionBaseAI::embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);
@@ -108,8 +116,8 @@ public:
         UInt64 dimensions = params.getUInt("dimensions");
         String model(arguments[model_arg_index].column->getDataAt(0));
 
-        auto provider = createAIProvider(
-            params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+        std::shared_ptr<IAIProvider> provider = createAIProvider(
+            getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
         if (!provider->supportsEmbeddings())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "AI provider '{}' does not support embeddings", params.collection.provider);
@@ -117,17 +125,13 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        UInt64 timeout_sec = settings[Setting::ai_function_request_timeout_sec].value;
-        UInt64 max_retries = settings[Setting::ai_function_max_retries].value;
-        UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
-        bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
+        size_t max_concurrent_requests = static_cast<size_t>(settings[Setting::ai_function_max_concurrent_requests_per_thread].value);
 
         /// Shared across every AI function call in the query
         auto quota_tracker = getContext()->getAIQuotaTracker();
 
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
-        timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
+        const auto policy = FunctionBaseAI::makeRequestPolicy(getContext());
 
         /// `isNullAt` and `getDataAt` are virtual on `IColumn`, so a single path covers `ColumnString`,
         /// `ColumnConst(ColumnString)`, `ColumnNullable` and `ColumnConst(ColumnNullable)` (e.g.
@@ -166,25 +170,9 @@ public:
             ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
         });
 
-        const auto input_cache = getContext()->getAIDuplicateCache();
-        UInt128 cache_prefix{};
-        size_t reserved_bytes = 0;
-        if (input_cache)
-        {
-            cache_prefix = hashAIEmbeddingPrefix(
-                params.collection.provider,
-                params.collection.endpoint,
-                params.collection.api_version,
-                params.collection.api_key,
-                model,
-                dimensions);
-            reserved_bytes = aiEmbeddingReservedBytes(dimensions);
-        }
-        QueryStatus * process_list = input_cache ? getContext()->getProcessListElement().get() : nullptr;
-
         FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
-            timeouts, embedding_result, input_cache.get(), cache_prefix, reserved_bytes, process_list);
+            provider, model, dimensions, getName(), getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
+            inputs, max_batch_size, max_concurrent_requests, policy, quota_tracker, embedding_result, output_cache.get());
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();
@@ -224,7 +212,9 @@ private:
     static constexpr size_t model_arg_index = 1;
 
     ContextPtr context;
-    ContextPtr getContext() const { return context; }
+    /// Embeddings of the texts this function has already sent. Null when the cache is disabled.
+    AIFunctionOutputCachePtr output_cache;
+    [[nodiscard]] ContextPtr getContext() const { return context; }
 };
 
 }

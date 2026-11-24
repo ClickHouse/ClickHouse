@@ -16,7 +16,7 @@ INSERT INTO logs_04824 VALUES
     ('2023-11-14 22:13:20.123456000', 'c', 9007199254740993, '1h'),
     ('2023-11-14 22:13:20.999999999', 'd', 9007199254740992, '10.5');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04824';
 SET dialect = 'logsql';
 

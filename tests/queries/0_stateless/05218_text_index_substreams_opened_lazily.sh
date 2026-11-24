@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage
+# Tags: no-object-storage, no-parallel
 # no-object-storage: the oracle is ProfileEvents['FileOpen'], which counts local file opens only.
+# no-parallel: the oracle needs the server caches to stay warm between the warm-up and the measured query, and a
+# concurrent `DROP` or `RENAME` of a `MergeTree` table in a database without table UUIDs clears all of them.
 # Random settings limits: min_bytes_to_use_mmap_io=(1048576, None)
 # min_bytes_to_use_mmap_io: below the file sizes here it makes every read go through the mmap cache,
 # which does not count as a file open at all, so both counts collapse to 0.
@@ -33,7 +35,9 @@ for i in $(seq 1 $PARTS); do
         FROM numbers(8)"
 done
 
-SETTINGS_COMMON="use_query_condition_cache = 0, use_query_cache = 0, use_text_index_negative_tokens_cache = 1,
+# use_columns_cache = 0: a column served from the columns cache opens no data file, which blinds the FileOpen counts.
+SETTINGS_COMMON="use_query_condition_cache = 0, use_query_cache = 0, use_columns_cache = 0,
+    use_text_index_negative_tokens_cache = 1,
     use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, load_marks_asynchronously = 0,
     enable_parallel_replicas = 0, max_threads = 1"
 
@@ -77,8 +81,7 @@ ${CLICKHOUSE_CLIENT} -q "
     ORDER BY query_id DESC"
 
 # The same in-range query once its postings block is in the global postings cache: reading no
-# substream then covers the postings stream too.  A threshold again, since that cache is shared with
-# concurrently running tests.
+# substream then covers the postings stream too.
 POSTINGS_CACHED="SELECT sum(val) FROM t_text_lazy_substreams WHERE hasToken(msg, 'everypart') SETTINGS $SETTINGS_POSTINGS_CACHE"
 POSTINGS_CACHED_ID="05218_postings_cached_${CLICKHOUSE_DATABASE}"
 

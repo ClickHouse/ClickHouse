@@ -8,9 +8,156 @@ keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud chang
 rss: true
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
+
+<Update label="2026-11-23">
+
+This week's releases strengthen safeguards for production databases, improve security-incident communication, and add a new option for billing Claude usage.
+
+## New features {#2026-11-23-new-features}
+
+### Deletion protection for Managed Postgres {#deletion-protection-for-managed-postgres}
+
+You can now enable deletion protection for a [ClickHouse Managed Postgres](/cloud/managed-postgres) service from its **Settings** page or through the OpenAPI. While protection is enabled, deletion requests from the console or API are rejected with `409` until protection is turned off, helping prevent accidental deletion of production databases. Deletion protection is not yet available for read replicas.
+
+## Integrations {#2026-11-23-integrations}
+
+### Linked billing with Anthropic's Claude Platform {#linked-billing-with-anthropics-claude-platform}
+
+ClickHouse Cloud organizations can now link their Claude Platform organization under **Organization settings → Claude organization**. Once linked, Anthropic bills Claude usage across supported ClickHouse Cloud products, including [ClickHouse Agents](/agents/index), directly to that organization, drawing down the existing Anthropic commitment. You approve the link in Claude without sharing an API key, set a monthly spend limit that you can change in the Claude Console, and can unlink from either side. Linked organizations can use the Claude models in ClickHouse's catalog, including Opus 5.5 and Haiku 5.5. This opt-in feature is available to all eligible organizations; see [linked billing with Claude Platform](/products/cloud/features/ai-ml/linked-billing-claude-platform) for details.
+
+## Security {#2026-11-23-security}
+
+### Designate security contacts for your organization {#designate-security-contacts-for-your-organization}
+
+Organization administrators can now designate up to three security contacts. If a security incident occurs, ClickHouse will know exactly who to reach at your organization. This feature is generally available.
+
+</Update>
+
+<Update label="2026-11-16">
+
+This week's updates add safeguards for Cloud services and support sessions, and preview more secure credential management. ClickHouse Observability and ClickHouse Managed Postgres are also now available.
+
+### Deletion protection for Cloud services {#deletion-protection-for-cloud-services}
+
+You can now protect a service from accidental deletion. While deletion protection is enabled, the service cannot be deleted until someone turns the setting off, adding a deliberate confirmation step before a destructive operation. The setting is available in the Cloud console and through the OpenAPI for all organizations. See [deletion protection](/products/cloud/guides/deletion-protection).
+
+### Restrict access to monitoring dashboards {#restrict-access-to-monitoring-dashboards}
+
+The **View monitoring** permission is now configurable for each Cloud console role. Administrators can disable it to prevent users assigned that role from viewing in-console monitoring dashboards; it remains enabled by default.
+
+### Query masking for support sessions {#query-masking-for-support-sessions}
+
+You can request query masking for a service to limit the query text available to ClickHouse Support. With masking enabled, Support sees `[REDACTED]` in `system.query_log`, and sensitive values in `system.text_log` are masked. Unmasked log access requires your explicit approval for an investigation and uses a separate auditable account. Query masking is off by default and is available on ClickHouse `26.6.1-2397` or later, `26.8.1-548` or later, `26.10.2-15` or later, and `26.11`; contact Support to enable it for a service.
+
+### Secure named collections entering Public Beta {#secure-named-collections-entering-public-beta}
+
+Secure named collections will enter Public Beta in November 2026 with ClickHouse `26.10` on the fast-release channel for all Cloud providers. They let you store credentials, such as S3 keys, encrypted once with `CREATE NAMED COLLECTION`, then reference the collection by name instead of placing credentials in queries. See [named collections](/concepts/features/configuration/server-config/named-collections).
+
+</Update>
+
+<Update label="Nov 11, 2026">
+
+This week's Cloud updates include major platform additions and smoother operations across data, observability, security, and AI engineering:
+
+- **Build:** [ClickHouse Managed Postgres](/products/managed-postgres/overview) is generally available, with native change data capture into ClickHouse and the `pg_clickhouse` extension. The [Xata acquisition](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) accelerates the roadmap for instant branching, cloning, and scale-to-zero environments.
+- **Observe:** [ClickHouse Observability](https://clickhouse.com/blog/announcing-clickhouse-observability) is in Public Beta. Send OpenTelemetry data to a managed endpoint and investigate logs, metrics, and traces in ClickStack or with agents. Observability Apps is in Private Preview, bringing prompt-driven, shareable applications over live telemetry.
+- **Secure:** ClickHouse Security is in Private Preview, combining security-data integrations, managed detections, and AI-powered investigations built on [RunReveal technology](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion). Admins can also configure each role's access to in-console monitoring dashboards.
+- **Connect:** The MongoDB CDC connector for [ClickPipes](/integrations/clickpipes/mongodb) is generally available, adding parallel snapshotting, structured ingestion, and new monitoring metrics. Private Preview support for `remoteSecure` lets services in the same organization, region, and cell query each other over ClickHouse Cloud's private network. Approved domains and the new Previews page make onboarding and trying eligible features self-service.
+- **Build with AI:** Langfuse AI Gateway is in Public Beta for tracing model usage and costs. Langfuse also adds versioned agent skills; project API keys can now be limited to full access, viewer, ingestion, or scores-ingestion permissions; and Experiments compares every score in a candidate run with a baseline, highlighting improvements and regressions. Read the [platform announcement](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) for details.
+
+</Update>
+
+<Update label="Oct 19, 2026">
+
+This week's updates make executable user-defined functions generally available across ClickHouse Cloud, add stronger correctness controls for Kafka ClickPipes, and expand ClickHouse Agents and Langfuse capabilities. You can now use a native UDF runtime, give Python UDFs outbound network access, and manage UDFs through the Cloud API and Terraform; Kafka ClickPipes can use exactly-once delivery and handle tombstone messages; and ClickHouse Agents add scheduled chats, programmatic tool calling, in-run Skills, and Claude Sonnet 5.5.
+
+## New features {#2026-10-19-new-features}
+
+### Executable UDFs are generally available {#executable-udfs-generally-available}
+
+Executable user-defined functions (UDFs) are now generally available on ClickHouse Cloud across AWS, GCP, and Azure, and are enabled for every organization. Since the public beta, UDFs have gained a native runtime for uploading precompiled, statically linked Rust, Go, C++, or Bun binaries; outbound network access for Python UDFs; a per-process memory limit; and a `deterministic` flag that lets the query cache serve queries that call a UDF. Native UDFs cannot be network-enabled. See the [announcement](https://clickhouse.com/blog/executable-udfs-generally-available-on-clickhouse-cloud), the [UDF documentation](/products/cloud/features/sql-console-features/user-defined-functions), and the [LLM token UDF example](https://github.com/ClickHouse/llm-token-udf).
+
+## API {#2026-10-19-api}
+
+### Manage UDFs with the Cloud API and Terraform {#manage-udfs-with-the-cloud-api-and-terraform}
+
+You can now manage the full lifecycle of executable UDFs through 12 new Cloud API endpoints. The Terraform provider adds `clickhouse_udf` and `clickhouse_udf_attachment` resources in version 3.24.0 and later; both support pinning a UDF version per service. See the [announcement](https://clickhouse.com/blog/executable-udfs-generally-available-on-clickhouse-cloud) and the [UDF documentation](/products/cloud/features/sql-console-features/user-defined-functions).
+
+## Improvements {#2026-10-19-improvements}
+
+### UDF performance metrics in `system.query_log` {#udf-performance-metrics-in-system-query-log}
+
+Starting in version 26.6, eight new `ProfileEvents` expose per-query UDF behaviour in `system.query_log`, including wall time, pool wait, CPU, memory, and bytes sent through the pipe. Two server-wide metrics in `system.asynchronous_metrics` report the number of live UDF processes and their total resident memory, including idle pool workers; the memory value is an upper bound because shared pages are counted once per process. See the [UDF monitoring documentation](/products/cloud/features/sql-console-features/user-defined-functions#monitoring).
+
+## ClickPipes {#2026-10-19-clickpipes}
+
+### Exactly-once delivery for Kafka ClickPipes {#exactly-once-delivery-for-kafka-clickpipes}
+
+You can now choose **exactly-once** delivery when creating a Kafka ClickPipe instead of the default at-least-once mode. Recovery deduplicates replayed insert ranges while their deterministic tokens remain in the target table's deduplication window. Configure [`replicated_deduplication_window`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) and [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) to cover the worst-case replay delay before relying on this instead of downstream deduplication such as `ReplacingMergeTree` and `FINAL`. See [delivery semantics](/integrations/clickpipes/kafka/best-practices#delivery-semantics).
+
+### Tombstone handling for Kafka ClickPipes {#tombstone-handling-for-kafka-clickpipes}
+
+Kafka ClickPipes can now handle tombstone messages: records with a key and a `NULL` payload. You can delete matching destination rows with lightweight deletes when exactly-once semantics is enabled, or mark tombstones as deleted rows. For large workloads, marking rows as deleted is recommended; use a `ReplacingMergeTree` destination table and query its `_is_deleted` virtual column. See [tombstone handling](/integrations/clickpipes/kafka/best-practices#tombstone-handling).
+
+## Console / UI {#2026-10-19-console-ui}
+
+### Scheduled Chats in ClickHouse Agents (beta) {#scheduled-chats-in-clickhouse-agents-beta}
+
+ClickHouse Agents can now run on a recurring schedule: hourly, daily, on weekdays, weekly, or using a custom cron schedule. Choose the time zone and days, and optionally organize each run in a Project. Manage schedules directly from the ClickHouse Agents sidebar.
+
+### Programmatic Tool Calling and in-run Skills for agents {#programmatic-tool-calling-and-in-run-skills-for-agents}
+
+Programmatic Tool Calling lets agents coordinate selected MCP tools through Code Interpreter with loops, branching, retries, and intermediate processing. To use it, enable Code Interpreter and mark tools as Programmatic in Agent Builder. Agents can also create reusable Skills while working and start using them in the same run.
+
+### Better management of long-running agent conversations {#better-management-of-long-running-agent-conversations}
+
+You can manually compact a conversation when its context gets crowded and see more clearly how much context tool results retain. Background tasks are easier to monitor and stop from the chat header, and supported results are delivered automatically. In the sidebar, you can filter and sort conversations, and pinned items now share one draggable section.
+
+### Exportable outputs, simpler file handling, and copyable shared conversations {#exportable-outputs-simpler-file-handling-and-copyable-shared-conversations}
+
+Mermaid diagrams open as full artifacts and can be exported to SVG or PNG; other artifacts can be viewed full-screen, and code blocks can be downloaded as files. You can send an attachment without a prompt, and agents route files to the appropriate tools only when needed. You can also copy a shared conversation into your account and continue it as your own.
+
+### Claude Sonnet 5.5 in ClickHouse Agents {#claude-sonnet-55-in-clickhouse-agents}
+
+Claude Sonnet 5.5 is now available in ClickHouse Agents and also powers the default ClickHouse Agent.
+
+</Update>
+
+<Update label="Oct 5, 2026">
+
+This week's release simplifies billing for customers with multiple ClickHouse Cloud organizations, extends ClickPipes serialization support for Kafka and Kinesis, and introduces an experimental native TCP option for .NET developers. You can now manage prepaid credits across organizations in the console or retrieve balances programmatically; streaming ClickPipes support common Avro and Protobuf workflows; and the .NET driver offers a faster, lower-allocation native client.
+
+## New features {#2026-10-05-new-features}
+
+### Transfer prepaid credits between organizations {#transfer-prepaid-credits-between-organizations}
+
+Customers with multiple organizations can now move prepaid credits between them in the console, without opening a support ticket. A single view shows prepaid credits across all of your organizations, so you can track consumption and plan renewals. This requires Org Admin, Billing Admin, or a custom role with billing permissions on each organization involved. Credits can be split across tiers but not between Cloud and BYOC organizations or across different cloud marketplaces. See the [self-service prepaid credit management documentation](/products/cloud/reference/billing/self-service-prepaid-credit-management).
+
+## API {#2026-10-05-api}
+
+### New API endpoint for organization credit balances {#new-api-endpoint-for-organization-credit-balances}
+
+The new `GET /v1/organizations/{organizationId}/creditBalances` endpoint in the ClickHouse Cloud OpenAPI returns an organization's active credit balances, including prepaid and trial credits. Use it to monitor credit consumption from your own tooling. See the [self-service prepaid credit management documentation](/products/cloud/reference/billing/self-service-prepaid-credit-management).
+
+## ClickPipes {#2026-10-05-clickpipes}
+
+### Avro and Protobuf support for Kinesis ClickPipes {#avro-and-protobuf-support-for-kinesis-clickpipes}
+
+Kinesis ClickPipes now support **Avro** and **Protobuf** in addition to JSON. Schemas can come from the **AWS Glue Schema Registry** or from an uploaded schema file. Kafka and Kinesis ClickPipes now support the same common serialization formats, and the feature is available in the UI, OpenAPI, and Terraform. See the [Kinesis ClickPipes documentation](/integrations/clickpipes/kinesis/).
+
+### Protobuf schema file uploads for Kafka ClickPipes {#protobuf-schema-file-uploads-for-kafka-clickpipes}
+
+Kafka ClickPipes now accept Protobuf schemas uploaded as `.proto` files or file descriptor sets (`.desc`). If you don't use a schema registry, you can now provide a standalone schema for deserialization. See the [Kafka ClickPipes documentation](/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic).
+
+## Integrations {#2026-10-05-integrations}
+
+### .NET driver v1.5.0 adds a native TCP client {#net-driver-v150-adds-a-native-tcp-client}
+
+The ClickHouse .NET driver v1.5.0 adds a new native TCP client alongside the existing HTTP client. It supports connection pooling, sessions, TLS, LZ4/ZSTD compression, query parameters, and OpenTelemetry tracing. In benchmarks on ClickHouse Cloud, reads were up to 2x faster, concurrent inserts up to 2x faster, and memory allocation dropped by orders of magnitude. The TCP API is experimental and may change; continue using the HTTP client for `ADO.NET`, ORMs, and raw formats such as CSV or Parquet. See the [TCP client documentation](/integrations/language-clients/csharp/tcp) and [NuGet package](https://www.nuget.org/packages/ClickHouse.Driver/1.5.0).
+
+</Update>
+
 
 <Update label="Sep 22, 2026">
 
@@ -30,7 +177,7 @@ HIPAA- and PCI-regulated cells are now available in the AWS Seoul (`ap-northeast
 
 ### PromQL support in private preview {#promql-support-in-private-preview}
 
-You can now store Prometheus metrics in the `TimeSeries` table engine and query them with PromQL directly against your ClickHouse service—no transpiler or proxy required, so existing collectors, Grafana dashboards, and Prometheus tooling keep working unchanged. Write with Prometheus remote-write v1 and read through the Prometheus HTTP API, or run PromQL from a SQL session using the `prometheusQuery` and `prometheusQueryRange` table functions. Available to selected ClickHouse Cloud and BYOC customers via the [private-preview waitlist](https://clickhouse.com/cloud/promql-support-waitlist) on AWS, GCP, and Azure. See the [Prometheus interface documentation](/concepts/features/interfaces/prometheus) and [announcement](https://clickhouse.com/blog/introducing-promql).
+You can now store Prometheus metrics in the `TimeSeries` table engine and query them with PromQL directly against your ClickHouse service—no transpiler or proxy required, so existing collectors, Grafana dashboards, and Prometheus tooling keep working unchanged. Write with Prometheus remote-write v1 and read through the Prometheus HTTP API, or run PromQL from a SQL session using the `prometheusQuery` and `prometheusQueryRange` table functions. Available to selected ClickHouse Cloud and BYOC customers via the [private-preview waitlist](https://clickhouse.com/cloud/promql-support-waitlist) on AWS, GCP, and Azure. See the [Prometheus interface documentation](/concepts/features/connect-to-clickhouse/prometheus) and [announcement](https://clickhouse.com/blog/introducing-promql).
 
 ### On-Demand Compute now in private preview {#on-demand-compute-now-in-private-preview}
 
@@ -97,7 +244,7 @@ Billing notifications are now managed through the ClickHouse Cloud Notification 
 
 ### Open Langfuse session traces from ClickHouse Agents {#open-langfuse-session-traces-from-clickhouse-agents}
 
-Organization administrators can now open the corresponding Langfuse session directly from a [ClickHouse Agents](/products/cloud/features/ai-ml/agents/index) chat and inspect traces for the entire conversation. This makes it easier to investigate agent behavior and debug multi-step runs. The improvement is available in Public Beta for newly created chats.
+Organization administrators can now open the corresponding Langfuse session directly from a [ClickHouse Agents](/agents/index) chat and inspect traces for the entire conversation. This makes it easier to investigate agent behavior and debug multi-step runs. The improvement is available in Public Beta for newly created chats.
 
 ### SAML redirects help prevent duplicate accounts {#saml-redirects-help-prevent-duplicate-accounts}
 
@@ -135,7 +282,7 @@ TLS activation and verification levels are now consistent across CDC sources. Th
 Replicated databases are once again selectable in the ClickPipes destination picker.
 
 ### ClickHouse Agents updates (public beta)
-[ClickHouse Agents](/products/cloud/features/ai-ml/agents/index) now support Chat Projects for organizing conversations, a context usage gauge showing token and context-window usage, agent-authored Skills, and bundled ClickHouse best-practice Skills. This release also includes improvements to settings, navigation, shortcuts, and pinning.
+[ClickHouse Agents](/agents/index) now support Chat Projects for organizing conversations, a context usage gauge showing token and context-window usage, agent-authored Skills, and bundled ClickHouse best-practice Skills. This release also includes improvements to settings, navigation, shortcuts, and pinning.
 
 ### ClickHouse BYOC on the Azure Marketplace
 ClickHouse [Bring Your Own Cloud](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) is now listed on the Azure Marketplace, letting customers purchase via private offer and deploy BYOC billed through their Azure account. Billing support for Azure BYOC marketplace listings and product IDs was added on the platform side.
@@ -165,7 +312,7 @@ See the [ClickPipes for GCP Pub/Sub docs](/integrations/clickpipes/pubsub/overvi
 ### ClickHouse Agents: Claude-powered agentic analytics (public beta)
 ClickHouse Agents is now in public beta at [ai.clickhouse.cloud](http://ai.clickhouse.cloud) — a first-party agent platform powered by Claude for conversational, schema-aware analysis over your ClickHouse Cloud data. Build custom agents with a no-code AgentBuilder, plug in MCP servers (Slack, Linear, Notion, and more), compose subagent workflows, and generate queries, pipelines, and apps without leaving the conversation. Includes AWS Bedrock AgentCore integration and managed LibreChat foundations.
 
-Learn more in the [ClickHouse Agents documentation](/products/cloud/features/ai-ml/agents/index).
+Learn more in the [ClickHouse Agents documentation](/agents/index).
 
 ### ClickHouse Managed Postgres (public beta)
 ClickHouse Managed Postgres, fully managed Postgres on local NVMe storage, is now in public beta, delivering 5x+ more TPS than AWS RDS and bridging OLTP and OLAP in one managed stack. A native CDC pipeline streams data directly into ClickHouse with no intermediate infrastructure, and the open-source `pg_clickhouse` extension lets you query ClickHouse tables from standard Postgres sessions.
@@ -355,7 +502,15 @@ curl https://clickhouse.com/cli | sh
   - GCP us-east1 (South Carolina)
 - Crash report collection preferences can now be configured at the organization level. This setting was previously available only at the service level. When disabled at the organization level, all existing and future services will be opted out automatically.
 
-<Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="Crash reports collection" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Crash reports collection](/images/cloud/reference/crash-reports-collection.webp)
+
+</Frame>
+
+</div>
 
 </Update>
 

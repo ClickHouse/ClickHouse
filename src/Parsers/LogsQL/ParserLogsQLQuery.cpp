@@ -102,7 +102,7 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!feature_enabled)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Support for the LogsQL dialect is disabled (turn on setting 'allow_experimental_logsql_dialect')");
+            "Support for the LogsQL dialect is disabled (turn on setting 'enable_logsql_dialect')");
 
     if (table.empty())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,

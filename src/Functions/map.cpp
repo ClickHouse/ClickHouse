@@ -60,35 +60,64 @@ public:
         return std::make_shared<FunctionMap>(context);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override
+    [[nodiscard]] bool isVariadic() const override
     {
         return true;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return true;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     /// map(..., Nothing) -> Map(..., Nothing)
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// `map(K1, V1, K2, V2, ..., Kn, Vn)` — even number of arguments, alternating
+    /// keys and values. The captured `K`/`V` repeat in lockstep via the ellipsis,
+    /// and `leastSupertype{,OrVariant}` folds even-indexed and odd-indexed positions
+    /// independently. Picks the variant-falling-back type function when
+    /// `use_variant_as_common_type` is on.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if (use_variant_as_common_type)
+            return "() -> Map(Nothing, Nothing)"
+                   " OR (K1, V1, ...) -> Map(leastSupertypeOrVariant(K1, ...), leastSupertypeOrVariant(V1, ...))";
+        return "() -> Map(Nothing, Nothing)"
+               " OR (K1, V1, ...) -> Map(leastSupertype(K1, ...), leastSupertype(V1, ...))";
+    }
+
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!allow_lossy_numeric_supertype)
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() % 2 != 0)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -116,7 +145,7 @@ public:
         return std::make_shared<DataTypeMap>(tmp);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_elements = arguments.size();
         if (num_elements == 0)
@@ -160,16 +189,34 @@ public:
     static constexpr auto name = "mapFromArrays";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapFromArrays>(); }
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Documentation-only — zips parallel `keys` and `values` arrays into a
+    /// `Map`. Either argument may instead be a `Map` (its key+value pair
+    /// becomes the corresponding side). The composite return type isn't
+    /// expressible in the DSL, so legacy `getReturnTypeImpl(DataTypes)` stays
+    /// authoritative.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Array(K : Any) | Map(Any, Any), Array(V : Any) | Map(Any, Any)) -> Map(K, V)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(
@@ -205,7 +252,7 @@ public:
         return std::make_shared<DataTypeMap>(key_value_types);
     }
 
-    ColumnPtr executeImpl(
+    [[nodiscard]] ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         auto get_array_column = [&](const ColumnPtr & column) -> std::pair<const ColumnArray *, ColumnPtr>
@@ -270,38 +317,23 @@ public:
     static constexpr auto name = "mapUpdate";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapUpdate>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// `mapUpdate(left, right)` — both arguments must be `Map`s with identical key and
+    /// value types. Capturing `K`/`V` from the first argument and re-using them in the
+    /// second forces type-level equality at type-check time.
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.size() != 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(),
-                arguments.size());
-
-        const auto * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
-        const auto * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());
-
-        if (!left || !right)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The two arguments for function {} must be both Map type", getName());
-
-        if (!left->getKeyType()->equals(*right->getKeyType()) || !left->getValueType()->equals(*right->getValueType()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The Key And Value type of Map for function {} must be the same", getName());
-
-        return std::make_shared<DataTypeMap>(left->getKeyType(), left->getValueType());
+        return "(M : Map(K, V), Map(K, V)) -> M";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         bool is_left_const = isColumnConst(*arguments[0].column);
         bool is_right_const = isColumnConst(*arguments[1].column);
@@ -332,7 +364,7 @@ public:
         auto result_keys = keys_data_left.cloneEmpty();
         auto result_values = values_data_left.cloneEmpty();
 
-        size_t size_to_reserve = keys_data_right.size() + (keys_data_left.size() - keys_data_right.size());
+        size_t size_to_reserve = keys_data_left.size();
 
         result_keys->reserve(size_to_reserve);
         result_values->reserve(size_to_reserve);
@@ -352,10 +384,10 @@ public:
         IColumn::Offset current_offset = 0;
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            size_t left_from = is_left_const ? 0 : offsets_left[row_idx - 1];
+            size_t left_from = is_left_const ? 0 : offsets_left[static_cast<ssize_t>(row_idx) - 1];
             size_t left_to = is_left_const ? offsets_left[0] : offsets_left[row_idx];
 
-            size_t right_from = is_right_const ? 0 : offsets_right[row_idx - 1];
+            size_t right_from = is_right_const ? 0 : offsets_right[static_cast<ssize_t>(row_idx) - 1];
             size_t right_to = is_right_const ? offsets_right[0] : offsets_right[row_idx];
 
             auto execute_row = [&](const auto & set)
@@ -414,21 +446,21 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMapContainsKeyValue>(context); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// A `NULL` needle is a value to search for, not one that makes the result `NULL`.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     /// Unwrapped below, on the columns taken out of the map; the generic path would also wrap the result.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
         if (!map_type)
@@ -442,7 +474,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
 
@@ -465,7 +497,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             UInt8 found = 0;
-            for (size_t i = offsets[row - 1]; !found && i < offsets[row]; ++i)
+            for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; !found && i < offsets[row]; ++i)
                 found = static_cast<UInt8>(key_matches[i] && value_matches[i]);
             result_data[row] = found;
         }
@@ -482,7 +514,7 @@ private:
         const NullMap * nulls = nullptr;
         bool always = false;
 
-        bool isNullAt(size_t row) const { return always || (nulls && (*nulls)[row]); }
+        [[nodiscard]] bool isNullAt(size_t row) const { return always || (nulls && (*nulls)[row]); }
     };
 
     static NullCheck makeNullCheck(const DataTypePtr & type, const IColumn & column)
@@ -510,7 +542,7 @@ private:
     }
 
     /// One flag per entry: does its key (or value) equal the needle of the row the entry belongs to?
-    PaddedPODArray<UInt8> matchEntries(
+    [[nodiscard]] PaddedPODArray<UInt8> matchEntries(
         const ColumnPtr & elements_argument,
         const DataTypePtr & element_type_argument,
         const ColumnWithTypeAndName & needle_argument,
