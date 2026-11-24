@@ -34,6 +34,8 @@ public:
     /// The registration of the disk `name`. If there is none yet, creates it, and the new
     /// registration takes over `nested`. Otherwise `nested` is left to the caller: destroying a
     /// registration may release a disk, which locks the mutexes the caller may be holding.
+    /// For the same reason, the caller must not destroy the returned registration under those mutexes either.
+    /// If it throws, nothing is changed, and `nested` is left to the caller as well.
     /// If the last registration is being destroyed and the disk is not unregistered yet, the disk stays, and the
     /// new registration owns the same nested registrations as the one being destroyed, not `nested`. Those are
     /// the registrations of the disks this disk wraps, while `nested` are the ones its definition names now, which
@@ -66,7 +68,10 @@ public:
     /// The released disk `name` that is not shut down yet because something still references it, to be
     /// used again instead of creating a new disk with the same name. nullptr if there is none.
     /// std::nullopt if the disk `name` is being shut down, and `waitForShutdown` has to be called first.
-    std::optional<DiskPtr> tryTakeReleasedDisk(const String & name);
+    /// A returned disk gets `registration`, as from `getOrCreate`, at the same time: a disk taken from here
+    /// without a registration would not be tracked by anything.
+    std::optional<DiskPtr> tryTakeReleasedDisk(
+        const String & name, CustomDiskRegistrations & nested, CustomDiskRegistrationPtr & registration);
 
     /// The released disks that are not shut down yet: scheduled for shutdown, being shut down, or still referenced
     /// by something else. They may still write to their storage, so a new disk must not use the same storage
@@ -91,6 +96,7 @@ private:
         DiskPtr disk;
     };
 
+    CustomDiskRegistrationPtr getOrCreateLocked(const String & name, CustomDiskRegistrations & nested) TSA_REQUIRES(mutex);
     void run();
     void finishShutdown(DiskToShutdown disk_to_shutdown);
     /// Shuts down the lingering disks that are not referenced by anything else anymore.

@@ -16,11 +16,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int UNKNOWN_DISK;
 }
 
 namespace FailPoints
 {
+    extern const char custom_disk_registry_fail_to_allocate_wrapper_registration[];
     extern const char custom_disk_registry_pause_before_shutdown[];
 }
 
@@ -70,22 +72,58 @@ CustomDiskRegistry::~CustomDiskRegistry()
 CustomDiskRegistrationPtr CustomDiskRegistry::getOrCreate(const String & name, CustomDiskRegistrations & nested)
 {
     std::lock_guard lock(mutex);
+    return getOrCreateLocked(name, nested);
+}
 
-    auto & entry = registrations[name];
-    auto registration = entry.registration.lock();
-    if (!registration)
+CustomDiskRegistrationPtr CustomDiskRegistry::getOrCreateLocked(const String & name, CustomDiskRegistrations & nested)
+{
+    auto [it, inserted] = registrations.try_emplace(name);
+    auto & entry = it->second;
+    if (auto registration = entry.registration.lock())
+        return registration;
+
+    /// Everything is allocated before anything is changed, and `nested` is taken over only once nothing can throw anymore.
+    /// Otherwise an exception would destroy the nested registrations here, under `mutex` and under the mutex of the caller,
+    /// and destroying a registration releases its disk, which locks both. It would also leave behind an entry without
+    /// a registration, which means that the disk is being unregistered, see `tryGet`.
+    try
     {
         /// The entry is removed in `release`, together with the disk. If it is still here, the last registration is
         /// being destroyed, and the disk it was created for stays registered: keep the registrations of the disks
         /// that disk wraps. The destructor of a registration keeps them until it has called `canRelease`.
-        auto shared_nested = entry.nested.lock();
+        SharedCustomDiskRegistrations shared_nested = entry.nested.lock();
+        std::shared_ptr<CustomDiskRegistrations> new_nested;
         if (!shared_nested)
-            shared_nested = std::make_shared<const CustomDiskRegistrations>(std::move(nested));
-        registration = std::make_shared<CustomDiskRegistration>(name, shared_nested);
+        {
+            new_nested = std::make_shared<CustomDiskRegistrations>();
+            shared_nested = new_nested;
+        }
+
+        /// Only for a disk that wraps other disks: this is where the registrations of those must survive.
+        if (!nested.empty())
+        {
+            fiu_do_on(FailPoints::custom_disk_registry_fail_to_allocate_wrapper_registration,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED,
+                    "Failed to allocate the registration of custom disk {} (fault injected)", backQuote(name));
+            });
+        }
+
+        auto registration = std::make_shared<CustomDiskRegistration>(name, shared_nested);
+
+        /// Nothing throws from here on.
+        if (new_nested)
+            new_nested->swap(nested);
         entry.registration = registration;
         entry.nested = shared_nested;
+        return registration;
     }
-    return registration;
+    catch (...)
+    {
+        if (inserted)
+            registrations.erase(it);
+        throw;
+    }
 }
 
 CustomDiskRegistrationPtr CustomDiskRegistry::tryGet(const String & name) const
@@ -226,7 +264,8 @@ bool CustomDiskRegistry::waitForShutdown(const String & name, UInt128 settings_h
     return false;
 }
 
-std::optional<DiskPtr> CustomDiskRegistry::tryTakeReleasedDisk(const String & name)
+std::optional<DiskPtr> CustomDiskRegistry::tryTakeReleasedDisk(
+    const String & name, CustomDiskRegistrations & nested, CustomDiskRegistrationPtr & registration)
 {
     std::lock_guard lock(mutex);
 
@@ -236,6 +275,9 @@ std::optional<DiskPtr> CustomDiskRegistry::tryTakeReleasedDisk(const String & na
     auto it = lingering_disks.find(name);
     if (it == lingering_disks.end())
         return DiskPtr{};
+
+    /// Created before the disk is taken: if it cannot be, the disk stays a lingering one, which is still tracked.
+    registration = getOrCreateLocked(name, nested);
 
     DiskPtr disk = std::move(it->second);
     lingering_disks.erase(it);

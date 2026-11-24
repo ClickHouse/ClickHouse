@@ -67,6 +67,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(access_control_pause_after_feature_tier_check) \
     PAUSEABLE_ONCE(custom_disk_registration_pause_before_release) \
     PAUSEABLE_ONCE(custom_disk_registry_pause_before_shutdown) \
+    ONCE(custom_disk_registry_fail_to_allocate_wrapper_registration) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \

@@ -8800,6 +8800,11 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         /// one of them may be the last one.
         std::vector<std::pair<String, DiskPtr>> retiring_disks;
 
+        /// The registration of a disk that is not in the selector yet. Declared before the lock as well: if the disk
+        /// cannot be created or added to the selector, the registration is destroyed after the lock is unlocked,
+        /// and that releases whatever has been done for the disk by then, like for any other last registration.
+        CustomDiskRegistrationPtr new_registration;
+
         std::lock_guard lock(shared->storage_policies_mutex);
 
         /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name instead of a nested
@@ -8821,7 +8826,7 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         auto disk = disk_selector->tryGet(name);
         if (!disk)
         {
-            auto released_disk = shared->custom_disk_registry.tryTakeReleasedDisk(name);
+            auto released_disk = shared->custom_disk_registry.tryTakeReleasedDisk(name, nested, new_registration);
             /// Released after the wait above, and being shut down.
             if (!released_disk.has_value())
                 continue;
@@ -8849,6 +8854,10 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
                         continue;
                 }
 
+                /// The registration is created before the disk, and handed to the caller together with it, so a disk
+                /// is never left unregistered - and thus never released - if the registration cannot be allocated.
+                new_registration = shared->custom_disk_registry.getOrCreate(name, nested);
+
                 disk = creator(getDisksMap(lock));
 
                 /// In case the new disk has `plain_rewritable` metadata although `find_overlapping_disks` did not expect it.
@@ -8861,7 +8870,9 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
                             name, retiring_disk_name);
                 }
             }
+            chassert(disk->isCustomDisk());
             const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+            return {disk, std::move(new_registration)};
         }
 
         /// The name may belong to a disk from the configuration, which the caller reports as an error.
@@ -8869,8 +8880,7 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         if (!disk->isCustomDisk())
             return {disk, nullptr};
 
-        /// The registration is created together with the disk and handed to the caller, so a disk is
-        /// never left unregistered - and thus collectable - between its creation and its first use.
+        /// The disk is in the selector, so it has a registration, unless its last one is being destroyed.
         /// An existing registration already owns the registrations of the nested disks: the name of a
         /// disk is derived from its definition with the nested definitions replaced by the names of
         /// the disks they describe, so the same name means the same nested disks.
