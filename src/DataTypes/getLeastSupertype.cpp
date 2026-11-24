@@ -293,23 +293,11 @@ bool haveBoolInSamePlaces(const IDataType & lhs, const IDataType & rhs)
     return true;
 }
 
-bool isMaybeNullableSimpleAggregateFunction(const IDataType & type)
+bool isCompositeSimpleAggregateFunction(const IDataType & type)
 {
     const auto * nullable = typeid_cast<const DataTypeNullable *>(&type);
     const IDataType & nested = nullable ? *nullable->getNestedType() : type;
-    return typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested.getCustomName());
-}
-
-bool haveBoolInDifferentPlacesInsideVariant(const IDataType & lhs, const IDataType & rhs, bool inside_variant)
-{
-    checkStackSize();
-    if (inside_variant && hasBoolLabel(lhs) != hasBoolLabel(rhs))
-        return true;
-    inside_variant = inside_variant || isVariant(lhs);
-    for (size_t i = 0; i < lhs.getNumberOfChildren(); ++i)
-        if (haveBoolInDifferentPlacesInsideVariant(*lhs.getChild(i), *rhs.getChild(i), inside_variant))
-            return true;
-    return false;
+    return typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested.getCustomName()) && nested.getNumberOfChildren() > 0;
 }
 
 DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &types_set)
@@ -351,8 +339,7 @@ bool equalsIncludingBool(const IDataType & lhs, const IDataType & rhs)
 {
     if (!lhs.equals(rhs))
         return false;
-    if ((isMaybeNullableSimpleAggregateFunction(lhs) || isMaybeNullableSimpleAggregateFunction(rhs))
-        && haveBoolInDifferentPlacesInsideVariant(lhs, rhs, false))
+    if (isCompositeSimpleAggregateFunction(lhs) || isCompositeSimpleAggregateFunction(rhs))
         return true;
     return haveBoolInSamePlaces(lhs, rhs);
 }

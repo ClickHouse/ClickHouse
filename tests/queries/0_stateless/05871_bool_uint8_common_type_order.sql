@@ -47,8 +47,14 @@ SELECT toUInt8(k.1), toUInt8(k.2) FROM (SELECT anySimpleState(tuple(true, toUInt
 SELECT toUInt8(k.1), toUInt8(k.2) FROM (SELECT anySimpleState(tuple(toUInt8(0), true, [toUInt8(2)]::Variant(Array(UInt8), String))) AS k) a FULL JOIN (SELECT anySimpleState(tuple(true, toUInt8(0), [true]::Variant(Array(Bool), String))) AS k) b USING k ORDER BY ALL;
 SELECT toTypeName(x.1), x.1 FROM (SELECT tuple(true, [true]::Variant(Array(Bool), String)) AS x UNION ALL SELECT tuple(toUInt8(2), [toUInt8(2)]::Variant(Array(UInt8), String))) ORDER BY x.1;
 SELECT toTypeName(x.1), x.1 FROM (SELECT tuple(toUInt8(2), [toUInt8(2)]::Variant(Array(UInt8), String)) AS x UNION ALL SELECT tuple(true, [true]::Variant(Array(Bool), String))) ORDER BY x.1;
-SELECT toTypeName(x.1), x.1 FROM (SELECT anySimpleState(tuple(true, toUInt8(7)::Variant(UInt8, String))) AS x UNION ALL SELECT tuple(toUInt8(2), toUInt8(7)::Variant(UInt8, String))) ORDER BY x.1;
-SELECT toTypeName(x.1), x.1 FROM (SELECT tuple(toUInt8(2), toUInt8(7)::Variant(UInt8, String)) AS x UNION ALL SELECT anySimpleState(tuple(true, toUInt8(7)::Variant(UInt8, String)))) ORDER BY x.1;
+SELECT toUInt8(x.1), toUInt8(x.2) FROM (SELECT anySimpleState(tuple(true, toUInt8(0), ([]::Array(AggregateFunction(any, Bool)))::Variant(Array(AggregateFunction(any, Bool)), String))) AS x UNION ALL SELECT anySimpleState(tuple(toUInt8(0), true, ([]::Array(AggregateFunction(any, UInt8)))::Variant(Array(AggregateFunction(any, UInt8)), String)))) ORDER BY ALL;
+SELECT toUInt8(x.1), toUInt8(x.2) FROM (SELECT anySimpleState(tuple(toUInt8(0), true, ([]::Array(AggregateFunction(any, UInt8)))::Variant(Array(AggregateFunction(any, UInt8)), String))) AS x UNION ALL SELECT anySimpleState(tuple(true, toUInt8(0), ([]::Array(AggregateFunction(any, Bool)))::Variant(Array(AggregateFunction(any, Bool)), String)))) ORDER BY ALL;
+CREATE TABLE t_saf_pair (s SimpleAggregateFunction(any, Tuple(Bool, Bool))) ENGINE = Memory;
+INSERT INTO t_saf_pair SELECT tuple(toUInt8(2), true);
+SELECT max(toUInt8(x.1)) = (SELECT toUInt8(s.1) FROM t_saf_pair) FROM (SELECT s AS x FROM t_saf_pair UNION ALL SELECT tuple(false, toUInt8(3)));
+SELECT max(toUInt8(x.1)) = (SELECT toUInt8(s.1) FROM t_saf_pair) FROM (SELECT tuple(false, toUInt8(3)) AS x UNION ALL SELECT s FROM t_saf_pair);
+SELECT max(toUInt8(k.1)) = (SELECT toUInt8(s.1) FROM t_saf_pair) FROM (SELECT s AS k FROM t_saf_pair) a FULL JOIN (SELECT tuple(false, toUInt8(3)) AS k) b USING k;
+DROP TABLE t_saf_pair;
 SELECT k, toTypeName(k) FROM (SELECT CAST(number + 2 AS SimpleAggregateFunction(groupBitOr, Bool)) AS k FROM numbers(1)) a FULL JOIN (SELECT toUInt16(number) AS k FROM numbers(1)) b USING k ORDER BY k SETTINGS join_use_nulls = 0;
 SELECT k, toTypeName(k) FROM (SELECT toUInt16(number) AS k FROM numbers(1)) a FULL JOIN (SELECT CAST(number + 2 AS SimpleAggregateFunction(groupBitOr, Bool)) AS k FROM numbers(1)) b USING k ORDER BY k SETTINGS join_use_nulls = 0;
 SELECT toTypeName(x), x, x = true FROM (SELECT ifNull(CAST(NULL, 'Nullable(Bool)'), toUInt8(2)) AS x);
