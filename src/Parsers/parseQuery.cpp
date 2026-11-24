@@ -525,8 +525,8 @@ ASTPtr tryParseQuery(
     IParser::Pos set_lookahead(token_iterator);
     const bool committed_to_set = parser.consumesRawText() && isCommittedToSetQuery(set_lookahead);
     const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
-    /// The walk below also matches the brackets. If they match up to the first `;` or the end, and the parse stops
-    /// before it, `checkUnmatchedParentheses` would walk the same tokens and find nothing, so it is skipped.
+    /// The walk below also matches the brackets. If they match up to the first `;` or the end, and the parse does not
+    /// look past it, `checkUnmatchedParentheses` would find nothing in this statement, so it is skipped.
     const char * brackets_match_until = nullptr;
     if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
@@ -622,7 +622,7 @@ ASTPtr tryParseQuery(
     /// Only the parens inside the current statement are reported, so the walk stops after it once every
     /// bracket is closed: walking the rest of a multi-statement input for each statement is quadratic.
     UnmatchedParentheses unmatched_parens;
-    if (!consumes_raw_text && !(brackets_match_until && last_token.end <= brackets_match_until))
+    if (!consumes_raw_text && !(brackets_match_until && last_token.begin <= brackets_match_until))
         unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token.end);
     if (!unmatched_parens.empty())
     {
