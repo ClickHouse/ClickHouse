@@ -16,7 +16,7 @@ ARG TARGETARCH
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="26.10.11.12"
+ARG VERSION="26.10.12.13"
 ARG PACKAGES="clickhouse-common-static clickhouse-keeper"
 ARG DIRECT_DOWNLOAD_URLS=""
 

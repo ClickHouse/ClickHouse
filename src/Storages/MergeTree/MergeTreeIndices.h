@@ -142,6 +142,8 @@ struct IMergeTreeIndexBulkGranules
 {
     virtual ~IMergeTreeIndexBulkGranules() = default;
     virtual void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+    /// Number of index values read so far.
+    [[nodiscard]] virtual size_t numValues() const = 0;
 };
 
 using MergeTreeIndexBulkGranulesPtr = std::shared_ptr<IMergeTreeIndexBulkGranules>;
