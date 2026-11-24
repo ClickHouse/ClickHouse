@@ -180,7 +180,8 @@ public:
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        std::optional<Int32> planned_schema_id_);
 
     ~IcebergStorageSink() override;
 
@@ -209,7 +210,10 @@ private:
     size_t pending_bytes = 0;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
-    Int64 current_schema_id;
+    /// The schema the query planned the inserted columns with; unset if the query pinned no table state.
+    const std::optional<Int32> planned_schema_id;
+    /// The current schema of the first read, which the data files are written with. A later attempt requires it unchanged.
+    Int64 current_schema_id = 0;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
@@ -231,12 +235,18 @@ private:
     void cancelBuffers();
     /// Best-effort removal of the written data files and manifests; never throws.
     void removeDataFilesAndManifests();
+    /// Reads the latest committed metadata: on the first chunk to write the data files with it,
+    /// after a commit lost to a concurrent commit to make it the base of the next attempt.
+    void readLatestMetadata();
+    /// One commit attempt. Returns false if the attempt lost to a concurrent commit.
     bool initializeMetadata();
+    /// Waits `delay_ms` before the next commit attempt. Throws if the insert is cancelled or runs out of time meanwhile.
+    void waitBeforeCommitRetry(UInt64 delay_ms);
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
-    Int64 partition_spec_id;
+    Int64 partition_spec_id = 0;
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
@@ -253,7 +263,7 @@ private:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
-    CompressionMethod metadata_compression_method;
+    CompressionMethod metadata_compression_method = CompressionMethod::None;
     /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
     String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;

@@ -286,11 +286,11 @@ single stripe in compact parts
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of compact part to read it
-in a whole to memory during merge. A merge also reads a bigger part in a whole
-if the part is not bigger than the worst-case memory of a read buffer for each
-column (the configured buffer size, twice with prefetch). For a part with small
-stripes this can take more memory than reading each column separately, but it
-sends one request instead of one per column per stripe. 0 disables it.
+in a whole to memory during merge or mutation. A bigger part is also read in a
+whole if the part is not bigger than the worst-case memory of a read buffer for
+each column (the configured buffer size, twice with prefetch). For a part with
+small stripes this can take more memory than reading each column separately, but
+it sends one request instead of one per column per stripe. 0 disables it.
 )", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
@@ -1136,12 +1136,13 @@ one step takes longer time
     DECLARE(Bool, merge_use_batch_sorting_queue, false, R"(
 Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
 
-Only applies to merges that do not change rows: the merges of plain `MergeTree` parts
-(`Ordinary` merge mode) and of normal projection parts. The merges of parts of engines with
-merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`, `SummingMergeTree`,
-`AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
-`VersionedCollapsingMergeTree`, and of aggregate projection parts keep using the default queue
-regardless of this setting.
+Applies only to the merges in `Ordinary` merge mode: the merges of plain `MergeTree` parts, including
+the merges that drop or rewrite rows (lightweight deletes, TTL deletes, patch parts of lightweight
+updates and `OPTIMIZE ... DEDUPLICATE`), and the merges of normal projection parts. The merge
+algorithms of engines with merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
+`VersionedCollapsingMergeTree`, and of aggregate projection parts choose their own sorting queue, so
+this setting has no effect on them.
 )", 0, \
         {"26.8", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."}) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
@@ -2300,6 +2301,15 @@ the total storage volume of all the data to be merged. If the volume exceeds
 data to the storage disk using the direct I/O interface (`O_DIRECT` option).
 If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 )", 0) \
+    DECLARE(Bool, check_part_use_direct_io, true, R"(
+When checking a data part on a local disk (`CHECK TABLE`, the check of a part that failed to be read,
+recalculation of missing checksums), read its files with direct I/O (`O_DIRECT` option),
+bypassing the OS page cache, so that wrong data in the page cache does not make a healthy part look broken.
+Parts in packed storage (see `min_bytes_for_full_part_storage`) and the part written by `OPTIMIZE ... DRY RUN`
+are still read through the page cache.
+If the filesystem does not support direct I/O, the files are read through the page cache.
+)", 0, \
+        {"26.12", false, true, "New setting. Check data parts on local disks with direct I/O, bypassing the OS page cache."}) \
     DECLARE(UInt64, index_granularity_bytes, 10 * 1024 * 1024, R"(
 Maximum size of data granules in bytes.
 
