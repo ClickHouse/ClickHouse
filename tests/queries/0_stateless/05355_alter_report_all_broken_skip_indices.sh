@@ -223,7 +223,7 @@ $CLICKHOUSE_CLIENT --query 'DROP TABLE alter_policy_alias_indices'
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE alter_nested_group_indices
     (
-        n Nested(a UInt64, b UInt64), y UInt64,
+        n Nested(a UInt64, b UInt64), y UInt64, z UInt64,
         INDEX ia n.a TYPE minmax,
         INDEX ib n.b TYPE minmax,
         INDEX iy y TYPE minmax
@@ -232,7 +232,7 @@ $CLICKHOUSE_CLIENT --query "
              alter_column_secondary_index_mode = 'throw',
              share_nested_offsets = 1
 "
-$CLICKHOUSE_CLIENT --query 'INSERT INTO alter_nested_group_indices (n.a, n.b, y) VALUES ([1], [2], 3)'
+$CLICKHOUSE_CLIENT --query 'INSERT INTO alter_nested_group_indices (n.a, n.b, y, z) VALUES ([1], [2], 3, 4)'
 check_index_validation_error \
     'ALTER TABLE alter_nested_group_indices CLEAR COLUMN y, CLEAR COLUMN n' \
     'Code: 524.' 'ALTER_OF_COLUMN_IS_FORBIDDEN' 'used by the indices ia, ib' 'used by the indices iy'
