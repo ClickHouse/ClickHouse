@@ -153,7 +153,8 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (transforming->getDataStreamTraits().preserves_sorting)
             return std::move(*properties);
 
-        /// Keep the prefix filling leaves sorted, collated keys included: a consumer needing equal values adjacent rejects them.
+        /// Propagate the leading keys that `FillingStep` keeps sorted. Collated keys stay in: consumers that need
+        /// equal values to be adjacent (`DISTINCT`, `LIMIT BY`) drop them themselves.
         if (const auto * filling_step = typeid_cast<const FillingStep *>(transforming))
         {
             const auto & filling_description = filling_step->getSortDescription();
