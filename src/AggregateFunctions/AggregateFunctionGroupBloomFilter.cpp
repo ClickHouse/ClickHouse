@@ -424,6 +424,9 @@ A Bloom filter may return false positives (report a value as present when it is 
 (a value that was added will always be found). The false positive rate is controlled by `false_positive_rate`.
 Lower values require more memory.
 
+Floating-point positive and negative zero are treated as the same value.
+`NaN` values are hashed using their binary representation; different `NaN` representations may not match.
+
 The parameter form is selected by the second parameter: if it is a `Float64` value in `(0, 1)`,
 the parameters are interpreted as `expected_elements` and `false_positive_rate`; otherwise, they are interpreted
 as `filter_size_bytes` and `num_hashes`. The maximum filter size is 256 MB, and the number of hash functions is limited to 20.
@@ -525,7 +528,7 @@ WHERE number >= 100
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
