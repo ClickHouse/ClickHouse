@@ -1,6 +1,7 @@
 #include <limits>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -168,13 +169,13 @@ public:
                     const auto nested_default_type = removeNullable(default_argument.type);
                     if (const auto * nullable_default_column = checkAndGetColumn<ColumnNullable>(materialized_default_column.get()))
                     {
-                        if (nested_default_type->isDefaultInsertTrivial())
+                        const auto & null_map = nullable_default_column->getNullMapData();
+                        if (nested_default_type->isDefaultInsertTrivial() || memoryIsZero(null_map.data(), 0, null_map.size()))
                             materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
                         else
                         {
                             /// The default of an `Enum` is its first value, not the column zero.
                             const auto & nested_default_column = nullable_default_column->getNestedColumn();
-                            const auto & null_map = nullable_default_column->getNullMapData();
                             auto filled_default_column = nested_default_column.cloneEmpty();
                             filled_default_column->reserve(nested_default_column.size());
                             for (size_t row = 0; row < nested_default_column.size(); ++row)
