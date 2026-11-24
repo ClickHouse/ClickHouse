@@ -286,14 +286,30 @@ public:
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
+    /// A dynamic path of `JSON` or a dynamic type of `Dynamic` has a value for every row, so rows with different paths
+    /// or types would cost rows x paths. Without them, all values go to the shared data, which keeps only the values of each row.
+    static void removeDynamicSubcolumns(IColumn & column)
+    {
+        auto remove = [](IColumn & subcolumn)
+        {
+            if (auto * object = typeid_cast<ColumnObject *>(&subcolumn))
+                object->setMaxDynamicPaths(0);
+            else if (auto * dynamic = typeid_cast<ColumnDynamic *>(&subcolumn))
+                dynamic->setMaxDynamicPaths(0);
+        };
+        remove(column);
+        column.forEachMutableSubcolumnRecursively(remove);
+    }
+
     static ColumnPtr getColumn(const DictionaryAttribute & dictionary_attribute, size_t size)
     {
         if constexpr (std::is_same_v<DictionaryAttributeType, Array>)
         {
             if (const auto * array_type = typeid_cast<const DataTypeArray *>(dictionary_attribute.type.get()))
             {
-                auto nested_column = array_type->getNestedType()->createColumn();
-                return ColumnArray::create(std::move(nested_column));
+                auto column = ColumnArray::create(array_type->getNestedType()->createColumn());
+                removeDynamicSubcolumns(*column);
+                return column;
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
@@ -301,7 +317,11 @@ public:
         if constexpr (std::is_same_v<DictionaryAttributeType, Map>)
         {
             if (const auto * map_type = typeid_cast<const DataTypeMap *>(dictionary_attribute.type.get()))
-                return ColumnMap::create(map_type->getNestedType()->createColumn());
+            {
+                auto column = ColumnMap::create(map_type->getNestedType()->createColumn());
+                removeDynamicSubcolumns(*column);
+                return column;
+            }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Map attribute type.");
         }
@@ -315,7 +335,9 @@ public:
                 for (const auto & [path, type] : object_type->getTypedPaths())
                     typed_path_columns[path] = type->createColumn();
 
-                return ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes(), object_type->getSharedDataPathMatcher());
+                auto column = ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes(), object_type->getSharedDataPathMatcher());
+                removeDynamicSubcolumns(*column);
+                return column;
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Object attribute type.");
@@ -349,6 +371,63 @@ public:
         else
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
     }
+};
+
+template <typename Value>
+constexpr bool is_column_attribute_value = std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>;
+
+/// Passed to lookup callbacks for `Array`, `Map` and `Object` attributes: a row of the stored column, or a default value.
+/// Copying the row with `insertFrom` avoids building a `Field` for every found key.
+template <typename Value>
+struct ColumnAttributeValue
+{
+    ColumnAttributeValue(const IColumn & column_, size_t row_) : column(&column_), row(row_) {}
+    ColumnAttributeValue(Value default_value_) : default_value(std::move(default_value_)) {} /// NOLINT(google-explicit-constructor)
+
+    void insertInto(IColumn & out) const
+    {
+        if (column)
+            out.insertFrom(*column, row);
+        else
+            out.insert(default_value);
+    }
+
+    const IColumn * column = nullptr;
+    size_t row = 0;
+    Value default_value;
+};
+
+template <typename Value>
+using AttributeLookupValue = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeValue<Value>, Value>;
+
+/// Stores `Array`, `Map` and `Object` attribute values in one column. Keeping one `Field` per row costs a heap
+/// allocation per row, and each jemalloc slab of such small allocations needs a metadata header that is never freed.
+template <typename Value>
+class ColumnAttributeContainer
+{
+public:
+    explicit ColumnAttributeContainer(const DictionaryAttribute & dictionary_attribute)
+        : column(DictionaryAttributeColumnProvider<Value>::getColumn(dictionary_attribute, 0))
+    {
+    }
+
+    [[nodiscard]] size_t size() const { return column->size(); }
+    [[nodiscard]] size_t capacity() const { return column->capacity(); }
+    ColumnAttributeValue<Value> operator[](size_t index) const { return {*column, index}; }
+    void filter(const IColumn::Filter & mask, size_t result_size) { column = IColumn::mutate(column->filter(mask, result_size)); }
+    /// A `Null` still takes a row to keep row numbers aligned; nullability is tracked by the layout.
+    void insert(const Field & value)
+    {
+        if (value.isNull())
+            column->insertDefault();
+        else
+            column->insert(value);
+    }
+
+    [[nodiscard]] size_t allocatedBytes() const { return column->allocatedBytes(); }
+
+private:
+    IColumn::MutablePtr column;
 };
 
 /**
