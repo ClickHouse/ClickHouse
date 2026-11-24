@@ -1,0 +1,27 @@
+--- a secondary index that would load a dictionary is refused ---
+index_dictionary: dump failed: 1
+would run when the table is loaded
+index_dictionary: table dumped: 0
+index_dictionary: no command ran
+--- a secondary index that looks a column up in a dictionary is loaded, and the dump refuses it without a lookup ---
+index_dictionary_column: dump failed: 1
+calls the non-deterministic function
+index_dictionary_column: table dumped: 0
+index_dictionary_column: no command ran
+--- a subquery in a TTL or a projection is refused ---
+ttl_where_subquery: dump failed: 1
+would run when the table is loaded
+ttl_where_subquery: table dumped: 0
+ttl_where_subquery: no command ran
+ttl_where_in: dump failed: 1
+would run when the table is loaded
+ttl_where_in: table dumped: 0
+ttl_where_in: no command ran
+projection_subquery: dump failed: 1
+would run when the table is loaded
+projection_subquery: table dumped: 0
+projection_subquery: no command ran
+--- a TTL with a condition and a projection without a subquery are dumped ---
+plain: dump failed: 0
+plain: table dumped: 1
+plain: no command ran

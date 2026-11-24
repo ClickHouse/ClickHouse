@@ -30,6 +30,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -172,7 +173,7 @@ void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQu
     }
 }
 
-/// With `load_tables_readonly`, refuses a TTL or a projection whose call on constants would be folded the same way.
+/// With `load_tables_readonly`, refuses a TTL, a projection or a secondary index whose call on constants or subquery would run the same way.
 void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextPtr & context)
 {
     if (!context->getServerSettings()[ServerSetting::load_tables_readonly])
@@ -186,6 +187,10 @@ void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextP
         for (const auto & column : create.columns_list->columns->children)
             if (const auto * declaration = column->as<ASTColumnDeclaration>(); declaration && declaration->getTTL())
                 stack.push_back(declaration->getTTL().get());
+    if (create.columns_list && create.columns_list->indices)
+        for (const auto & index : create.columns_list->indices->children)
+            if (const auto * declaration = index->as<ASTIndexDeclaration>(); declaration)
+                stack.push_back(declaration->getExpression().get());
     while (!stack.empty())
     {
         const IAST * node = stack.back();
@@ -194,6 +199,10 @@ void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextP
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot load {} with `load_tables_readonly`: {} would run when the table is loaded",
                 backQuote(create.getTable()), call->formatForErrorMessage());
+        if (node->as<ASTSubquery>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: the subquery {} would run when the table is loaded",
+                backQuote(create.getTable()), node->formatForErrorMessage());
         for (const auto & child : node->children)
             stack.push_back(child.get());
         /// The key and the assignments of `GROUP BY ... SET` are kept apart from the children.
