@@ -22,3 +22,17 @@ WHERE m IN map('a', toDate('2000-01-01'));
 
 SELECT count() FROM (SELECT map('a', '2000-01-01') AS m)
 WHERE m IN materialize(map('a', toDate('2000-01-01')));
+
+SELECT
+    map('a', 'a') IN map('a', toFixedString('a', 2)),
+    map('a', 'a') IN materialize(map('a', toFixedString('a', 2)));
+
+SELECT
+    ['a'] IN [toFixedString('a', 2)],
+    ['a'] IN materialize([toFixedString('a', 2)]);
+
+SELECT count() FROM (SELECT map('a', 'a') AS m)
+WHERE m IN map('a', toFixedString('a', 2));
+
+SELECT count() FROM (SELECT map('a', 'a') AS m)
+WHERE m IN materialize(map('a', toFixedString('a', 2)));

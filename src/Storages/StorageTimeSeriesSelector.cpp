@@ -1275,6 +1275,9 @@ namespace
 
 void StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(Context & context)
 {
+    /// The selector generates its own `id IN` predicate over tuple IDs. Keep its
+    /// established internal membership semantics regardless of the caller setting.
+    context.setSetting("in_null_as_unknown", false);
     /// The time ranges table is joined by a merge join over both tables read in the order of `id` (see addTimeRangesTableJoin):
     /// a hash join would put the whole time ranges table of the metric into a hash table first,
     /// and reading out of order would sort both tables before the first row of the result.

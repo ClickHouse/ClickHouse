@@ -683,7 +683,22 @@ bool hasCompoundStringConversionLeaf(const DataTypePtr & left_type, const DataTy
             || isUUID(type) || isIPv4(type) || isIPv6(type);
     };
     return nested && ((source_is_text_convertible(left) && isStringOrFixedString(right))
-        || (isStringOrFixedString(left) && source_is_text_convertible(right)));
+        || (isStringOrFixedString(left) && source_is_text_convertible(right))
+        || (isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right)));
+}
+
+bool hasCompoundFloatLeaf(const DataTypePtr & type)
+{
+    const auto nested = removeNullable(removeLowCardinality(type));
+    if (isFloat(nested))
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(nested.get()))
+        return hasCompoundFloatLeaf(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
+        return std::ranges::any_of(tuple->getElements(), hasCompoundFloatLeaf);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(nested.get()))
+        return hasCompoundFloatLeaf(map->getKeyType()) || hasCompoundFloatLeaf(map->getValueType());
+    return false;
 }
 
 ASTPtr makeExactCompoundNumericInComparison(
@@ -822,7 +837,10 @@ ASTPtr makeComplexNonConstantInReplacement(
         const auto source_bare_type = removeNullable(removeLowCardinality(source_type));
         ASTPtr match;
         if (hasCompoundCarrierForIn(left_operand_type, source_type)
-            || hasCompoundStringConversionLeaf(left_operand_type, source_type))
+            || hasCompoundStringConversionLeaf(left_operand_type, source_type)
+            || (removeNullable(removeLowCardinality(left_operand_type))->equals(*source_bare_type)
+                && (isArray(source_bare_type) || isMap(source_bare_type))
+                && hasCompoundFloatLeaf(left_operand_type)))
         {
             match = makeASTFunction(
                 isMap(left_bare_type) ? "__mapValueEqualsForIn" : "__arrayValueEqualsForIn",

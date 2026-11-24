@@ -194,7 +194,8 @@ namespace
             || isUUID(type) || isIPv4(type) || isIPv6(type);
     };
     return (isStringOrFixedString(left) && text_convertible(right))
-        || (text_convertible(left) && isStringOrFixedString(right));
+        || (text_convertible(left) && isStringOrFixedString(right))
+        || (isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right));
 }
 
 [[nodiscard]] bool matchesSetFieldConversion(
@@ -569,6 +570,9 @@ public:
                 continue;
             values[row] = maps->compareAt(row, 0, *converted, 1) == 0;
         }
+        for (size_t row = 0; row < input_rows_count; ++row)
+            if (values[row] && fieldContainsNaNForIn((*maps)[row]))
+                values[row] = 0;
         if (canContainNull(*arguments[1].type))
             return ColumnNullable::create(std::move(result), std::move(null_map));
         return result;
@@ -692,6 +696,9 @@ public:
                 values[row] = converted_source && left_row->compareAt(0, 0, *converted_source, 1) == 0;
             }
         }
+        for (size_t row = 0; row < input_rows_count; ++row)
+            if (values[row] && fieldContainsNaNForIn((*left_values)[row]))
+                values[row] = 0;
         if (canContainNull(*arguments[1].type))
             return ColumnNullable::create(std::move(result), std::move(null_map));
         return result;

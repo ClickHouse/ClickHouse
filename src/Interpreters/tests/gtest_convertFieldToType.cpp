@@ -1,16 +1,51 @@
 #include <initializer_list>
 #include <limits>
 #include <ostream>
+#include <thread>
 #include <Core/Field.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
 
 #include <gtest/gtest.h>
 #include <base/Decimal.h>
 #include <base/types.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+TEST(ConvertFieldToType, ResourceFailureIsNotAConversionMiss)
+{
+    Map entries;
+    entries.emplace_back(Tuple{Field(String{"a"}), Field(UInt64{1})});
+    const Field source(std::move(entries));
+    const auto target = DataTypeFactory::instance().get("Map(String, String)");
+    int error_code = 0;
+
+    std::thread worker([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.untracked_memory_limit = 0;
+        thread_status.memory_tracker.setHardLimit(1);
+        try
+        {
+            (void)tryConvertFieldToType(source, *target);
+        }
+        catch (const Exception & e)
+        {
+            error_code = e.code();
+        }
+        thread_status.memory_tracker.setHardLimit(0);
+    });
+    worker.join();
+
+    EXPECT_EQ(error_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+}
 
 struct ConvertFieldToTypeTestParams
 {

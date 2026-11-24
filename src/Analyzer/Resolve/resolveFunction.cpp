@@ -1469,7 +1469,8 @@ static bool hasCompoundStringConversionLeaf(const DataTypePtr & left_type, const
             || isUUID(type) || isIPv4(type) || isIPv6(type);
     };
     return nested && ((source_is_text_convertible(left) && isStringOrFixedString(right))
-        || (isStringOrFixedString(left) && source_is_text_convertible(right)));
+        || (isStringOrFixedString(left) && source_is_text_convertible(right))
+        || (isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right)));
 }
 
 static QueryTreeNodePtr buildCompoundCarrierInComparison(
@@ -1569,7 +1570,13 @@ static QueryTreeNodePtr buildExactCompoundValueInComparison(
     const DataTypePtr & right_type)
 {
     QueryTreeNodePtr equal;
-    if (needsExactCompoundNumericInComparison(left_type, right_type))
+    if (needsExactCompoundNumericInComparison(left_type, right_type)
+        || ((isArray(removeNullable(removeLowCardinality(left_type)))
+                || isMap(removeNullable(removeLowCardinality(left_type)))
+                || isTuple(removeNullable(removeLowCardinality(left_type))))
+            && removeNullable(removeLowCardinality(left_type))->equals(
+                *removeNullable(removeLowCardinality(right_type)))
+            && hasCompoundFloatLeaf(left_type)))
         equal = buildExactCompoundNumericInComparison(left, right, left_type, right_type);
     else if ((isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(left_type)))
             && isNumber(removeNullable(removeLowCardinality(right_type))))
