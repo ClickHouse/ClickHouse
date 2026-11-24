@@ -1,13 +1,15 @@
-from praktika import Workflow
+from praktika import Job, Workflow
 
 from ci.defs.defs import (
     BASE_BRANCH,
     DOCKERS,
     SECRETS,
     ArtifactConfigs,
+    ArtifactNames,
     JobNames,
+    RunnerLabels,
 )
-from ci.defs.job_configs import JobConfigs
+from ci.defs.job_configs import JobConfigs, common_integration_test_job_config
 from ci.jobs.scripts.workflow_hooks.filter_job import (
     PR_SINGLE_ARCH_SKIPPED_BUILDS,
     PR_SINGLE_ARCH_SKIPPED_JOBS,
@@ -88,6 +90,24 @@ INTEGRATION_COVERAGE_REPLACEMENT_JOBS = (
 PLAIN_INTEGRATION_TEST_JOB = [
     j for j in INTEGRATION_TARGETED_JOBS if "(amd_tsan, targeted)" in j.name
 ][0]
+
+# TEMPORARY (revert before merge): run the full stateless and integration suites against the
+# CFI (ThinLTO) release binaries, to find every CFI violation in https://github.com/ClickHouse/ClickHouse/pull/133736.
+CFI_TEMP_INTEGRATION_RELEASE_JOBS = common_integration_test_job_config.parametrize(
+    *[
+        Job.ParamSet(
+            parameter=f"{build}, {batch}/{total_batches}",
+            runs_on=RunnerLabels.ARM_MEDIUM if build.startswith("arm") else RunnerLabels.AMD_MEDIUM,
+            requires=[artifact],
+        )
+        for build, artifact in (
+            ("arm_release", ArtifactNames.CH_ARM_RELEASE),
+            ("amd_release", ArtifactNames.CH_AMD_RELEASE),
+        )
+        for total_batches in (5,)
+        for batch in range(1, total_batches + 1)
+    ],
+)
 
 workflow = Workflow.Config(
     name="PR",
@@ -258,6 +278,15 @@ workflow = Workflow.Config(
             for job in JobConfigs.clickbench_jobs
         ],
         JobConfigs.llvm_coverage_job,
+        # TEMPORARY (revert before merge), see `CFI_TEMP_INTEGRATION_RELEASE_JOBS`.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_master_release_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in CFI_TEMP_INTEGRATION_RELEASE_JOBS
+        ],
         # Waits for the integration jobs of this workflow, which upload the compliance results.
         # The full `arm_binary` run (or, with `ci-coverage`, the LLVM coverage run) is the one that
         # always runs the compliance suite.
