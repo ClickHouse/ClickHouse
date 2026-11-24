@@ -651,11 +651,13 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
 
             if (nullable && always_null)
             {
-                /// Single-point range containing either the default value or one of the infinities.
+                /// Single-point range containing either the default value or NULL. NULL is
+                /// represented as positive infinity, matching the NULLS LAST convention of
+                /// `MergeTree` key ranges that `KeyCondition` and `MergeTreeSetIndex` rely on.
                 if (null_as_default)
                     range.right = range.left = output_block_type.getDefault();
                 else
-                    range.right = range.left;
+                    range.left = range.right = POSITIVE_INFINITY;
                 continue;
             }
 
@@ -3223,11 +3225,13 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
             if (nullable && always_null)
             {
-                /// Single-point range containing either the default value or one of the infinities.
+                /// Single-point range containing either the default value or NULL. NULL is
+                /// represented as positive infinity, matching the NULLS LAST convention of
+                /// `MergeTree` key ranges that `KeyCondition` and `MergeTreeSetIndex` rely on.
                 if (null_as_default)
                     range.right = range.left = output_block_type.getDefault();
                 else
-                    range.right = range.left;
+                    range.left = range.right = POSITIVE_INFINITY;
             }
             else
             {
@@ -3339,11 +3343,12 @@ bool Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
         else
         {
             /// Make sure the range includes NULL.
-            /// In Range, NULL is represented as infinity (positive or negative, doesn't matter).
-            /// So, make sure the range reaches infinity on at least one side.
-            /// We arbitrarily picked negative rather than positive infinity.
-            if (!range.left.isNull() && !range.right.isNull())
-                range.left = NEGATIVE_INFINITY;
+            /// In Range, NULL is represented as positive infinity, matching the NULLS LAST
+            /// convention of `MergeTree` key ranges. E.g. `MergeTreeSetIndex::checkInRange` only
+            /// matches a NULL set element (`IN (NULL, ...)` with `transform_null_in`) against
+            /// positive infinity, so extend the range to the right.
+            range.right = POSITIVE_INFINITY;
+            range.right_included = true;
         }
     }
     else
