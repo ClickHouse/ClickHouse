@@ -2,6 +2,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -422,6 +423,42 @@ bool hasLightweightDeletedRows(const RangesInDataParts & parts)
         { return part.data_part->hasLightweightDelete() || (part.parent_part && part.parent_part->hasLightweightDelete()); });
 }
 
+/// The share of the selected rows of `parts` that lightweight deletes have left. The deleted rows of a part are known
+/// from its `existing_rows_count`, which a `DELETE FROM` mutation counts as it writes `_row_exists`; the row count and
+/// the statistics of a part still cover them. A part without the count, or a projection part, whose rows do not map to
+/// the rows of its parent, is counted whole. The deleted rows are assumed to be spread evenly over the ranges of a part,
+/// unless `upper_bound` is set: then a part keeps the smaller of its selected rows and its existing rows.
+Float64 getLiveRowsShare(const RangesInDataParts & parts, bool upper_bound)
+{
+    Float64 selected_rows = 0;
+    Float64 live_rows = 0;
+    for (const auto & part : parts)
+    {
+        const auto part_selected_rows = static_cast<Float64>(part.getRowsCount());
+        selected_rows += part_selected_rows;
+
+        const auto & data_part = *part.data_part;
+        if (!part.parent_part && data_part.rows_count && data_part.existing_rows_count
+            && *data_part.existing_rows_count < data_part.rows_count && data_part.hasLightweightDelete())
+        {
+            const auto existing_rows = static_cast<Float64>(*data_part.existing_rows_count);
+            live_rows += upper_bound ? std::min(part_selected_rows, existing_rows)
+                                     : part_selected_rows * existing_rows / static_cast<Float64>(data_part.rows_count);
+        }
+        else
+            live_rows += part_selected_rows;
+    }
+    return selected_rows > 0 ? live_rows / selected_rows : 1.0;
+}
+
+/// Scales `rows` by `live_rows_share`, rounding up so that a relation with any live row keeps at least one.
+UInt64 applyLiveRowsShare(UInt64 rows, Float64 live_rows_share)
+{
+    if (live_rows_share >= 1.0)
+        return rows;
+    return std::min(rows, toUInt64Saturating(std::ceil(static_cast<Float64>(rows) * live_rows_share)));
+}
+
 /// Whether a `UNIQUE KEY` read drops rows of `parts` superseded by later inserts. It drops them through the delete
 /// bitmaps of its snapshot; they are not `_row_exists` deletes and leave no mutation, but the part statistics still
 /// cover them. The bitmap of each part is checked, as the reader does: the analysis has already resolved them to drop
@@ -599,8 +636,11 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .source = RowEstimateSource::NoStatistics};
         }
 
-        const auto coverage = analyzeReadCoverage(
-            *reading, analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts(), plan_time_filter != nullptr);
+        const RangesInDataParts & parts_to_read = analyzed_result ? analyzed_result->parts_with_ranges : reading->getParts();
+        const auto coverage = analyzeReadCoverage(*reading, parts_to_read, plan_time_filter != nullptr);
+        /// The rows of the parts include the rows deleted by lightweight deletes, which the read skips.
+        /// The runtime-filter transport needs an upper bound of the rows.
+        const Float64 live_rows_share = getLiveRowsShare(parts_to_read, /*upper_bound=*/options.for_runtime_filter_transport);
 
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
@@ -608,6 +648,18 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), plan_time_filter, prewhere_node);
+                if (live_rows_share < 1.0)
+                {
+                    relation_profile.rows = applyLiveRowsShare(relation_profile.rows, live_rows_share);
+                    for (auto & [_, column_stats] : relation_profile.column_stats)
+                    {
+                        if (column_stats.num_distinct_values > relation_profile.rows)
+                        {
+                            column_stats.num_distinct_values = relation_profile.rows;
+                            column_stats.ndv_provenance.add(EstimatedRowCountClamp);
+                        }
+                    }
+                }
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,
@@ -639,7 +691,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .source = RowEstimateSource::NoStatistics};
 
         return RelationStats{
-            .estimated_rows = analyzed_result->selected_rows,
+            .estimated_rows = applyLiveRowsShare(analyzed_result->selected_rows, live_rows_share),
             .table_name = table_display_name,
             .imprecise_estimate = true,
             .rows_exact = !coverage.mayDropRows(analyzed_result->selected_rows),

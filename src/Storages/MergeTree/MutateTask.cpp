@@ -110,7 +110,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
-    extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
@@ -5622,10 +5621,12 @@ bool MutateTask::prepare()
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
-    if ((*ctx->data->getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && lightweight_delete_mode)
+    if (lightweight_delete_mode)
     {
         /// This mutation contains lightweight delete and we need to count the deleted rows,
-        /// Reset existing_rows_count of new data part to 0 and it will be updated while writing _row_exists column
+        /// Reset existing_rows_count of new data part to 0 and it will be updated while writing _row_exists column.
+        /// The count is cheap, and it is used both for the size of parts in merges (under `exclude_deleted_rows_for_part_size_in_merge`)
+        /// and for the row estimates of join reordering, so it is kept regardless of the setting.
         ctx->count_lightweight_deleted_rows = true;
     }
     else

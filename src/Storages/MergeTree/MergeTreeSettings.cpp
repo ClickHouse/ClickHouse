@@ -1078,8 +1078,10 @@ unfinished mutations
     DECLARE(Bool, exclude_deleted_rows_for_part_size_in_merge, false, R"(
 If enabled, estimated actual size of data parts (i.e., excluding those rows
 that have been deleted through `DELETE FROM`) will be used when selecting
-parts to merge. Note that this behavior is only triggered for data parts
-affected by `DELETE FROM` executed after this setting is enabled.
+parts to merge. Note that the deleted rows of a data part are known only if
+it was affected by `DELETE FROM` executed since the server started, or if
+[load_existing_rows_count_for_old_parts](#load_existing_rows_count_for_old_parts)
+is enabled.
 
 Possible values:
 - `true`
