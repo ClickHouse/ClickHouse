@@ -41,6 +41,9 @@ private:
 
     std::atomic<bool> & shutdown_called;
 
+    /// Written by the producing task, read in `finishImpl` after `deactivate` waited for the task.
+    bool stopped_by_shutdown = false;
+
     /* payloads.queue:
      *      - payloads are pushed to queue in countRow and popped by another thread in writingFunc, each payload gets into queue only once
      */
