@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int S3_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -55,6 +56,9 @@ VendedCredentials CredentialVendor::vend(const String & location, VendedAccessLe
 #if USE_AWS_S3
 namespace
 {
+
+/// STS limit for an inline session policy.
+constexpr size_t MAX_SESSION_POLICY_LENGTH = 2048;
 
 /// IAM reads `*` and `?` as wildcards and `${...}` as a variable. `${*}`, `${?}` and `${$}` mean the plain characters.
 String escapeForIAM(const String & value)
@@ -169,12 +173,23 @@ S3::AssumeRoleResult CredentialVendor::assumeRole(const String & location, Vende
 {
     const auto [bucket, key] = IcebergRESTCatalogS3Location::parse(location);
 
+    /// Policy is ASCII after escaping, so bytes are characters.
+    const auto policy = buildSessionPolicy(bucket, key, access);
+    if (policy.size() > MAX_SESSION_POLICY_LENGTH)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot vend credentials for {}: session policy has {} characters, STS accepts at most {}. "
+            "Use shorter namespace and table names, or load table without credential vending",
+            location,
+            policy.size(),
+            MAX_SESSION_POLICY_LENGTH);
+
     /// Build request.
     S3::AssumeRoleRequest request(
         Aws::String(warehouse_role.role_arn),
         Aws::String(warehouse_role.getSessionName()),
         Aws::String(warehouse_role.external_id),
-        Aws::String(buildSessionPolicy(bucket, key, access)));
+        Aws::String(policy));
 
     /// Send request.
     const auto outcome = sts_client->assumeRole(request);
