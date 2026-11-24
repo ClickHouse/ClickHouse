@@ -198,7 +198,8 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     IInputFormat & input_format_,
     ContextPtr context_,
     const NamesAndTypesList & extra_inputs_,
-    GetExtraInputs get_extra_inputs_)
+    GetExtraInputs get_extra_inputs_,
+    const NamesAndTypesList * requested_columns_)
     : ISimpleTransform(header, header, true)
     , columns(columns_)
     , column_defaults(columns.getDefaults())
@@ -209,6 +210,13 @@ AddingDefaultsTransform::AddingDefaultsTransform(
 {
     for (const auto & column : extra_inputs_)
         available_columns.insert({column.type->createColumn(), column.type, column.name});
+
+    if (requested_columns_)
+    {
+        columns_to_fill.emplace();
+        for (const auto & column : *requested_columns_)
+            columns_to_fill->insert(column.getNameInStorage());
+    }
 }
 
 
@@ -256,6 +264,28 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         size_t column_idx = res.getPositionByName(col_name);
         if (block_missing_values->hasDefaultBits(column_idx))
             columns_needing_defaults.emplace_back(col_name, column_idx);
+    }
+
+    /// A column the output does not have gets its default only when a default of the output reads it.
+    if (columns_to_fill)
+    {
+        NameSet needing;
+        for (const auto & [col_name, col_idx] : columns_needing_defaults)
+            needing.insert(col_name);
+        NameSet needed;
+        VectorWithMemoryTracking<String> to_visit;
+        for (const auto & [col_name, col_idx] : columns_needing_defaults)
+            if (columns_to_fill->contains(col_name) && needed.insert(col_name).second)
+                to_visit.push_back(col_name);
+        while (!to_visit.empty())
+        {
+            const String name = std::move(to_visit.back());
+            to_visit.pop_back();
+            for (const auto & read : getColumnsReadByDefault(name, columns, column_defaults, available_columns))
+                if (needing.contains(read) && needed.insert(read).second)
+                    to_visit.push_back(read);
+        }
+        std::erase_if(columns_needing_defaults, [&](const auto & column) { return !needed.contains(column.first); });
     }
 
     if (columns_needing_defaults.empty())

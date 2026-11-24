@@ -25,8 +25,8 @@ namespace DB
         Block source_header;
         /// Header that will be passed to IInputFormat to read data from file.
         /// Superset of requested_columns.
-        /// It can contain more columns than were requested if format doesn't support
-        /// reading subset of columns.
+        /// It also has the columns the defaults of the read columns use, and all columns
+        /// if format doesn't support reading subset of columns.
         Block format_header;
         /// Description of columns for format_header. Used for inserting defaults.
         ColumnsDescription columns_description;

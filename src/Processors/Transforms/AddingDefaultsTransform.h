@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -24,6 +25,7 @@ public:
     /// read. Called only for a chunk where some default is evaluated.
     using GetExtraInputs = std::function<ColumnsWithTypeAndName(const NameSet & read_by_defaults, size_t num_rows)>;
 
+    /// With `requested_columns_`, only their defaults and the defaults they read are evaluated.
     /// `extra_inputs_` are columns the input format does not produce, e.g. Hive partition columns.
     AddingDefaultsTransform(
         SharedHeader header,
@@ -31,7 +33,8 @@ public:
         IInputFormat & input_format_,
         ContextPtr context_,
         const NamesAndTypesList & extra_inputs_ = {},
-        GetExtraInputs get_extra_inputs_ = {});
+        GetExtraInputs get_extra_inputs_ = {},
+        const NamesAndTypesList * requested_columns_ = nullptr);
 
     String getName() const override { return "AddingDefaultsTransform"; }
 
@@ -48,6 +51,7 @@ private:
     GetExtraInputs get_extra_inputs;
     /// The header and the empty `extra_inputs_`.
     Block available_columns;
+    std::optional<NameSet> columns_to_fill;
 
     /// The default-expression actions are built per chunk inside `transform`, so `onCancel`
     /// needs a published handle to the instance that is executing right now to forward
