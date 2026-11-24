@@ -27,3 +27,6 @@
 [2]
 [2]
 [1,3]
+-- a list on an indexed dedicated column without NULL uses the skipping index
+[1,2]
+1

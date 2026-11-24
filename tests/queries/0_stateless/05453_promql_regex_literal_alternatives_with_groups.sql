@@ -80,3 +80,23 @@ SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_lc_nullable,
 
 DROP TABLE rx_nullable;
 DROP TABLE rx_lc_nullable;
+
+-- A dedicated column without NULL is compared as is, so a skipping index on it serves a list.
+DROP TABLE IF EXISTS rx_indexed;
+CREATE TABLE rx_indexed ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, tags_index_granularity = 1, tags_to_columns = {'job': 'job'}
+TAGS INNER COLUMNS (job String, INDEX job_idx job TYPE bloom_filter GRANULARITY 1);
+
+INSERT INTO rx_indexed (metric_name, tags, samples) VALUES
+    ('a_total', {'job':'api'}, [(1000, 1.)]),
+    ('a_total', {'job':'web'}, [(1000, 2.)]),
+    ('a_total', {'job':'db'}, [(1000, 3.)]),
+    ('a_total', {'instance':'x'}, [(1000, 4.)]);
+
+SELECT '-- a list on an indexed dedicated column without NULL uses the skipping index';
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_indexed, 'a_total{job=~"api|web"}', 1000) ORDER BY value)
+SETTINGS log_comment = '05453_rx_indexed', use_skip_indexes_on_data_read = 0, use_query_condition_cache = 0, enable_parallel_replicas = 0;
+SYSTEM FLUSH LOGS query_log;
+SELECT arrayExists(index -> endsWith(index, '.job_idx'), used_data_skipping_indices) FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = '05453_rx_indexed';
+
+DROP TABLE rx_indexed;
