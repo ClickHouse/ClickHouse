@@ -152,8 +152,8 @@ struct ManifestListEntryCounts
     /// When set, override the entry's `added_snapshot_id` / `sequence_number`, preserving the
     /// lineage of a manifest that was first added by an earlier snapshot and is carried
     /// forward into this manifest list.
-    std::optional<Int64> added_snapshot_id;
-    std::optional<Int64> added_sequence_number;
+    std::optional<Int64> added_snapshot_id = std::nullopt;
+    std::optional<Int64> added_sequence_number = std::nullopt;
 };
 
 void generateManifestList(
