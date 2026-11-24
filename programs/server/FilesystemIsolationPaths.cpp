@@ -24,6 +24,9 @@
 #include <set>
 #include <string_view>
 
+#include <pwd.h>
+#include <unistd.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -74,6 +77,13 @@ constexpr std::array system_paths = {
     "/usr/local/share/ca-certificates",
     /// The separate debug info of the executable, for the symbols in stack traces.
     "/usr/lib/debug",
+    /// The secrets that container runtimes mount: Kubernetes projects the tokens of the service accounts into
+    /// `/var/run/secrets`, as `/var/run/secrets/eks.amazonaws.com/serviceaccount/token` for the IAM roles of EKS, which
+    /// an AWS profile can name in `web_identity_token_file`, and Docker mounts its secrets into `/run/secrets`. Each of
+    /// them is a mount of its own, and the directories rather than the files are visible, because the kubelet rotates
+    /// the tokens by replacing the files.
+    "/run/secrets",
+    "/var/run/secrets",
 };
 
 /// The directories of the CA certificates of the system, which can be links to certificates elsewhere.
@@ -167,6 +177,7 @@ public:
         addLogs();
         addCertificates();
         addKerberosProfiles();
+        addCloudCredentials();
         addBridge();
         addJemallocProfiles();
         addExtraPaths();
@@ -216,7 +227,11 @@ private:
     /// If the file is a symbolic link, the directories of the targets of the links in the chain as well: a
     /// certificate of Let's Encrypt in `live/<domain>` is a link to `../../archive/<domain>/fullchain<N>.pem`, and a
     /// renewal adds a new file next to the target and points the link at it.
-    void addLocation(const fs::path & path, Access access, const std::string & source)
+    ///
+    /// With `only_file_in_shared_directory`, a file directly in `/` or in `/tmp` is visible on its own instead of its
+    /// directory: the root directory cannot be visible, and the directory `/tmp` of the host would cover the private
+    /// writable `/tmp` and expose the temporary files of everything else on the host.
+    void addLocation(const fs::path & path, Access access, const std::string & source, bool only_file_in_shared_directory = false)
     {
         std::error_code error;
         /// The same limit on the number of links as in the kernel, against a loop.
@@ -241,7 +256,10 @@ private:
                     add(current, access, source);
                 return;
             }
-            add(current.parent_path(), access, source);
+            if (only_file_in_shared_directory && isSharedDirectory(current.parent_path()))
+                add(current, access, source);
+            else
+                add(current.parent_path(), access, source);
 
             if (i == max_links || !FS::isSymlinkNoThrow(current))
                 return;
@@ -254,6 +272,16 @@ private:
             /// it means the parent of the target of that link, which `resolvePath` follows as the kernel does.
             current = absolute(target.string(), "/");
         }
+    }
+
+    /// The root directory or `/tmp`, also through links, as `/var/tmp -> /tmp`.
+    static bool isSharedDirectory(const fs::path & directory)
+    {
+        std::error_code error;
+        const fs::path real_directory = fs::weakly_canonical(directory, error);
+        if (error)
+            return false;
+        return real_directory == "/" || real_directory == "/tmp";
     }
 
     /// For a system file that is a symbolic link, the directories of the targets of the links in the chain outside
@@ -858,6 +886,68 @@ private:
                 addKeyLocation(fmt::format("ldap_servers.{}.{}", server, name), Access::ReadOnly, runtime_directory);
             addCertificateAuthorityKey(fmt::format("ldap_servers.{}.tls_ca_cert_dir", server));
         }
+    }
+
+    /// The credentials of the clouds that the clients of S3 and Azure read from files named by environment variables,
+    /// as the token of the service account that Kubernetes projects into a pod for `AssumeRoleWithWebIdentity`
+    /// (`AWS_WEB_IDENTITY_TOKEN_FILE`, set by EKS, as `/var/run/secrets/eks.amazonaws.com/serviceaccount/token`),
+    /// for EKS Pod Identity and for the workload identity of Azure. The kubelet rotates such a token: the file is a
+    /// link to `..data/token`, and it points `..data` at a new directory, so the directories of the file and of the
+    /// targets of the links are visible rather than the file. A relative path is relative to the working directory.
+    void addCloudCredentials()
+    {
+        for (const char * name : {
+                 "AWS_WEB_IDENTITY_TOKEN_FILE",
+                 "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+                 "AWS_CONFIG_FILE",
+                 "AWS_SHARED_CREDENTIALS_FILE",
+                 "AZURE_FEDERATED_TOKEN_FILE"})
+        {
+            const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+            if (value && *value)
+                addLocation(absolute(value, runtime_directory), Access::ReadOnly, fmt::format("the environment variable {}", name),
+                    /* only_file_in_shared_directory = */ true);
+        }
+
+        /// The default location of the configuration and the credentials of the AWS SDK, `~/.aws/config` and
+        /// `~/.aws/credentials`, as `Aws::FileSystem::GetHomeDirectory` finds it: `HOME`, and if it is not set or is
+        /// empty, the home directory of the user in the passwd database. Only if it is a directory that can
+        /// be accessed: the server can inherit the home directory of another user, as `HOME=/root` after
+        /// `clickhouse su` in the entrypoint of the Docker image, and it does not need it unless it uses S3.
+        if (const std::string home = getHomeDirectory(); home.starts_with('/'))
+        {
+            const fs::path aws_directory = absolute(home, "/") / ".aws";
+            std::error_code error;
+            if (fs::is_directory(aws_directory, error))
+            {
+                const std::string source = "the configuration of the AWS SDK in the home directory";
+                add(aws_directory, Access::ReadOnly, source);
+                /// The files can be links to a place that is not visible otherwise, as a mounted secret:
+                /// `~/.aws/credentials -> /mnt/cloud-credentials/credentials`.
+                for (const char * name : {"config", "credentials"})
+                    if (const fs::path file = aws_directory / name; FS::isSymlinkNoThrow(file))
+                        addLocation(file, Access::ReadOnly, source, /* only_file_in_shared_directory = */ true);
+            }
+        }
+    }
+
+    /// The home directory as the AWS SDK resolves it, see `Aws::FileSystem::GetHomeDirectory`.
+    static std::string getHomeDirectory()
+    {
+        std::string home;
+        if (const char * value = std::getenv("HOME")) // NOLINT(concurrency-mt-unsafe)
+            home = value;
+
+        if (home.empty())
+        {
+            passwd entry{};
+            passwd * result = nullptr;
+            std::array<char, 4096> buffer{};
+            if (getpwuid_r(getuid(), &entry, buffer.data(), buffer.size(), &result) == 0 && result && result->pw_dir)
+                home = result->pw_dir;
+        }
+
+        return Poco::trim(home);
     }
 
     /// The profiles of Kerberos at the default paths of the bundled MIT Kerberos (`DEFAULT_PROFILE_PATH`), with the
