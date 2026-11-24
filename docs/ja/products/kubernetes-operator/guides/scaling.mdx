@@ -12,10 +12,12 @@ doc_type: 'guide'
 このガイドでは、`ClickHouseCluster` のレプリカと分片をスケーリングする方法、`KeeperCluster` のクォーラムを安全にスケーリングする方法、そしてスケール操作の進行中に確認すべき 条件 について説明します。
 
 <Note>
-  `ClickHouseCluster` では常に Keeper が必要で、`spec.keeperClusterRef` または `spec.externalKeeper` で設定します。オペレーター はクラスターのサイズに関係なく、これを通じてクラスターを調整します。1 つの分片あたり複数のレプリカを実行するには、データが `ReplicatedMergeTree` テーブルにも保存されている必要があります。レプリケーションによって、2 つ目のレプリカでも同じ行を提供できるようになるためです。
+  `ClickHouseCluster` では常に Keeper が必要で、必須の `spec.keeperClusterRef` フィールドで参照します。オペレーター はクラスターのサイズに関係なく、これを通じてクラスターを調整します。1 つの分片あたり複数のレプリカを実行するには、データが `ReplicatedMergeTree` テーブルにも保存されている必要があります。レプリケーションによって、2 つ目のレプリカでも同じ行を提供できるようになるためです。
 </Note>
 
-## レプリカのスケーリング {#scaling-replicas}
+<div id="scaling-replicas">
+  ## レプリカのスケーリング
+</div>
 
 `spec.replicas` は、各分片のレプリカ数を設定します。各レプリカは `<cluster>-clickhouse-<shard>-<replica>` という名前のそれぞれ独立した StatefulSet で実行されるため、`shards: 2` と `replicas: 3` のクラスターでは 6 つの StatefulSet が実行されます。
 
@@ -30,7 +32,9 @@ spec:
 
 スケールアップ時には、オペレーターがレプリカごとの新しい StatefulSets を作成し、各ポッドが Ready になるのを待ってから、新しいレプリカにスキーマを同期します ([スキーマの自動同期](#automatic-schema-sync) を参照) 。スケールダウン時には、余分な StatefulSets を削除し、削除したレプリカが残した古い replicated-database のレプリカ登録をクリーンアップします。
 
-## 分片のスケーリング {#scaling-shards}
+<div id="scaling-shards">
+  ## 分片のスケーリング
+</div>
 
 `spec.shards` は分片数を設定します。新しい分片を追加するたびに、レプリカごとの StatefulSets 一式が追加されます。また、オペレーターは [分片ごとに 1 つの PodDisruptionBudget](/ja/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) を作成するため、ある分片での中断が別の分片の許容中断数に影響することはありません。
 
@@ -42,7 +46,9 @@ spec:
 
 各分片はデータのそれぞれ異なる一部を保持しており、オペレーターが分片間で行をコピーしたり移動したりすることはありません。`Distributed` テーブルまたは明示的なルーティング方式によって行の格納先となる分片が決まるため、分片を追加しても、既存の分片にすでに保存されている行に手を加えることなく、新しい書き込みの格納先を増やせます。
 
-## 自動スキーマ同期 {#automatic-schema-sync}
+<div id="automatic-schema-sync">
+  ## 自動スキーマ同期
+</div>
 
 `spec.settings.enableDatabaseSync` が `true` (デフォルト)  の場合、トポロジーの変化に応じて、オペレーターがスキーマの整合性を維持します。
 
@@ -53,7 +59,9 @@ spec:
 
 たとえば、外部ツールがスキーマ伝播を管理している場合は、`enableDatabaseSync: false` を設定してこの動作を無効にします。その場合、オペレーターは `SchemaInSync` 条件に `SchemaSyncDisabled` という reason を報告します。
 
-## 確認すべき 条件 {#scaling-conditions}
+<div id="scaling-conditions">
+  ## 確認すべき 条件
+</div>
 
 スケール操作の実行中に、カスタムリソースの進捗を確認します:
 
@@ -75,7 +83,9 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 
 スケール操作は、`ClusterSizeAligned` が `UpToDate`、`SchemaInSync` が `ReplicasInSync`、`Ready` が `AllShardsReady` をそれぞれ報告した時点で完了します。
 
-## Keeper のスケーリング {#scaling-keeper}
+<div id="scaling-keeper">
+  ## Keeper のスケーリング
+</div>
 
 `KeeperCluster` は RAFT クォーラムで動作するため、オペレーター はメンバーシップを**一度に 1 レプリカずつ**変更し、クラスターが安定した状態にある場合にのみ実行します。これによりクォーラムが保護されます。`2F+1` のクラスターは `F` 個のメンバーの停止に耐えられるため、3 ノードのクラスターは 1 メンバーが欠けても動作を継続でき、5 ノードのクラスターは 2 メンバーが欠けても動作を継続できます。
 

@@ -66,7 +66,7 @@ public:
 
         Value value;
 
-        [[nodiscard]] String toString() const
+        String toString() const
         {
             switch (value)
             {
@@ -145,7 +145,7 @@ public:
         String znode_path;
 
     public:
-        [[nodiscard]] String toString() const;
+        String toString() const;
         void fromString(const String & buf);
     };
 

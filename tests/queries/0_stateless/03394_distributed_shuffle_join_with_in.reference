@@ -5,19 +5,18 @@ Expression (Project names)
       Expression ((Before ORDER BY + Projection))
         JoinLogical
           ShuffleExchange (by hash([__table1.path]))
-            Expression ((Apply runtime join filter + (Change column names to column identifiers + (Project names + Projection))))
-              MergingAggregated (merge)
+            Expression
+              Aggregating
                 ShuffleExchange (by hash([__table2.path]))
-                  Aggregating (partial)
-                    Expression ((((Apply runtime join filter + (Change column names to column identifiers + (Project names + Projection))) + Before GROUP BY) + (WHERE + Change column names to column identifiers)))
-                      ReadFromMergeTree (default.test)
+                  Expression
+                    ReadFromMergeTree (default.test)
           ShuffleExchange (by hash([__table3.path]))
             BuildRuntimeFilter (Build runtime join filter on __table3.path)
               Expression ((Change column names to column identifiers + (Project names + Projection)))
-                MergingAggregated (merge)
+                Aggregating
                   ShuffleExchange (by hash([__table4.path]))
-                    Aggregating (partial)
-                      Expression ((Before GROUP BY + (WHERE + Change column names to column identifiers)))
+                    Expression (Before GROUP BY)
+                      Expression ((WHERE + Change column names to column identifiers))
                         ReadFromMergeTree (default.test)
 ----------
 path_0	12	path_0	12

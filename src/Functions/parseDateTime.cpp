@@ -68,40 +68,30 @@ namespace
         DateTime64
     };
 
-    /// Built on first use rather than by a static initializer.
-    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> & dayOfWeekMap()
-    {
-        static const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> map{
-            {"mon", {"day", 1}},
-            {"tue", {"sday", 2}},
-            {"wed", {"nesday", 3}},
-            {"thu", {"rsday", 4}},
-            {"fri", {"day", 5}},
-            {"sat", {"urday", 6}},
-            {"sun", {"day", 7}},
-        };
-        return map;
-    }
+    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> dayOfWeekMap{
+        {"mon", {"day", 1}},
+        {"tue", {"sday", 2}},
+        {"wed", {"nesday", 3}},
+        {"thu", {"rsday", 4}},
+        {"fri", {"day", 5}},
+        {"sat", {"urday", 6}},
+        {"sun", {"day", 7}},
+    };
 
-    /// Built on first use rather than by a static initializer.
-    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> & monthMap()
-    {
-        static const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> map{
-            {"jan", {"uary", 1}},
-            {"feb", {"ruary", 2}},
-            {"mar", {"ch", 3}},
-            {"apr", {"il", 4}},
-            {"may", {"", 5}},
-            {"jun", {"e", 6}},
-            {"jul", {"y", 7}},
-            {"aug", {"ust", 8}},
-            {"sep", {"tember", 9}},
-            {"oct", {"ober", 10}},
-            {"nov", {"ember", 11}},
-            {"dec", {"ember", 12}},
-        };
-        return map;
-    }
+    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> monthMap{
+        {"jan", {"uary", 1}},
+        {"feb", {"ruary", 2}},
+        {"mar", {"ch", 3}},
+        {"apr", {"il", 4}},
+        {"may", {"", 5}},
+        {"jun", {"e", 6}},
+        {"jul", {"y", 7}},
+        {"aug", {"ust", 8}},
+        {"sep", {"tember", 9}},
+        {"oct", {"ober", 10}},
+        {"nov", {"ember", 11}},
+        {"dec", {"ember", 12}},
+    };
 
     /// key: month, value: total days of current month if current year is leap year.
     constexpr Int32 leapDays[] = {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -469,13 +459,13 @@ namespace
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale);
 
             scale = scale_;
         }
 
         /// For debug
-        [[nodiscard]] [[maybe_unused]] String toString() const
+        [[maybe_unused]] String toString() const
         {
             String res;
             res += "year:" + std::to_string(year);
@@ -533,15 +523,6 @@ namespace
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
             if (!yearIsInValidRange(week_year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
-
-            if (week_of_year_ == 53)
-            {
-                Int32 days_since_epoch_of_jan_first = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_first, (daysSinceEpochFromDate(week_year_, 1, 1)))
-                Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_first);
-                if (first_day_of_week_year != 4 && !(isLeapYear(week_year_) && first_day_of_week_year == 3))
-                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week 53 for ISO week year {}", week_year_)
-            }
 
             Int32 days_since_epoch_of_jan_fourth = 0;
             ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_fourth, (daysSinceEpochFromDate(week_year_, 1, 4)))
@@ -652,48 +633,15 @@ namespace
         {
         }
 
-        [[nodiscard]] String getName() const override { return name; }
+        String getName() const override { return name; }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-        /// row references it, so the throwing variant must not be executed on the whole dictionary -
-        /// the empty string is not a date and it would fail on entirely valid data.
-        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
-        [[nodiscard]] bool isVariadic() const override { return true; }
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+        bool useDefaultImplementationForConstants() const override { return true; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+        bool isVariadic() const override { return true; }
+        size_t getNumberOfArguments() const override { return 0; }
 
-        /// Documentation-only — the override below is authoritative (it computes
-        /// the DateTime64 scale from the number of `S` placeholders in the
-        /// format string, and attaches the timezone from the optional third arg).
-        [[nodiscard]] String getSignatureString() const override
-        {
-            String result;
-            if constexpr (return_type == ReturnType::DateTime)
-                result = "DateTime";
-            else
-                result = "DateTime64";
-            if constexpr (error_handling == ErrorHandling::Null)
-                result = "Nullable(" + result + ")";
-            return "(String, [const String], [const String]) -> " + result;
-        }
-
-        /// There is no types-only answer: the result type depends on the *values* of the optional
-        /// arguments — the timezone comes from the third argument and, for the `DateTime64`
-        /// non-MySQL syntax, the scale is the number of `S` placeholders in the format string.
-        /// Decline this entry point instead of letting the documentation-only signature above
-        /// answer with a timezone-less `DateTime`/scale-0 `DateTime64`.
-        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-        {
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "getReturnType is not implemented for {}: the result type can only be derived "
-                "when the values of the format and timezone arguments are known",
-                getName());
-        }
-
-        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
                 {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
@@ -744,7 +692,7 @@ namespace
             return data_type;
         }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
             DataTypePtr result_type_without_nullable;
             if constexpr (error_handling == ErrorHandling::Null)
@@ -916,10 +864,10 @@ namespace
             explicit Instruction(const String & literal_) : literal(literal_), fragment("LITERAL") { }
             explicit Instruction(String && literal_) : literal(std::move(literal_)), fragment("LITERAL") { }
 
-            [[nodiscard]] const String & getFragment() const { return fragment; }
+            const String & getFragment() const { return fragment; }
 
             /// For debug
-            [[nodiscard]] [[maybe_unused]] String toString() const
+            [[maybe_unused]] String toString() const
             {
                 if (func)
                     return "func:" + func_name + ",fragment:" + fragment;
@@ -958,20 +906,6 @@ namespace
                 res = res * 10 + (*cur - '0');
                 ++cur;
                 return cur;
-            }
-
-            [[nodiscard]]
-            static PosOrError readDayOfMonthNumber(Pos cur, Pos end, const String & fragment, Int32 & day_of_month)
-            {
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "two digits are expected for day of month", fragment))
-                if (cur[0] < '0' || cur[0] > '9' || cur[1] < '0' || cur[1] > '9') [[unlikely]]
-                    RETURN_ERROR(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse fragment {} from {} because two digits are expected for day of month",
-                        fragment,
-                        std::string_view(cur, end - cur))
-
-                return readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day_of_month);
             }
 
             template <typename T, NeedCheckSpace need_check_space>
@@ -1066,8 +1000,8 @@ namespace
 
                 String text(cur, 3);
                 boost::to_lower(text);
-                auto it = dayOfWeekMap().find(text);
-                if (it == dayOfWeekMap().end())
+                auto it = dayOfWeekMap.find(text);
+                if (it == dayOfWeekMap.end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week short text {} ",
@@ -1086,8 +1020,8 @@ namespace
 
                 String text(cur, 3);
                 boost::to_lower(text);
-                auto it = monthMap().find(text);
-                if (it == monthMap().end())
+                auto it = monthMap.find(text);
+                if (it == monthMap.end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year short text {}",
@@ -1106,8 +1040,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = monthMap().find(text1);
-                if (it == monthMap().end())
+                auto it = monthMap.find(text1);
+                if (it == monthMap.end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
@@ -1162,7 +1096,7 @@ namespace
             static PosOrError mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_month = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day_of_month))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
             }
@@ -1178,7 +1112,7 @@ namespace
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
 
                 Int32 day = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day))
 
@@ -1230,7 +1164,7 @@ namespace
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
 
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
@@ -1303,8 +1237,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = dayOfWeekMap().find(text1);
-                if (it == dayOfWeekMap().end())
+                auto it = dayOfWeekMap.find(text1);
+                if (it == dayOfWeekMap.end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown day of week text: {}",
@@ -1701,8 +1635,8 @@ namespace
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = dayOfWeekMap().find(text1);
-                if (it == dayOfWeekMap().end())
+                auto it = dayOfWeekMap.find(text1);
+                if (it == dayOfWeekMap.end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week text: {}",
@@ -1760,8 +1694,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = monthMap().find(text1);
-                if (it == monthMap().end())
+                auto it = monthMap.find(text1);
+                if (it == monthMap.end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year text: {}",
@@ -1937,7 +1871,7 @@ namespace
         };
         /// NOLINTEND(readability-else-after-return)
 
-        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseFormat(const String & format) const
+        VectorWithMemoryTracking<Instruction> parseFormat(const String & format) const
         {
             static_assert(
                 parse_syntax == ParseSyntax::MySQL || parse_syntax == ParseSyntax::Joda,
@@ -1949,7 +1883,7 @@ namespace
                 return parseJodaFormat(format);
         }
 
-        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseMysqlFormat(const String & format) const
+        VectorWithMemoryTracking<Instruction> parseMysqlFormat(const String & format) const
         {
 #define ACTION_ARGS(func) &(func), #func, std::string_view(pos - 1, 2)
 
@@ -2056,7 +1990,7 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Week));
                             break;
 
-                        // Weekday as an integer number with Sunday as 0 (0-6)  4
+                        // Weekday as a integer number with Sunday as 0 (0-6)  4
                         case 'w':
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfWeek0To6));
                             break;
@@ -2213,7 +2147,7 @@ namespace
 #undef ACTION_ARGS
         }
 
-        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseJodaFormat(const String & format) const
+        VectorWithMemoryTracking<Instruction> parseJodaFormat(const String & format) const
         {
 #define ACTION_ARGS_WITH_BIND(func, arg) std::bind_front(&(func), (arg)), #func, std::string_view(cur_token, repetitions)
 
@@ -2342,7 +2276,7 @@ namespace
         }
 
 
-        [[nodiscard]] String getFormat(const ColumnsWithTypeAndName & arguments) const
+        String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
             if (arguments.size() == 1)
             {
@@ -2368,7 +2302,7 @@ namespace
             }
         }
 
-        [[nodiscard]] const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
+        const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
         {
             if (arguments.size() < 3)
                 return DateLUT::instance();
@@ -2539,7 +2473,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
         )",
         R"(
 ┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                             2025-01-04 23:00:00 │
+│                                            2025-01-04 23:00:00  │
 └─────────────────────────────────────────────────────────────────┘
         )"
     }

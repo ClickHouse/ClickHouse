@@ -7,8 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The children of an Arrow union restart the dotted path, so the struct child `s` of a union child has the path
 # `s`, which is also the name of an unrelated column of the header. The requested type of that column must not
 # change how the union child decodes: the union declares its children from the Arrow schema. Before the fix the
-# child was decoded under the type of `s` (`IPv6`, or a `Tuple` that keeps the null map of a struct) while still
-# declared as the schema says, and the cast of the union read its column as another type.
+# child was decoded under the type of `s` (`IPv6`, or a `Tuple` or `Nullable` type that keeps the null map of a
+# struct) while still declared as the schema says, and the cast of the union read its column as another type.
 
 DATA="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
@@ -34,5 +34,7 @@ echo "-- union Variant and unrelated column IPv6"
 $CLICKHOUSE_LOCAL -q "SELECT variantType(u), hex(CAST(u AS String)), s FROM file('${DATA}.union', ArrowStream, 'u Variant(Tuple(s String), UInt64), s IPv6')"
 echo "-- nullable struct in a union and unrelated column Tuple"
 $CLICKHOUSE_LOCAL -q "SELECT u, s FROM file('${DATA}.nullable', ArrowStream, 'u String, s Tuple(x UInt64)') SETTINGS enable_nullable_tuple_type = 0"
+echo "-- nullable struct in a union and unrelated column Nullable"
+$CLICKHOUSE_LOCAL -q "SELECT u, s FROM file('${DATA}.nullable', ArrowStream, 'u String, s Nullable(String)') SETTINGS enable_nullable_tuple_type = 0"
 
 rm -f "${DATA}.union" "${DATA}.nullable"

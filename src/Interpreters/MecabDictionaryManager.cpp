@@ -53,10 +53,10 @@ namespace ErrorCodes
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsSecretString secret_access_key;
-    extern const S3AuthSettingsSecretString session_token;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString region;
-    extern const S3AuthSettingsSecretString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
@@ -141,14 +141,14 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
     static constexpr unsigned s3_retry_attempts = 10;
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        auth_settings[S3AuthSetting::region].value,
+        auth_settings[S3AuthSetting::region],
         context->getRemoteHostFilter(),
         s3_max_redirects,
         S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
         /*s3_slow_all_threads_after_network_error=*/true,
         /*s3_slow_all_threads_after_retryable_error=*/false,
         /*enable_s3_requests_logging=*/false,
-        /*group=*/HTTPConnectionGroupType::STORAGE,
+        /*for_disk_s3=*/false,
         /*opt_disk_name=*/{},
         /*request_throttler=*/{},
         uri.uri.getScheme());
@@ -156,6 +156,7 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
 
     S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = S3::isS3ExpressEndpoint(uri.endpoint),
     };
@@ -163,9 +164,9 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
     auto client = S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
-        auth_settings[S3AuthSetting::access_key_id].value,
-        auth_settings[S3AuthSetting::secret_access_key].value,
-        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value,
+        auth_settings[S3AuthSetting::access_key_id],
+        auth_settings[S3AuthSetting::secret_access_key],
+        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
         auth_settings.server_side_encryption_kms_config,
         auth_settings.headers,
         S3::CredentialsConfiguration{
@@ -177,7 +178,7 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
             .role_session_name = auth_settings[S3AuthSetting::role_session_name],
             .external_id = auth_settings[S3AuthSetting::external_id],
         },
-        auth_settings[S3AuthSetting::session_token].value);
+        auth_settings[S3AuthSetting::session_token]);
 
     return std::make_unique<ReadBufferFromS3>(
         std::move(client), uri.bucket, uri.key, uri.version_id, S3::S3RequestSettings{}, context->getReadSettings());

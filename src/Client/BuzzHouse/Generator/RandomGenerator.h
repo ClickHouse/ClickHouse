@@ -293,7 +293,7 @@ public:
         "PROJECTION",
     };
 
-    [[nodiscard]] uint64_t getSeed() const;
+    uint64_t getSeed() const;
 
     uint32_t nextSmallNumber();
 
@@ -356,6 +356,30 @@ public:
         if (tmp <= always_on_prob + always_off_prob)
         {
             return max_val;
+        }
+        if (tmp <= always_on_prob + always_off_prob + 0.001)
+        {
+            if constexpr (std::is_unsigned_v<T>)
+            {
+                return (tmp <= always_on_prob + always_off_prob + 0.0003) ? 0 : std::numeric_limits<T>::max();
+            }
+            if constexpr (std::is_signed_v<T>)
+            {
+                return (tmp <= always_on_prob + always_off_prob + 0.0005) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
+            }
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                if (tmp <= always_on_prob + always_off_prob + 0.0003)
+                {
+                    return std::numeric_limits<T>::min();
+                }
+                if (max_val >= 0.9 && max_val <= 1.1)
+                {
+                    return max_val;
+                }
+                return std::numeric_limits<T>::max();
+            }
+            UNREACHABLE();
         }
         if constexpr (std::is_integral_v<T>)
         {

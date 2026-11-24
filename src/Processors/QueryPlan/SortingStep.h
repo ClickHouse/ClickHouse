@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -88,7 +87,7 @@ public:
         const SharedHeader & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
-        const Settings & settings_,
+        size_t max_block_size_,
         UInt64 limit_);
 
     /// MergingSorted
@@ -99,49 +98,42 @@ public:
         UInt64 limit_ = 0,
         bool always_read_till_end_ = false);
 
-    [[nodiscard]] String getName() const override { return "Sorting"; }
+    String getName() const override { return "Sorting"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] UInt64 getLimit() const { return limit; }
+    UInt64 getLimit() const { return limit; }
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    [[nodiscard]] const SortDescription & getSortDescription() const override { return result_description; }
+    const SortDescription & getSortDescription() const override { return result_description; }
 
-    [[nodiscard]] bool hasPartitions() const { return !partition_by_description.empty(); }
-    [[nodiscard]] const SortDescription & getPartitionByDescription() const { return partition_by_description; }
-    [[nodiscard]] Names getPartitionByColumnNames() const;
+    bool hasPartitions() const { return !partition_by_description.empty(); }
+    const SortDescription & getPartitionByDescription() const { return partition_by_description; }
+    Names getPartitionByColumnNames() const;
 
-    [[nodiscard]] size_t getScatterPartitions() const { return scatter_partitions; }
+    size_t getScatterPartitions() const { return scatter_partitions; }
 
     /// Do not reshuffle the input by the hash of the partition columns before sorting: the input streams
     /// already carry disjoint sets of the partition key values, so sorting each stream independently is
     /// enough to keep every partition contiguous and sorted.
     void skipScatterByPartition() { skip_scatter_by_partition = true; }
 
-    [[nodiscard]] bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
+    bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
-    /// The sorting before a `WindowStep`. `partition_by_description` does not tell it: the planners leave it empty
-    /// for a window without `PARTITION BY` and for keys that cannot be hash-scattered.
-    [[nodiscard]] bool isWindowSorting() const { return is_window_sorting; }
-    void setWindowSorting() { is_window_sorting = true; }
-
-    [[nodiscard]] bool isPartialTopN() const { return is_partial_top_n; }
+    bool isPartialTopN() const { return is_partial_top_n; }
     void setPartialTopN() { is_partial_top_n = true; }
-
-    [[nodiscard]] bool hasLimitByHint() const { return !limit_by_columns.empty(); }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     void enableBuffering() { use_buffering = true; }
-    [[nodiscard]] bool getUseBuffering() const { return use_buffering; }
+    bool getUseBuffering() const { return use_buffering; }
 
-    [[nodiscard]] Type getType() const { return type; }
-    [[nodiscard]] const Settings & getSettings() const { return sort_settings; }
+    Type getType() const { return type; }
+    const Settings & getSettings() const { return sort_settings; }
 
     void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
 
@@ -158,40 +150,35 @@ public:
         scatter_partitions = partitions;
     }
 
-    /// Sorts the main streams, or only the totals stream if `sort_totals` is set.
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         bool skip_partial_sort = false,
-        TopKThresholdTrackerPtr threshold_tracker = nullptr,
-        bool sort_totals = false);
+        TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     /// `scatter_partitions != 0` means a fixed-shard-count scatter (`convertToScatteredFullSort`, used by
     /// `parallel_full_sorting_merge`); `scatter_partitions` is not on the wire, so such a sort must stay
     /// unserializable rather than have a worker silently rebuild it as an ordinary partitioned sort.
-    [[nodiscard]] bool isSerializable() const override
+    bool isSerializable() const override
     {
         return (type == Type::Full || type == Type::FinishSorting) && scatter_partitions == 0;
     }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
-
-    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
+    bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
-    [[nodiscard]] bool hasTopKThresholdTracker() const { return threshold_tracker != nullptr; }
 
-    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
+    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
 
-    [[nodiscard]] VectorWithMemoryTracking<size_t> getStepGroups() const override;
-    [[nodiscard]] String getStepGroupName(size_t group) const override;
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -208,13 +195,12 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker, bool sort_totals);
+        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
-        UInt64 limit_,
-        UInt64 read_ahead_limit);
+        UInt64 limit_);
     void finishSorting(
         QueryPipelineBuilder & pipeline,
         const SortDescription & input_sort_desc,
@@ -241,10 +227,6 @@ private:
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
 
-    /// See `isWindowSorting`. It only tells the optimizer what the sort is for, but it is serialized: a worker
-    /// optimizes its deserialized fragment again and must restrict reading in order the same way.
-    bool is_window_sorting = false;
-
     /// A distributed plan can split a top-N sort in two stages: each node keeps its local
     /// top `limit` rows, and a limit above keeps the global top `limit` of the merged result.
     /// This flag marks the first stage. It only tells the optimizer what the sort is for (like
@@ -263,7 +245,6 @@ private:
     /// See `pushLimitByIntoSort`. Empty means no hint.
     Names limit_by_columns;
     UInt64 limit_by_group_length = 0;
-    bool limit_by_always_read_till_end = false;
 
     Processors scatter_stage;
     Processors sorting_stage;
