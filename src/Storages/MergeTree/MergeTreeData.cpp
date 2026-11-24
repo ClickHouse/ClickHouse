@@ -9683,13 +9683,15 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             if (use_active_parts_threshold)
             {
                 parts_over_threshold = active_parts_over_threshold;
-                allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+                allowed_parts_over_threshold = active_parts_over_threshold; /// if throw threshold is not above delay threshold, will use max delay
+                if (active_parts_to_throw_insert > active_parts_to_delay_insert)
+                    allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
             }
             else
             {
                 parts_over_threshold = outdated_parts_over_threshold;
-                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
-                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0)
+                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not above delay threshold, will use max delay
+                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert])
                     allowed_parts_over_threshold = (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert];
             }
         }
