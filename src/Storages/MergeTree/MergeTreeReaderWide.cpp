@@ -1187,25 +1187,29 @@ void MergeTreeReaderWide::registerReadRanges()
         return;
 
     ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
-    ReadRangesRegistry::Batch batch;
-    std::lock_guard lock(ranges_read_mutex);
-    for (auto & [stream_name, stream_ranges] : ranges_read)
     {
-        if (stream_ranges.ranges.empty())
-            continue;
-        if (!stream_ranges.read_ranges)
-            stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
-                data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
-        read_ranges_registry->registerRanges(batch, *stream_ranges.read_ranges, stream_ranges.ranges);
+        ReadRangesRegistry::Batch batch;
+        std::lock_guard lock(ranges_read_mutex);
+        for (auto & [stream_name, stream_ranges] : ranges_read)
+        {
+            if (stream_ranges.ranges.empty())
+                continue;
+            if (!stream_ranges.read_ranges)
+                stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
+                    data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
+            read_ranges_registry->registerRanges(batch, *stream_ranges.read_ranges, stream_ranges.ranges);
+        }
+        read_ranges_registry->commit(batch);
     }
-    read_ranges_registry->commit(batch);
 
     if (read_ranges_registry->stopped())
     {
         /// The streams created later get no sink either.
-        streams.forEach([](const String &, MergeTreeReaderStream & stream) { stream.setRangesReadSink(nullptr); });
-        ranges_read.clear();
         read_ranges_registry.reset();
+        /// Without `ranges_read_mutex`, which `setReadRangesRegistry` takes under the lock of the streams.
+        streams.forEach([](const String &, MergeTreeReaderStream & stream) { stream.setRangesReadSink(nullptr); });
+        std::lock_guard lock(ranges_read_mutex);
+        ranges_read.clear();
     }
 }
 
