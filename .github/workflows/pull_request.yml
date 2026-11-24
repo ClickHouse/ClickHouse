@@ -4,6 +4,7 @@ name: PR
 
 on:
   pull_request:
+    branches: ['master', 'fix-stats-for-string-filters', 'autopr-count-ranges-cap', 'autopr-count-text-index-reads']
     types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
