@@ -222,12 +222,12 @@ private:
     {
         size_t first = a;
         size_t hi = b - a;
-        for (size_t i = (hi - 1) / 2 + 1; i-- > 0;)
-            siftDown(i, hi, first);
-        for (size_t i = hi; i-- > 0;)
+        for (size_t i = (hi - 1) / 2 + 1; i > 0; --i)
+            siftDown(i - 1, hi, first);
+        for (size_t i = hi; i > 0; --i)
         {
-            swap(first, first + i);
-            siftDown(0, i, first);
+            swap(first, first + i - 1);
+            siftDown(0, i - 1, first);
         }
     }
 
@@ -547,7 +547,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            VectorWithMemoryTracking<Group> row_groups(groups.begin() + offsets[row - 1], groups.begin() + offsets[row]);
+            VectorWithMemoryTracking<Group> row_groups(groups.begin() + offsets[static_cast<ssize_t>(row) - 1], groups.begin() + offsets[row]);
             auto tags = tags_collector->getTagsByGroup(row_groups);
 
             /// The values of the tags to sort by; a missing tag is an empty string, as in Prometheus.
@@ -581,10 +581,10 @@ public:
             {
                 const auto & rank_offsets = assert_cast<const ColumnArray &>(ranks_array->getData()).getOffsets();
                 const auto & rank_data = assert_cast<const ColumnUInt64 &>(assert_cast<const ColumnArray &>(ranks_array->getData()).getData()).getData();
-                size_t first = offsets[row - 1];
+                size_t first = offsets[static_cast<ssize_t>(row) - 1];
                 auto rank = [&](size_t i)
                 {
-                    return std::span<const UInt64>(rank_data.data() + rank_offsets[first + i - 1], rank_data.data() + rank_offsets[first + i]);
+                    return std::span<const UInt64>(rank_data.data() + rank_offsets[static_cast<ssize_t>(first + i) - 1], rank_data.data() + rank_offsets[first + i]);
                 };
                 std::sort(order.begin(), order.end(), [&](size_t a, size_t b)
                 {
@@ -642,7 +642,7 @@ SELECT arrayMap(g -> timeSeriesExtractTag(g, 'host'),
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
