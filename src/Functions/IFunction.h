@@ -224,8 +224,8 @@ public:
       */
     void updateHash(SipHash & hash) const;
 
-    /// The hash of the values of the result settings (see `FunctionResultSetting`) captured when the function was created.
-    /// 0 when the function declares none or is constructed outside the factory.
+    /// The hash of the values of the result settings (see `FunctionResultSetting`) captured when the function was created,
+    /// or 0 when there is nothing to hash: the function declares no result settings or is constructed outside the factory.
     UInt128 getResultSettingsHash() const { return result_settings_hash; }
     void setResultSettingsHash(UInt128 hash) const { result_settings_hash = hash; }
 

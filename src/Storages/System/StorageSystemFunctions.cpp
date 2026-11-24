@@ -286,6 +286,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[i++]->insertDefault(); // is_deterministic
             res_columns[i++]->insert(UInt8{0}); // higher_order
             res_columns[i++]->insertDefault(); // signature
+            res_columns[i++]->insertDefault(); // result_settings
             continue;
         }
 
@@ -358,6 +359,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insertDefault(); // is_deterministic
         res_columns[i++]->insert(UInt8{0}); // higher_order
         res_columns[i++]->insertDefault(); // signature
+        res_columns[i++]->insertDefault(); // result_settings
     }
 }
 
