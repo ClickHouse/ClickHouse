@@ -580,14 +580,20 @@ std::string getUsersConfigFile(const std::string & config_file, const std::vecto
     }
 
     /// The same file referenced twice (e.g. the legacy `users_config` and the `users_xml` storage both naming
-    /// `users.xml`) is one storage: the server skips a path equal to the (lexically normal) path of an added one.
+    /// `users.xml`) is one storage. The rule is the server's: `UsersConfigAccessStorage::load` keeps the lexically
+    /// normal path of an added storage, and `isPathEqual` skips a later path equal to it as written. The paths are
+    /// kept as written: the server reads the file and finds its `.d` directory through them, and through a symbolic
+    /// link followed by `..` the lexically normal path can name another directory.
     {
         std::vector<std::string> unique_files;
         for (const auto & file : users_files)
         {
-            const std::string normal = fs::path(file).lexically_normal().string();
-            if (std::find(unique_files.begin(), unique_files.end(), normal) == unique_files.end())
-                unique_files.push_back(normal);
+            bool added = std::any_of(unique_files.begin(), unique_files.end(), [&](const std::string & unique_file)
+            {
+                return fs::path(unique_file).lexically_normal().string() == file;
+            });
+            if (!added)
+                unique_files.push_back(file);
         }
         users_files = std::move(unique_files);
     }

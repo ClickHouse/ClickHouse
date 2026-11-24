@@ -83,3 +83,25 @@ cat > "$config/legacy-users-config.xml" <<'XML'
 XML
 chmod a+r "$config/legacy-users-config.xml"
 checkPassword "-v $config/legacy-users-config.xml:/etc/clickhouse-server/config.d/legacy-users-config.xml:ro"
+
+# A users file path through a symbolic link followed by `..`: `/mounted/link/../users.xml` is `/mounted/sub/users.xml`
+# for the server, which merges `/mounted/sub/users.d`, while its lexically normal form is `/mounted/users.xml`.
+# Both files exist, so only writing to the `.d` directory of the path as written applies the password.
+volume="$(docker volume create)"
+trap '[ $? -eq 0 ] || [ -z "$cid" ] || dumpServerLogs "$cid"; docker rm -vf "$config_cid" $cid > /dev/null; docker volume rm -f "$volume" > /dev/null; rm -rf "$config"' EXIT
+docker run --rm \
+  -v "$volume":/mounted \
+  -v "$config/custom-users.xml":/src/users.xml:ro \
+  busybox:musl \
+  sh -c 'mkdir -p /mounted/sub/dir && cp /src/users.xml /mounted/users.xml && cp /src/users.xml /mounted/sub/users.xml && ln -s sub/dir /mounted/link && chmod -R a+rX /mounted'
+cat > "$config/symlink-users-path.xml" <<'XML'
+<clickhouse>
+    <user_directories>
+        <users_xml>
+            <path>/mounted/link/../users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
+XML
+chmod a+r "$config/symlink-users-path.xml"
+checkPassword "-v $volume:/mounted -v $config/symlink-users-path.xml:/etc/clickhouse-server/config.d/symlink-users-path.xml:ro"
