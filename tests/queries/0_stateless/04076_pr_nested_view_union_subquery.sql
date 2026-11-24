@@ -1,5 +1,9 @@
 -- Tags: long
 
+-- The test checks the query text that query-based parallel replicas send to the replicas;
+-- plan-based send a plan fragment instead.
+SET parallel_replicas_plan_based = 0;
+
 -- Three-level view nesting mirroring a customer's schema:
 -- Archive + current tables (different column names) -> D_SSP/D_DSP views
 --   (inner UNION ALL subquery with column renames + outer SELECT * with backward-compat aliases)
@@ -187,7 +191,6 @@ INSERT INTO t_dsp_current SELECT
 FROM numbers(1000);
 
 SET automatic_parallel_replicas_mode = 0;
-SET enable_analyzer = 1;
 SET max_threads = 4; -- override random max_threads=1 which makes 3-level nested view too slow
 SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 

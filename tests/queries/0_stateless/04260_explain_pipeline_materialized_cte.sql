@@ -10,7 +10,6 @@
 -- a per-query `FORMAT Null` clause; wrapping in a subquery lets us assert
 -- that EXPLAIN produced output without printing it.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 DROP TABLE IF EXISTS t_04260 SYNC;

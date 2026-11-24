@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnNullable.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
@@ -30,7 +31,7 @@ ColumnNumbers calculateDistinctKeyColumnsPositions(const Block & header, const N
 class LCOptimizationController
 {
 public:
-    bool isEnabled() const { return state != State::Disabled; }
+    [[nodiscard]] bool isEnabled() const { return state != State::Disabled; }
 
     void update(size_t num_rows, size_t new_indices_in_chunk);
 
@@ -74,12 +75,12 @@ public:
 
     /// Estimates additional bitmap storage without creating dictionary state. Each new dictionary needs
     /// one byte per entry. Empty input, reused dictionaries, and an inapplicable optimization need none.
-    size_t estimateGrowthMemory(const IColumn & column) const;
+    [[nodiscard]] size_t estimateGrowthMemory(const IColumn & column) const;
 
     /// The memory occupied by the per-dictionary bitmaps of the seen indices. A bitmap is as large as its
     /// dictionary, whatever the number of rows seen, so it can dominate the memory of a `DISTINCT` over a
     /// few rows of a large dictionary.
-    size_t getTotalByteCount() const { return total_byte_count; }
+    [[nodiscard]] size_t getTotalByteCount() const { return total_byte_count; }
 
 private:
     std::pair<IColumn::Filter, size_t> buildMask(const ColumnLowCardinality & column, size_t num_rows);
@@ -116,20 +117,20 @@ public:
         bool skip_null_keys_ = false);
 
     /// Returns the representation chosen from the materialized input columns. Requires an initialized set.
-    DistinctKeyRepresentation getKeyRepresentation() const;
+    [[nodiscard]] DistinctKeyRepresentation getKeyRepresentation() const;
 
-    const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
-    bool hasKeyColumns() const { return !key_columns_pos.empty(); }
+    [[nodiscard]] const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
+    [[nodiscard]] bool hasKeyColumns() const { return !key_columns_pos.empty(); }
 
     /// Whether a constant key component is `NULL` (detected only in the `skip_null_keys` mode): every key
     /// then contains a `NULL`, so a consumer that skips `NULL` keys receives nothing at all.
-    bool hasConstNullKey() const { return has_const_null_key; }
+    [[nodiscard]] bool hasConstNullKey() const { return has_const_null_key; }
 
     /// The number of distinct keys seen so far.
-    size_t getTotalRowCount() const;
+    [[nodiscard]] size_t getTotalRowCount() const;
 
     /// The memory occupied by the set and by the `LowCardinality` fast path.
-    size_t getTotalByteCount() const;
+    [[nodiscard]] size_t getTotalByteCount() const;
 
     /// Reads owning comparison-key columns from a frozen set in hash-table iteration order.
     class KeyExtractor
@@ -141,31 +142,35 @@ public:
         /// allocated column memory. The byte target is soft because a key or an allocation can exceed
         /// it; zero disables it. `max_rows` must be positive. An empty vector marks exhaustion.
         virtual MutableColumns next(size_t max_rows, size_t max_bytes) = 0;
+
+        /// Retained hash-table and arena memory, zero after the final key is extracted.
+        [[nodiscard]] virtual size_t getTotalByteCount() const = 0;
     };
 
     /// Transfers the hash table, arena, and key metadata into an extractor. With `Columns`, the result
     /// follows `getKeyColumnsPositions`; with `Hash128`, it contains one `UInt128` fingerprint column.
     /// The returned columns own their values independently of the extractor. The table is released
     /// after its final key is materialized, or when the extractor is destroyed early.
-    /// Requires at least one retained key and `skip_null_keys_ = false`.
+    /// Requires at least one retained key and `skip_null_keys_ = false`: only external `DISTINCT` extracts
+    /// keys, and it keeps `NULL` keys as values.
     std::unique_ptr<KeyExtractor> extractKeys() &&;
 
     /// Normalizes input columns and initializes the set on first use, without inserting keys.
     /// Header constants stay compact because they cannot distinguish rows. The prepared chunk exposes
     /// the materialized memory of the remaining columns needed to estimate filtering copies.
-    /// Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
+    /// Requires `hasKeyColumns` to be true.
     void prepareForInsert(Chunk & chunk);
 
     /// Estimates peak additional retained memory assuming every row in the prepared chunk is new.
     /// Includes hash-table buffers, string arenas, and `LowCardinality` dictionary bitmaps. Requires an
     /// initialized set and columns normalized by `prepareForInsert`. Saturates at the maximum of `size_t`
     /// when the bound is not representable.
-    size_t estimateGrowthMemory(const Chunk & chunk) const;
+    [[nodiscard]] size_t estimateGrowthMemory(const Chunk & chunk) const;
 
     /// Estimates peak workspace for packed keys, a copy of the prepared input, and top-level row masks.
-    /// Excludes retained set growth. Requires columns normalized by `prepareForInsert` and
-    /// `skip_null_keys_ = false`. Column-specific temporary allocations can exceed this estimate.
-    size_t estimateFilteringMemory(const Chunk & chunk) const;
+    /// Excludes retained set growth. Requires columns normalized by `prepareForInsert`. Column-specific
+    /// temporary allocations can exceed this estimate.
+    [[nodiscard]] size_t estimateFilteringMemory(const Chunk & chunk) const;
 
     /// Inserts unseen keys and retains their first rows, preserving chunk information.
     /// `max_rows_in_distinct` and `max_bytes_in_distinct` apply after insertion. `THROW` raises an
@@ -189,16 +194,29 @@ public:
     /// limits apply to the accepted prefix with the same semantics as `filter`. Method
     /// preparation still covers the whole chunk and must fit the caller's workspace budget. Dictionary
     /// masks are bypassed so an unprocessed suffix does not mark its indices as seen.
-    /// Requires columns normalized by `prepareForInsert` and `skip_null_keys_ = false`.
+    /// Requires columns normalized by `prepareForInsert` and `skip_null_keys_ = false`: only external
+    /// `DISTINCT` checks insertions, and it keeps `NULL` keys as values.
     FilterResult filterWithInsertionCheck(Chunk chunk, const InsertionCheck & can_insert);
 
     /// Whether a size limit with the 'break' overflow mode was reached: no new key can be added to the
     /// set, so the caller should stop reading and return the partial result.
-    bool isLimitReached() const { return limit_reached; }
+    [[nodiscard]] bool isLimitReached() const { return limit_reached; }
 
 private:
+    /// The key columns as `filter` hashes them. In `skip_null_keys` mode, the `Nullable` key columns are
+    /// replaced by their nested columns, and `null_map` marks the rows with a `NULL` in any of them.
+    /// `filter`, `prepareForInsert` and the estimates all take the key columns from here, so the hash
+    /// method of the set and the estimates match the keys that `filter` inserts.
+    struct HashedKeyColumns
+    {
+        ColumnRawPtrs columns;
+        /// Owns `null_map` when it combines several `Nullable` key columns.
+        ColumnPtr null_map_holder;
+        ConstNullMapPtr null_map = nullptr;
+    };
+
     FilterResult filterImpl(Chunk chunk, const InsertionCheck * can_insert);
-    ColumnRawPtrs getKeyColumns(const Columns & columns) const;
+    [[nodiscard]] HashedKeyColumns getHashedKeyColumns(const Columns & columns) const;
     void initialize(const ColumnRawPtrs & key_columns);
 
     const ColumnNumbers key_columns_pos;

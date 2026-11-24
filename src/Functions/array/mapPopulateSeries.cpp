@@ -1,4 +1,5 @@
 #include <base/sort.h>
+#include <base/sanitizer_defs.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/callOnTypeIndex.h>
@@ -36,12 +37,12 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapPopulateSeries>(); }
 
 private:
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Two call shapes:
     ///   `mapPopulateSeries(map [, max_key])`              -> Map(K, V)
@@ -49,7 +50,7 @@ private:
     /// `K` and `V` must be signed/unsigned integer types; `max_key` is also
     /// a non-Nullable integer. The runtime additionally rejects mixed-width
     /// keys and out-of-range `max_key`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(M : Map(Integer, Integer), [Integer]) -> M"
                " OR (Array(K : Integer), Array(V : Integer), [Integer]) -> Tuple(Array(K), Array(V))";
@@ -99,7 +100,7 @@ private:
                 max_key_type->getName());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -156,6 +157,7 @@ private:
     }
 
     template <typename KeyType, typename ValueType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void executeImplTyped(
         const ColumnPtr & key_column,
         const ColumnPtr & value_column,
@@ -193,7 +195,7 @@ private:
 
         for (size_t offset_index = 0; offset_index < key_offsets_size; ++offset_index)
         {
-            size_t start_offset = offsets[offset_index - 1];
+            size_t start_offset = offsets[static_cast<ssize_t>(offset_index) - 1];
             size_t end_offset = offsets[offset_index];
 
             sorted_keys_values.clear();
@@ -270,7 +272,7 @@ private:
             size_t result_value_data_size = result_value_data.size();
             size_t sorted_keys_values_size = sorted_keys_values.size();
 
-            result_key_data.resize_fill(result_key_data_size + length + 1);
+            result_key_data.resize(result_key_data_size + length + 1);
             result_value_data.resize_fill(result_value_data_size + length + 1);
 
             size_t sorted_values_index = 0;
@@ -325,7 +327,7 @@ private:
         ColumnPtr max_key_column;
     };
 
-    KeyAndValueInput extractKeyAndValueInput(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] KeyAndValueInput extractKeyAndValueInput(const ColumnsWithTypeAndName & arguments) const
     {
         KeyAndValueInput input;
 
@@ -462,7 +464,7 @@ private:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
     {
         auto input = extractKeyAndValueInput(arguments);
 

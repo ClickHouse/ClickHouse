@@ -8,23 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Two samples ten seconds apart. A 32-bit float cannot hold 1700000100: it rounds to 1700000128,
 # which is past the second sample, so an evaluation time held in one selects the wrong value.
-# Use the generated metric-families target: this test does not depend on its versioned schema.
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
-CREATE TABLE ts_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_tags (
-    id UUID,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String))
-ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
-CREATE TABLE ts_time_ranges (
-    id UUID,
-    min_time SimpleAggregateFunction(min, DateTime64(3, 'UTC')),
-    max_time SimpleAggregateFunction(max, DateTime64(3, 'UTC')))
-ENGINE = AggregatingMergeTree ORDER BY id;
-CREATE TABLE ts ENGINE = TimeSeries DATA ts_data TAGS ts_tags TIME RANGES ts_time_ranges;
-INSERT INTO ts_tags VALUES ('00000000-0000-0000-0000-000000000001', 'up', {'instance':'host1'});
-INSERT INTO ts_time_ranges VALUES ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000100, 3, 'UTC'), toDateTime64(1700000110, 3, 'UTC'));
-INSERT INTO ts_data VALUES ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000100, 3, 'UTC'), 100), ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000110, 3, 'UTC'), 999);
+CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'UTC'), Float64))) ENGINE = TimeSeries;
+INSERT INTO ts (metric_name, tags, samples) VALUES ('up', {'instance':'host1'}, [(toDateTime64(1700000100, 3, 'UTC'), 100), (toDateTime64(1700000110, 3, 'UTC'), 999)]);
 "
 
 echo "-- the setting holds the value it is given, over the native protocol"

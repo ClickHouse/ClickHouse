@@ -1,0 +1,5 @@
+{"foo":1,"header":2,"object_paths":{"foo":300},"object_typed_shared_data":{"foo":100,"shared_paths":{"foo":200}}}
+1	2	100	200	300
+{"foo":1,"header":2,"object_paths":{"foo":300},"object_typed_shared_data":{"foo":100,"shared_paths":{"foo":200}}}
+1	2	100	200	300
+{"foo":"x","object_typed_shared_data":{"foo":100}}	x	100
