@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/AggregationUtils.h>
@@ -225,9 +226,20 @@ private:
         if (tuple_data_type_elements.size() != function_arguments_nodes_size)
             return {};
 
+        /// Build the element constants from the tuple column rather than from `Field`s: a `Field` loses
+        /// the `Variant` discriminator and the `Dynamic` type, so re-inserting it may produce a different value.
+        const auto * tuple_column = typeid_cast<const ColumnTuple *>(constant_node_typed.getColumn()->getDataColumnPtr().get());
+        if (!tuple_column || tuple_column->tupleSize() != function_arguments_nodes_size)
+            return {};
+
+        auto make_element_constant_node = [&](size_t i)
+        {
+            return std::make_shared<ConstantNode>(ColumnConst::create(tuple_column->getColumnPtr(i), 1), tuple_data_type_elements[i]);
+        };
+
         if (function_arguments_nodes_size == 1)
         {
-            auto comparison_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[0], tuple_data_type_elements[0]);
+            auto comparison_argument_constant_node = make_element_constant_node(0);
             return makeNonFoldingComparisonFunction(function_arguments_nodes[0], std::move(comparison_argument_constant_node), comparison_function_name);
         }
 
@@ -236,7 +248,7 @@ private:
 
         for (size_t i = 0; i < function_arguments_nodes_size; ++i)
         {
-            auto equals_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[i], tuple_data_type_elements[i]);
+            auto equals_argument_constant_node = make_element_constant_node(i);
             auto equals_function = makeEqualsFunction(function_arguments_nodes[i], std::move(equals_argument_constant_node));
             tuple_arguments_equals_functions.push_back(std::move(equals_function));
         }
