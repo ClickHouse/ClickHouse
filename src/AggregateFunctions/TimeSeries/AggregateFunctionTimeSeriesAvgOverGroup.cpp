@@ -144,7 +144,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & array = assert_cast<const ColumnArray &>(*columns[1]);
-        const size_t begin = array.getOffsets()[row_num - 1];
+        const size_t begin = array.getOffsets()[static_cast<ssize_t>(row_num) - 1];
         const size_t end = array.getOffsets()[row_num];
 
         const IColumn * nested = &array.getData();
@@ -407,7 +407,7 @@ FROM values('series Int8, value Float64', (4, -1e308), (1, 1e308), (3, -9.988465
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
