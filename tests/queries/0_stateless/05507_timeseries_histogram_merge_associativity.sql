@@ -2,8 +2,8 @@
 -- the merges. Every sample whose predecessor may have changed gets its counter reset hint detected from the data against its
 -- predecessor in the result, whatever hint it had: an explicit or an earlier detected hint was about another predecessor. The hints
 -- of the other samples are kept: the sink detected them, so they are what detection would give. The counter hints don't take part in
--- choosing between samples with the same timestamp, and the first sample of an array has an unknown hint unless it is a gauge, so the
--- first sample of the result doesn't depend on which of equal ones was kept either.
+-- choosing between samples with the same timestamp, and the first sample of the result gets an unknown hint unless it is a gauge, so
+-- it doesn't depend on which of equal ones was kept either.
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS histogram_arrays;

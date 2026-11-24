@@ -137,7 +137,7 @@ struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
 
         if (ranges_order == RangesOrder::GloballySorted)
         {
-            /// A single array is returned as it is, which is not a merge.
+            /// A single array is not a merge.
             if (ranges.size() > 1)
                 ProfileEvents::increment(ProfileEvents::TimeSeriesGroupArrayHistogramsAppendOnlyMerges);
             return;
@@ -224,8 +224,8 @@ private:
 
         /// Collapses each run of equal timestamps into the winning sample, in place at the beginning of `samples`. The rule orders
         /// the whole payload but the counter hints, so the payload of the winner doesn't depend on the order of the ranges. Neither
-        /// does its hint, for normalized arrays: a winner continuing its run has the hint detection would give, and the first sample
-        /// of an array has an unknown one unless it is a gauge.
+        /// does its hint, for normalized arrays: a winner continuing its run has the hint detection would give, any other one starts
+        /// a range of the result, whose first hint `appendRanges` sets.
         size_t num_unique = 0;
         for (const Sample & candidate : samples)
         {
@@ -263,9 +263,9 @@ private:
 /// Aggregate function merging arrays of histogram samples of the shape of the `histograms` column of a TimeSeries table (see
 /// TimeSeriesHistogramsColumns), each sorted by timestamp, into one sorted and deduplicated by `TimeSeriesDuplicateTimestampRule`.
 /// A sample whose predecessor may have changed gets the hint of TimeSeriesHistogramCounterResetRule against its predecessor in the
-/// result; the other hints are kept, so the arrays must be normalized as the sink stores them: the first sample of an array has an
-/// unknown hint unless it is a gauge, every other one the detected hint. Then the result doesn't depend on the order of the merges, as
-/// `SimpleAggregateFunction` requires. A single array is returned as it is; the result type is the argument type.
+/// result, the first sample of the result an unknown hint unless it is a gauge; the other hints are kept, so every sample but the
+/// first of an array must have the detected hint, as the sink stores them. Then the result doesn't depend on the order of the merges,
+/// as `SimpleAggregateFunction` requires. The result type is the argument type.
 template <typename TimestampType>
 class AggregateFunctionTimeSeriesGroupArrayHistograms final
     : public IAggregateFunctionDataHelper<AggregateFunctionTimeSeriesGroupArrayHistogramsData<TimestampType>, AggregateFunctionTimeSeriesGroupArrayHistograms<TimestampType>>
@@ -407,7 +407,7 @@ private:
 
     static constexpr size_t MAX_ARRAYS_TO_RESERVE = 4096;
 
-    /// Appends the rows of `ranges`, sorted and disjoint in time, to `tuple_to`.
+    /// Appends the rows of `ranges`, sorted and disjoint in time, to `tuple_to`, with new hints for the first samples of the ranges.
     static void appendRanges(std::span<const typename Data::Range> ranges, ColumnTuple & tuple_to)
     {
         if (ranges.empty())
@@ -415,7 +415,14 @@ private:
 
         auto it = ranges.begin();
         const auto end = ranges.end();
+        const size_t first = tuple_to.size();
         tuple_to.insertRangeFrom(*it->source, it->offset, it->size);
+        /// The hint of the first sample describes its predecessor in its array, which isn't in the result, e.g. cut off by
+        /// `timeSeriesSliceSortedArray`, and can differ between equal duplicates. A gauge marker describes the sample itself.
+        auto & hints = assert_cast<ColumnInt8 &>(tuple_to.getColumn(
+            TimeSeriesHistogramsColumns::getTuplePosition(TimeSeriesHistogramsColumn::CounterResetHint))).getData();
+        if (TimeSeriesHistogramCounterResetHint{hints[first]} != TimeSeriesHistogramCounterResetHint::Gauge)
+            hints[first] = static_cast<Int8>(TimeSeriesHistogramCounterResetHint::Unknown);
         ++it;
         /// Skip unused views creation.
         if (it == end)

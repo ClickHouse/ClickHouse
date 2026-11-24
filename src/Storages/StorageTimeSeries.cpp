@@ -1180,7 +1180,8 @@ histogram after a float one or the reverse) get an unknown hint whatever their c
 When rows are merged by `timeSeriesGroupArray` (in background merges, in reads with `FINAL`, and when the aggregate is called
 directly), the hint of every sample whose predecessor may have changed (the first sample of every appended array but the first, and in
 arrays overlapping in time every sample after one of another array) is detected again the same way against its predecessor in the
-result, and the first sample of the result keeps its unknown or gauge hint. So a stored hint depends only on the sample and its final
+result, and the first sample of the result gets an unknown hint unless it is a gauge: its predecessor isn't in the result, e.g. when
+`timeSeriesSelector` cuts a row at the start of the queried range. So a stored hint depends only on the sample and its final
 predecessor, not on the order of the merges, and a reset the sender reported but the data doesn't show is not stored: Prometheus
 doesn't return one either, its readers detect the resets from the data.
 

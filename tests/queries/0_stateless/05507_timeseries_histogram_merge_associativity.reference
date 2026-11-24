@@ -1,7 +1,7 @@
 -- the hint of B is detected against C, whichever merge made C its predecessor
 [(100,10,'unknown'),(200,2,'reset'),(300,5,'not_reset')]	1	1	1	1	1	1
 -- a reset the data does not show is kept while its predecessor stays (a single array, appended arrays) and detected again when a sample lands in between
-[(100,10,'not_reset'),(300,15,'reset')]	[(100,10,'not_reset'),(300,15,'reset'),(400,20,'not_reset')]	[(100,10,'not_reset'),(200,12,'not_reset'),(300,15,'not_reset')]
+[(100,10,'unknown'),(300,15,'reset')]	[(100,10,'unknown'),(300,15,'reset'),(400,20,'not_reset')]	[(100,10,'unknown'),(200,12,'not_reset'),(300,15,'not_reset')]
 -- which of two equal samples wins does not change the hint of the sample after them
 [(50,5,'unknown'),(100,1,'reset'),(200,2,'not_reset')]	1	1	1	1
 -- an equal duplicate of the predecessor does not change the hint of the sample after it, whichever is kept

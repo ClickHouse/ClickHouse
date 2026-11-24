@@ -1,9 +1,9 @@
 -- The counter reset hints after `timeSeriesGroupArray` merges arrays of histogram samples: every sample whose predecessor
 -- may have changed (the first sample of every appended array but the first, and in overlapping arrays every sample after one of
 -- another array) gets its hint detected again from the data against its predecessor in the result, as the sink does within one
--- insert (a count decrease is a reset), whatever hint it had; the other hints and gauge markers are kept, a single array is returned
--- as it is, the result doesn't depend on the order of the inputs, and the hints don't take part in choosing which payload wins a
--- conflict. The same happens when the parts of the samples table are merged.
+-- insert (a count decrease is a reset), whatever hint it had, and the first sample of the result gets an unknown one; the other
+-- hints and gauge markers are kept, the result doesn't depend on the order of the inputs, and the hints don't take part in choosing
+-- which payload wins a conflict. The same happens when the parts of the samples table are merged.
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 SET max_threads = 1;
@@ -34,10 +34,14 @@ FROM values('scenario String, part UInt8, samples Array(Tuple(UInt32, Int64, UIn
     ('interleave', 2, [(101, 2, 1), (103, 4, 1)]),
     ('gauge', 1, [(100, 100, 3), (101, 120, 3)]),
     ('gauge', 2, [(100, 1, 3), (101, 2, 3), (102, 3, 3)]),
+    ('cut', 1, [(101, 5, 1)]),
+    ('cut', 2, [(101, 5, 2)]),
     ('single', 1, [(100, 1, 2), (101, 2, 1)]));
 
 -- Appended arrays keep their hints but for their first sample (the sink detected them), overlapping arrays get them detected after
--- a sample of another array; gauge markers are kept; the single array of `single` is returned as it is.
+-- a sample of another array; gauge markers are kept; the first sample of the result gets an unknown hint, also in the single array
+-- of `single`. `cut` has the first samples of two rows cut by `timeSeriesSelector`: equal, with the hints detected against different
+-- predecessors.
 SELECT scenario, arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), merged),
        merged = arrayReduce('timeSeriesGroupArray', arrayReverse(arrays))
 FROM

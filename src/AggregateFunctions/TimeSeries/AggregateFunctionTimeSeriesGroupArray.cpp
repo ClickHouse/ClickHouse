@@ -123,9 +123,10 @@ which sample is kept.
 The winning histogram payload does not depend on the order of merging. Where merging changes a sample's predecessor or joins separate
 input arrays, its counter reset hint is detected again from the data against the new predecessor by the rules of the inserts into a
 `TimeSeries` table (a decrease of a count is a reset, a change of the schema or of the zero threshold makes the hint unknown), whatever
-hint the sample had: that hint was about another predecessor. Gauge markers are kept. The hints of the other samples are kept as they are,
-so the argument arrays must be normalized: every sample but the first of an array must carry the hint these rules detect against its
-predecessor in the array, and the first one an unknown hint unless it is a gauge, as the inserts into a `TimeSeries` table store them.
+hint the sample had: that hint was about another predecessor. The first sample of the result gets an unknown hint: the predecessor its
+hint was about isn't in the result, for example in the arrays `timeSeriesSelector` cuts out of the stored rows. Gauge markers are kept.
+The hints of the other samples are kept as they are, so the argument arrays must be normalized: every sample but the first of an array
+must carry the hint these rules detect against its predecessor in the array, as the inserts into a `TimeSeries` table store them.
 Then the hints do not depend on the order of merging either; for arrays with other hints they do.
 
 <Note>
