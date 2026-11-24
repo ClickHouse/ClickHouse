@@ -17,6 +17,16 @@ void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
     partition_bounds.rows_count = 1;
     partition_bounds.start_visible = true;
     partition_bounds.end_visible = false;
+
+    /// Single-row partitions call this once per row. Their end is visible right away, so this check keeps `advance`, which
+    /// calls `std::find` and therefore saves registers on every call, off that path.
+    const RowNumber & end = partition_bounds.end;
+    if (end < blocks.end() && blocks.blockAt(end.block).index.partition_starts[end.row])
+    {
+        finish();
+        return;
+    }
+
     advance(blocks);
 }
 
