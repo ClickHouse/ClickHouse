@@ -58,6 +58,7 @@ extern const SettingsNonZeroUInt64 max_block_size;
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
@@ -111,11 +112,38 @@ struct DataFileWriteResultWithStats
     std::unordered_map<ChunkPartitioner::PartitionKey, PartitionFiles, ChunkPartitioner::PartitionKeyHasher> files_by_partition;
 };
 
+/// The partition a data file of the mutated snapshot was written under, as recorded in its manifest entry.
+struct DataFilePartition
+{
+    Int32 partition_spec_id = 0;
+    Int32 schema_id = 0;
+    Row partition_value;
+
+    bool operator==(const DataFilePartition & other) const = default;
+};
+
+struct DataFilePartitionHasher
+{
+    size_t operator()(const DataFilePartition & key) const
+    {
+        UInt64 ids = (static_cast<UInt64>(static_cast<UInt32>(key.partition_spec_id)) << 32) | static_cast<UInt32>(key.schema_id);
+        return ChunkPartitioner::PartitionKeyHasher{}(key.partition_value) ^ std::hash<UInt64>{}(ids);
+    }
+};
+
+/// Keyed by the `_iceberg_metadata_file_path` value of each live data file of the mutated snapshot.
+using DataFilePartitions = std::unordered_map<String, DataFilePartition>;
+
+struct DeleteFileWriteResultWithStats
+{
+    std::unordered_map<DataFilePartition, PartitionFiles, DataFilePartitionHasher> files_by_partition;
+};
+
 using DeletedPositionsByDataFile = std::map<String, roaring::Roaring64Map>;
 
 struct WriteDataFilesResult
 {
-    DataFileWriteResultWithStats delete_file;
+    DeleteFileWriteResultWithStats delete_file;
     /// Empty unless this is an UPDATE, which also writes new data files.
     DataFileWriteResultWithStats data_file;
     /// Null without statistics.
@@ -285,10 +313,11 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     const std::optional<FormatSettings> & format_settings,
     std::optional<ChunkPartitioner> & chunk_partitioner,
     Poco::JSON::Object::Ptr data_schema,
-    bool write_statistics)
+    bool write_statistics,
+    const DataFilePartitions & data_file_partitions)
 {
     chassert(commands.size() == 1);
-    DataFileWriteResultWithStats delete_files;
+    DeleteFileWriteResultWithStats delete_files;
 
     DataFileWriteResultByPartitionKey update_data_result;
     DataFileStatisticsByPartitionKey update_data_statistics;
@@ -342,7 +371,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         auto header = interpreter->getUpdatedHeader();
 
         /// The deleted rows arrive in any order of data files and positions.
-        std::unordered_map<ChunkPartitioner::PartitionKey, DeletedPositionsByDataFile, ChunkPartitioner::PartitionKeyHasher> deleted_positions;
+        DeletedPositionsByDataFile deleted_positions;
         PaddedPODArray<UInt64> positions_buffer;
 
         Block block;
@@ -353,68 +382,59 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                 continue;
 
             has_any_rows = true;
-            Chunk chunk(block.getColumns(), block.rows());
-            auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
-            size_t col_data_filename_index = block.getPositionByName(block_datafile_path);
-            size_t col_position_index = block.getPositionByName(block_row_number);
-
-            for (const auto & [partition_key, partition_chunk] : partition_result)
+            /// The virtual column `_iceberg_metadata_file_path` may arrive as LowCardinality(String).
+            const IColumn & file_paths = *block.getByName(block_datafile_path).column;
+            ColumnPtr row_numbers = block.getByName(block_row_number).column;
+            if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(row_numbers.get()))
             {
-                /// The virtual column `_iceberg_metadata_file_path` may arrive as LowCardinality(String).
-                const IColumn & file_paths = *partition_chunk.getColumns()[col_data_filename_index];
-                ColumnPtr row_numbers = partition_chunk.getColumns()[col_position_index];
-                if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(row_numbers.get()))
-                {
-                    const auto & null_map = nullable->getNullMapData();
-                    if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
-                    row_numbers = nullable->getNestedColumnPtr();
-                }
+                const auto & null_map = nullable->getNullMapData();
+                if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
+                row_numbers = nullable->getNestedColumnPtr();
+            }
 
-                /// Row numbers are non-negative.
-                const size_t num_rows = partition_chunk.getNumRows();
-                const UInt64 * positions = nullptr;
-                if (const auto * row_numbers_int64 = typeid_cast<const ColumnInt64 *>(row_numbers.get()))
+            /// Row numbers are non-negative.
+            const size_t num_rows = block.rows();
+            const UInt64 * positions = nullptr;
+            if (const auto * row_numbers_int64 = typeid_cast<const ColumnInt64 *>(row_numbers.get()))
+            {
+                positions = reinterpret_cast<const UInt64 *>(row_numbers_int64->getData().data());
+            }
+            else
+            {
+                positions_buffer.resize(num_rows);
+                for (size_t row = 0; row < num_rows; ++row)
+                    positions_buffer[row] = row_numbers->get64(row);
+                positions = positions_buffer.data();
+            }
+
+            /// The rows of one data file come in runs.
+            const auto * low_cardinality_file_paths = typeid_cast<const ColumnLowCardinality *>(&file_paths);
+            size_t run_begin = 0;
+            while (run_begin < num_rows)
+            {
+                size_t run_end = run_begin + 1;
+                if (isColumnConst(file_paths))
                 {
-                    positions = reinterpret_cast<const UInt64 *>(row_numbers_int64->getData().data());
+                    run_end = num_rows;
+                }
+                else if (low_cardinality_file_paths)
+                {
+                    const IColumn & indexes = low_cardinality_file_paths->getIndexes();
+                    const UInt64 index = indexes.getUInt(run_begin);
+                    while (run_end < num_rows && indexes.getUInt(run_end) == index)
+                        ++run_end;
                 }
                 else
                 {
-                    positions_buffer.resize(num_rows);
-                    for (size_t row = 0; row < num_rows; ++row)
-                        positions_buffer[row] = row_numbers->get64(row);
-                    positions = positions_buffer.data();
+                    const std::string_view path = file_paths.getDataAt(run_begin);
+                    while (run_end < num_rows && file_paths.getDataAt(run_end) == path)
+                        ++run_end;
                 }
 
-                /// The rows of one data file come in runs.
-                const auto * low_cardinality_file_paths = typeid_cast<const ColumnLowCardinality *>(&file_paths);
-                auto & positions_by_data_file = deleted_positions[partition_key];
-                size_t run_begin = 0;
-                while (run_begin < num_rows)
-                {
-                    size_t run_end = run_begin + 1;
-                    if (isColumnConst(file_paths))
-                    {
-                        run_end = num_rows;
-                    }
-                    else if (low_cardinality_file_paths)
-                    {
-                        const IColumn & indexes = low_cardinality_file_paths->getIndexes();
-                        const UInt64 index = indexes.getUInt(run_begin);
-                        while (run_end < num_rows && indexes.getUInt(run_end) == index)
-                            ++run_end;
-                    }
-                    else
-                    {
-                        const std::string_view path = file_paths.getDataAt(run_begin);
-                        while (run_end < num_rows && file_paths.getDataAt(run_end) == path)
-                            ++run_end;
-                    }
-
-                    positions_by_data_file[String(file_paths.getDataAt(run_begin))].addMany(run_end - run_begin, positions + run_begin);
-                    run_begin = run_end;
-                }
+                deleted_positions[String(file_paths.getDataAt(run_begin))].addMany(run_end - run_begin, positions + run_begin);
+                run_begin = run_end;
             }
         }
 
@@ -425,20 +445,24 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         std::deque<PendingDeleteFileUpload> pending_uploads;
         try
         {
-            for (const auto & [partition_key, positions_by_data_file] : deleted_positions)
+            for (const auto & [data_file_path, positions] : deleted_positions)
             {
-                auto & partition_files = delete_files.files_by_partition[partition_key];
-                for (const auto & [data_file_path, positions] : positions_by_data_file)
+                auto partition_it = data_file_partitions.find(data_file_path);
+                if (partition_it == data_file_partitions.end())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Iceberg data file `{}` of a mutated row is not a live data file of the mutated snapshot",
+                        data_file_path);
+                auto & partition_files = delete_files.files_by_partition[partition_it->second];
+
+                if (pending_uploads.size() == max_pending_uploads)
                 {
-                    if (pending_uploads.size() == max_pending_uploads)
-                    {
-                        finishDeleteFileUpload(pending_uploads.front(), object_storage, path_resolver);
-                        pending_uploads.pop_front();
-                    }
-                    auto write_buffer = writePositionDeleteFile(
-                        data_file_path, positions, context, object_storage, write_format, generator, path_resolver, format_settings, partition_files);
-                    pending_uploads.push_back({&partition_files, partition_files.files.size() - 1, std::move(write_buffer)});
+                    finishDeleteFileUpload(pending_uploads.front(), object_storage, path_resolver);
+                    pending_uploads.pop_front();
                 }
+                auto write_buffer = writePositionDeleteFile(
+                    data_file_path, positions, context, object_storage, write_format, generator, path_resolver, format_settings, partition_files);
+                pending_uploads.push_back({&partition_files, partition_files.files.size() - 1, std::move(write_buffer)});
             }
             for (auto & upload : pending_uploads)
                 finishDeleteFileUpload(upload, object_storage, path_resolver);
@@ -559,7 +583,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 }
 
 static bool writeMetadataFiles(
-    const DataFileWriteResultWithStats & delete_files,
+    const DeleteFileWriteResultWithStats & delete_files,
     const DataFileWriteResultWithStats & data_files,
     IcebergColumnSketches * updated_rows_sketches,
     bool write_statistics,
@@ -576,7 +600,8 @@ static bool writeMetadataFiles(
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
-    SharedHeader data_sample_block)
+    SharedHeader data_sample_block,
+    PartitionSpecResolver & spec_resolver)
 {
     auto delete_sample_block = std::make_shared<const Block>(getPositionDeleteFileSampleBlock());
 
@@ -585,7 +610,7 @@ static bool writeMetadataFiles(
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
-    auto sum_files = [](const DataFileWriteResultWithStats & set) -> std::tuple<Int64, Int64, Int64>
+    auto sum_files = [](const auto & set) -> std::tuple<Int64, Int64, Int64>
     {
         Int64 rows = 0;
         Int64 bytes = 0;
@@ -605,11 +630,12 @@ static bool writeMetadataFiles(
     auto [delete_rows, delete_bytes, delete_files_count] = sum_files(delete_files);
     auto [data_rows, data_bytes, data_files_count] = sum_files(data_files);
 
-    std::unordered_set<ChunkPartitioner::PartitionKey, ChunkPartitioner::PartitionKeyHasher> touched_partitions;
-    for (const auto & [partition_key, _] : delete_files.files_by_partition)
-        touched_partitions.insert(partition_key);
+    /// A partition is identified by its spec and tuple, whatever the schema of its files.
+    std::unordered_set<DataFilePartition, DataFilePartitionHasher> touched_partitions;
+    for (const auto & [partition, _] : delete_files.files_by_partition)
+        touched_partitions.insert({partition.partition_spec_id, 0, partition.partition_value});
     for (const auto & [partition_key, _] : data_files.files_by_partition)
-        touched_partitions.insert(partition_key);
+        touched_partitions.insert({partition_spec_id, 0, partition_key});
 
     auto result = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateNextMetadata(
         filename_generator,
@@ -630,6 +656,7 @@ static bool writeMetadataFiles(
     std::vector<Int64> manifest_entry_row_counts;
     std::vector<Int64> manifest_entry_file_counts;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
+    std::vector<Int64> entry_partition_spec_ids;
     std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
     auto hint_path = filename_generator.generateVersionHint();
@@ -641,10 +668,14 @@ static bool writeMetadataFiles(
     {
         try
         {
-            for (const auto * set : {&delete_files, &data_files})
-                for (const auto & [_, partition_files] : set->files_by_partition)
+            auto remove_files = [&](const auto & set)
+            {
+                for (const auto & [_, partition_files] : set.files_by_partition)
                     for (const auto & data_file : partition_files.files)
                         object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(data_file.path)));
+            };
+            remove_files(delete_files);
+            remove_files(data_files);
 
             for (const auto & manifest_filename_in_storage : *manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
@@ -659,92 +690,130 @@ static bool writeMetadataFiles(
         }
     };
 
-    auto write_manifest_entries = [&](const DataFileWriteResultWithStats & set, Iceberg::FileContentType content_type, SharedHeader sample_block)
+    /// One manifest per partition, with an entry and the statistics of each of its files.
+    auto write_manifest = [&](
+        const PartitionFiles & partition_files,
+        const Row & partition_key,
+        Iceberg::FileContentType content_type,
+        SharedHeader sample_block,
+        const std::vector<String> & partition_columns,
+        const DataTypes & partition_types,
+        Poco::JSON::Object::Ptr spec,
+        Int32 spec_id,
+        Poco::JSON::Object::Ptr schema_to_serialize)
     {
-        /// One manifest per partition, with an entry and the statistics of each of its files.
-        for (const auto & [partition_key, partition_files] : set.files_by_partition)
+        std::vector<Iceberg::IcebergPathFromMetadata> file_paths;
+        std::vector<UInt64> file_row_counts;
+        std::vector<UInt64> file_byte_counts;
+        std::vector<const DataFileStatistics *> file_statistics;
+        Int64 partition_rows = 0;
+        for (size_t i = 0; i < partition_files.files.size(); ++i)
         {
-            std::vector<Iceberg::IcebergPathFromMetadata> file_paths;
-            std::vector<UInt64> file_row_counts;
-            std::vector<UInt64> file_byte_counts;
-            std::vector<const DataFileStatistics *> file_statistics;
-            Int64 partition_rows = 0;
-            for (size_t i = 0; i < partition_files.files.size(); ++i)
-            {
-                const auto & data_file = partition_files.files[i];
-                file_paths.push_back(data_file.path);
-                file_row_counts.push_back(static_cast<UInt64>(data_file.total_rows));
-                file_byte_counts.push_back(static_cast<UInt64>(data_file.total_bytes));
-                file_statistics.push_back(&partition_files.statistics[i]);
-                partition_rows += data_file.total_rows;
-            }
+            const auto & data_file = partition_files.files[i];
+            file_paths.push_back(data_file.path);
+            file_row_counts.push_back(static_cast<UInt64>(data_file.total_rows));
+            file_byte_counts.push_back(static_cast<UInt64>(data_file.total_bytes));
+            file_statistics.push_back(&partition_files.statistics[i]);
+            partition_rows += data_file.total_rows;
+        }
 
-            auto manifest_entry_path = filename_generator.generateManifestEntryName();
-            manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
-            manifest_entries.push_back(manifest_entry_path);
-            per_entry_content_types.push_back(content_type);
-            manifest_entry_row_counts.push_back(partition_rows);
-            manifest_entry_file_counts.push_back(static_cast<Int64>(partition_files.files.size()));
+        auto manifest_entry_path = filename_generator.generateManifestEntryName();
+        manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
+        manifest_entries.push_back(manifest_entry_path);
+        per_entry_content_types.push_back(content_type);
+        manifest_entry_row_counts.push_back(partition_rows);
+        manifest_entry_file_counts.push_back(static_cast<Int64>(partition_files.files.size()));
+        entry_partition_spec_ids.push_back(spec_id);
 
-            if (chunk_partitioner)
-            {
-                ManifestPartitionSummary partition_summary(chunk_partitioner->getResultTypes());
-                partition_summary.add(partition_key);
-                entry_partition_summaries.push_back(std::move(partition_summary));
-            }
+        ManifestPartitionSummary partition_summary(partition_types);
+        partition_summary.add(partition_key);
+        entry_partition_summaries.push_back(std::move(partition_summary));
 
-            auto buffer_manifest_entry = object_storage->writeObject(
-                StoredObject(path_resolver.resolve(manifest_entry_path)),
-                WriteMode::Rewrite,
-                std::nullopt,
-                DBMS_DEFAULT_BUFFER_SIZE,
-                context->getWriteSettings());
-            try
+        auto buffer_manifest_entry = object_storage->writeObject(
+            StoredObject(path_resolver.resolve(manifest_entry_path)),
+            WriteMode::Rewrite,
+            std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
+        try
+        {
+            generateManifestFile(
+                metadata,
+                partition_columns,
+                std::vector<Row>(file_paths.size(), partition_key),
+                partition_types,
+                file_paths,
+                file_row_counts,
+                file_byte_counts,
+                /* data_file_statistics */ std::nullopt,
+                sample_block,
+                new_snapshot,
+                write_format,
+                spec,
+                spec_id,
+                *buffer_manifest_entry,
+                content_type,
+                /* user_defined_sequence_number */ std::nullopt,
+                /* user_defined_snapshot_id */ std::nullopt,
+                /* data_file_formats */ {},
+                /* per_file_statistics */ {},
+                /* data_file_sort_order_ids */ {},
+                /* per_file_entry_lineage */ {},
+                schema_to_serialize,
+                &file_statistics);
+            buffer_manifest_entry->finalize();
+            auto size = buffer_manifest_entry->count();
+            if (size == 0)
             {
-                generateManifestFile(
-                    metadata,
-                    chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
-                    std::vector<Row>(file_paths.size(), partition_key),
-                    chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
-                    file_paths,
-                    file_row_counts,
-                    file_byte_counts,
-                    /* data_file_statistics */ std::nullopt,
-                    sample_block,
-                    new_snapshot,
-                    write_format,
-                    partititon_spec,
-                    partition_spec_id,
-                    *buffer_manifest_entry,
-                    content_type,
-                    /* user_defined_sequence_number */ std::nullopt,
-                    /* user_defined_snapshot_id */ std::nullopt,
-                    /* data_file_formats */ {},
-                    /* per_file_statistics */ {},
-                    /* data_file_sort_order_ids */ {},
-                    /* per_file_entry_lineage */ {},
-                    /* schema_to_serialize */ nullptr,
-                    &file_statistics);
-                buffer_manifest_entry->finalize();
-                auto size = buffer_manifest_entry->count();
-                if (size == 0)
-                {
-                    size = object_storage->getObjectMetadata(path_resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
-                }
-                manifest_entry_sizes.push_back(size);
+                size = object_storage->getObjectMetadata(path_resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
             }
-            catch (...)
-            {
-                cleanup();
-                throw;
-            }
+            manifest_entry_sizes.push_back(size);
+        }
+        catch (...)
+        {
+            cleanup();
+            throw;
         }
     };
 
     try
     {
-        write_manifest_entries(delete_files, Iceberg::FileContentType::POSITION_DELETE, delete_sample_block);
-        write_manifest_entries(data_files, Iceberg::FileContentType::DATA, data_sample_block);
+        for (const auto & [partition, partition_files] : delete_files.files_by_partition)
+        {
+            const auto & resolved_spec = spec_resolver.resolve(partition.partition_spec_id, partition.schema_id);
+            if (partition.partition_value.size() != resolved_spec.partition_columns.size())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg manifest partition tuple has {} values but partition spec {} defines {} columns",
+                    partition.partition_value.size(),
+                    partition.partition_spec_id,
+                    resolved_spec.partition_columns.size());
+            write_manifest(
+                partition_files,
+                partition.partition_value,
+                Iceberg::FileContentType::POSITION_DELETE,
+                delete_sample_block,
+                resolved_spec.partition_columns,
+                resolved_spec.partition_types,
+                resolved_spec.spec,
+                partition.partition_spec_id,
+                spec_resolver.getSchema(partition.schema_id));
+        }
+        for (const auto & [partition_key, partition_files] : data_files.files_by_partition)
+            write_manifest(
+                partition_files,
+                partition_key,
+                Iceberg::FileContentType::DATA,
+                data_sample_block,
+                chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
+                chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
+                partititon_spec,
+                partition_spec_id,
+                /* schema_to_serialize */ nullptr);
+
+        /// The manifest list leaves `partitions` null when no written spec is partitioned.
+        if (std::ranges::all_of(entry_partition_summaries, [](const auto & summary) { return summary.getFields().empty(); }))
+            entry_partition_summaries.clear();
 
         {
             auto buffer_manifest_list = object_storage->writeObject(
@@ -769,7 +838,7 @@ static bool writeMetadataFiles(
                 per_entry_content_types,
                 /* entry_counts */ {},
                 /* carry_forward_manifest_paths */ {},
-                /* entry_partition_spec_ids */ {},
+                entry_partition_spec_ids,
                 entry_partition_summaries,
                 manifest_entry_row_counts,
                 manifest_entry_file_counts);
@@ -855,7 +924,8 @@ void validateSnapshotForMutation(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    DataFilePartitions & data_file_partitions)
 {
     if (!metadata->has(f_current_snapshot_id) || metadata->isNull(f_current_snapshot_id))
         return;
@@ -897,6 +967,10 @@ void validateSnapshotForMutation(
                     "but data file `{}` has format `{}`",
                     file_entry->parsed_entry->file_path_key.serialize(),
                     file_format);
+
+            data_file_partitions.emplace(
+                file_entry->parsed_entry->file_path_key.serialize(),
+                DataFilePartition{manifest_list_entry.partition_spec_id, file_entry->resolved_schema_id, file_entry->normalized_partition_key_value});
         }
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
@@ -989,8 +1063,9 @@ void mutate(
         /// Validate against the freshly-fetched snapshot. Bound to this exact
         /// metadata version, so a concurrent writer that commits non-Parquet
         /// data files between iterations is caught by the next retry.
+        DataFilePartitions data_file_partitions;
         validateSnapshotForMutation(
-            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id));
+            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id), data_file_partitions);
 
         TableStateSnapshot current_iceberg_snapshot;
         current_iceberg_snapshot.metadata_file_path = metadata_path;
@@ -1022,10 +1097,12 @@ void mutate(
             format_settings,
             chunk_partitioner,
             current_schema,
-            write_statistics);
+            write_statistics,
+            data_file_partitions);
 
         if (mutation_files)
         {
+            PartitionSpecResolver spec_resolver(metadata, persistent_table_components.schema_processor, context);
             if (!writeMetadataFiles(
                     mutation_files->delete_file,
                     mutation_files->data_file,
@@ -1044,7 +1121,8 @@ void mutate(
                     partititon_spec,
                     static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
-                    sample_block))
+                    sample_block,
+                    spec_resolver))
                 continue;
         }
         break;
