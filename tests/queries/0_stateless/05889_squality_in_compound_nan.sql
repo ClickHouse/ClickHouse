@@ -43,6 +43,13 @@ SELECT
 SELECT count() FROM (SELECT [toFloat64('nan')] AS a)
 WHERE a IN materialize([toFloat64('nan')]);
 
+SELECT
+    map('a', toFloat64('nan')) IN map('a', toFloat64('nan')),
+    map('a', toFloat64('nan')) IN materialize(map('a', toFloat64('nan')));
+
+SELECT count() FROM (SELECT map('a', toFloat64('nan')) AS m)
+WHERE m IN materialize(map('a', toFloat64('nan')));
+
 DROP TABLE IF EXISTS squality_in_nan_constraint;
 CREATE TABLE squality_in_nan_constraint
 (

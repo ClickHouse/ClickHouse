@@ -377,6 +377,16 @@ namespace
         const auto converted = tryConvertFieldToType(right, *left_bare, right_bare.get(), {}, /*strict=*/true);
         return !converted.isNull() && accurateEquals(left, converted);
     }
+    if ((isStringOrFixedString(left_bare) || isStringOrFixedString(right_bare))
+        && !left_bare->equals(*right_bare))
+    {
+        /// Compare in the probe domain, retaining source tags such as nested `Bool`.
+        auto source_column = right_bare->createColumn();
+        source_column->insert(right);
+        auto converted = tryConvertColumnToTypeOrNull(
+            *source_column, right_bare, left_bare, {}, /*strict=*/true);
+        return converted && accurateEquals(left, (*converted)[0]);
+    }
     return accurateEquals(left, right);
 }
 

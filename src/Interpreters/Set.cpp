@@ -393,6 +393,11 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
 
         auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
+        /// Publish the null marker only after its key was accepted. A later row
+        /// can throw while the already inserted keys remain visible.
+        if (transform_null_in && keys_size == 1 && key_columns[0]->isNullAt(i))
+            contains_null_row.store(true);
+
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
 
@@ -544,19 +549,6 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
     if (!columns.at(0)->empty())
         has_input_rows.store(true);
 
-    if (transform_null_in && keys_size == 1 && !contains_null_row.load())
-    {
-        const auto & column = *columns.at(0);
-        for (size_t row = 0, rows = column.size(); row < rows; ++row)
-        {
-            if (column.isNullAt(row))
-            {
-                contains_null_row.store(true);
-                break;
-            }
-        }
-    }
-
     holder.key_columns.reserve(keys_size);
     holder.materialized_columns.reserve(keys_size);
 
@@ -583,7 +575,16 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
     {
         auto keys = compute_disk_set_keys(holder.key_columns, key_sizes, rows, null_map);
         if (!keys->empty())
+        {
             disk_set_builder->add(std::move(keys));
+            if (transform_null_in && keys_size == 1 && !contains_null_row.load())
+                for (size_t row = 0; row < rows; ++row)
+                    if (holder.key_columns[0]->isNullAt(row))
+                    {
+                        contains_null_row.store(true);
+                        break;
+                    }
+        }
         return true;
     }
 
@@ -843,8 +844,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
 bool Set::hasNull() const
 {
-    /// `StorageSet` exposes inserted rows before its first `finishInsert`. The null
-    /// marker is atomic and can be read alongside those rows while the set is built.
+    /// Observe the marker and inserted keys after the same critical section.
+    std::shared_lock lock(rwlock);
     return transform_null_in && contains_null_row.load();
 }
 

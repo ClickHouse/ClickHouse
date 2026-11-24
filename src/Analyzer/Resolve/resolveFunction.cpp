@@ -4424,7 +4424,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
                     if (use_standard_null_semantics
-                        && needsExactCompoundNumericInComparison(left_type, non_const_set_candidate->getResultType()))
+                        && (needsExactCompoundNumericInComparison(left_type, non_const_set_candidate->getResultType())
+                            || (left_type->equals(*non_const_set_candidate->getResultType())
+                                && hasCompoundFloatLeaf(left_type))))
                     {
                         node = buildExactCompoundNumericInComparison(
                             fn_args[0], fn_args[1], left_type, non_const_set_candidate->getResultType());
