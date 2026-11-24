@@ -262,8 +262,10 @@ struct AdaptiveAggregationSession
     size_t frozen_producers = 0;
     size_t thawed_producers = 0;
 
-    /// The cells of the producers' tables, published under the same mutex.
+    /// The cells of the producers' tables, and their staged records and bytes, published under the same mutex.
     size_t table_cells = 0;
+    size_t staged_records = 0;
+    size_t staged_bytes = 0;
 
     /// A rank that `bucket_top_k` groups of a descending top-K are known to reach, the floor that the merge's
     /// threshold starts from (see `AdaptiveTopKThreshold`): the largest of the producers' floors, each the threshold
@@ -609,8 +611,9 @@ struct AdaptiveAggregationProducer
     std::unique_ptr<PartitionedRecordBuffer> partitions;
     /// Memory that the staged records in `partitions` take.
     [[nodiscard]] size_t stagedBytes() const { return partitions ? partitions->allocatedChunkBytes() : 0; }
-    /// The producer's staged records, including those already written to disk, for the merge-work estimate.
+    /// The producer's staged records and their bytes, including those already written to disk, for the merge-work estimate.
     size_t total_staged_records = 0;
+    size_t total_staged_bytes = 0;
 
     /// The current block's misses.
     AdaptiveMissBatch misses;

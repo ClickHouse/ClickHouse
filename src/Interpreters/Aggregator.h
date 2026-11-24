@@ -731,6 +731,9 @@ public:
     /// itself takes, as with the 16 bytes of a `-ForEach` state over such a function.
     bool hasHeavyStates() const { return has_heavy_states; }
 
+    /// Whether some aggregation state owns memory that its destructor frees, such as the sets of `uniqExact`.
+    bool hasStatesWithDestructors() const { return !all_aggregates_has_trivial_destructor; }
+
     /// The pool threshold of a merge while its workers are busy (see `ParallelMergeThreshold`): the share of
     /// one of the merge's `workers` in the merge work that the producers of `session` estimated, within fixed
     /// bounds, or the upper bound without a session. The caller guarantees that the merge has at least one

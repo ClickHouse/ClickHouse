@@ -1,7 +1,7 @@
 -- An aggregation over one input stream has one producer for the adaptive aggregator, whatever `max_threads` is.
 -- The cells check the two things that are special about it.
--- Its merge takes the threads of the query: the bucket merge gets a source per thread, and the number of
--- streams does not cap them. Two streams with four threads get four sources as well.
+-- Its bucket merge takes a source per thread that its work keeps busy, and never fewer than its producers: these
+-- small merges take one source, and the two streams take two.
 -- Its frozen table thaws sooner than the tables of several producers, because nothing merges the table of a lone
 -- producer on the ordinary path. A producer that sees its keys 8 times thaws when it is alone, and stays frozen
 -- as one of two.

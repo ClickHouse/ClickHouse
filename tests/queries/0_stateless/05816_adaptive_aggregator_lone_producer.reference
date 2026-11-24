@@ -4,6 +4,6 @@ two streams, repeated keys	40000	799980000	640000
 one stream, repeated keys	1	1
 one stream, unique keys	1	0
 two streams, repeated keys	2	0
-one stream, repeated keys	4
-one stream, unique keys	4
-two streams, repeated keys	4
+one stream, repeated keys	1
+one stream, unique keys	1
+two streams, repeated keys	2

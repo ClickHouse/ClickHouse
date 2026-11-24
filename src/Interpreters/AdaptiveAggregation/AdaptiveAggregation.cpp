@@ -101,6 +101,7 @@ void Aggregator::accountStagedBatch(
             adaptive.count_bins.add(hashes[i], is_simple_count ? misses.getMultiplicities()[i] : 1);
 
     adaptive.total_staged_records += total;
+    adaptive.total_staged_bytes += staged.record_bytes;
 
     /// The thaw evidence of the thread (see `adaptiveStagingRepeats`). A batch updates:
     ///
@@ -384,6 +385,8 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     shared.estimated_merge_work += estimated_merge_work;
     ++shared.finished_producers;
     shared.table_cells += local_variants.sizeWithoutOverflowRow();
+    shared.staged_records += adaptive.total_staged_records;
+    shared.staged_bytes += adaptive.total_staged_bytes;
     shared.top_k_floor = std::max(shared.top_k_floor, top_k_floor);
     if (null_key_rank)
         shared.top_k_null_key.addProducerRank(*null_key_rank);

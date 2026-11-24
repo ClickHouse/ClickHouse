@@ -120,6 +120,25 @@ static Chunk convertToChunk(Aggregator::AggregatedChunk && agg_chunk)
 
 namespace
 {
+    /// The adaptive bucket merge takes a worker per this many records, staged or held in the tables, rounded up.
+    constexpr size_t adaptive_merge_records_per_worker = 262'144;
+    /// A merge takes a worker per this much memory that it reads.
+    constexpr size_t merge_memory_per_worker = 4 << 20;
+
+    /// The workers of the adaptive bucket merge, as in `singleLevelMergeWorkerCount`, except that only states that
+    /// own memory keep every worker: a wide fixed-size state merges at a constant cost per record, its bytes as memory.
+    size_t adaptiveBucketMergeWorkers(
+        const Aggregator & aggregator, const AdaptiveAggregationSession & session, size_t table_memory, size_t max_workers)
+    {
+        const size_t records = session.staged_records + session.table_cells;
+        const size_t by_work = aggregator.hasStatesWithDestructors()
+            ? max_workers
+            : std::max(
+                  (records + adaptive_merge_records_per_worker - 1) / adaptive_merge_records_per_worker,
+                  (session.staged_bytes + table_memory) / merge_memory_per_worker);
+        return std::min({max_workers, ADAPTIVE_AGGREGATION_NUM_BUCKETS, std::max({session.producers, by_work, size_t{1}})});
+    }
+
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
         auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
@@ -1096,11 +1115,10 @@ private:
     size_t singleLevelMergeWorkerCount(size_t source_cells, size_t source_memory) const
     {
         static constexpr size_t MIN_CELLS_PER_WORKER = 2048;
-        static constexpr size_t MEMORY_PER_WORKER = 4 << 20;
 
         if (params->aggregator.hasHeavyStates())
             return num_threads;
-        return std::clamp<size_t>(std::max(source_cells / MIN_CELLS_PER_WORKER, source_memory / MEMORY_PER_WORKER), 1, num_threads);
+        return std::clamp<size_t>(std::max(source_cells / MIN_CELLS_PER_WORKER, source_memory / merge_memory_per_worker), 1, num_threads);
     }
 
     /// The partition sources of the single-level merge and the bucket sources of the adaptive merge
@@ -2036,19 +2054,20 @@ void AggregatingTransform::initGenerate()
         if (!skip_merging)
         {
             AdaptiveAggregationSession * session = adaptive_context ? adaptive_context->session.get() : nullptr;
+            size_t table_memory = 0;
+            if (bucket_merge)
+                for (const auto & variant : many_data->variants)
+                    table_memory += variant->memoryUsage();
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), session);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
-            /// A merge of the tables takes at most one thread per table, and each producer filled one. The
-            /// adaptive bucket merge is not bound by the tables: its sources claim the buckets one by one,
-            /// and each takes its table and its arena per bucket. Its work is the staged records, and a
-            /// single aggregating stream can stage nearly every row it reads, so it takes the merge threads
-            /// of the step, up to one per bucket. The merge by cell index is not bound by the tables either: its
-            /// workers claim the partitions of the indexes one by one (see
-            /// `ConvertingAggregatedToChunksTransform::planPartitionMerge`), so it takes the merge threads of the
-            /// step, up to one per partition.
+            /// A merge of the tables takes at most one thread per table; the adaptive bucket merge, which is not bound
+            /// by the tables, takes as many as its work keeps busy, up to the merge threads of the step. The merge by cell
+            /// index is not bound by the tables either: its workers claim the partitions of the indexes one by one (see
+            /// `ConvertingAggregatedToChunksTransform::planPartitionMerge`), so it takes the merge threads of the step, up
+            /// to one per partition.
             size_t merge_threads = many_data->num_producers;
             if (bucket_merge)
-                merge_threads = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
+                merge_threads = adaptiveBucketMergeWorkers(params->aggregator, *session, table_memory, max_threads);
             else if (!prepared_data_ptr->empty() && params->aggregator.mergesByCellIndex(*prepared_data_ptr))
                 merge_threads = prepared_data_ptr->front()->cellIndex().numPartitions();
             merge_threads = std::min(max_threads, merge_threads);
