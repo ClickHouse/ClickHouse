@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/sanitizer_defs.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -108,7 +109,7 @@ private:
     size_t capacity = INLINE_CAPACITY;
     size_t size = 0;
 
-    static size_t hash(const ASTLiteral * key)
+    static size_t NO_SANITIZE_UNSIGNED_OVERFLOW hash(const ASTLiteral * key)
     {
         /// Addresses are aligned, so the low bits carry no information - mix the high ones down.
         auto x = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(key));
