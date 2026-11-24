@@ -2846,7 +2846,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
     supports table namespaces and `X` is not `system`. Database `X` must exist, and both
     existing is an error unless the user can access only one of them. SQL stored in
     definitions (views, materialized views, row policies, mutations, `ALIAS` columns, projections,
-    constraints) always reads `X.T` as table `T` of database `X`.
+    constraints) always reads `X.T` as table `T` of database `X`, except in the query argument
+    of a table function such as `view` or `eval`.
     """
     node = started_cluster.instances["node1"]
     on = {"allow_experimental_table_namespaces": 1}
@@ -2858,6 +2859,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
     J = "join_table"
     T2 = f"t2_{test_ref}"
     V, V2, MV = f"v_{test_ref}", f"v2_{test_ref}", f"mv_{test_ref}"
+    VF, VE = f"vf_{test_ref}", f"ve_{test_ref}"
     A = f"a_{test_ref}"
     PR, C = f"pr_{test_ref}", f"c_{test_ref}"
     policy = f"pol_{test_ref}"
@@ -2931,6 +2933,23 @@ def test_namespace_two_part_name_resolution(started_cluster):
         node.query(f"USE {CATALOG_NAME}; CREATE VIEW default.{V2} AS SELECT * FROM `{X}.{T}`", settings=on)
         result = int(node.query(f"SELECT count() FROM default.{V2}", settings=on))
         assert result == 5, f"quoted name in a view body must be the catalog table (5 rows), got {result}"
+
+        # the query argument of a table function in a view body is a part of the reading query, so it keeps the current-database reading
+        on_eval = {**on, "enable_eval_table_function": 1}
+        node.query(
+            f"USE {CATALOG_NAME}; CREATE VIEW default.{VF} AS SELECT * FROM view(SELECT * FROM {X}.{T})",
+            settings=on,
+        )
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{VF}", settings=on))
+        assert result == 5, f"view over `view` must read the catalog table (5 rows), got {result}"
+        node.query(
+            f"USE {CATALOG_NAME}; CREATE VIEW default.{VE} AS SELECT * FROM eval('SELECT * FROM {X}.{T}')",
+            settings=on_eval,
+        )
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{VE}", settings=on_eval))
+        assert result == 5, f"view over `eval` must read the catalog table (5 rows), got {result}"
+        for name in (VF, VE):
+            node.query(f"DROP VIEW default.{name}")
 
         _, err = node.query_and_get_answer_with_error(
             f"USE {CATALOG_NAME}; ALTER TABLE default.{T2} DELETE WHERE symbol IN {X}.{T}", settings=on
@@ -3091,7 +3110,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
             node.query(f"DROP USER IF EXISTS u_{kind}_{test_ref}")
         node.query(f"DROP ROW POLICY IF EXISTS {policy} ON default.{T2}")
         node.query(f"DROP USER IF EXISTS {policy_user}")
-        for name in (V, V2, MV):
+        for name in (V, V2, MV, VF, VE):
             node.query(f"DROP VIEW IF EXISTS default.{name}")
         node.query(f"DROP TABLE IF EXISTS default.{T2}")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{T2}`")

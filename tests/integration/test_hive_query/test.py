@@ -261,3 +261,30 @@ def test_selected_rows_not_double_counted(started_cluster):
     assert selected_bytes == read_bytes, (selected_bytes, read_bytes)
 
     node.query("DROP TABLE default.hive_counters SYNC")
+
+
+def test_hive_table_function_in_definer_view(started_cluster):
+    # A table function whose storage keeps its context weakly (`StorageHive`), inside a
+    # `SQL SECURITY DEFINER` view read with table namespaces enabled: the read used to throw
+    # `Context has expired`.
+    node = started_cluster.instances["h0_0_0"]
+    node.query("DROP VIEW IF EXISTS default.hive_definer_view")
+    node.query(
+        """
+        CREATE VIEW default.hive_definer_view SQL SECURITY DEFINER AS
+        SELECT * FROM hive('thrift://hivetest:9083', 'test', 'demo', 'id Nullable(String), score Nullable(Int32), day Nullable(String)', 'day')
+        """
+    )
+
+    assert (
+        query_with_retry(node, "SELECT count() FROM default.hive_definer_view").strip()
+        == "4"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM default.hive_definer_view SETTINGS allow_experimental_table_namespaces = 1"
+        ).strip()
+        == "4"
+    )
+
+    node.query("DROP VIEW default.hive_definer_view")
