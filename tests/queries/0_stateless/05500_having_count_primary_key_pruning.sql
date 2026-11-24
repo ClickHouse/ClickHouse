@@ -124,12 +124,13 @@ SELECT count(), sum(k), sum(c) FROM (SELECT k, count() AS c FROM t_having_pk_des
 SELECT 'key expression named like a column';
 DROP TABLE IF EXISTS t_having_pk_named;
 -- The index holds the key expression, not the stored column of that name: https://github.com/ClickHouse/ClickHouse/issues/133178
+-- The split-ranges injection computes the sorting key over the read block, which replaces the stored column of that name.
 CREATE TABLE t_having_pk_named (x UInt32, `negate(x)` Int64) ENGINE = MergeTree ORDER BY negate(x)
 SETTINGS allow_suspicious_indices = 1, index_granularity = 4096, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_having_pk_named SELECT number, 0 FROM numbers(53248);
 ALTER TABLE t_having_pk_named UPDATE `negate(x)` = 0 WHERE 1 SETTINGS mutations_sync = 2;
-SELECT count(), sum(c) FROM (SELECT `negate(x)`, count() AS c FROM t_having_pk_named GROUP BY `negate(x)` HAVING count() > 10000) SETTINGS query_plan_aggregation_having_count_pruning = 0;
-SELECT count(), sum(c) FROM (SELECT `negate(x)`, count() AS c FROM t_having_pk_named GROUP BY `negate(x)` HAVING count() > 10000) SETTINGS query_plan_aggregation_having_count_pruning = 1;
+SELECT count(), sum(c) FROM (SELECT `negate(x)`, count() AS c FROM t_having_pk_named GROUP BY `negate(x)` HAVING count() > 10000) SETTINGS query_plan_aggregation_having_count_pruning = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+SELECT count(), sum(c) FROM (SELECT `negate(x)`, count() AS c FROM t_having_pk_named GROUP BY `negate(x)` HAVING count() > 10000) SETTINGS query_plan_aggregation_having_count_pruning = 1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 
 SELECT 'query condition cache';
 -- HAVING-skipped marks are never stored as "no rows match the WHERE".
