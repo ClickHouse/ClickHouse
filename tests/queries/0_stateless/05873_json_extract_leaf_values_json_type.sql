@@ -1,6 +1,9 @@
 -- JSONExtractLeafValues and JSONExtractLeafPathsAndValues read a JSON column directly.
 -- The result must be the same as for the column cast to String.
 
+-- A DateTime without a time zone is written in the server time zone, the cast to String uses the session time zone.
+SET session_timezone = '';
+
 DROP TABLE IF EXISTS t_leaf;
 CREATE TABLE t_leaf (id UInt32, j JSON(max_dynamic_paths = 3, `a.b` UInt32, c Nullable(String))) ENGINE = Memory;
 INSERT INTO t_leaf VALUES
@@ -82,6 +85,25 @@ FROM
     FROM numbers(1000)
 );
 
+SELECT 'session_timezone';
+DROP TABLE IF EXISTS t_leaf_tz;
+CREATE TABLE t_leaf_tz (id UInt32, j JSON(ts DateTime), INDEX idx JSONExtractLeafValues(j) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+-- A typed and a dynamic path with the same DateTime. The index is built in one session time zone and read in another.
+INSERT INTO t_leaf_tz SELECT number, CAST(map('ts', toDateTime(1577836800 + number), 'd', toDateTime(1577836800 + number)), 'JSON(ts DateTime)')
+FROM numbers(10) SETTINGS session_timezone = 'America/New_York';
+WITH toString(toDateTime(1577836805, 'UTC'), serverTimezone()) AS v
+SELECT JSONExtractLeafValues(j) = [v, v] FROM t_leaf_tz WHERE id = 5 SETTINGS session_timezone = 'Asia/Kathmandu';
+SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), serverTimezone()))
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, use_query_condition_cache = 0;
+SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), serverTimezone()))
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 0, use_query_condition_cache = 0;
+SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu'))
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, use_query_condition_cache = 0;
+SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu'))
+SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 0, use_query_condition_cache = 0;
+
 DROP TABLE t_leaf;
 DROP TABLE t_leaf_types;
 DROP TABLE t_leaf_variant;
+DROP TABLE t_leaf_tz;

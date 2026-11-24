@@ -195,10 +195,26 @@ std::string determineDefaultTimeZone()
     throw Poco::Exception(error_prefix + "custom time zone file used.");
 }
 
+thread_local bool use_server_timezone = false;
+
+}
+
+DateLUT::ServerTimezoneScope::ServerTimezoneScope()
+    : previous(use_server_timezone)
+{
+    use_server_timezone = true;
+}
+
+DateLUT::ServerTimezoneScope::~ServerTimezoneScope()
+{
+    use_server_timezone = previous;
 }
 
 const DateLUTImpl & DateLUT::instance()
 {
+    if (use_server_timezone)
+        return serverTimezoneInstance();
+
     const auto & date_lut = getInstance();
 
     std::optional<std::string> timezone_from_context;

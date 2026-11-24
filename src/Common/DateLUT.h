@@ -23,6 +23,17 @@ public:
     /// If setting is not set, returns the server timezone.
     static const DateLUTImpl & instance();
 
+    /// While it exists, `instance()` in this thread ignores `session_timezone` and returns the server timezone.
+    class ServerTimezoneScope : private boost::noncopyable
+    {
+    public:
+        ServerTimezoneScope();
+        ~ServerTimezoneScope();
+
+    private:
+        bool previous;
+    };
+
     static ALWAYS_INLINE const DateLUTImpl & instance(std::string_view time_zone)
     {
         if (time_zone.empty())

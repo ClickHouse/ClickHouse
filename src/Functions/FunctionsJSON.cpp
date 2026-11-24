@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/assert_cast.h>
+#include <Common/DateLUT.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
@@ -1700,6 +1701,9 @@ public:
         auto & offsets = col_arr.getOffsets();
         offsets.reserve(input_rows_count);
 
+        /// A `DateTime` without a time zone in its type is written in the server time zone, see `ignores_allow_simdjson`.
+        DateLUT::ServerTimezoneScope server_timezone_scope;
+
         ObjectViews views;
         const auto & view = getObjectView(*column_object, *argument.type, views);
         String path;
@@ -2984,9 +2988,9 @@ So an index over the function gives the same rows as a full scan.
 </Note>
 
 For a value of the [`JSON`](/reference/data-types/newjson) data type, the function reads its typed paths, dynamic paths and shared data directly.
-The result is the same as for the value cast to `String`.
+The result is the same as for the value cast to `String` with the default settings.
 So the paths are the paths of the `JSON` type, in sorted order.
-A `DateTime` value without a time zone in its type is written in the session time zone, as in the cast to `String`.
+A `DateTime` value without a time zone in its type is written in the server time zone, so the result does not depend on [`session_timezone`](/reference/settings/session-settings#session_timezone).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractLeafValues(json[, skip_regex[, arrays]])";
         FunctionDocumentation::Arguments arguments = {
