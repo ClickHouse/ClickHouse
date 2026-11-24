@@ -35,6 +35,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -475,11 +476,23 @@ static void projectDagInputs(ActionsDAG & actions_dag)
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns);
+    const Names & available_columns,
+    size_t max_expanded_size);
 
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 
-static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node)
+static bool allReadsCanLeaveConjunctsOut(const QueryPlan::Node & node)
+{
+    if (node.children.empty())
+    {
+        const auto * read = dynamic_cast<const SourceStepWithFilterBase *>(node.step.get());
+        return read && read->canLeaveConjunctsOutOfFilter();
+    }
+    return std::ranges::all_of(node.children, [](const QueryPlan::Node * child) { return allReadsCanLeaveConjunctsOut(*child); });
+}
+
+static size_t tryPushDownOverJoinStep(
+    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
     QueryPlanStepPtr & child = child_node->step;
@@ -532,6 +545,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if ((table_join_ptr && table_join_ptr->kind() == JoinKind::Paste)
         || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste))
         return 0;
+
+    const size_t max_expanded_conjunct_size = allReadsCanLeaveConjunctsOut(*child_node) ? settings.max_expanded_ast_elements : 0;
 
     UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
     UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
@@ -907,7 +922,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         cross_type_equivalent_columns,
         left_stream_only_matched,
         right_stream_only_matched,
-        filter_is_always_false);
+        filter_is_always_false,
+        max_expanded_conjunct_size);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
     {
@@ -1147,7 +1163,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         /// of returning an empty result. The estimator still sees the empty read from the other side.
         if (left_stream_filter_push_down_input_columns_available)
         {
-            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down);
+            auto left_partial_filter_dag = tryToExtractPartialPredicate(
+                filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down, max_expanded_conjunct_size);
             if (left_partial_filter_dag.has_value())
             {
                 const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
@@ -1163,7 +1180,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
         if (right_stream_filter_push_down_input_columns_available)
         {
-            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down);
+            auto right_partial_filter_dag = tryToExtractPartialPredicate(
+                filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down, max_expanded_conjunct_size);
             if (right_partial_filter_dag.has_value())
             {
                 const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
@@ -1404,7 +1422,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<BuildRuntimeFilterStep>(parent_node, true, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node))
+    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node, settings))
         return updated_steps;
 
     /// TODO.

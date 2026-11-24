@@ -307,6 +307,34 @@ std::unordered_set<const ActionsDAG::Node *> findReachableNodes(
     return visited;
 }
 
+static size_t expandedSizeCapped(const ActionsDAG::NodeRawConstPtrs & roots, size_t above)
+{
+    std::unordered_map<const ActionsDAG::Node *, size_t> sizes;
+    auto add = [above](size_t & size, size_t part) { size = part >= above - size ? above : size + part; };
+    computeForNodes(roots, sizes, [&](const ActionsDAG::Node * current)
+    {
+        size_t size = 1;
+        for (const auto * child : current->children)
+            add(size, sizes.at(child));
+        if (current->type == ActionsDAG::ActionType::FUNCTION)
+            if (const auto * index_hint = FunctionIndexHint::tryGet(current->function_base))
+                add(size, expandedSizeCapped(index_hint->getActions().getOutputs(), above));
+        return size;
+    });
+    size_t total = 0;
+    for (const auto * root : roots)
+        add(total, sizes.at(root));
+    return total;
+}
+
+bool isExpandedSizeAbove(const ActionsDAG::Node * node, size_t limit)
+{
+    /// No DAG in memory has `SIZE_MAX` nodes, and `limit + 1` below must not wrap.
+    if (limit == 0 || limit == std::numeric_limits<size_t>::max())
+        return false;
+    return expandedSizeCapped({node}, limit + 1) == limit + 1;
+}
+
 ActionsDAG::ActionsDAG() = default;
 ActionsDAG::ActionsDAG(ActionsDAG &&) noexcept = default;
 ActionsDAG & ActionsDAG::operator=(ActionsDAG &&) noexcept = default;
@@ -4037,7 +4065,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const NameSet & cross_type_equivalent_columns,
     bool keep_runtime_filters_out_of_left_stream,
     bool keep_runtime_filters_out_of_right_stream,
-    bool filter_is_always_false)
+    bool filter_is_always_false,
+    size_t max_expanded_conjunct_size)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -4079,6 +4108,21 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, inputs, both_streams_allowed_nodes, false);
+
+    /// Pushing a conjunct rebuilds it with names spelled out per path, so one too big to write out stays above the join.
+    auto keep_too_big_above_join = [&](ConjunctionNodes & conjunctions)
+    {
+        std::erase_if(conjunctions.allowed, [&](const Node * conjunct)
+        {
+            if (!isExpandedSizeAbove(conjunct, max_expanded_conjunct_size))
+                return false;
+            conjunctions.rejected.push_back(conjunct);
+            return true;
+        });
+    };
+    keep_too_big_above_join(left_stream_push_down_conjunctions);
+    keep_too_big_above_join(right_stream_push_down_conjunctions);
+    keep_too_big_above_join(both_streams_push_down_conjunctions);
 
     /// A cross-type equivalent input is replaced below by a cast of the opposite side's key rather than
     /// renamed to an equal-typed column, so it can be constant where the input is not and is computed a

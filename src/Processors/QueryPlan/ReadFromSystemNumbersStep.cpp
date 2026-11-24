@@ -472,6 +472,11 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+bool ReadFromSystemNumbersStep::canLeaveConjunctsOutOfFilter() const
+{
+    return storage->as<const StorageSystemNumbers &>().limit.has_value();
+}
+
 QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
 {
     return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);

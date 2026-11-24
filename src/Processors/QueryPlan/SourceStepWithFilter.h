@@ -49,6 +49,9 @@ public:
         filter_dags.push_back(std::move(filter_dag));
     }
 
+    /// Whether the read ends without its filter, so a JOIN above it may keep a conjunct instead of pushing it down.
+    [[nodiscard]] virtual bool canLeaveConjunctsOutOfFilter() const { return false; }
+
     void setLimit(size_t limit_value)
     {
         if (limit)
