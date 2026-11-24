@@ -18,9 +18,34 @@
 #include <vector>
 
 #if defined(OS_LINUX)
-namespace
+std::optional<uint32_t> countCPUsInList(const std::string & cpu_list)
 {
-    std::optional<uint32_t> countCPUsInList(const std::string & cpu_list);
+    if (cpu_list.empty())
+        return std::nullopt;
+
+    auto parse = [](const std::string & text, int & value)
+    {
+        return std::from_chars(text.data(), text.data() + text.size(), value).ec == std::errc{};
+    };
+
+    std::vector<std::string> cpu_ranges;
+    boost::split(cpu_ranges, cpu_list, boost::is_any_of(","));
+    uint32_t cpus_count = 0;
+    for (const std::string & cpu_number_or_range : cpu_ranges)
+    {
+        std::vector<std::string> cpu_range;
+        boost::split(cpu_range, cpu_number_or_range, boost::is_any_of("-"));
+
+        int start = 0;
+        int end = 0;
+        if (cpu_range.size() == 1 && parse(cpu_range[0], start))
+            end = start;
+        else if (cpu_range.size() != 2 || !parse(cpu_range[0], start) || !parse(cpu_range[1], end) || end < start)
+            return std::nullopt;
+
+        cpus_count += static_cast<uint32_t>(end - start) + 1;
+    }
+    return cpus_count;
 }
 #endif
 
@@ -59,38 +84,6 @@ int32_t readFrom(const std::filesystem::path & filename, int default_value)
     if (infile >> idata)
         return idata;
     return default_value;
-}
-
-/// Parse a kernel cpu-list such as "0-15" or "0,2-4,7" (the format of /sys/devices/system/cpu/* and
-/// cgroup cpuset files) and return the number of CPUs in it, or nullopt if the text is not a cpu-list.
-std::optional<uint32_t> countCPUsInList(const std::string & cpu_list)
-{
-    if (cpu_list.empty())
-        return std::nullopt;
-
-    auto parse = [](const std::string & text, int & value)
-    {
-        return std::from_chars(text.data(), text.data() + text.size(), value).ec == std::errc{};
-    };
-
-    std::vector<std::string> cpu_ranges;
-    boost::split(cpu_ranges, cpu_list, boost::is_any_of(","));
-    uint32_t cpus_count = 0;
-    for (const std::string & cpu_number_or_range : cpu_ranges)
-    {
-        std::vector<std::string> cpu_range;
-        boost::split(cpu_range, cpu_number_or_range, boost::is_any_of("-"));
-
-        int start = 0;
-        int end = 0;
-        if (cpu_range.size() == 1 && parse(cpu_range[0], start))
-            end = start;
-        else if (cpu_range.size() != 2 || !parse(cpu_range[0], start) || !parse(cpu_range[1], end) || end < start)
-            return std::nullopt;
-
-        cpus_count += static_cast<uint32_t>(end - start) + 1;
-    }
-    return cpus_count;
 }
 
 /// Try to look at cgroups limit if it is available.
