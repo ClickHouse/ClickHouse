@@ -1485,6 +1485,8 @@ def test_definition_of_another_table():
 
     backup_name = new_backup_name()
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+    backup_name_temporary = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name_temporary}")
     instance.query("DROP TABLE test.table")
 
     # The rights are checked for `test.table`, so a backup whose definition is of another table is refused.
@@ -1498,6 +1500,16 @@ def test_definition_of_another_table():
         f"RESTORE TABLE test.table FROM {backup_name}", user="u1"
     )
     assert instance.query("EXISTS test.tabl2") == "0\n"
+
+    # And so is a definition of a temporary table.
+    path = os.path.join(get_path_to_backup(backup_name_temporary), "metadata/test/table.sql")
+    definition = open(path).read()
+    with open(path, "w") as f:
+        f.write(definition.replace("CREATE TABLE", "CREATE TEMPORARY TABLE"))
+
+    assert "is of another object" in instance.query_and_get_error(
+        f"RESTORE TABLE test.table FROM {backup_name_temporary}", user="u1"
+    )
 
     # The definition of a temporary table must be of a temporary table.
     session_id = new_session_id()

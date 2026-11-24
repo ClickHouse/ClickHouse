@@ -299,8 +299,8 @@ void BackupMetadataFinder::findTableInBackupImpl(
 
     /// The rights of a restore are checked for the table of the backup entry, so its definition must be of that table.
     if (const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        create.getTable() != table_name_in_backup.table
-        || (is_temporary_table ? !create.isTemporary() : create.getDatabase() != table_name_in_backup.database))
+        create.getTable() != table_name_in_backup.table || create.isTemporary() != is_temporary_table
+        || (!is_temporary_table && create.getDatabase() != table_name_in_backup.database))
         throw Exception(
             ErrorCodes::CANNOT_RESTORE_TABLE,
             "The definition of {} in the backup is of another object: {}",
