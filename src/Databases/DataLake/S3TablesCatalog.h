@@ -67,7 +67,7 @@ protected:
         Poco::JSON::Object::Ptr request_body,
         const String & method,
         bool ignore_result,
-        size_t * sent_requests) const override;
+        size_t & sent_requests) const override;
 
 private:
     const String region;

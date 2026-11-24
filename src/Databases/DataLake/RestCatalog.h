@@ -250,7 +250,8 @@ protected:
         const String & method,
         bool ignore_result) const
     {
-        return sendRequest(catalog_state, endpoint, request_body, method, ignore_result, /* sent_requests */ nullptr);
+        size_t sent_requests = 0;
+        return sendRequest(catalog_state, endpoint, request_body, method, ignore_result, sent_requests);
     }
 
     /// Also counts in `sent_requests` the requests with the body sent, including the retries of the transport.
@@ -260,7 +261,7 @@ protected:
         Poco::JSON::Object::Ptr request_body,
         const String & method,
         bool ignore_result,
-        size_t * sent_requests) const;
+        size_t & sent_requests) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 

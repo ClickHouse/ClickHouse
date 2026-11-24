@@ -1907,7 +1907,7 @@ String RestCatalog::sendRequest(
     Poco::JSON::Object::Ptr request_body,
     const String & method,
     bool ignore_result,
-    size_t * sent_requests) const
+    size_t & sent_requests) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1926,10 +1926,9 @@ String RestCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str, sent_requests](DB::WriteBuffer & out)
+        out_stream_callback = [body_str, &sent_requests](DB::WriteBuffer & out)
         {
-            if (sent_requests)
-                ++*sent_requests;
+            ++sent_requests;
             DB::writeString(body_str, out);
         };
     }
@@ -2208,10 +2207,10 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     size_t sent_requests = 0;
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, &sent_requests);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, sent_requests);
         /// The transport sends the commit again, as after a lost response.
         fiu_do_on(DB::FailPoints::iceberg_rest_catalog_resend_commit, {
-            sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, &sent_requests);
+            sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, sent_requests);
         });
         fiu_do_on(DB::FailPoints::iceberg_rest_catalog_lose_commit_response, {
             throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Failpoint: the response to the commit of {}.{} was lost", namespace_name, table_name);

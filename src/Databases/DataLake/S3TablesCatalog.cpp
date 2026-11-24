@@ -337,7 +337,7 @@ String S3TablesCatalog::sendRequest(
     Poco::JSON::Object::Ptr request_body,
     const String & method,
     bool ignore_result,
-    size_t * sent_requests) const
+    size_t & sent_requests) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -349,10 +349,9 @@ String S3TablesCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str, sent_requests](DB::WriteBuffer & out)
+        out_stream_callback = [body_str, &sent_requests](DB::WriteBuffer & out)
         {
-            if (sent_requests)
-                ++*sent_requests;
+            ++sent_requests;
             DB::writeString(body_str, out);
         };
     }
