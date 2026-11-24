@@ -7,7 +7,6 @@
 #include <base/defines.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/HashTable/Hash.h>
-#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 
 #include <mutex>
@@ -25,26 +24,35 @@ class CachedCompressedReadBuffer;
 struct RuntimeDataflowStatisticsBlock;
 
 /// The ranges of the files the readers of a read load, counted into its statistics, each range once however many readers
-/// load it. The ranges kept for that are reserved from `automatic_parallel_replicas_max_counted_ranges` before the maps
-/// grow; past it, the counting stops and the statistics record that the input was not measured.
+/// load it. The ranges kept for that are reserved from `automatic_parallel_replicas_max_counted_ranges` before they are
+/// kept; past it, the counting stops and the statistics record that the input was not measured. The ranges still kept
+/// unmerged are counted when the registry is destroyed, before the statistics are, since it holds them.
 class ReadRangesRegistry
 {
 public:
     /// `duplicated` is that of the `RuntimeDataflowStatisticsCacheUpdater` of the read.
     ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_);
+    ~ReadRangesRegistry();
 
     /// The counted ranges of a file. The readers of several threads count the same file.
+    /// The ranges are appended and merged in bulk, which is several times faster than keeping them in a tree and takes
+    /// 16 bytes a range.
     class ReadRanges
     {
         friend class ReadRangesRegistry;
 
-        /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
+        /// The bytes of the ranges not counted yet that become counted: those merged, and those extending the last
+        /// merged range. Clears the ranges.
         size_t add(CompressedBlockRanges & ranges) TSA_REQUIRES(mutex);
+        /// Merges the appended ranges into the merged ones and returns the bytes they add. Never throws.
+        size_t merge() TSA_REQUIRES(mutex);
 
         std::mutex mutex;
-        /// Merged, by their begin. A B-tree keeps a range in about 20 bytes, a `std::map` in 48.
-        absl::btree_map<size_t, size_t, std::less<>, AllocatorWithMemoryTracking<std::pair<const size_t, size_t>>> united_ranges
-            TSA_GUARDED_BY(mutex);
+        /// Up to `merged`: sorted by their begin, neither overlapping nor touching. After it: appended since the last merge.
+        CompressedBlockRanges united_ranges TSA_GUARDED_BY(mutex);
+        size_t merged TSA_GUARDED_BY(mutex) = 0;
+        /// The bytes of the merged ranges.
+        size_t merged_bytes TSA_GUARDED_BY(mutex) = 0;
     };
 
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.

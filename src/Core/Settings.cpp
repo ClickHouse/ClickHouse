@@ -10078,7 +10078,8 @@ Set to 1 to accept any amount of duplicated reading, which restores the behaviou
 How many ranges of compressed blocks automatic parallel replicas may keep to count the bytes a query reads while it
 collects the statistics of the query. A compressed block is counted once however many times it is loaded, so the ranges
 of the files counted so far are kept until the query ends, merged where they are contiguous: a read that skips many
-granules leaves many of them. A range takes about 20 bytes, and every file counted takes a unit of the limit too.
+granules leaves many of them. A range takes 16 bytes, and up to twice as much while the ranges of a file grow; every
+file counted takes a unit of the limit too.
 
 When the limit is reached, the counting stops and the statistics record that the input could not be measured: the query
 is then not executed with parallel replicas, and its statistics are not collected again until the number of rows it reads
