@@ -1,6 +1,3 @@
-#include <map>
-#include <optional>
-#include <functional>
 #include <unordered_set>
 #include <utility>
 #include <ranges>
@@ -23,7 +20,10 @@
 #include <DataTypes/FieldToDataType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/quoteString.h>
+#include <base/scope_guard.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -112,19 +112,20 @@ bool containsQueryOrUnionInSourceExpression(const QueryTreeNodePtr & node)
     return false;
 }
 
-/// How `PlannerActionsVisitorImpl` names the columns that a lambda argument of the same name shadows.
-/// `ActionNodeNameHelper` needs it to name the functions and lambdas that use such columns.
-struct ShadowedColumnNamer
-{
-    /// Whether the expression has a column that an argument of one of its lambdas can shadow.
-    std::function<bool()> has_shadowed_columns;
-    /// The name of a column inside the lambdas that are being built and the lambdas that are being named,
-    /// or `nullopt` if no lambda of the expression can shadow the column.
-    std::function<std::optional<String>(const QueryTreeNodePtr &, const String &)> get_column_name;
-    /// Whether a lambda is being built.
-    std::function<bool()> is_inside_lambda;
-};
-
+/** Calculates the names of action nodes.
+  *
+  * The name of a column depends on the lambdas it is used in. Inside the body of a lambda, a name that one of the
+  * enclosing lambdas declares as an argument is that argument, so a column of the same name (possible when column
+  * identifiers are not used as names, e.g. in `PREWHERE`, for the synthetic column of an `INTERPOLATE` expression,
+  * and for a lambda argument written as a quoted column identifier) is named differently there:
+  * `__shadowed_<n>.<name>`, with the smallest `n` that is not an argument of an enclosing lambda either.
+  * A column whose own name already has this form is escaped the same way inside lambdas, so the names of
+  * different columns never coincide. Outside of lambdas no column is renamed.
+  *
+  * The policy depends only on the node and on the lambdas that enclose it, so `PlannerActionsVisitorImpl`,
+  * which builds the actions, and the standalone `calculateActionNodeName`, which names aggregate function arguments,
+  * sort keys, etc., produce identical names.
+  */
 class ActionNodeNameHelper
 {
 public:
@@ -137,42 +138,18 @@ public:
     {
     }
 
-    void setShadowedColumnNamer(ShadowedColumnNamer shadowed_column_namer_)
+    /// The nodes named between `enterLambda` and `exitLambda` are in the body of the lambda.
+    void enterLambda(const LambdaNode & lambda_node)
     {
-        shadowed_column_namer = std::move(shadowed_column_namer_);
+        lambda_scopes.emplace_back(&lambda_node);
     }
 
-    /// The lambdas whose bodies are being named, outermost first.
-    [[nodiscard]] const std::vector<const LambdaNode *> & getLambdasBeingNamed() const
+    void exitLambda()
     {
-        return lambdas_being_named;
+        lambda_scopes.pop_back();
     }
 
-    /// Whether the name of a column depends on the lambdas it is used in,
-    /// because the expression has a column shadowed by a lambda argument.
-    [[nodiscard]] bool hasShadowedColumns() const
-    {
-        return has_shadowed_columns;
-    }
-
-    /// Must be called for the first lambda of the expression before anything in a lambda is named.
-    void onLambda()
-    {
-        if (lambda_seen)
-            return;
-
-        lambda_seen = true;
-        if (!shadowed_column_namer || !shadowed_column_namer->has_shadowed_columns())
-            return;
-
-        /// The names calculated so far are valid outside of lambdas only, but `node_to_name` is used in a lambda as well
-        /// (a query tree node can be shared, e.g. an aliased expression), and so are the names that are being calculated now.
-        has_shadowed_columns = true;
-        node_to_name.clear();
-        ++context_dependent_names;
-    }
-
-    /// The name of a column regardless of the lambdas it is used in.
+    /// The name of a column outside of lambdas.
     String calculateColumnNodeName(const QueryTreeNodePtr & node) const
     {
         const ColumnIdentifier * column_identifier = nullptr;
@@ -185,38 +162,120 @@ public:
         return node->as<ColumnNode &>().getColumnName();
     }
 
+    /// The name of a column in the body of the lambdas entered.
+    /// It differs from `column_node_name`, the name outside of lambdas, if a lambda argument shadows the column.
+    String calculateColumnNodeNameInLambdas(const QueryTreeNodePtr & node, const String & column_node_name) const
+    {
+        if (lambda_scopes.empty())
+            return column_node_name;
+
+        /// A lambda argument cannot be shadowed: the analyzer resolves the name to the innermost lambda declaring it.
+        auto column_source = node->as<ColumnNode &>().getColumnSourceOrNull();
+        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+            return column_node_name;
+
+        if (!isLambdaArgumentName(column_node_name) && !hasShadowedColumnNameForm(column_node_name))
+            return column_node_name;
+
+        for (size_t i = 0;; ++i)
+        {
+            String name = fmt::format("{}{}.{}", shadowed_column_name_prefix, i, column_node_name);
+            if (!isLambdaArgumentName(name))
+                return name;
+        }
+    }
+
+    /// Whether a column shadowed by a lambda argument has been named while naming this node.
+    [[nodiscard]] bool hasShadowedColumns(const QueryTreeNodePtr & node) const
+    {
+        return nodes_with_shadowed_columns.contains(node);
+    }
+
+    /// The name of a node in the body of the lambdas entered.
     String calculateActionNodeName(const QueryTreeNodePtr & node)
     {
-        /// Without shadowed columns every name is here. With them, only the names that do not depend on the lambdas.
-        auto it = node_to_name.find(node);
-        if (it != node_to_name.end())
-            return it->second;
-
-        if (isOutsideLambdas())
+        /// The arguments of aggregate and window functions are calculated before the lambda is,
+        /// and the function itself is an input of the actions, named by the standalone calculator.
+        if (!lambda_scopes.empty())
         {
-            auto outside_it = node_to_name_outside_lambdas.find(node);
-            if (outside_it != node_to_name_outside_lambdas.end())
-            {
-                ++context_dependent_names;
-                return outside_it->second;
-            }
+            const auto * function_node = node->as<FunctionNode>();
+            if (function_node && (function_node->isAggregationCall() || function_node->isWindowCall()))
+                return calculateActionNodeNameOutsideLambdas(node);
         }
 
-        size_t context_dependent_names_before = context_dependent_names;
+        const auto & names = getNodeToName();
+        auto it = names.find(node);
+        if (it != names.end())
+        {
+            if (nodes_with_shadowed_columns.contains(node))
+                ++shadowed_columns_named;
+            return it->second;
+        }
+
+        size_t shadowed_columns_named_before = shadowed_columns_named;
         String result = calculateActionNodeNameImpl(node);
 
-        if (context_dependent_names == context_dependent_names_before)
-            node_to_name.emplace(node, result);
-        else if (isOutsideLambdas())
-            node_to_name_outside_lambdas.emplace(node, result);
+        if (shadowed_columns_named != shadowed_columns_named_before)
+            nodes_with_shadowed_columns.insert(node);
 
+        getNodeToName().emplace(node, result);
         return result;
     }
 
-private:
-    [[nodiscard]] bool isOutsideLambdas() const
+    /// The name the node has outside of lambdas, regardless of the lambdas entered.
+    String calculateActionNodeNameOutsideLambdas(const QueryTreeNodePtr & node)
     {
-        return has_shadowed_columns && lambdas_being_named.empty() && !shadowed_column_namer->is_inside_lambda();
+        LambdaScopes outer_lambda_scopes;
+        outer_lambda_scopes.swap(lambda_scopes);
+        SCOPE_EXIT({ lambda_scopes.swap(outer_lambda_scopes); });
+
+        return calculateActionNodeName(node);
+    }
+
+private:
+    static constexpr std::string_view shadowed_column_name_prefix = "__shadowed_";
+
+    /// The names calculated in the body of a lambda are valid only there.
+    struct LambdaScope
+    {
+        explicit LambdaScope(const LambdaNode * lambda_node_) : lambda_node(lambda_node_) {}
+
+        const LambdaNode * lambda_node;
+        QueryTreeNodeToName node_to_name;
+    };
+
+    using LambdaScopes = VectorWithMemoryTracking<LambdaScope>;
+
+    QueryTreeNodeToName & getNodeToName()
+    {
+        return lambda_scopes.empty() ? node_to_name : lambda_scopes.back().node_to_name;
+    }
+
+    /// Whether one of the lambdas entered declares an argument with this name.
+    [[nodiscard]] bool isLambdaArgumentName(const String & name) const
+    {
+        for (const auto & lambda_scope : lambda_scopes)
+        {
+            const auto & argument_names = lambda_scope.lambda_node->getArguments().getNames();
+            if (std::find(argument_names.begin(), argument_names.end(), name) != argument_names.end())
+                return true;
+        }
+
+        return false;
+    }
+
+    /// Whether the name is `__shadowed_<n>.<name>`.
+    [[nodiscard]] static bool hasShadowedColumnNameForm(std::string_view name)
+    {
+        if (!name.starts_with(shadowed_column_name_prefix))
+            return false;
+
+        size_t pos = shadowed_column_name_prefix.size();
+        size_t digits_begin = pos;
+        while (pos < name.size() && isNumericASCII(name[pos]))
+            ++pos;
+
+        return pos != digits_begin && pos < name.size() && name[pos] == '.';
     }
 
     String calculateActionNodeNameImpl(const QueryTreeNodePtr & node)
@@ -228,18 +287,13 @@ private:
         {
             case QueryTreeNodeType::COLUMN:
             {
-                result = calculateColumnNodeName(node);
+                String column_node_name = calculateColumnNodeName(node);
 
                 /// A column shadowed by a lambda argument is named differently from that argument,
                 /// otherwise e.g. `plus(value, value)` would name two different functions of one lambda.
-                if (has_shadowed_columns)
-                {
-                    if (auto column_name = shadowed_column_namer->get_column_name(node, result))
-                    {
-                        ++context_dependent_names;
-                        result = std::move(*column_name);
-                    }
-                }
+                result = calculateColumnNodeNameInLambdas(node, column_node_name);
+                if (result != column_node_name)
+                    ++shadowed_columns_named;
 
                 break;
             }
@@ -499,10 +553,9 @@ private:
                         buffer << ", ";
                 }
 
-                onLambda();
-                lambdas_being_named.push_back(&lambda_node);
+                enterLambda(lambda_node);
+                SCOPE_EXIT({ exitLambda(); });
                 buffer << " -> " << calculateActionNodeName(lambda_node.getExpression());
-                lambdas_being_named.pop_back();
 
                 result = buffer.str();
                 break;
@@ -627,17 +680,16 @@ public:
         return buffer.str();
     }
 private:
-    std::unordered_map<QueryTreeNodePtr, std::string> & node_to_name;
-    /// The names that are valid outside of lambdas only. Used when the expression has shadowed columns.
-    std::unordered_map<QueryTreeNodePtr, std::string> node_to_name_outside_lambdas;
+    /// The names of the nodes outside of lambdas.
+    QueryTreeNodeToName & node_to_name;
     const PlannerContext & planner_context;
     bool use_column_identifier_as_action_node_name = true;
-    std::optional<ShadowedColumnNamer> shadowed_column_namer;
-    std::vector<const LambdaNode *> lambdas_being_named;
-    bool lambda_seen = false;
-    bool has_shadowed_columns = false;
-    /// How many names that depend on the lambdas they are used in have been calculated.
-    size_t context_dependent_names = 0;
+    /// The lambdas whose bodies are being named, outermost first.
+    LambdaScopes lambda_scopes;
+    /// The nodes that have a column shadowed by a lambda argument, in the body of some lambdas at least.
+    std::unordered_set<QueryTreeNodePtr> nodes_with_shadowed_columns;
+    /// How many columns shadowed by a lambda argument have been named.
+    size_t shadowed_columns_named = 0;
 };
 
 class ActionsScopeNode
@@ -662,24 +714,9 @@ public:
         return scope_node;
     }
 
-    bool containsNode(const std::string & node_name) const
+    [[nodiscard]] bool containsNode(const std::string & node_name) const
     {
         return node_name_to_node.contains(node_name);
-    }
-
-    /// Add a DAG ALIAS node so that `alias_name` resolves to `child`.
-    /// Used when a table column inside a lambda body was given a disambiguated
-    /// name at the lambda scope; other scopes still have the column under its
-    /// original name and need this alias for expression building and capture.
-    const ActionsDAG::Node * addAliasIfNecessary(const std::string & alias_name, const ActionsDAG::Node * child)
-    {
-        auto it = node_name_to_node.find(alias_name);
-        if (it != node_name_to_node.end())
-            return it->second;
-
-        const auto * node = &actions_dag.addAlias(*child, alias_name);
-        node_name_to_node[node->result_name] = node;
-        return node;
     }
 
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)
@@ -866,14 +903,11 @@ private:
 
     NodeNameAndNodeMinLevel visitCorrelatedColumn(const ColumnNodePtr & node);
 
-    /// Whether a lambda scope on the actions stack declares an argument with this name.
-    bool isLambdaArgumentName(const String & name) const;
+    /// Remembers that a node which lambda scopes have under `node_name` is `outer_node_name` in the outermost scope.
+    void addOuterNodeName(const String & node_name, const String & outer_node_name);
 
-    /// The name under which a column shadowed by a lambda argument is passed through lambda scopes.
-    String getShadowedColumnName(const QueryTreeNodePtr & node, const String & column_node_name);
-
-    /// Collects the names of the columns and of the lambda arguments of the expression being visited.
-    void collectExpressionNames();
+    /// The node of the scope by the name it has in lambda scopes.
+    const ActionsDAG::Node * getNodeByNameInLambdas(size_t level, const String & node_name);
 
     NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name = {});
 
@@ -891,15 +925,11 @@ private:
 
     std::vector<ActionsScopeNode> actions_stack;
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
-    /// Names chosen by `getShadowedColumnName`, by column source and name.
-    std::map<std::pair<const IQueryTreeNode *, std::string>, std::string> shadowed_column_names;
-    /// The expression being visited, and the action names of all its columns and the names of all its lambda arguments,
-    /// collected on demand by `collectExpressionNames`.
-    QueryTreeNodePtr root_expression_node;
-    std::optional<std::unordered_set<std::string>> expression_column_names;
-    std::unordered_set<std::string> expression_lambda_argument_names;
-    /// Whether a column of the expression has the name of a lambda argument of the expression.
-    bool expression_has_shadowed_columns = false;
+    /// A node that uses a column shadowed by a lambda argument, and such a column itself, are named differently
+    /// in lambda scopes and in the outermost scope, which has no lambda arguments (see `ActionNodeNameHelper`).
+    /// The outermost scope keeps the names the standalone `calculateActionNodeName` gives, because its nodes
+    /// are what the actions export. This is the name in the outermost scope by the name in lambda scopes.
+    std::unordered_map<std::string, std::string> outer_node_names;
     CorrelatedSubtrees correlated_subtrees;
     const PlannerContextPtr planner_context;
     const ColumnNodePtrWithHashSet & correlated_columns_set;
@@ -919,38 +949,11 @@ PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {
     actions_stack.emplace_back(actions_dag, nullptr);
-
-    /// The functions and lambdas that use a column shadowed by a lambda argument are named by the name `visitColumn`
-    /// gives to the column, so that they differ from the functions and lambdas that use the argument.
-    action_node_name_helper.setShadowedColumnNamer(ShadowedColumnNamer{
-        .has_shadowed_columns = [this]
-        {
-            collectExpressionNames();
-            return expression_has_shadowed_columns;
-        },
-        .get_column_name = [this](const QueryTreeNodePtr & node, const String & column_node_name) -> std::optional<String>
-        {
-            auto column_source = node->as<ColumnNode &>().getColumnSourceOrNull();
-            if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
-                return {};
-
-            collectExpressionNames();
-            if (!expression_lambda_argument_names.contains(column_node_name))
-                return {};
-
-            if (!isLambdaArgumentName(column_node_name))
-                return column_node_name;
-
-            return getShadowedColumnName(node, column_node_name);
-        },
-        .is_inside_lambda = [this] { return actions_stack.size() > 1; },
-    });
 }
 
 std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitorImpl::visit(QueryTreeNodePtr expression_node)
 {
     ActionsDAG::NodeRawConstPtrs result;
-    root_expression_node = expression_node;
 
     if (auto * expression_list_node = expression_node->as<ListNode>())
     {
@@ -1033,7 +1036,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return {column_node_name, Levels(0)};
     }
 
-    if (!isLambdaArgumentName(column_node_name))
+    String column_node_name_in_lambdas = action_node_name_helper.calculateColumnNodeNameInLambdas(node, column_node_name);
+    if (column_node_name_in_lambdas == column_node_name)
     {
         for (Int64 i = actions_stack_size; i >= 0; --i)
             actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
@@ -1052,27 +1056,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     /// column under its own name in any of these scopes would either reuse the argument node or create
     /// the argument with the column's type, and the body would be built for the wrong source and type.
     ///
-    /// Therefore pass the column through every lambda scope under a disambiguated name, which the
-    /// capture loop of `visitLambda` resolves scope by scope down to an alias of the real INPUT in
-    /// the outermost scope, which is not a lambda.
-    ///
-    String disambiguated = getShadowedColumnName(node, column_node_name);
+    /// Therefore pass the column through every lambda scope under the name it has in lambdas, which the
+    /// capture loop of `visitLambda` resolves scope by scope down to the real INPUT in the outermost scope,
+    /// which is not a lambda.
+    actions_stack[0].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
+    for (Int64 i = actions_stack_size; i > 0; --i)
+        actions_stack[i].addInputColumnIfNecessary(column_node_name_in_lambdas, column_node.getColumnType());
 
-    for (Int64 i = actions_stack_size; i >= 0; --i)
-    {
-        const auto & scope = actions_stack[i].getScopeNode();
-        if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
-        {
-            actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
-        }
-        else
-        {
-            const auto * input_node = actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
-            actions_stack[i].addAliasIfNecessary(disambiguated, input_node);
-        }
-    }
-
-    return {disambiguated, Levels(0)};
+    addOuterNodeName(column_node_name_in_lambdas, column_node_name);
+    return {column_node_name_in_lambdas, Levels(0)};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitCorrelatedColumn(const ColumnNodePtr & node)
@@ -1082,141 +1074,38 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
     /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
     /// can properly capture the correlated column value from the outer scope.
-    const auto * placeholder_node = actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
 
     /// Inside a lambda body, an INPUT named after one of the lambda's arguments is that argument
     /// (see `visitColumn`), so the correlated column must not be registered under a name that a lambda
-    /// scope on the stack declares as an argument. In that case pass it through every inner scope under
-    /// a disambiguated name, which the capture loop of `visitLambda` resolves down to an alias of the
-    /// placeholder in the outermost scope.
-    if (!isLambdaArgumentName(column_node_name))
-    {
-        for (size_t i = 1; i < actions_stack.size(); ++i)
-            actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
-
-        return {column_node_name, Levels(0)};
-    }
-
-    String disambiguated = getShadowedColumnName(node, column_node_name);
-    actions_stack[0].addAliasIfNecessary(disambiguated, placeholder_node);
+    /// scope on the stack declares as an argument. It is passed through every inner scope under the name
+    /// it has in lambdas, which the capture loop of `visitLambda` resolves down to the placeholder
+    /// in the outermost scope.
+    String column_node_name_in_lambdas = action_node_name_helper.calculateColumnNodeNameInLambdas(node, column_node_name);
 
     for (size_t i = 1; i < actions_stack.size(); ++i)
-        actions_stack[i].addInputColumnIfNecessary(disambiguated, node->getColumnType());
+        actions_stack[i].addInputColumnIfNecessary(column_node_name_in_lambdas, node->getColumnType());
 
-    return {disambiguated, Levels(0)};
+    addOuterNodeName(column_node_name_in_lambdas, column_node_name);
+    return {column_node_name_in_lambdas, Levels(0)};
 }
 
-bool PlannerActionsVisitorImpl::isLambdaArgumentName(const String & name) const
+void PlannerActionsVisitorImpl::addOuterNodeName(const String & node_name, const String & outer_node_name)
 {
-    auto is_argument_of = [&](const LambdaNode & lambda_node)
-    {
-        const auto & arg_names = lambda_node.getArguments().getNames();
-        return std::find(arg_names.begin(), arg_names.end(), name) != arg_names.end();
-    };
-
-    for (const auto & scope_node : actions_stack)
-    {
-        const auto & scope = scope_node.getScopeNode();
-        if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA && is_argument_of(scope->as<LambdaNode &>()))
-            return true;
-    }
-
-    /// While an expression is being named, the lambdas it contains are not on the stack yet,
-    /// but a column in their bodies has to get the name it will have when they are.
-    for (const auto * lambda_node : action_node_name_helper.getLambdasBeingNamed())
-    {
-        if (is_argument_of(*lambda_node))
-            return true;
-    }
-
-    return false;
+    if (node_name != outer_node_name)
+        outer_node_names.emplace(node_name, outer_node_name);
 }
 
-void PlannerActionsVisitorImpl::collectExpressionNames()
+const ActionsDAG::Node * PlannerActionsVisitorImpl::getNodeByNameInLambdas(size_t level, const String & node_name)
 {
-    if (expression_column_names)
-        return;
-
-    expression_column_names.emplace();
-    std::vector<QueryTreeNodePtr> nodes_to_process{root_expression_node};
-    while (!nodes_to_process.empty())
+    if (level == 0)
     {
-        auto current = std::move(nodes_to_process.back());
-        nodes_to_process.pop_back();
-
-        if (const auto * column = current->as<ColumnNode>())
-        {
-            auto source = column->getColumnSourceOrNull();
-            if (!source || source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS)
-                expression_column_names->insert(action_node_name_helper.calculateColumnNodeName(current));
-        }
-        else if (const auto * lambda = current->as<LambdaNode>())
-        {
-            for (const auto & argument_name : lambda->getArguments().getNames())
-                expression_lambda_argument_names.insert(argument_name);
-        }
-
-        for (const auto & child : current->getChildren())
-        {
-            if (child && child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION)
-                nodes_to_process.push_back(child);
-        }
+        auto it = outer_node_names.find(node_name);
+        if (it != outer_node_names.end())
+            return actions_stack[0].getNodeOrThrow(it->second);
     }
 
-    expression_has_shadowed_columns = std::any_of(
-        expression_column_names->begin(), expression_column_names->end(),
-        [&](const auto & column_name) { return expression_lambda_argument_names.contains(column_name); });
-}
-
-String PlannerActionsVisitorImpl::getShadowedColumnName(const QueryTreeNodePtr & node, const String & column_node_name)
-{
-    /// The name must not coincide with a lambda argument, or it would be taken for that argument, and must not
-    /// coincide with the name of another column or action, or the two would share one node. Columns of the
-    /// expression may be visited after this one, so the names of all columns of the expression are checked,
-    /// not only the nodes already registered: e.g. a table column may be named `__table1.x` by a quoted identifier.
-    ///
-    /// The chosen name is remembered, because after the first reference to the column it is registered itself.
-    auto column_source = node->as<ColumnNode &>().getColumnSourceOrNull();
-    auto & chosen_name = shadowed_column_names[{column_source.get(), column_node_name}];
-    if (!chosen_name.empty() && !isLambdaArgumentName(chosen_name))
-        return chosen_name;
-
-    collectExpressionNames();
-
-    String source_kind;
-    if (!correlated_columns_set.empty() && correlated_columns_set.contains(static_pointer_cast<ColumnNode>(node)))
-        source_kind = "CORRELATED";
-    else
-        source_kind = column_source ? toString(column_source->getNodeType()) : "COLUMN";
-
-    auto is_name_taken = [&](const String & candidate)
-    {
-        if (isLambdaArgumentName(candidate) || expression_column_names->contains(candidate))
-            return true;
-
-        return std::any_of(actions_stack.begin(), actions_stack.end(), [&](const auto & scope) { return scope.containsNode(candidate); });
-    };
-
-    /// Prefer the column identifier (e.g. `__table1.x`, or `t1.x` for a correlated column of the outer query).
-    /// It is deterministic (same for the same query), and column identifiers are unique within the query.
-    if (const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
-        column_identifier && !is_name_taken(*column_identifier))
-    {
-        chosen_name = *column_identifier;
-        return chosen_name;
-    }
-
-    /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
-    /// so it has no column identifier. Derive a name that is not taken and is not a column identifier
-    /// of the query either (a table expression may have any alias, e.g. `__CORRELATED`).
-    const auto & global_planner_context = planner_context->getGlobalPlannerContext();
-    String base_name = fmt::format("__{}.{}", source_kind, column_node_name);
-    String name = base_name;
-    for (size_t i = 1; global_planner_context->hasColumnIdentifier(name) || is_name_taken(name); ++i)
-        name = fmt::format("{}_{}", base_name, i);
-
-    chosen_name = name;
-    return chosen_name;
+    return actions_stack[level].getNodeOrThrow(node_name);
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name)
@@ -1259,10 +1148,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
         lambda_arguments_names_and_types.emplace_back(lambda_argument_names[i], lambda_argument_types[i]);
 
-    action_node_name_helper.onLambda();
-
     ActionsDAG lambda_actions_dag;
     actions_stack.emplace_back(lambda_actions_dag, node);
+    action_node_name_helper.enterLambda(lambda_node);
 
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
     lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
@@ -1273,6 +1161,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     Names required_column_names = lambda_actions_dag.getRequiredColumnsNames();
 
     actions_stack.pop_back();
+    action_node_name_helper.exitLambda();
     levels.reset(actions_stack.size());
     size_t level = levels.max();
 
@@ -1282,7 +1171,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
         if (it == lambda_argument_names.end())
         {
-            lambda_children.push_back(actions_stack[level].getNodeOrThrow(required_column_name));
+            lambda_children.push_back(getNodeByNameInLambdas(level, required_column_name));
             captured_column_names.push_back(required_column_name);
         }
     }
@@ -1296,14 +1185,26 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     auto compile_lambda_expression = planner_context->mayBeSerializedForRemoteExecution() ? CompileExpressions::no : CompileExpressions::yes;
     auto expression_actions_settings = ExpressionActionsSettings(planner_context->getQueryContext(), compile_lambda_expression);
     /// With a column shadowed by a lambda argument, only the name that tells the column from the argument identifies the lambda.
-    auto lambda_node_name = action_node_name_helper.hasShadowedColumns()
-        ? action_node_name_helper.calculateActionNodeName(node)
-        : calculateActionNodeName(node, *planner_context);
+    auto lambda_node_name = action_node_name_helper.calculateActionNodeName(node);
+    auto outer_lambda_node_name = lambda_node_name;
+    if (!action_node_name_helper.hasShadowedColumns(node))
+    {
+        lambda_node_name = calculateActionNodeName(node, *planner_context);
+        outer_lambda_node_name = lambda_node_name;
+    }
+    else if (actions_stack.size() > 1)
+    {
+        outer_lambda_node_name = action_node_name_helper.calculateActionNodeNameOutsideLambdas(node);
+    }
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
-    const auto * actions_node = actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
+    const auto * actions_node = actions_stack[level].addFunctionIfNecessary(
+        level == 0 ? outer_lambda_node_name : lambda_node_name, std::move(lambda_children), function_capture);
+
+    if (level == 0)
+        addOuterNodeName(lambda_node_name, outer_lambda_node_name);
 
     if (!result_type->equals(*actions_node->result_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1502,6 +1403,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
+    /// The outermost scope has the node under the name it has outside of lambdas, see `outer_node_names`.
+    auto outer_function_node_name = actions_stack.size() > 1
+        ? action_node_name_helper.calculateActionNodeNameOutsideLambdas(node)
+        : function_node_name;
+
     /// Fast path for the no-lambda case: when there is a single actions scope, an expression that
     /// has already been built can be reused as-is instead of re-traversing it. With the analyzer,
     /// WITH-aliases are shared by pointer in the query tree (a DAG), so without this we would
@@ -1538,17 +1444,19 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
      * fails with a type mismatch.
      */
     bool is_input_node = function_node.isAggregationCall() || function_node.isWindowCall()
-        || actions_stack.front().containsInputOrConstantNode(function_node_name);
+        || actions_stack.front().containsInputOrConstantNode(outer_function_node_name);
     if (is_input_node)
     {
         size_t actions_stack_size = actions_stack.size();
 
-        for (size_t i = 0; i < actions_stack_size; ++i)
+        actions_stack.front().addInputColumnIfNecessary(outer_function_node_name, function_node.getResultType());
+        for (size_t i = 1; i < actions_stack_size; ++i)
         {
             auto & actions_stack_node = actions_stack[i];
             actions_stack_node.addInputColumnIfNecessary(function_node_name, function_node.getResultType());
         }
 
+        addOuterNodeName(function_node_name, outer_function_node_name);
         return {function_node_name, Levels(0)};
     }
 
@@ -1589,8 +1497,18 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     children.reserve(function_arguments_size);
 
     size_t level = levels.max();
+    const bool is_inside_lambda = actions_stack.size() > 1;
     for (auto & function_argument_node_name : function_arguments_node_names)
-        children.push_back(actions_stack[level].getNodeOrThrow(function_argument_node_name));
+    {
+        children.push_back(is_inside_lambda
+            ? getNodeByNameInLambdas(level, function_argument_node_name)
+            : actions_stack[level].getNodeOrThrow(function_argument_node_name));
+    }
+
+    /// A function of a lambda body that does not depend on lambda arguments is calculated in the outermost scope.
+    const auto & result_node_name = level == 0 ? outer_function_node_name : function_node_name;
+    if (level == 0)
+        addOuterNodeName(function_node_name, outer_function_node_name);
 
     if (!canDisplaySecrets(planner_context->getQueryContext()))
         markFoldedSecretConstants(function_node, children);
@@ -1602,7 +1520,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                 "Expression in arrayJoin cannot depend on lambda argument: {} ",
                 function_arguments_node_names.at(0));
 
-        actions_stack[level].addArrayJoinIfNecessary(function_node_name, children.at(0));
+        actions_stack[level].addArrayJoinIfNecessary(result_node_name, children.at(0));
     }
     else
     {
@@ -1624,13 +1542,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             if (auto resolver = FunctionFactory::instance().tryGet(
                     function_node.getFunctionName(), planner_context->getQueryContext()))
-                actions_stack[level].addFunctionIfNecessary(function_node_name, children, resolver);
+                actions_stack[level].addFunctionIfNecessary(result_node_name, children, resolver);
             else
-                actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+                actions_stack[level].addFunctionIfNecessary(result_node_name, children, function_node);
         }
         else
         {
-            actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+            actions_stack[level].addFunctionIfNecessary(result_node_name, children, function_node);
         }
     }
 
