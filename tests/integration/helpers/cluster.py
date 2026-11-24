@@ -229,7 +229,10 @@ DEFAULT_THREAD_FUZZER_SETTINGS = {
 
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-SANITIZER_SIGN = "=================="
+# ASan, MSan and TSan reports start with a `=====` banner; UBSan and CFI diagnostics reports have none.
+SANITIZER_SIGNS = ("==================", ": runtime error: ")
+# For `zgrep` (basic regex alternation).
+SANITIZER_SIGN = "\\|".join(SANITIZER_SIGNS)
 
 CLICKHOUSE_START_COMMAND = (
     "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
@@ -2386,6 +2389,7 @@ class ClickHouseCluster:
         tmpfs=None,
         mem_limit=None,
         cpu_limit=None,
+        cpuset=None,
         pids_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
@@ -2537,6 +2541,7 @@ class ClickHouseCluster:
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
             cpu_limit=cpu_limit,
+            cpuset=cpuset,
             pids_limit=pids_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
@@ -4806,7 +4811,8 @@ class ClickHouseCluster:
                 # Search for sinitizer signs in docker.log if it's still empty
                 with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
-                        if SANITIZER_SIGN in line:
+                        # Only the banner: other containers log Go panics with `runtime error:`.
+                        if SANITIZER_SIGNS[0] in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
                             break
 
@@ -4823,7 +4829,7 @@ class ClickHouseCluster:
                     if not os.path.exists(keeper_stderr):
                         continue
                     with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
+                        if any(sign in line for line in f for sign in SANITIZER_SIGNS):
                             sanitizer_assert_instance = f"zoo{i}"
                             logging.error(
                                 "Sanitizer in Keeper instance zoo%s log %s",
@@ -5259,6 +5265,7 @@ services:
         tmpfs: {tmpfs}
         {mem_limit}
         {cpu_limit}
+        {cpuset}
         {pids_limit}
         cap_add:
             - SYS_PTRACE
@@ -5382,6 +5389,7 @@ class ClickHouseInstance:
         tmpfs=None,
         mem_limit=None,
         cpu_limit=None,
+        cpuset=None,
         pids_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
@@ -5411,6 +5419,9 @@ class ClickHouseInstance:
             self.cpu_limit = ""
         else:
             self.cpu_limit = f"cpus: {cpu_limit}"
+
+        # CPUs the container may run on, e.g. "0-1" (the `--cpuset-cpus` option of `docker run`).
+        self.cpuset = f'cpuset: "{cpuset}"' if cpuset is not None else ""
 
         if pids_limit is not None:
             self.pids_limit = f"pids_limit: {pids_limit}"
@@ -7396,6 +7407,7 @@ class ClickHouseInstance:
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
                     cpu_limit=self.cpu_limit,
+                    cpuset=self.cpuset,
                     pids_limit=self.pids_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
