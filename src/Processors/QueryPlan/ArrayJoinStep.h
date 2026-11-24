@@ -26,6 +26,7 @@ public:
         , element_filter(other.element_filter ? std::optional<ActionsDAG>(other.element_filter->clone()) : std::nullopt)
         , element_filter_column_name(other.element_filter_column_name)
         , remove_element_filter_column(other.remove_element_filter_column)
+        , has_relaxed_filter_below(other.has_relaxed_filter_below)
     {}
 
     [[nodiscard]] String getName() const override { return "ArrayJoin"; }
@@ -53,6 +54,10 @@ public:
         if (element_filter)
             visitor(*element_filter);
     }
+
+    /// the filter push down adds a relaxed copy of a filter below the step only one time
+    [[nodiscard]] bool hasRelaxedFilterBelow() const { return has_relaxed_filter_below; }
+    void setHasRelaxedFilterBelow() { has_relaxed_filter_below = true; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
@@ -83,6 +88,7 @@ private:
     std::optional<ActionsDAG> element_filter;
     String element_filter_column_name;
     bool remove_element_filter_column = false;
+    bool has_relaxed_filter_below = false;
 };
 
 }

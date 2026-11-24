@@ -1483,5 +1483,3 @@ endif ()
 
 add_library(OpenSSL::Crypto ALIAS crypto)
 add_library(OpenSSL::SSL ALIAS ssl)
-
-install(FILES openssl.conf fipsmodule.conf DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)

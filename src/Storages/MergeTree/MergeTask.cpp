@@ -3862,9 +3862,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        const auto sorting_queue_strategy
-            = !global_ctx->merge_may_reduce_rows
-                && (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
+        const auto sorting_queue_strategy = (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
             ? SortingQueueStrategy::Batch
             : SortingQueueStrategy::Default;
 

@@ -4063,7 +4063,7 @@ Note, that `max_bytes_before_external_sort` is still respected, spilling to disk
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.
 )", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
@@ -7253,6 +7253,14 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
+    DECLARE(NonZeroUInt64, iceberg_metadata_previous_versions_max, 100, R"(
+The maximum number of entries in the `metadata-log` of an Iceberg table that a write keeps, including the entry of the metadata file it writes. When a write adds an entry over the limit, the oldest entries are removed. The metadata files themselves are not deleted.
+
+The Iceberg table property `write.metadata.previous-versions-max` takes precedence over this setting. As in the Java implementation, the property is the number of previous metadata files and is at least one, so the `metadata-log` keeps one entry more than its value.
+
+The setting has no effect on tables in a catalog that writes the metadata files itself, such as a REST catalog: the catalog maintains the `metadata-log` according to its own configuration and the table property.
+)", 0, \
+        {"26.12", std::numeric_limits<UInt64>::max(), 100, "New setting. Writes into Iceberg tables bound the `metadata-log`, which previously grew with every commit."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
 Data files smaller than this are selected for compaction.
 
@@ -10710,6 +10718,19 @@ snapshot with its own manifest, so an `INSERT` writes exactly one manifest only 
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0, \
         {"25.12", 100, 100, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_initial_backoff_ms, 10, R"(
+The upper bound of the delay before the first retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit.
+The bound doubles with each next retry, up to `iceberg_insert_commit_retry_max_backoff_ms`, and each delay is chosen at random
+between zero and the bound, so that the writers that lost the same race do not retry at the same moment and collide again.
+The delay is taken before the latest metadata is looked up, so with many concurrent writers it also limits how often the metadata
+directory is listed. `0` retries without a delay.
+)", 0, \
+        {"26.12", 0, 10, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_max_backoff_ms, 5000, R"(
+The maximum of the delay bound before a retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit,
+see `iceberg_insert_commit_retry_initial_backoff_ms`.
+)", 0, \
+        {"26.12", 0, 5000, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
     DECLARE(Bool, database_datalake_require_metadata_access, true, R"(
 Either to throw error or not if we don't have rights to get table's metadata in database engine DataLakeCatalog.
 )", 0, \
@@ -10903,6 +10924,10 @@ instead of glob listing. 0 means disabled.
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0, \
         {"26.1", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."}) \
+    DECLARE(Bool, json_use_optimized_type_conversion, true, R"(
+When enabled, conversions between JSON types with different parameters (typed paths, skip rules) use an optimized path that reuses unchanged sub-columns by pointer and applies CAST only to changed paths. This avoids the full serialize-to-string and parse-from-string pipeline. Disable to force the legacy format+parse conversion for all JSON type changes.
+)", 0, \
+        {"26.12", true, true, "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."}) \
     DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, true, R"(
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
@@ -10965,17 +10990,23 @@ Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nu
 
 Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join` is not affected either.
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join keeps exact keys when its hash table fits in the L2 cache of the CPU, and also when it would hash every left key and the right side has fewer rows than `min_rows_for_packed_string_keys_in_hash_join`. With that setting at 0, every join is packed, also one whose hash table fits in the L2 cache.
 )", 0, \
         {"26.11", false, true, "New setting to make hash joins on a single `String` key faster and use less memory."}) \
     DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 100'000, R"(
-The minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. Smaller joins gain little from it, and can be slower with long keys.
+A hash join whose right side has a row estimate packs its `String` keys (see `enable_packed_string_keys_in_hash_join`) only when the hash table with exact keys would be larger than about the L2 cache of the CPU, or when this setting is 0. The size of the table is the number of right-side rows times the bytes of one row: a cell of 32 bytes plus the average length of the key, which adds 0 when unknown. Smaller joins gain little from packed keys, and can be slower.
 
-The estimate is the number of right-side rows in an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate always uses `enable_packed_string_keys_in_hash_join`.
+A packed key of more than 15 bytes is hashed for every row of the left side. A join with a runtime filter that passes mostly the rows with a match (see `enable_join_runtime_filters`) hashes only the rows that match, so it needs no minimum. Without such a filter, this setting is the minimum number of right-side rows. It applies when the average length of the key is more than 15 bytes, and when the length is unknown, because it then counts as long. The length is known from the `basic` column statistics of the key. `MergeTree` tables collect them by default, see `auto_statistics_types`.
 
-0 means no minimum.
+The key has no statistics when it is a column of a `Memory` table, the result of an aggregate function of a subquery, or the result of an expression in `ON`, such as `concat(k, 'x')` or `hex(k)`. A join with `OR` does not use them. A subquery that only passes the column on, or groups by it, keeps them.
+
+A `LEFT` join other than `SEMI` and `ANTI`, and a `FULL` join, keep all rows of their left side, so they get no runtime filter. The filter of a `LEFT ANTI` join passes the rows without a match, so it does not count.
+
+The number of rows is the right-side rows of an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate, which `parallel_hash_join_threshold` uses too. Without an optimizer estimate, it is the estimate of this server for its own read of the right table. A join with neither packs the keys, unless the server that planned the query estimated the right side below this minimum. Each server of a distributed query decides from its own estimate, statistics and cache size.
+
+0 packs the keys of every join.
 )", 0, \
-        {"26.11", 0, 100'000, "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}) \
+        {"26.11", 0, 100'000, "New setting: the minimum number of right-side rows for a hash join that would hash every left key, that is a key of an average length of more than 15 bytes, or of unknown length, without a runtime filter. `enable_packed_string_keys_in_hash_join` also needs a hash table larger than the L2 cache. 0 packs every join."}) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0, \
         {"26.6", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"}) \
