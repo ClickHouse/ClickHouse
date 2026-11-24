@@ -14,15 +14,7 @@ void AsynchronousMessageProducer::start(const ContextPtr & context)
 {
     LOG_TEST(log, "Executing startup");
 
-    try
-    {
-        initialize();
-    }
-    catch (...)
-    {
-        finished = true;
-        throw;
-    }
+    initialize();
 
     producing_task = context->getSchedulePool()->createTask(StorageID::createEmpty(), getProducingTaskName(), [this]
     {
@@ -38,8 +30,8 @@ void AsynchronousMessageProducer::start(const ContextPtr & context)
 
 void AsynchronousMessageProducer::finish()
 {
-    /// We should execute finish logic only once.
-    if (finished.exchange(true))
+    /// We should execute finish logic only once, and only for the producing task that `start` created.
+    if (finished.exchange(true) || !producing_task)
         return;
 
     LOG_TEST(log, "Executing shutdown");
