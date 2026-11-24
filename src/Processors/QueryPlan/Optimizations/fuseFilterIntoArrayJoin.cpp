@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ActionsDAGTraversal.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 
@@ -70,9 +71,10 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     const bool fully_fused = !residual.tryFindInOutputs(filter->getFilterColumnName()) || split->is_filter_const_after_push_down;
 
     /// a conjunct that stays above (e.g. with rand) no longer guards the fused ones and sees fewer rows
+    auto ignores_row_count = [](const IFunctionBase & function) { return !function.isStateful() && !function.hasObservableSideEffects(); };
     if (!fully_fused
-        && (expression.hasStatefulFunctions()
-            || !std::ranges::all_of(ActionsDAG::extractConjunctionAtoms(filter_node), canBeMovedToTheFrontOfAndChain)))
+        && (!std::ranges::all_of(expression.getNodes(), [&](const auto & node) { return allNodeFunctions(node, ignores_row_count); })
+            || !std::ranges::all_of(ActionsDAG::extractConjunctionAtoms(filter_node), [](const auto * atom) { return canBeEvaluatedOnMoreRows(atom); })))
         return 0;
 
     /// With short-circuit off, a FilterStep still masks a throwing atom by splitting the AND into sequential
