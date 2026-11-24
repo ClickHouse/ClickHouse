@@ -44,6 +44,18 @@ for i in {1..50}; do
 done
 [ "$warm" == "1" ] || echo "The deduplication cache of t2 was not warmed up"
 
+# The cache hit above scheduled a cache refresh; let it finish before TRUNCATE,
+# otherwise it may load the snapshot without the hash and hide the stale entry.
+for _ in {1..600}; do
+    pending=$($CLICKHOUSE_CLIENT -q "
+        SELECT count() FROM system.background_schedule_pool
+        WHERE database = currentDatabase() AND table = 't2'
+          AND log_name LIKE '%(AsyncBlockIDsCache)'
+          AND (scheduled OR delayed OR executing)")
+    [ "$pending" == "0" ] && break
+    sleep 0.1
+done
+
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t1"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA t2"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t2"
