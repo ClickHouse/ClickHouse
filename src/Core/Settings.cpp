@@ -10721,7 +10721,7 @@ with [iceberg_insert_single_manifest_for_all_partitions](#iceberg_insert_single_
 
 The table properties `commit.manifest-merge.enabled`, `commit.manifest.min-count-to-merge` and `commit.manifest.target-size-bytes`
 take precedence over the settings.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.12", false, false, "New setting."}) \
     DECLARE(UInt64, iceberg_insert_manifest_min_count_to_merge, 100, R"(
 The minimum number of manifest files of a partition, the new manifest file of an `INSERT` into an Iceberg table included,
