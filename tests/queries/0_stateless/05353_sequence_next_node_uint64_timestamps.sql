@@ -84,6 +84,18 @@ SELECT sequenceNextNodeMerge('forward', 'head')(s) FROM
     SELECT CAST(unhex('0101014507000000000000000000000000')
         AS AggregateFunction(sequenceNextNode('forward', 'head'), UInt64, String, UInt8, UInt8))
 );
+-- The same for a tail: the full state also keeps the last nodes of the low 32-bit order.
+SELECT sequenceNextNodeMerge('backward', 'tail')(s) FROM
+(
+    SELECT CAST(s AS AggregateFunction(sequenceNextNode('backward', 'tail'), UInt64, String, UInt8, UInt8)) AS s
+    FROM remote('127.0.0.2', view(
+        SELECT sequenceNextNodeState('backward', 'tail')(t, page, page = 'V', page = 'V') AS s
+        FROM values('t UInt64, page String', (5, 'P'), (6, 'Q'), (7, 'R'), (4294967297, 'S'), (4294967298, 'T'), (4294967299, 'U'))))
+    UNION ALL
+    SELECT CAST(unhex('0101015608000000010000000000000001')
+        AS AggregateFunction(sequenceNextNode('backward', 'tail'), UInt64, String, UInt8, UInt8))
+)
+SETTINGS prefer_localhost_replica = 0;
 
 -- Timestamps 2^32 apart with the same value: the earlier one is the head, whatever the order the states are merged in.
 SELECT groupArray(k), sequenceNextNodeMerge('forward', 'head')(s) FROM
