@@ -103,71 +103,6 @@ namespace
         }
     }
 
-    /// Returns the key that orders label values in natural order, as `sort_by_label` does in Prometheus: a value is split
-    /// into pieces of digits and pieces of other characters, digit pieces are compared as numbers (`host2` before `host10`)
-    /// and the other pieces as text.
-    ///
-    /// NOTE: The ClickHouse function `naturalSortKey` is not used because it returns one string, in which a digit piece is
-    /// compared with the text next to it: it puts `host-1` before `host2` (`-` is before the digits), and Prometheus puts
-    /// it after `host10`.
-    ///
-    /// The key is an array with one tuple (category, number length, text) per piece. A piece has either only digits or
-    /// no digits, so comparing it as a string with `0` and with `:` (the character after `9`) tells which of the three
-    /// tuples it gets:
-    ///
-    /// arrayMap(piece -> multiIf(
-    ///         piece < '0', (0, 0, piece),                                            -- text before the digits
-    ///         piece < ':', (1, length(trimLeft(piece, '0')), trimLeft(piece, '0')),  -- digits
-    ///         (2, 0, piece)),                                                        -- text after the digits
-    ///     extractAll(<label_value>, '[0-9]+|[^0-9]+'))                               -- pieces
-    ///
-    /// - Category: Prometheus compares a digit piece with a text piece as text, so text that starts before `0`
-    ///   (such as `-` or `.`) goes before every number, and other text after.
-    /// - Number length: without leading zeros, the longer number is the greater one, and numbers of the same length
-    ///   compare as text. So a number of any length can be compared.
-    ///
-    /// Examples, in natural order:
-    ///   `-1`      [(0, 0, '-'), (1, 1, '1')]
-    ///   `4m5`     [(1, 1, '4'), (2, 0, 'm'), (1, 1, '5')]
-    ///   `4m600`   [(1, 1, '4'), (2, 0, 'm'), (1, 3, '600')]
-    ///   `007`     [(1, 1, '7')]
-    ///   `host2`   [(2, 0, 'host'), (1, 1, '2')]
-    ///   `host10`  [(2, 0, 'host'), (1, 2, '10')]
-    ///   `host-1`  [(2, 0, 'host-'), (1, 1, '1')]
-    ///
-    /// Arrays are compared piece by piece, and tuples field by field: `4m5` is before `4m600` by the number length
-    /// of the third piece (1 < 3), and `host10` is before `host-1` by the text of the first piece (`host` < `host-`).
-    ///
-    /// The key is evaluated once for each series of the result, not for each stored sample or each comparison.
-    ASTPtr makeNaturalSortKey(ASTPtr label_value)
-    {
-        /// Every use gets its own AST node: a node must not be in two places of a tree.
-        /// `piece` is the parameter of the SQL lambda below, so the identifiers must have the name given to `makeASTLambda`.
-        auto piece = [] { return make_intrusive<ASTIdentifier>("piece"); };
-        auto number_literal = [](UInt64 value) { return make_intrusive<ASTLiteral>(value); };
-        auto string_literal = [](const char * text)
-        {
-            return make_intrusive<ASTLiteral>(String{text});
-        };
-        auto without_leading_zeros = [&]
-        {
-            return makeASTFunction("trimLeft", piece(), string_literal("0"));
-        };
-
-        auto text_before_digits = makeASTFunction("tuple", number_literal(0), number_literal(0), piece());
-        auto digits = makeASTFunction("tuple", number_literal(1), makeASTFunction("length", without_leading_zeros()), without_leading_zeros());
-        auto text_after_digits = makeASTFunction("tuple", number_literal(2), number_literal(0), piece());
-
-        auto piece_key = makeASTFunction("multiIf",
-            makeASTFunction("less", piece(), string_literal("0")), std::move(text_before_digits),
-            makeASTFunction("less", piece(), string_literal(":")), std::move(digits),
-            std::move(text_after_digits));
-
-        return makeASTFunction("arrayMap",
-            makeASTLambda({"piece"}, std::move(piece_key)),
-            makeASTFunction("extractAll", std::move(label_value), string_literal("[0-9]+|[^0-9]+")));
-    }
-
 }
 
 bool isFunctionSort(std::string_view function_name)
@@ -222,8 +157,9 @@ std::optional<SortOrder> getSortOrder(const SQLQueryPiece & result)
             auto label_value = makeASTFunction("ifNull",
                 makeASTFunction("timeSeriesExtractTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(label_name)),
                 make_intrusive<ASTLiteral>(String{}));
-
-            keys.emplace_back(makeNaturalSortKey(std::move(label_value)));
+            /// The labels are compared in natural order, as sort_by_label does in Prometheus;
+            /// why the mode is 1: the default mode puts host-1 before host2, and Prometheus puts it after.
+            keys.emplace_back(makeASTFunction("naturalSortKey", label_value, make_intrusive<ASTLiteral>(UInt64(1))));
         }
     }
     else
