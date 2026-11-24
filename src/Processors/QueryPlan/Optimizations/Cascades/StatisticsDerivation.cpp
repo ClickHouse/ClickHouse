@@ -1,3 +1,4 @@
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -90,7 +91,8 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     }
     else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(plan_step))
     {
-        group->statistics = deriveAggregatingStatistics(*aggregating_step, input_statistics(0));
+        group->statistics = deriveAggregatingStatistics(
+            *aggregating_step, input_statistics(0), expression->is_partial_of_two_stage_aggregation);
     }
     else if (const auto * sorting_step = typeid_cast<const SortingStep *>(plan_step))
     {
@@ -694,7 +696,36 @@ static std::pair<Float64, Float64> estimateGroupCount(const Names & columns, con
             std::min(ndv_product, input_statistics.max_row_count)};
 }
 
-ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
+/// A state of `uniqExact` holds all the distinct values of its arguments, and the exchange and the merge
+/// above the aggregation work for each value. So the values of such states are counted as the rows of the
+/// output, with their bytes. A function with a combinator (`uniqExactIf`) is not counted: the estimate
+/// does not know which values its condition accepts.
+static void countDistinctValuesOfStates(
+    const AggregateDescriptions & aggregates, const ExpressionStatistics & input_statistics, ExpressionStatistics & aggregation_statistics)
+{
+    Float64 values = 0;
+    Float64 max_values = 0;
+    Float64 bytes = 0;
+    for (const auto & aggregate : aggregates)
+    {
+        if (aggregate.function->getName() != "uniqExact")
+            continue;
+        const auto [distinct_values, max_distinct_values] = estimateGroupCount(aggregate.argument_names, input_statistics);
+        values += distinct_values;
+        max_values += max_distinct_values;
+        bytes += distinct_values * Float64(aggregate.function->getStateBytesPerDistinctInput());
+    }
+    if (values <= aggregation_statistics.estimated_row_count)
+        return;
+
+    bytes += aggregation_statistics.estimated_row_count * aggregation_statistics.estimated_bytes_per_row;
+    aggregation_statistics.estimated_row_count = values;
+    aggregation_statistics.max_row_count = std::max(aggregation_statistics.max_row_count, max_values);
+    aggregation_statistics.estimated_bytes_per_row = bytes / values;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(
+    const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics, bool is_partial_of_two_stage_aggregation)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     ExpressionStatistics aggregation_statistics;
@@ -715,6 +746,12 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output
     /// header with the keys' known value sizes.
     aggregation_statistics.estimated_bytes_per_row = estimateRowWidth(*aggregating_step.getOutputHeader(), aggregation_statistics.column_statistics);
+
+    /// Only for the partial half of a two-stage aggregation: its output goes to its own merge.
+    /// `ROLLUP` and `CUBE` keep the statistics of their input, so there the values would be rows
+    /// for the steps above them.
+    if (memo.getContext().cascades_distinct_aggregation_split && is_partial_of_two_stage_aggregation && aggregator_params.keys.empty())
+        countDistinctValuesOfStates(aggregator_params.aggregates, input_statistics, aggregation_statistics);
 
     /// Group keys pass through with their values, so their equivalences survive; the column
     /// statistics at this point hold exactly the group keys.

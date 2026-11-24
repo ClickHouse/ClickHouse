@@ -1,0 +1,167 @@
+-- 1. many distinct values: an aggregation by x on every node, a shuffle by x, then the count
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 2. the same query with the setting off: the states of uniqExact go to one node
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 3. a Nullable argument: the aggregation above the shuffle is count(n), which does not count the NULL group
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> uniqExact(__table1.n) UInt64 : 0
+         ALIAS uniqExact(__table1.n) :: 0 -> countDistinct(n) UInt64 : 1
+Positions: 1
+  MergingAggregated
+  Keys:
+  Aggregates:
+      uniqExact(__table1.n)
+        Function: count(Nullable(Int32)) → UInt64
+        Arguments: __table1.n
+  Mode: memory-efficient
+    GatherExchange
+      Aggregating
+      Keys:
+      Aggregates:
+          uniqExact(__table1.n)
+            Function: count(Nullable(Int32)) → UInt64
+            Arguments: __table1.n
+      Skip merging: 0
+        MergingAggregated
+        Keys: __table1.n
+          ShuffleExchange
+            Aggregating
+            Keys: __table1.n
+            Skip merging: 0
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+              Actions: INPUT : 0 -> n Nullable(Int32) : 0
+                       ALIAS n :: 0 -> __table1.n Nullable(Int32) : 1
+              Positions: 1
+                ReadFromMergeTree (ParallelRead default.t_distinct_split)
+                ReadType: Default
+                Parts: 2
+                Granules: 2
+-- 3b. the column of a subquery under another name: the same plan as in case 1
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+                ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 4. a filter below the aggregation: the same plan over the filter
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression (Before GROUP BY)
+                Filter ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 5. a limit on the rows of GROUP BY must not apply to the distinct values: no split
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.t_distinct_split)
+-- 6. not a single uniqExact of one column without GROUP BY: no split
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ShuffleExchange
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 7. uniqExact keeps a hash of a String, GROUP BY compares the strings: no split
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 7b. an aggregation in the order of the key takes 0. and -0. for one value, uniqExact does not: no split
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 8. a forced shuffle: the aggregation by x must shuffle all the rows, so the states of one million values cost less
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 9. no distinct count for the column: the default estimate (a tenth of the rows) gives the split
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_split)
+-- 10. two nodes, almost every row has its own value: uniqExact on one node costs less than a shuffle of the rows
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.t_distinct_split_narrow)
+-- 11. no hint: the distinct count comes from the statistics of the table
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ShuffleExchange
+              ReadFromMergeTree (ParallelRead default.t_distinct_split_measured)
+-- 12. the table of case 10 on eight nodes: the split, with a shuffle of the rows
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ShuffleExchange
+              ReadFromMergeTree (ParallelRead default.t_distinct_split_narrow)
+-- 13. the same when an exchange is very expensive: one node reads the table and computes uniqExact
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.t_distinct_split_narrow)

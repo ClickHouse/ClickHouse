@@ -139,6 +139,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
     context.distributed_plan_partial_aggregation_before_shuffle = optimization_settings.distributed_plan_partial_aggregation_before_shuffle;
     context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
+    context.cascades_distinct_aggregation_split = optimization_settings.cascades_distinct_aggregation_split;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
     return context;
@@ -164,6 +165,8 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     /// only the partial + merge split (variant A), which the rule skips itself.
     if (memo.getContext().cascades_aggregation_pushdown)
         addRule(createAggregationPushdown());
+    if (memo.getContext().cascades_distinct_aggregation_split)
+        addRule(createDistinctAggregationSplit());
     addRule(createAggregationImplementation());
     addRule(createDistinctImplementation());
     addRule(createMergingAggregationImplementation());

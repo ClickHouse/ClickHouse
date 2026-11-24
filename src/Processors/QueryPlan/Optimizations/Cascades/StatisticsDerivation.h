@@ -55,7 +55,8 @@ private:
     ExpressionStatistics deriveReadStatistics(const ReadFromMergeTree & read_step);
     ExpressionStatistics deriveFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics);
-    ExpressionStatistics deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveAggregatingStatistics(
+        const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics, bool is_partial_of_two_stage_aggregation);
     ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics);

@@ -221,6 +221,37 @@ cost. Given `GROUP BY n_name` with 25 distinct values:
 The optimizer creates all three as alternatives and compares their costs. Two-phase
 wins when the GROUP BY has few distinct values (high aggregation factor).
 
+### Distinct Aggregation Split
+
+`count(DISTINCT x)` without `GROUP BY` is `uniqExact(x)` by default. Its two-phase plan sends
+the hash set of the distinct values of every node as one row to one node, which merges them.
+With many distinct values this serial path takes longer than the scan.
+
+With `cascades_distinct_aggregation_split`, `DistinctAggregationSplit` adds another way to
+compute the aggregation to its group:
+
+```
+Aggregating(no keys, uniqExact(x))   =>   Aggregating(no keys, count(x))
+                                            Aggregating(keys: x)
+```
+
+The usual rules plan the two aggregations, as for a query written as a count over
+`GROUP BY x`: usually a partial aggregation by `x`, a shuffle of the distinct values, a merge
+and a count on every node, and a sum of the counts on one node. The plans of the original
+aggregation stay in the group, and the costs select.
+
+- **Types**: the rule applies where `uniqExact` keeps the value itself: integers, `Date`,
+  `Date32`, `DateTime`, enums, `UUID`, `IPv4`, also in `Nullable` and `LowCardinality`. For
+  strings and decimals `uniqExact` keeps a 128-bit hash. Floats are excluded: an aggregation
+  in the order of its key takes `0.` and `-0.` as one value.
+- **NULL**: the count is `count(x)` for a `Nullable` argument, so the NULL group is not counted.
+- **`max_rows_to_group_by`**: the rule does not apply, because the limit would apply to the
+  distinct values.
+- **Statistics**: to compare the plans, `deriveAggregatingStatistics` counts the values of the
+  `uniqExact` states as rows (bytes from `IAggregateFunction::getStateBytesPerDistinctInput`).
+  It does so only in the partial half of a two-stage aggregation without keys: `ROLLUP` and
+  `CUBE` keep the statistics of their input for their own output.
+
 ## Architecture Details
 
 ### Task-Based Optimization
@@ -457,6 +488,9 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   never `ASOF` or `INNER ANY`, and never `ANY` under `join_any_take_last_row` (the
   kept row comes from the hash-table build side, so a swap changes the result)
 - `TwoStageAggregationTransformation` — splits aggregation into partial + merge
+- `DistinctAggregationSplit` — adds a count over an aggregation by the argument as an
+  alternative to a `uniqExact` without `GROUP BY` (see "Distinct Aggregation Split"), gated by
+  `cascades_distinct_aggregation_split`
 - `TwoStageTopN` — splits a top-N sort into a per-node bounded sort, a sorted-merge
   gather, and a coordinator limit
 

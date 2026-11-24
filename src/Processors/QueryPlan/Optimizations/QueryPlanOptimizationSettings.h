@@ -199,6 +199,7 @@ struct QueryPlanOptimizationSettings
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
+    bool cascades_distinct_aggregation_split = false;
 
     bool make_distributed_plan = false;
     /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the

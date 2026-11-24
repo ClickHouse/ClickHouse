@@ -441,6 +441,7 @@ std::unordered_map<String, CHSetting> performanceSettings
             {"1", "1.5", "1000"},
             false)},
        {"cascades_aggregation_pushdown", trueOrFalseSetting},
+       {"cascades_distinct_aggregation_split", trueOrFalseSetting},
        {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
        {"compile_aggregate_expressions", trueOrFalseSetting},
        {"compile_expressions", trueOrFalseSetting},
