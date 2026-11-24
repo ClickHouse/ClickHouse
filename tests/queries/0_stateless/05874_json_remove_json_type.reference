@@ -91,6 +91,12 @@ $.k1.x	0
 $.e.f	0
 several paths
 0
+a member with a dot, without escaping
+$["a.b"]	0
+$["a.x"]	0
+$["z.y"]	0
+$["k6.m"][0].n	0
+$.arr[0]["a.b"]	{"arr":[{"a":{"b":1},"k":2}]}	{"arr":[{"a":{"b":1},"k":2}]}
 result type
 1
 values of different types in the shared variant of Dynamic

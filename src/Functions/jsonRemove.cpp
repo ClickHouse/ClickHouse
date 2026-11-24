@@ -733,8 +733,10 @@ private:
         const auto & column_object = assert_cast<const ColumnObject &>(*column);
 
         /// A stored path is a sequence of keys, so only the leading member steps select stored paths.
+        /// Without escaping, a stored key never contains a dot, so a member with a dot selects no stored path.
         size_t num_members = 0;
-        while (num_members < steps.size() && steps[num_members].type == PathStep::Type::Member)
+        while (num_members < steps.size() && steps[num_members].type == PathStep::Type::Member
+               && (escape_dots_in_keys || !steps[num_members].member_name.contains('.')))
             ++num_members;
         if (num_members == 0)
             return column;

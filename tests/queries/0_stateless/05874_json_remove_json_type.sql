@@ -68,6 +68,16 @@ SELECT '$.e.f', countIf(toString(JSONRemove(j, '$.e.f')) != toString(CAST(JSONRe
 SELECT 'several paths';
 SELECT countIf(toString(JSONRemove(j, '$.d[0]', '$.d[0]', '$.e[0].f', '$.a')) != toString(CAST(JSONRemove(j::String, '$.d[0]', '$.d[0]', '$.e[0].f', '$.a'), toTypeName(j)))) FROM t_remove;
 
+-- Without escaping, the JSON type stores the key a.b as the nested path a.b, so a member with a dot matches nothing.
+SELECT 'a member with a dot, without escaping';
+SET json_type_escape_dots_in_keys = 0;
+SELECT '$["a.b"]', countIf(toString(JSONRemove(j, '$["a.b"]')) != toString(CAST(JSONRemove(j::String, '$["a.b"]'), toTypeName(j)))) FROM t_remove;
+SELECT '$["a.x"]', countIf(toString(JSONRemove(j, '$["a.x"]')) != toString(CAST(JSONRemove(j::String, '$["a.x"]'), toTypeName(j)))) FROM t_remove;
+SELECT '$["z.y"]', countIf(toString(JSONRemove(j, '$["z.y"]')) != toString(CAST(JSONRemove(j::String, '$["z.y"]'), toTypeName(j)))) FROM t_remove;
+SELECT '$["k6.m"][0].n', countIf(toString(JSONRemove(j, '$["k6.m"][0].n')) != toString(CAST(JSONRemove(j::String, '$["k6.m"][0].n'), toTypeName(j)))) FROM t_remove;
+SELECT '$.arr[0]["a.b"]', toString(JSONRemove(j, '$.arr[0]["a.b"]')), toString(CAST(JSONRemove(j::String, '$.arr[0]["a.b"]'), toTypeName(j)))
+FROM (SELECT '{"arr":[{"a":{"b":1},"k":2}]}'::JSON AS j);
+
 SELECT 'result type';
 SELECT toTypeName(JSONRemove(j, '$.a')) = toTypeName(j) FROM t_remove LIMIT 1;
 
