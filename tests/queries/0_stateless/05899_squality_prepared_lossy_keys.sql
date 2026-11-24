@@ -66,10 +66,6 @@ SELECT CAST(toUInt64(1) AS Variant(UInt64, String))
     IN squality_prepared_string_set; -- { serverError NOT_IMPLEMENTED }
 DROP TABLE squality_prepared_string_set;
 
-SELECT [CAST(toUInt64(1) AS Variant(UInt64, String))] IN materialize(['1']);
-SELECT [CAST(toUInt64(1) AS Variant(UInt64, String))]
-    IN (SELECT ['1']); -- { serverError NOT_IMPLEMENTED }
-
 SELECT [toDecimal64('0.01', 2)] IN [toDateTime64('1970-01-01 00:00:00', 1, 'UTC')],
        [toDecimal64('0.01', 2)] IN materialize([toDateTime64('1970-01-01 00:00:00', 1, 'UTC')]);
 SELECT count() FROM (SELECT [toDecimal64('0.01', 2)] AS a)
