@@ -764,8 +764,9 @@ private:
         SharedHeader right_sample_block_,
         HashJoinBuildLayout build_layout_) const
     {
-        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, build_layout_,
-            HashJoinStatsCollectingParams{}, estimated_probe_rows);
+        /// A clone can probe just one primary-key range or swap the inputs. Only the planner
+        /// that estimates the actual probe relation can supply its fingerprint preparation budget.
+        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, build_layout_);
     }
 
     std::shared_ptr<TableJoin> table_join;
