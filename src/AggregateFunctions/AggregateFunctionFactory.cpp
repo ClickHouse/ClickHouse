@@ -163,10 +163,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         }
     }
 
-    /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
-    /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
-    /// they must handle the nullability themselves.
-    /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
+    /// If one of the types is Nullable, we apply aggregate function combinator "Null", unless the function
+    /// handles the nullability itself, such as any_value_respect_nulls.
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
     if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
@@ -189,18 +187,13 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
                 "Aggregate function {} does not support arguments whose type can only be NULL",
                 name);
 
+        /// Functions from `Nothing` are rewritten to `AggregateFunctionNothing`, in this case `nested_function` is nullptr.
         AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
 
         if (nested_function)
             assertCombinatorIsSupported(*nested_function, combinator->getName());
 
-        // Pure window functions are not real aggregate functions. Applying
-        // combinators doesn't make sense for them, they must handle the
-        // nullability themselves. Another special case is functions from Nothing
-        // that are rewritten to AggregateFunctionNothing, in this case
-        // nested_function is nullptr.
-        if (!nested_function || !nested_function->isOnlyWindowFunction())
-            return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
+        return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
     auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);

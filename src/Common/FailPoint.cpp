@@ -106,6 +106,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    REGULAR(file_read_corrupt_data_without_direct_io) \
     REGULAR(file_top_k_query_condition_cache_inject_file_change) \
     ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
@@ -481,6 +482,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     REGULAR(transaction_hold_unknown_state) \
+    PAUSEABLE_ONCE(unique_key_delete_pause_before_commit) \
     PAUSEABLE_ONCE(unique_key_insert_pause_before_commit) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
@@ -563,6 +565,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
     PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
     PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
+    REGULAR(host_resolvers_pool_drop_cache_during_resolve) \
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
