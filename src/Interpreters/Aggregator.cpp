@@ -1663,7 +1663,8 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         {
             if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
                             : (method.top_k_heap.hasBoundary()
-                               && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
+                               && (has_typed_key ? method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)
+                                                 : method.top_k_heap.shouldSkip(heap_key_cols, i))))
             {
                 ++top_k_rows_skipped;
                 continue;
@@ -1818,8 +1819,12 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
     {
-        if constexpr (top_k)
+        /// Without a typed key `shouldSkipTyped` always falls through to `shouldSkip`; calling it directly keeps the numeric
+        /// dispatch out of the loop, so the check stays small enough to be inlined.
+        if constexpr (top_k && has_typed_key)
             return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
+        else if constexpr (top_k)
+            return method.top_k_heap.shouldSkip(heap_key_cols, row);
         return false;
     };
 
