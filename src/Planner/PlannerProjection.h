@@ -13,7 +13,6 @@
 namespace DB
 {
 
-class ColumnsDescription;
 class QueryPlan;
 
 /// plans the SELECT of a projection
@@ -21,8 +20,8 @@ class QueryPlan;
 class ProjectionPlanner
 {
 public:
-    /// the query has no FROM, it reads source_columns
-    ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context);
+    /// the query has no FROM, it reads the columns of source
+    ProjectionPlanner(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
 
     /// the functions in the actions refer to this context, so keep it while you use the actions
     [[nodiscard]] ContextPtr getContext() const { return planner_context->getQueryContext(); }
@@ -60,8 +59,5 @@ private:
     Names planner_key_names;
     AggregateDescriptions aggregates;
 };
-
-/// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
-QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
 
 }

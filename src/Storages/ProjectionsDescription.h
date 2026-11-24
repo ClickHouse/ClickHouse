@@ -5,6 +5,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Common/PODArray_fwd.h>
@@ -146,6 +147,7 @@ struct ProjectionDescription
      *        column (i.e., `_part_offset = starting_offset + row_index`). This column is
      *        essential for mapping projection rows back to their original positions in the
      *        parent part during merge or mutation.
+     * @param table_metadata The metadata of the table. The projection query is resolved against its columns.
      * @param context The query context. A copy will be made internally with adjusted settings.
      * @param perm_ptr Optional pointer to a permutation vector. If provided, it is used to map
      *        the output rows back to their original order in the parent block. This is necessary
@@ -154,11 +156,25 @@ struct ProjectionDescription
      *
      * @return The resulting block after executing the projection query.
      */
-    Block calculate(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
+    Block calculate(
+        const Block & block,
+        UInt64 starting_offset,
+        const StorageInMemoryMetadata & table_metadata,
+        ContextPtr context,
+        const IColumnPermutation * perm_ptr = nullptr) const;
 
     /// Same as but ignores additional index-specific metadata or structures.
     /// Only the query AST is used to compute the output block.
-    Block calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
+    Block calculateByQuery(
+        const Block & block,
+        UInt64 starting_offset,
+        const StorageInMemoryMetadata & table_metadata,
+        ContextPtr context,
+        const IColumnPermutation * perm_ptr = nullptr) const;
+
+    /// the table that `query_ast` is resolved against after the description: the columns that the query reads
+    /// it is not kept in the description, because each table has at least one projection
+    [[nodiscard]] StoragePtr createQuerySource(const StorageInMemoryMetadata & table_metadata) const;
 
     [[nodiscard]] String getDirectoryName() const { return name + ".proj"; }
 };

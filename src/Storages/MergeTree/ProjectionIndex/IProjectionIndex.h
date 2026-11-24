@@ -13,6 +13,7 @@ class ColumnsDescription;
 
 struct KeyDescription;
 struct ProjectionDescription;
+struct StorageInMemoryMetadata;
 
 using IColumnPermutation = PaddedPODArray<size_t>;
 
@@ -41,6 +42,7 @@ public:
         const ProjectionDescription & projection_desc,
         const Block & block,
         UInt64 starting_offset,
+        const StorageInMemoryMetadata & table_metadata,
         ContextPtr context,
         const IColumnPermutation * perm_ptr) const
         = 0;

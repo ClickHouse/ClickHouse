@@ -20,6 +20,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Planner/PlannerProjection.h>
+#include <Planner/PlannerProjectionAnalysis.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -717,8 +718,34 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     return result;
 }
 
+StoragePtr ProjectionDescription::createQuerySource(const StorageInMemoryMetadata & table_metadata) const
+{
+    const auto & columns = table_metadata.getColumns();
+
+    ColumnsDescription query_columns;
+    for (const auto & column_name : required_columns)
+    {
+        /// the old analysis can take an `EPHEMERAL` column as the smallest one, but a part does not store it
+        if (!columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+            continue;
+
+        const auto & name_in_storage = columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name).getNameInStorage();
+        if (!query_columns.has(name_in_storage))
+            query_columns.add(columns.get(name_in_storage));
+    }
+    /// a projection that only counts rows can need no column, but the planner needs a table with a column
+    if (query_columns.empty())
+        query_columns = ColumnsDescription(columns.getAllPhysical());
+
+    return createProjectionQuerySource(query_columns, MergeTreeData::createVirtuals(&table_metadata.partition_key));
+}
+
 Block ProjectionDescription::calculate(
-    const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
+    const Block & block,
+    UInt64 starting_offset,
+    const StorageInMemoryMetadata & table_metadata,
+    ContextPtr context,
+    const IColumnPermutation * perm_ptr) const
 {
     if (index)
     {
@@ -733,14 +760,18 @@ Block ProjectionDescription::calculate(
                 name,
                 index->getName());
         }
-        return index->calculate(*this, block, starting_offset, context, perm_ptr);
+        return index->calculate(*this, block, starting_offset, table_metadata, context, perm_ptr);
     }
 
-    return calculateByQuery(block, starting_offset, context, perm_ptr);
+    return calculateByQuery(block, starting_offset, table_metadata, context, perm_ptr);
 }
 
 Block ProjectionDescription::calculateByQuery(
-    const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
+    const Block & block,
+    UInt64 starting_offset,
+    const StorageInMemoryMetadata & table_metadata,
+    ContextPtr context,
+    const IColumnPermutation * perm_ptr) const
 {
     /// Nothing to project from an empty block. This can happen when TTL deletes all rows during merge.
     /// Aggregate projections with constant GROUP BY keys (e.g., GROUP BY 0.674) would produce 1 row
@@ -808,7 +839,7 @@ Block ProjectionDescription::calculateByQuery(
     }
 
     /// `_part_offset` is added above, so it is an ordinary column of the source block.
-    ProjectionPlanner planner(query_ast, ColumnsDescription(source_block.getNamesAndTypesList()), context);
+    ProjectionPlanner planner(query_ast, createQuerySource(table_metadata), context);
     auto plan = type == ProjectionDescription::Type::Aggregate
         ? planner.buildPlanForAggregateProjection(std::move(source_block))
         : planner.buildPlanForNormalProjection(std::move(source_block));
