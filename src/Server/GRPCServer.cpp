@@ -2147,6 +2147,13 @@ public:
             tryLogCurrentException(log, "~Runner");
         }
 
+        /// If `stop` could not start the thread, shut down here: this is neither the completion-queue thread
+        /// nor a thread holding `mutex`, so the completion-queue thread keeps delivering the tags meanwhile.
+        if (shutdown_thread.joinable())
+            shutdown_thread.join();
+        else
+            shutdownServer();
+
         if (queue_thread.joinable())
             queue_thread.join();
     }
@@ -2173,17 +2180,19 @@ public:
     void stop()
     {
         std::lock_guard lock{mutex};
+        if (shutdown_thread.joinable())
+            return;
+
         should_stop = true;
 
-        if (current_calls.empty() && cancelled_responders.empty())
-        {
-            /// If there are no current calls then we call shutdownQueue() to signal the queue to stop waiting for next events.
-            /// The following line will make CompletionQueue::Next() stop waiting if the queue is empty and return false instead.
-            shutdownQueue();
-
-            /// If there are some current calls then we can't call shutdownQueue() right now because we want to let the current calls finish.
-            /// In this case function shutdownQueue() will be called later in run().
-        }
+        /// `grpc::Server::Shutdown` without a deadline blocks until every call which gRPC has already matched is
+        /// released, including a call whose accept tag is still in the completion queue and has not reached
+        /// `onNewCall` yet. Such a call is released only by the completion-queue thread, which needs `mutex` for it.
+        /// So `grpc::Server::Shutdown` must run neither under `mutex` nor on the completion-queue thread: it runs on
+        /// its own thread, while the completion-queue thread keeps finishing the current calls and cancelling
+        /// the calls accepted after this point. It also must not block `stop`, because the server kills
+        /// the unfinished queries only after `stop` returns.
+        shutdown_thread = ThreadFromGlobalPool{[this] { shutdownServer(); }};
     }
 
     size_t getNumCurrentCalls() const
@@ -2252,6 +2261,8 @@ private:
         auto it = current_calls.find(call);
         finished_calls.push_back(std::move(it->second));
         current_calls.erase(it);
+        /// No tag has to follow the end of the last call, so `run` could miss it.
+        shutdownQueueIfNoCalls();
     }
 
     void run()
@@ -2271,27 +2282,44 @@ private:
             std::erase_if(cancelled_responders, [](const auto & responder) { return responder->isDone(); });
 
             /// If (should_stop == true) we continue processing while there are current calls.
-            /// `grpc::Server::Shutdown` waits for all started calls to be released, so the cancelled responders
-            /// must be destroyed before it, and that happens only when this thread delivers their tags.
-            if (should_stop && current_calls.empty() && cancelled_responders.empty())
-                shutdownQueue();
+            /// `grpc::Server::Shutdown` waits on another thread for all started calls to be released, so the cancelled
+            /// responders must be destroyed for it to return, and that happens only when this thread delivers their tags.
+            shutdownQueueIfNoCalls();
         }
 
         /// CompletionQueue::Next() returns false if the queue is fully drained and shut down.
     }
 
-    /// Shutdown the queue if that isn't done yet.
-    void shutdownQueue()
+    /// Shuts down the gRPC server, which blocks until all the calls matched by gRPC are released, and then
+    /// the completion queue. Must be called without `mutex` and not on the completion-queue thread.
+    void shutdownServer() noexcept
     {
-        chassert(should_stop);
-        if (queue_is_shut_down)
+        try
+        {
+            /// Server should be shut down before CompletionQueue.
+            if (owner.grpc_server)
+                owner.grpc_server->Shutdown();
+
+            std::lock_guard lock{mutex};
+            should_stop = true;
+            server_is_shut_down = true;
+            shutdownQueueIfNoCalls();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "shutdownServer");
+        }
+    }
+
+    /// Shuts down the completion queue if that isn't done yet, once the server is shut down and no call can start
+    /// an operation on the queue anymore. It makes `CompletionQueue::Next` return false after the queue is drained.
+    /// `mutex` is already locked.
+    void shutdownQueueIfNoCalls()
+    {
+        if (!server_is_shut_down || queue_is_shut_down || !current_calls.empty() || !cancelled_responders.empty())
             return;
 
         queue_is_shut_down = true;
-
-        /// Server should be shut down before CompletionQueue.
-        if (owner.grpc_server)
-            owner.grpc_server->Shutdown();
 
         if (owner.queue)
             owner.queue->Shutdown();
@@ -2300,6 +2328,9 @@ private:
     GRPCServer & owner;
     LoggerRawPtr log;
     ThreadFromGlobalPool queue_thread;
+    /// Runs the blocking `grpc::Server::Shutdown`, see `stop`.
+    ThreadFromGlobalPool shutdown_thread;
+    bool server_is_shut_down = false;
     bool queue_is_shut_down = false;
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
     std::map<Call *, std::unique_ptr<Call>> current_calls;
