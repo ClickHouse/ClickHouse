@@ -2462,6 +2462,14 @@ class SettingsRandomizer:
         "enable_group_by_top_k_dynamic_filtering": lambda: random.random() > 0.05,
         # Low values freeze the top-K heaps almost immediately, 0 never freezes them
         "group_by_top_k_optimization_observation_rows": lambda: random.choice([0, 1, 1024, 65536]),
+        "json_use_optimized_type_conversion": lambda: random.randint(0, 1),
+        "read_in_order_max_bytes_to_prefetch": lambda: random.choice([0, 1, 1024 * 1024, 128 * 1024 * 1024]),
+        "enable_robin_hood_hash_for_joins": lambda: random.randint(0, 1),
+        "query_plan_use_shuffle_for_order_by_rand": lambda: random.random() > 0.2,
+        "output_format_parquet_data_page_row_limit": lambda: random.choice([100, 1000, 20000, 1000000]),
+        "output_format_arrow_max_record_batch_size_bytes": lambda: random.choice(
+            [64 * 1024, 16 * 1024 * 1024, 2147483646]
+        ),
         "query_plan_push_down_volume_reducing_functions": lambda: random.random() > 0.05,
         "query_plan_optimize_lazy_materialization_for_file": lambda: random.random() > 0.05,
         "enable_function_early_short_circuit": lambda: random.random() < 0.3,
@@ -2868,6 +2876,8 @@ class MergeTreeSettingsRandomizer:
         "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
         "enable_adaptive_codec_selection": lambda: random.randint(0, 1),
+        "adaptive_codec_selection_period": lambda: random.choice([1, 8, 64]),
+        "serialize_statistics_bounds_with_column_type": lambda: random.randint(0, 1),
         "packed_skip_index_max_bytes": lambda: random.choice(
             [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
         ),
