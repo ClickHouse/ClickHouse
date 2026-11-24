@@ -11646,19 +11646,19 @@ Number of stateless workers the tasks of a distributed query are sent to at the 
 the batches of one worker are sent one after another. `0` sends to all the query's workers at once, `1` to one worker after
 another. The query's thread never sends.
 )", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New experimental setting."}) \
+        {"26.12", 0, 0, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_task_dispatch_batching, true, R"(
 Send the tasks of a distributed query to each stateless worker in batches (`start_tasks`): one request carries all the
 worker's tasks of the stages started together, with each stage's plan written once, up to 100 MiB of plans per request.
 `0` sends one task per request.
-)", EXPERIMENTAL, \
-        {"26.11", true, true, "New experimental setting."}) \
+)", PRIVATE_PREVIEW, \
+        {"26.12", true, true, "New setting."}) \
     DECLARE(UInt64, distributed_plan_task_dispatch_stages_per_flush, 0, R"(
 Hand the queued tasks of a distributed query to the senders after every this many started stages, so their batches go
 out while the later stages are prepared. `0` hands them over only before waiting for persisted producers and once all
 stages are started.
 )", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New experimental setting."}) \
+        {"26.12", 0, 0, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_read_in_order, false, R"(
 Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
 table's sorting key can skip the sort and stop early instead of scanning and sorting.
