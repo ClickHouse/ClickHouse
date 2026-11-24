@@ -7,6 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The stress test fuzzes every query: a fuzzed `DETACH ... ON CLUSTER` copy can run late, after the `ATTACH`, and leave a table detached.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0"
+
 # An INSERT into a Kafka table must fail, not succeed with rows missing, when DROP or DETACH stops it.
 
 name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -20,12 +23,10 @@ cleanup()
     trap - EXIT INT TERM
     set +e
 
-    # A kill between DETACH and ATTACH, or a fuzzed `DETACH ... ON CLUSTER` that runs late, leaves ${name}_detach detached, which
-    # DROP TABLE IF EXISTS skips and DROP NAMED COLLECTION does not see. So it is attached back, and its collection kept if that fails.
+    # A kill between DETACH and ATTACH leaves ${name}_detach detached, which DROP TABLE IF EXISTS skips and DROP NAMED COLLECTION
+    # does not see. So it is attached back, and its collection kept if that fails.
     local keep_collection=0
-    $CLICKHOUSE_CLIENT -q "
-        SET ast_fuzzer_any_query = 0;
-        ATTACH TABLE IF NOT EXISTS ${name}_detach; DROP TABLE IF EXISTS ${name}_detach" 2>/dev/null || keep_collection=1
+    $CLICKHOUSE_CLIENT -q "ATTACH TABLE IF NOT EXISTS ${name}_detach; DROP TABLE IF EXISTS ${name}_detach" 2>/dev/null || keep_collection=1
     for table in drop keeper down; do
         $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${name}_${table}" 2>/dev/null
     done
@@ -66,14 +67,13 @@ insert_and_shut_down()
         [ "$($CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['KafkaMessagesProduced'] >= 1 FROM system.processes WHERE query_id = '$query_id'")" = 1 ] && break
         sleep 0.1
     done
-    # ast_fuzzer_any_query = 0: a fuzzed `ON CLUSTER` copy of a DETACH can run late, after the ATTACH, and leave the table detached.
-    $CLICKHOUSE_CLIENT -q "SET ast_fuzzer_any_query = 0; $2 TABLE ${table}"
+    $CLICKHOUSE_CLIENT -q "$2 TABLE ${table}"
     wait
     echo "$1: $(grep -m1 -c 'ABORTED' "${CLICKHOUSE_TMP}/${table}.out")"
 }
 
 insert_and_shut_down drop DROP
 insert_and_shut_down detach DETACH
-$CLICKHOUSE_CLIENT -q "SET ast_fuzzer_any_query = 0; ATTACH TABLE ${name}_detach"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${name}_detach"
 insert_and_shut_down keeper DROP "SETTINGS kafka_keeper_path = '/clickhouse/test/${name}', kafka_replica_name = 'r1'" "--allow_kafka_offsets_storage_in_keeper 1"
 insert_and_shut_down down DROP "" "" "${name}_down"
