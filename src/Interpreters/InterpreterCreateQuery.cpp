@@ -271,7 +271,7 @@ void checkQueriesOfExternalDictionarySource(const ASTCreateQuery & create, Conte
     if (!create.dictionary || !create.dictionary->source || !isExternalDatabaseDictionarySource(Poco::toLower(create.dictionary->source->name)))
         return;
 
-    checkExternalDictionarySourceQueries(*getDictionaryConfigurationFromAST(create, context), "dictionary", context);
+    checkExternalDictionarySourceQueries(*getDictionaryConfigurationFromAST(create, context), "dictionary");
 }
 
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
@@ -4215,6 +4215,23 @@ BlockIO InterpreterCreateQuery::execute()
 }
 
 
+AccessRightsElements InterpreterCreateQuery::getRequiredAccessForDictionarySource(const ASTCreateQuery & create)
+{
+    AccessRightsElements required_access;
+
+    /// Required here, not where the dictionary is built: a `Replicated` database builds it with full access,
+    /// and the dictionary is loaded with the global context.
+    if (auto collection_name = getNamedCollectionOfDictionarySource(create))
+        required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
+
+    /// The `odbc` source can use the credentials of a DSN configured on the server, as the `odbc` table function,
+    /// which requires the same privilege. Its queries are checked to be `SELECT`, but the dialect of the database is unknown.
+    if (create.dictionary && create.dictionary->source && Poco::toLower(create.dictionary->source->name) == "odbc")
+        required_access.emplace_back(AccessType::READ, toStringSource(AccessTypeObjects::Source::ODBC));
+
+    return required_access;
+}
+
 AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
@@ -4231,16 +4248,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     else if (create.is_dictionary)
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.getDatabase(), create.getTable());
-
-        /// Required here, not where the dictionary is built: a `Replicated` database builds it with full access,
-        /// and the dictionary is loaded with the global context.
-        if (auto collection_name = getNamedCollectionOfDictionarySource(create))
-            required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
-
-        /// The `odbc` source can use the credentials of a DSN configured on the server, as the `odbc` table function,
-        /// which requires the same privilege. Its queries are checked to be `SELECT`, but the dialect of the database is unknown.
-        if (create.dictionary && create.dictionary->source && Poco::toLower(create.dictionary->source->name) == "odbc")
-            required_access.emplace_back(AccessType::READ, toStringSource(AccessTypeObjects::Source::ODBC));
+        required_access.append_range(getRequiredAccessForDictionarySource(create));
     }
     else if (create.isView())
     {

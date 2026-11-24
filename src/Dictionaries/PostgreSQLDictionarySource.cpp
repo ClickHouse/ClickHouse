@@ -4,7 +4,6 @@
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
 #include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Dictionaries/registerDictionaries.h>
 
@@ -309,18 +308,6 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
             });
-
-            /// The collection is read again at each load, so a query that it holds is checked here, not only at `CREATE DICTIONARY`:
-            /// the collection could be changed after. The queries of the definition are checked at `CREATE`, so that
-            /// the existing dictionaries keep loading.
-            if (hasExternalDictionarySourceQueryFromNamedCollection(config, settings_config_prefix, *named_collection))
-                checkExternalDictionarySourceQueries(
-                    dict_struct,
-                    "postgresql",
-                    dictionary_configuration->query,
-                    dictionary_configuration->where,
-                    dictionary_configuration->update_field,
-                    dictionary_configuration->invalidate_query);
 
             bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false);
 

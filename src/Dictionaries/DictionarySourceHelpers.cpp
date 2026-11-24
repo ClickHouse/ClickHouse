@@ -1,5 +1,4 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,8 +15,6 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
-#include <Common/NamedCollections/NamedCollections.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 namespace DB
 {
@@ -85,18 +82,33 @@ bool isExternalDatabaseDictionarySource(const String & source_type)
     return source_type == "mysql" || source_type == "postgresql" || source_type == "odbc";
 }
 
-void checkExternalDictionarySourceQueries(
-    const DictionaryStructure & dict_struct,
-    const String & source_type,
-    const String & query,
-    const String & where,
-    const String & update_field,
-    const String & invalidate_query)
+void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    Poco::Util::AbstractConfiguration::Keys source_keys;
+    config.keys(config_prefix + ".source", source_keys);
+    /// The number of elements is checked when the source is created.
+    if (source_keys.empty() || source_keys.size() > 2)
+        return;
+
+    /// The source type is chosen as in `DictionarySourceFactory::create`.
+    const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
+    if (!isExternalDatabaseDictionarySource(source_type))
+        return;
+
+    const String source_prefix = config_prefix + ".source." + source_type;
+
+    /// Only the queries of the definition are checked. A named collection can hold them too, but it is written by a user who
+    /// can create or alter named collections and so controls the credentials anyway, as for the configuration files.
+    const String query = config.getString(source_prefix + ".query", "");
+    const String where = config.getString(source_prefix + ".where", "");
+    const String update_field = config.getString(source_prefix + ".update_field", "");
+    const String invalidate_query = config.getString(source_prefix + ".invalidate_query", "");
+
     /// The source composes its queries from `query` or `where`, the attribute expressions and `update_field`, which are inserted verbatim,
     /// and from identifiers, which it quotes in the style of the database. The identifiers do not change the kind of the query,
     /// so they are replaced here by a placeholder table and quoted in the ClickHouse style, which the ClickHouse parser reads correctly.
     /// The table, the database and the schema can also come from a named collection, so they are not used.
+    const DictionaryStructure dict_struct(config, config_prefix);
     const ExternalQueryBuilder query_builder(
         dict_struct, /* db_ */ "", /* schema_ */ "", /* table_ */ query.empty() ? "table" : "", query, where, IdentifierQuotingStyle::Backticks);
 
@@ -116,59 +128,6 @@ void checkExternalDictionarySourceQueries(
             source_type,
             "Invalidate query for " + source_type + " dictionary",
             "Only SELECT query can be used as a dictionary invalidate query");
-}
-
-bool hasExternalDictionarySourceQueryFromNamedCollection(
-    const Poco::Util::AbstractConfiguration & config, const String & source_config_prefix, const NamedCollection & collection)
-{
-    for (const auto * key : {"query", "where", "update_field", "invalidate_query"})
-    {
-        if (collection.has(key) && !config.has(source_config_prefix + "." + key))
-            return true;
-    }
-    return false;
-}
-
-void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
-{
-    Poco::Util::AbstractConfiguration::Keys source_keys;
-    config.keys(config_prefix + ".source", source_keys);
-    /// The number of elements is checked when the source is created.
-    if (source_keys.empty() || source_keys.size() > 2)
-        return;
-
-    /// The source type is chosen as in `DictionarySourceFactory::create`.
-    const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
-    if (!isExternalDatabaseDictionarySource(source_type))
-        return;
-
-    const String source_prefix = config_prefix + ".source." + source_type;
-
-    /// The MySQL and PostgreSQL sources take the queries from the named collection that they refer to, with the keys
-    /// of the definition replacing the keys of the collection, so the checked queries are the ones that the source sends.
-    /// The ODBC source does not use named collections. A missing collection is reported when the source is created.
-    /// The privilege is checked before the collection is read, so that the errors do not show its queries to a user without it.
-    NamedCollectionPtr collection;
-    if (const String collection_name = config.getString(source_prefix + ".name", "");
-        !collection_name.empty() && (source_type == "mysql" || source_type == "postgresql"))
-    {
-        context->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
-        NamedCollectionFactory::instance().loadIfNot();
-        collection = NamedCollectionFactory::instance().tryGet(collection_name);
-    }
-    auto get_query_key = [&](const String & key) -> String
-    {
-        if (config.has(source_prefix + "." + key) || !collection)
-            return config.getString(source_prefix + "." + key, "");
-        return collection->getOrDefault<String>(key, "");
-    };
-
-    const String query = get_query_key("query");
-    const String where = get_query_key("where");
-    const String update_field = get_query_key("update_field");
-    const String invalidate_query = get_query_key("invalidate_query");
-
-    checkExternalDictionarySourceQueries(DictionaryStructure(config, config_prefix), source_type, query, where, update_field, invalidate_query);
 }
 
 /// For simple key

@@ -482,7 +482,11 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
                 if (create.is_dictionary)
+                {
                     flags |= AccessType::CREATE_DICTIONARY;
+                    /// The restored `CREATE` runs as internal, so `getRequiredAccess` imposes nothing; the source is authorized here.
+                    required_access.append_range(InterpreterCreateQuery::getRequiredAccessForDictionarySource(create));
+                }
                 else if (create.is_ordinary_view || create.is_materialized_view)
                     flags |= AccessType::CREATE_VIEW;
                 else

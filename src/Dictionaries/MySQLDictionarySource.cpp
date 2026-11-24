@@ -1,5 +1,4 @@
 #include <Dictionaries/MySQLDictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 #if USE_MYSQL
@@ -176,18 +175,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false),
             });
-
-            /// The collection is read again at each load, so a query that it holds is checked here, not only at `CREATE DICTIONARY`:
-            /// the collection could be changed after. The queries of the definition are checked at `CREATE`, so that
-            /// the existing dictionaries keep loading.
-            if (hasExternalDictionarySourceQueryFromNamedCollection(config, settings_config_prefix, *named_collection))
-                checkExternalDictionarySourceQueries(
-                    dict_struct,
-                    "mysql",
-                    dictionary_configuration->query,
-                    dictionary_configuration->where,
-                    dictionary_configuration->update_field,
-                    dictionary_configuration->invalidate_query);
 
             const auto & settings = global_context->getSettingsRef();
             if (!mysql_settings[MySQLSetting::connect_timeout].changed)

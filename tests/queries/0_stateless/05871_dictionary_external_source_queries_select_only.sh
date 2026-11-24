@@ -32,18 +32,12 @@ function cleanup()
     $CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS ${user}_odbc"
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS $nc"
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_secret"
-    $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_query"
-    $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_invalidate"
-    $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_altered"
     $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${replicated_db} SYNC"
 }
 trap cleanup EXIT
 cleanup
 
 $CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION $nc AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd'"
-# The source takes the queries that are not in the definition from the collection.
-$CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION ${nc}_query AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd', query = 'DROP TABLE t'"
-$CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION ${nc}_invalidate AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd', table = 't', invalidate_query = 'DROP TABLE t'"
 
 function dictionary_exists()
 {
@@ -101,10 +95,6 @@ check_rejected "MySQL query with INTO OUTFILE" "$CREATE" "$MYSQL QUERY 'SELECT i
 check_rejected "MySQL where" "$CREATE" "$MYSQL TABLE 't' WHERE '1; DROP TABLE t')" "Multi-statements are not allowed"
 check_rejected "MySQL update_field" "$CREATE" "$MYSQL TABLE 't' UPDATE_FIELD 'x >= 0; DROP TABLE t')" "Multi-statements are not allowed"
 check_rejected "MySQL named collection invalidate_query" "$CREATE" "MYSQL(NAME $nc TABLE 't' INVALIDATE_QUERY 'UPDATE t SET value = 1 WHERE id = 1')" "$NOT_SELECT invalidate query"
-check_rejected "MySQL query in the named collection" "$CREATE" "MYSQL(NAME ${nc}_query)" "$NOT_SELECT source"
-check_rejected "PostgreSQL invalidate_query in the named collection" "$CREATE" "POSTGRESQL(NAME ${nc}_invalidate)" "$NOT_SELECT invalidate query"
-# The ODBC source does not use named collections, so its queries are composed from the definition only.
-check_rejected "ODBC where with a named collection" "$CREATE" "ODBC(NAME ${nc}_query CONNECTION_STRING 'DSN=none' TABLE 't' WHERE '1; DROP TABLE t')" "Multi-statements are not allowed"
 check_rejected "PostgreSQL invalidate_query" "$CREATE" "$POSTGRESQL TABLE 't' INVALIDATE_QUERY 'DROP TABLE t')" "$NOT_SELECT invalidate query"
 check_rejected "PostgreSQL query" "$CREATE" "$POSTGRESQL QUERY 'DELETE FROM t WHERE id = 1')" "$NOT_SELECT source"
 check_rejected "MySQL query is an expression" "$CREATE" "$MYSQL QUERY concat('DROP', ' TABLE t'))" "$NOT_SELECT source"
@@ -144,26 +134,6 @@ echo '--- SELECT is accepted'
 check_accepted "MySQL" "$MYSQL QUERY 'SELECT id, value FROM t WHERE {condition}' UPDATE_FIELD 'updated' INVALIDATE_QUERY 'SELECT max(updated) FROM t')"
 check_accepted "MySQL with expressions" "MYSQL(HOST concat('127.0.0.1', '') PORT 1 USER 'u' PASSWORD 'p' DB 'd' TABLE 't' INVALIDATE_QUERY concat('SELECT ', '1'))"
 check_accepted "PostgreSQL" "$POSTGRESQL TABLE 't' WHERE 'id > 0' UPDATE_FIELD 'updated' INVALIDATE_QUERY 'SELECT max(updated) FROM t')"
-check_accepted "MySQL query of the definition replaces the query of the named collection" "MYSQL(NAME ${nc}_query QUERY 'SELECT id, value FROM t')"
-
-echo '--- A query of the named collection is checked at each load and at RESTORE, because the collection can change'
-$CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION ${nc}_altered AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd', query = 'SELECT id, value FROM t'"
-$CLICKHOUSE_CLIENT --query "
-    CREATE DICTIONARY dict_select_only (id UInt64, value String) PRIMARY KEY id
-        SOURCE(MYSQL(NAME ${nc}_altered)) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)"
-echo -n 'Before the change, the load fails only to connect: '
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY dict_select_only" 2>&1 | grep -q "$CONNECTION_FAILED" && echo OK || echo FAIL
-$CLICKHOUSE_CLIENT --query "ALTER NAMED COLLECTION ${nc}_altered SET query = 'DROP TABLE t'"
-echo -n 'After the change, the load is rejected: '
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY dict_select_only" 2>&1 | grep -q "$NOT_SELECT source" && echo OK || echo FAIL
-# The backup keeps the definition, which refers to the changed collection.
-echo -n 'RESTORE is rejected, and the dictionary is not restored: '
-$CLICKHOUSE_CLIENT --multiquery --query "
-    BACKUP DICTIONARY dict_select_only TO Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;
-    DROP DICTIONARY dict_select_only;
-    RESTORE DICTIONARY dict_select_only FROM Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;" 2>&1 \
-    | grep -q "$NOT_SELECT source" && [ "$(dictionary_exists)" = "0" ] && echo OK || echo FAIL
-$CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
 
 echo '--- A named collection requires the privilege NAMED COLLECTION'
 $CLICKHOUSE_CLIENT --multiquery --query "
@@ -185,21 +155,42 @@ function create_as_user()
     $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
 }
 
+# `RESTORE` creates the dictionary with an internal query, so it requires the privileges of the source itself.
+# Backs up a dictionary with the source, created by `default`, and restores it as the user. Prints whether the `RESTORE` was denied
+# for the grant (a regular expression), and whether the dictionary exists. Reading the backup requires `READ ON DISK`.
+backup_number=0
+function restore_as_user()
+{
+    local as_user="$1"
+    local source="$2"
+    local on_cluster="$3"
+    local grant="$4"
+    local backup="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_$((++backup_number))')"
+    $CLICKHOUSE_CLIENT --multiquery --query "
+        CREATE DICTIONARY dict_select_only (id UInt64, value String) PRIMARY KEY id
+            SOURCE(${source}) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);
+        BACKUP DICTIONARY dict_select_only TO ${backup} FORMAT Null;
+        DROP DICTIONARY dict_select_only;"
+    $CLICKHOUSE_CLIENT --user "$as_user" --query "
+        RESTORE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ${on_cluster} FROM ${backup} FORMAT Null" 2>&1 \
+        | grep -qE "necessary to have the grant ${grant}" && echo 1 || echo 0
+    dictionary_exists
+    $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
+}
+
 echo 'Without the grant: denied, not created'
 create_as_user "" "$nc"
 echo 'Without the grant, ON CLUSTER: denied, not created'
 create_as_user "ON CLUSTER test_shard_localhost" "$nc"
 echo 'Without the grant, the name is an expression: denied, not created'
 create_as_user "" "concat('$nc', '')"
-echo 'Without the grant, the queries of the collection are not read: denied for the collection'
-$CLICKHOUSE_CLIENT --user "$user" --query "
-    CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only (id UInt64, value String) PRIMARY KEY id
-        SOURCE(MYSQL(NAME ${nc}_query UPDATE_FIELD ')')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
-    | grep -qE "necessary to have the grant NAMED COLLECTION ON \`?${nc}_query\`?\." && echo 1 || echo 0
-dictionary_exists
+echo 'Without the grant, RESTORE ON CLUSTER: denied, not restored'
+restore_as_user "$user" "MYSQL(NAME $nc TABLE 't')" "ON CLUSTER test_shard_localhost" "NAMED COLLECTION ON \`?${nc}\`?\."
 $CLICKHOUSE_CLIENT --query "GRANT NAMED COLLECTION ON $nc TO $user"
 echo 'With the grant: created'
 create_as_user "" "$nc"
+echo 'With the grant, RESTORE ON CLUSTER: restored'
+restore_as_user "$user" "MYSQL(NAME $nc TABLE 't')" "ON CLUSTER test_shard_localhost" "NAMED COLLECTION ON \`?${nc}\`?\."
 echo 'With the grant, the name is an expression: created'
 create_as_user "" "concat('$nc', '')"
 
@@ -228,7 +219,8 @@ echo '--- An ODBC source requires the privilege READ ON ODBC'
 # which has no separate `READ` and `WRITE` on a source, so a partial revoke of `SOURCES` would not be kept.
 $CLICKHOUSE_CLIENT --multiquery --query "
     CREATE USER ${user}_odbc;
-    GRANT CREATE DICTIONARY, DROP DICTIONARY ON ${CLICKHOUSE_DATABASE}.* TO ${user}_odbc;"
+    GRANT CREATE DICTIONARY, DROP DICTIONARY ON ${CLICKHOUSE_DATABASE}.* TO ${user}_odbc;
+    GRANT READ ON DISK TO ${user}_odbc;"
 function create_odbc_as_user()
 {
     $CLICKHOUSE_CLIENT --user "${user}_odbc" --query "
@@ -240,6 +232,10 @@ function create_odbc_as_user()
 }
 echo 'Without the grant: denied, not created'
 create_odbc_as_user
+echo 'Without the grant, RESTORE: denied, not restored'
+restore_as_user "${user}_odbc" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')" "" "READ ON ODBC"
 $CLICKHOUSE_CLIENT --query "GRANT READ ON ODBC TO ${user}_odbc"
 echo 'With the grant: created'
 create_odbc_as_user
+echo 'With the grant, RESTORE: restored'
+restore_as_user "${user}_odbc" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')" "" "READ ON ODBC"

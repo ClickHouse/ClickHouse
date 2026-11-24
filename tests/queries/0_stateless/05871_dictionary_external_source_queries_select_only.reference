@@ -5,9 +5,6 @@ MySQL query with INTO OUTFILE: OK
 MySQL where: OK
 MySQL update_field: OK
 MySQL named collection invalidate_query: OK
-MySQL query in the named collection: OK
-PostgreSQL invalidate_query in the named collection: OK
-ODBC where with a named collection: OK
 PostgreSQL invalidate_query: OK
 PostgreSQL query: OK
 MySQL query is an expression: OK
@@ -30,11 +27,6 @@ CREATE OR REPLACE: OK
 MySQL: OK
 MySQL with expressions: OK
 PostgreSQL: OK
-MySQL query of the definition replaces the query of the named collection: OK
---- A query of the named collection is checked at each load and at RESTORE, because the collection can change
-Before the change, the load fails only to connect: OK
-After the change, the load is rejected: OK
-RESTORE is rejected, and the dictionary is not restored: OK
 --- A named collection requires the privilege NAMED COLLECTION
 Without the grant: denied, not created
 1
@@ -45,10 +37,13 @@ Without the grant, ON CLUSTER: denied, not created
 Without the grant, the name is an expression: denied, not created
 1
 0
-Without the grant, the queries of the collection are not read: denied for the collection
+Without the grant, RESTORE ON CLUSTER: denied, not restored
 1
 0
 With the grant: created
+0
+1
+With the grant, RESTORE ON CLUSTER: restored
 0
 1
 With the grant, the name is an expression: created
@@ -60,6 +55,12 @@ With the grant, the name is an expression: created
 Without the grant: denied, not created
 1
 0
+Without the grant, RESTORE: denied, not restored
+1
+0
 With the grant: created
+0
+1
+With the grant, RESTORE: restored
 0
 1

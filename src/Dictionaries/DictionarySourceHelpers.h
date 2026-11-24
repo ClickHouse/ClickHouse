@@ -13,7 +13,6 @@ namespace DB
 {
 
 struct DictionaryStructure;
-class NamedCollection;
 class SettingsChanges;
 
 /// For simple key
@@ -42,28 +41,11 @@ bool isExternalDatabaseDictionarySource(const String & source_type);
 /// (`query`, or `table` with `where` and the attribute expressions), the update query (`update_field`) and `invalidate_query`.
 /// They must be `SELECT` without `INTO OUTFILE` in the ClickHouse syntax, without comments, heredocs, typographic quotes and backslashes,
 /// which the database may read differently, and for ODBC, whose dialect is unknown, without square brackets.
-/// For MySQL and PostgreSQL, the queries can come from the named collection that the source refers to, with the keys of the
-/// definition replacing its keys; `NAMED COLLECTION` on it is checked in `context` before it is read.
+/// Only the queries of the definition are checked, not the ones held by a named collection that the source refers to.
 /// `config_prefix` is the dictionary configuration ("dictionary"). Does nothing for other sources.
 /// It is used for a `CREATE DICTIONARY` query of a user and for `RESTORE`, whose definitions come from a backup: the configuration files
 /// and the definitions of existing dictionaries (`ATTACH` at startup, replicas) are not checked, so that they keep loading.
-void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
-
-/// Checks the queries of a source of an external database as `checkExternalDictionarySourceQueries` above, from their values.
-/// Used by the MySQL and PostgreSQL sources of a dictionary created with a DDL query, when a query comes from a named collection:
-/// the collection is read again at each load, and it could be changed after the check of `CREATE DICTIONARY`.
-void checkExternalDictionarySourceQueries(
-    const DictionaryStructure & dict_struct,
-    const String & source_type,
-    const String & query,
-    const String & where,
-    const String & update_field,
-    const String & invalidate_query);
-
-/// Whether `query`, `where`, `update_field` or `invalidate_query` of the source comes from the named collection, not from the definition.
-/// `collection` is the collection with the keys of the definition applied, `source_config_prefix` is "<dict_root>.source.<type>".
-bool hasExternalDictionarySourceQueryFromNamedCollection(
-    const Poco::Util::AbstractConfiguration & config, const String & source_config_prefix, const NamedCollection & collection);
+void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.
      *
