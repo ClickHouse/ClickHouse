@@ -1,0 +1,8 @@
+50 CONST, t: 30
+50 CONST, d: 30
+20 CONST, t: TOO_MANY_ROWS
+20 CONST, d: TOO_MANY_ROWS
+50 CONST, group_by_overflow_mode = 'throw' CONST, t: TOO_MANY_ROWS
+50 CONST, group_by_overflow_mode = 'throw' CONST, d: TOO_MANY_ROWS
+50 CONST, optimize_trivial_group_by_limit_query = 0 CONST, t: TOO_MANY_ROWS
+50 CONST, optimize_trivial_group_by_limit_query = 0 CONST, d: TOO_MANY_ROWS
