@@ -119,18 +119,11 @@ concept HasPrefetchMemberFunc = requires
 /// True when software prefetch in the JOIN probe loop is feasible for the given key
 /// getter / map combination: the key getter must compute keys cheaply and the map
 /// must expose a `prefetch` member that takes the key holder produced by the getter.
-/// A fixed table prefetches only in a probe that `HashJoinTable::rangeProbePrefetches` selects.
 template <typename KeyGetter, typename Map>
 constexpr bool join_prefetch_supported = KeyGetter::has_cheap_key_calculation
-    && !is_partitioned_fixed_table<std::remove_const_t<Map>>
     && HasPrefetchMemberFunc<
         std::remove_const_t<Map>,
         decltype(std::declval<KeyGetter &>().getKeyHolder(std::declval<size_t>(), std::declval<Arena &>()))>;
-
-/// A range table with mapped values. A range set has 1-byte cells, so it is at most 256 KiB.
-template <typename KeyGetter, typename Map>
-constexpr bool range_join_prefetch_supported
-    = ColumnsHashing::IsHashMethodInRange<KeyGetter>::value && !std::is_void_v<typename JoinMappedType<Map>::Type>;
 
 /// Decide at runtime whether prefetching should actually fire for a given map: the user
 /// must have it enabled and the map must be large enough that we expect non-trivial
@@ -152,12 +145,20 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
 }
 
 /// The number of cells from the smallest to the largest sampled key, or 0 if more than 1 of 16 sampled rows looks up no key in the
-/// range, the keys are in order, or a key repeats: the CPU prefetches a table that the probe walks in order, and the cells of a few
-/// repeated keys stay cached. A pseudo-random row per stratum, so periodic keys do not bias it.
-template <typename KeyGetter, typename Selector>
-size_t sampledKeySpan(const KeyGetter & key_getter, const JoinOnKeyColumns & keys, const Selector & selector, Arena & pool)
+/// range, at most 1 step in 8 between the sampled keys goes against the others, or a key repeats: the CPU prefetches a table that
+/// the probe walks in order, and the cells of a few repeated keys stay cached. A pseudo-random row per stratum, so periodic keys do
+/// not bias it.
+template <typename KeyGetter>
+size_t sampledKeySpan(
+    const KeyGetter & key_getter, const JoinOnKeyColumns & keys, const ScatteredBlock::Selector::Range & selector, Arena & pool)
 {
+    /// 64 rows did not see a repeat among 2048 to 8192 keys spread over the range.
     static constexpr size_t max_samples = 128;
+    /// A row that reads no cell gains nothing from its prefetch. With 120 of 128, 0.2% of the blocks with 85% of the keys in range
+    /// prefetch, 81% with 95%.
+    static constexpr size_t min_in_range_per_16 = 15;
+    /// Keys in order step back about once per wrap-around, random keys about every second step.
+    static constexpr size_t max_steps_per_step_against = 8;
     const size_t rows = ScatteredBlock::Selector::size(selector);
     if (rows == 0)
         return 0;
@@ -191,7 +192,8 @@ size_t sampledKeySpan(const KeyGetter & key_getter, const JoinOnKeyColumns & key
         max_key = std::max<UInt64>(max_key, key);
         ++in_range;
     }
-    if (16 * in_range < 15 * samples || 8 * std::min(ascending, descending) <= ascending + descending)
+    if (16 * in_range < min_in_range_per_16 * samples
+        || max_steps_per_step_against * std::min(ascending, descending) <= ascending + descending)
         return 0;
     return max_key - min_key + 1;
 }
@@ -203,7 +205,7 @@ ALWAYS_INLINE void prefetchJoinKey(const Map & map, KeyGetter & key_getter, size
     if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
     {
         const auto [key, in_range] = key_getter.getKeyHolderInRange(row, pool);
-        map.prefetch(in_range ? key : decltype(key){});
+        map.prefetchCell(in_range ? key : 0);
     }
     else
         map.prefetch(key_getter.getKeyHolder(row, pool));
@@ -694,11 +696,13 @@ public:
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();
 
-    /// An `ASOF` table is never a range table, and a `range8` table of at most 256 cells always fits in the cache.
+    /// A range table with mapped values. An `ASOF` table is never a range table, a `range8` table of at most 256 cells always fits
+    /// in the cache, and a range set has 1-byte cells, so it is at most 256 KiB.
     template <Type TYPE, typename Maps>
     static constexpr bool range_prefetch_supported = !std::is_same_v<Maps, HashJoin::MapsAsof> && TYPE != Type::range8_key32
         && TYPE != Type::range8_key64
-        && range_join_prefetch_supported<typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type, const JoinMapOf<TYPE, Maps>>;
+        && ColumnsHashing::IsHashMethodInRange<typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type>::value
+        && !std::is_void_v<typename JoinMappedType<const JoinMapOf<TYPE, Maps>>::Type>;
 
     /// Once per block: whether a hash table holding every value of the range, and one holding every value from the smallest to the
     /// largest sampled key, would prefetch (they have at least 2 cells per key), and nearly all rows look up a key in the range, in no
@@ -721,7 +725,7 @@ public:
     /// Looks up the key of every row of `selector`. For each row, calls `on_row(i, ind, find_result, offset)` with the position `i`,
     /// the row `ind`, and the output offset. The loop keeps the offset so that it stays in a register. A row with a `NULL` key
     /// or one the `ON`-section mask filters out gets a result that is not found; `fast_path` assumes there is none. `TYPE` is `type()`.
-    template <Type TYPE, typename Maps, bool fast_path, bool prefetch_range = false, typename OnRow>
+    template <Type TYPE, typename Maps, bool fast_path, bool prefetch_range, typename OnRow>
     ALWAYS_INLINE void probe(
         const JoinOnKeyColumns & keys,
         const ScatteredBlock::Selector::Range & selector,
