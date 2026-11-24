@@ -30,8 +30,8 @@ private:
     /// subcolumn whose value for an absent element is not its default: the element is not there, so the
     /// extracted value is `NULL` and the map must read 1 rather than 0.
     bool selected_subcolumn_is_null_map;
-    /// The type whose default fills the rows of other variants, set only when it is not the column default. Not part
-    /// of the pool key: the key of the nested serialization already determines the default of its type.
+    /// The type whose default fills the rows of other variants, set only when it is not the column default. Only whether
+    /// it is set is part of the pool key: the key of the nested serialization already determines which type it is.
     DataTypePtr absent_element_type;
 
     SerializationVariantElement(
@@ -56,7 +56,7 @@ private:
     void insertRowsForAbsentElement(IColumn & inner_column, size_t num_rows) const;
 
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_);
+    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_, bool has_absent_element_type_);
     static SerializationPtr create(
         const SerializationPtr & nested_,
         const String & variant_element_name_,

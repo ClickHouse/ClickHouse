@@ -30,7 +30,7 @@ DataTypePtr getTypeForAbsentRows(const DataTypePtr & type, bool absent_rows_are_
 
 }
 
-UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_)
+UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_, bool has_absent_element_type_)
 {
     SipHash hash;
     hash.update("VariantElement");
@@ -41,6 +41,7 @@ UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, c
     hash.update(num_variants_);
     hash.update(nullable_added_by_extraction_);
     hash.update(selected_subcolumn_is_null_map_);
+    hash.update(has_absent_element_type_);
     return hash.get128();
 }
 
@@ -56,7 +57,7 @@ SerializationPtr SerializationVariantElement::create(
     const auto absent_element_type = getTypeForAbsentRows(element_type_, nullable_added_by_extraction_ || selected_subcolumn_is_null_map_);
     if (!nested_->supportsPooling())
         return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, absent_element_type));
-    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, absent_element_type); });
+    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, absent_element_type != nullptr), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, absent_element_type); });
 }
 
 bool SerializationVariantElement::isNullMapSubstream(Substream::Type type)
