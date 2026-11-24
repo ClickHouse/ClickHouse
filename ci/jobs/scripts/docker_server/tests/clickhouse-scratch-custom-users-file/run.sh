@@ -145,7 +145,7 @@ checkRefused "-v $volume:/mounted -v $config/symlink-users-path.xml:/etc/clickho
 cat > "$config/zk-users-path.xml" <<'XML'
 <clickhouse>
     <macros>
-        <users_file from_zk="/users_file" replace="replace">users.xml</users_file>
+        <users_file from_zk="/users_file"/>
     </macros>
     <user_directories>
         <users_xml>
