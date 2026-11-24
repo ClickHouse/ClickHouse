@@ -56,6 +56,13 @@ SELECT 'cast array of tuple', finalizeAggregation(tupleElement(CAST([tuple(state
 WITH arrayReduce('quantileState(0.9)', [1, 2, 3, 100]) AS state
 SELECT 'cast state of states', arrayMap(x -> finalizeAggregation(x),
     finalizeAggregation(CAST(arrayReduce('groupArrayState', [state]), 'AggregateFunction(groupArray, AggregateFunction(quantile(0.5), UInt8))')));
+WITH arrayReduce('quantileState(0.9)', [1, 2, 3, 100]) AS state,
+    CAST(tuple(arrayReduce('countState', [state]), state), 'Tuple(AggregateFunction(count, UInt8), AggregateFunction(quantile(0.5), UInt8))') AS c
+SELECT 'cast beside a count of states', finalizeAggregation(tupleElement(c, 1)), finalizeAggregation(tupleElement(c, 2));
+WITH arrayReduce('quantileState(0.9)', [1, 2, 3, 100]) AS state,
+    CAST(arrayReduce('uniqState', [toUInt64(1), 2, 3]), 'AggregateFunction(0, uniq, UInt64)') AS u,
+    CAST(tuple(arrayReduce('countState', [u]), state), 'Tuple(AggregateFunction(count, AggregateFunction(1, uniq, UInt64)), AggregateFunction(quantile(0.5), UInt8))') AS c
+SELECT 'cast beside a count of a state of another version', finalizeAggregation(tupleElement(c, 1)), finalizeAggregation(tupleElement(c, 2));
 
 -- A nested state of another version keeps its own function: its bytes were written with that version.
 SELECT 'nested state of another version', uniqMerge(y) FROM (

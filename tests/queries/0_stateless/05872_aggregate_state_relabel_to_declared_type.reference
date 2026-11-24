@@ -14,6 +14,8 @@ cast array	2.5
 cast map	2.5
 cast array of tuple	2.5
 cast state of states	[2.5]
+cast beside a count of states	1	2.5
+cast beside a count of a state of another version	1	2.5
 nested state of another version	100315
 insert variant merge tree	2.5
 cast tuple of variant	AggregateFunction(quantile(0.5), UInt8)

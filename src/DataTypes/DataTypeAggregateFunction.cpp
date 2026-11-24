@@ -587,6 +587,13 @@ void collectAggregateStates(const IDataType & type, bool in_arguments, std::vect
         if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
         {
             nodes.push_back({aggregate_type, in_arguments});
+
+            /// A state whose normalized type has no arguments (`count`) does not store them.
+            auto normalized_type = aggregate_type->getFunction()->getNormalizedStateType();
+            const auto * normalized = typeid_cast<const DataTypeAggregateFunction *>(normalized_type.get());
+            if (normalized && normalized->getArgumentsDataTypes().empty())
+                return;
+
             for (const auto & argument_type : aggregate_type->getArgumentsDataTypes())
                 collectAggregateStates(*argument_type, /*in_arguments=*/ true, nodes);
         }
