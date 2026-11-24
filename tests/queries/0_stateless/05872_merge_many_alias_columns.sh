@@ -30,8 +30,10 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO t_alias (k, m) VALUES (1, {'c1': 10, 'c$
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_plain (k, c1, c$N, d1, d2) VALUES (2, 20, 8, 21, 42)"
 
 $CLICKHOUSE_CLIENT --query "SELECT k, c1, c2, c$N, d1, d2 FROM merge(currentDatabase(), '^t_') ORDER BY k"
+$CLICKHOUSE_CLIENT --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_wide" --query "SELECT count(), sum(sipHash64(*)) FROM merge(currentDatabase(), '^t_')"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 # Planning the aliases one by one needs about 510 MB here.
-$CLICKHOUSE_CLIENT --query "SELECT count(), sum(sipHash64(*)) FROM merge(currentDatabase(), '^t_') SETTINGS max_memory_usage = 150000000"
+$CLICKHOUSE_CLIENT --query "SELECT memory_usage < 150000000 FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_wide'"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_alias"
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_plain"
