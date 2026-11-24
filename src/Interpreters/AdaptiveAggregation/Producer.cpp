@@ -151,8 +151,15 @@ std::optional<UInt64> Aggregator::adaptiveLocalTopKCount(AggregatedDataVariants 
     std::vector<UInt64> counts;
     const auto append_table_counts = [&](auto & method)
     {
-        if constexpr (MapAggregationMethod<std::decay_t<decltype(method)>>)
+        using Method = std::decay_t<decltype(method)>;
+        if constexpr (MapAggregationMethod<Method>)
+        {
             method.data.forEachMapped([&](AggregateDataPtr & mapped) { counts.push_back(getInlineCountState(mapped)); });
+            /// The NULL key is a group of the table outside its cells (see `keeps_null_key_slot`).
+            if constexpr (keeps_null_key_slot<Method>)
+                if (method.data.hasNullKeyData())
+                    counts.push_back(getInlineCountState(method.data.getNullKeyData()));
+        }
     };
 #define M(NAME) \
     else if (table.type == AggregatedDataVariants::Type::NAME) \
@@ -482,6 +489,88 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
     return {.hits = collected.hits, .null_rows = collected.null_rows};
 }
 
+template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
+AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectArgumentMisses(
+    LocalMethod & local_method,
+    State & local_find_state,
+    size_t row_begin,
+    size_t row_end,
+    Arena & scratch_pool,
+    AdaptiveAggregationProducer & adaptive,
+    bool bypass_local_probe,
+    AggregateDataPtr * places_data,
+    const EmplaceNullKey & emplace_null_key,
+    const StageMisses & stage_misses) const
+{
+    auto & misses = adaptive.misses;
+    const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
+    AdaptiveLocalProbes probes;
+    /// The last missed key of fixed-width values and a string, and its hash, for the rows that repeat it.
+    [[maybe_unused]] RecordKey last_missed_key{};
+    [[maybe_unused]] UInt64 last_missed_hash = 0;
+    [[maybe_unused]] bool has_missed_key = false;
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        if constexpr (keeps_null_key_slot<LocalMethod> && record_places)
+        {
+            if (local_find_state.isNullAt(i))
+            {
+                ++probes.null_rows;
+                places_data[i] = emplace_null_key(local_method.data);
+                continue;
+            }
+        }
+
+        auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            /// As in `collectCombinedMisses`: a key with an empty string that repeats the last missed key
+            /// misses as well, and its record takes that key's hash without hashing or probing it again.
+            if (key.str.isEmpty() && has_missed_key && last_missed_key.str.isEmpty() && key.keys == last_missed_key.keys)
+            {
+                if constexpr (record_places)
+                    places_data[i] = nullptr;
+                misses.add<RecordKey>(static_cast<UInt32>(i), last_missed_hash, key, keep_key_bytes);
+                keyHolderDiscardKey(key_holder);
+                continue;
+            }
+        }
+
+        const UInt64 hash = local_method.data.hash(key);
+
+        if (!bypass_local_probe)
+        {
+            if (auto it = local_method.data.find(key, hash))
+            {
+                ++probes.hits;
+                if constexpr (record_places)
+                    places_data[i] = it->getMapped();
+                keyHolderDiscardKey(key_holder);
+                continue;
+            }
+        }
+
+        if constexpr (record_places)
+            places_data[i] = nullptr;
+        misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            last_missed_key = key;
+            last_missed_hash = hash;
+            has_missed_key = true;
+        }
+        keyHolderDiscardKey(key_holder);
+        if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, State>)
+        {
+            if (missBatchKeyBytesFull(misses, keep_key_bytes))
+                stage_misses();
+        }
+    }
+    return probes;
+}
+
 template <typename LocalMethod, typename SharedMethod>
 requires MapAggregationMethod<LocalMethod>
 void NO_INLINE Aggregator::executeFrozenImpl(
@@ -538,7 +627,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     /// aggregation fills a new cell: with created states (see `executeImplBatch`), a zero inline count for a
     /// lone `count`, or without aggregate functions the sentinel of `executeImplBatchNoAggregates`. Generic,
     /// so that its body compiles only for the methods that keep the slot.
-    [[maybe_unused]] const auto emplace_null_key = [&](auto & data) -> AggregateDataPtr &
+    const auto emplace_null_key = [&](auto & data) -> AggregateDataPtr &
     {
         if (!data.hasNullKeyData())
         {
@@ -656,89 +745,13 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         return;
     }
 
-    /// The probe/staging loop of argument records, shared by the shape that records the places of the hits
-    /// and the bypassed probe, which has no hits and so skips the allocation of the places and the per-row
-    /// stores. A NULL key goes to its slot without a lookup, so its rows need places: the shape without them
-    /// takes only a block without such rows.
-    auto probe_rows = [&]<bool record_places>(AggregateDataPtr * places_data) -> AdaptiveLocalProbes
-    {
-        AdaptiveLocalProbes probes;
-        /// The last missed key of fixed-width values and a string, and its hash, for the rows that repeat it.
-        [[maybe_unused]] RecordKey last_missed_key{};
-        [[maybe_unused]] UInt64 last_missed_hash = 0;
-        [[maybe_unused]] bool has_missed_key = false;
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            /// The condition on `record_places`, a parameter of the lambda, stays apart from the one on the
-            /// method, so that the branch is not compiled for the methods without the slot.
-            if constexpr (keeps_null_key_slot<LocalMethod>)
-            {
-                if constexpr (record_places)
-                {
-                    if (local_find_state.isNullAt(i))
-                    {
-                        ++probes.null_rows;
-                        places_data[i] = emplace_null_key(local_method.data);
-                        continue;
-                    }
-                }
-            }
-
-            auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
-            const auto & key = keyHolderGetKey(key_holder);
-
-            if constexpr (is_keys_and_packed_string<RecordKey>)
-            {
-                /// As in `collectCountMisses`: a key with an empty string that repeats the last missed key
-                /// misses as well, and its record takes that key's hash without hashing or probing it again.
-                if (key.str.isEmpty() && has_missed_key && last_missed_key.str.isEmpty() && key.keys == last_missed_key.keys)
-                {
-                    if constexpr (record_places)
-                        places_data[i] = nullptr;
-                    misses.add<RecordKey>(static_cast<UInt32>(i), last_missed_hash, key, keep_key_bytes);
-                    keyHolderDiscardKey(key_holder);
-                    continue;
-                }
-            }
-
-            const UInt64 hash = local_method.data.hash(key);
-
-            if (!bypass_local_probe)
-            {
-                if (auto it = local_method.data.find(key, hash))
-                {
-                    ++probes.hits;
-                    if constexpr (record_places)
-                        places_data[i] = it->getMapped();
-                    keyHolderDiscardKey(key_holder);
-                    continue;
-                }
-            }
-
-            if constexpr (record_places)
-                places_data[i] = nullptr;
-            misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
-            if constexpr (is_keys_and_packed_string<RecordKey>)
-            {
-                last_missed_key = key;
-                last_missed_hash = hash;
-                has_missed_key = true;
-            }
-            keyHolderDiscardKey(key_holder);
-            if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, typename LocalMethod::StateNoCache>)
-            {
-                if (missBatchKeyBytesFull(misses, keep_key_bytes))
-                    stage_misses();
-            }
-        }
-        return probes;
-    };
-
     /// With the probe bypassed there is no hit, so there are no places to record, unless the block may have
     /// rows of the NULL key.
     if (bypass_local_probe && !local_find_state.mayHaveNullRows())
     {
-        const AdaptiveLocalProbes probes = probe_rows.template operator()<false>(nullptr);
+        const AdaptiveLocalProbes probes = collectArgumentMisses</*record_places=*/false, RecordKey>(
+            local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe,
+            /*places_data=*/nullptr, emplace_null_key, stage_misses);
         record_local_probes(probes.hits, row_end - row_begin);
         stage_misses();
         return;
@@ -753,7 +766,9 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
 
-    const AdaptiveLocalProbes probes = probe_rows.template operator()<true>(places.get());
+    const AdaptiveLocalProbes probes = collectArgumentMisses</*record_places=*/true, RecordKey>(
+        local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, places.get(),
+        emplace_null_key, stage_misses);
     record_local_probes(probes.hits, row_end - row_begin - probes.null_rows);
     stage_misses();
 
