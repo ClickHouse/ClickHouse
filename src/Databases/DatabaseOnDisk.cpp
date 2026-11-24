@@ -630,6 +630,8 @@ void DatabaseOnDisk::renameTable(
         /// but not when moving from Atomic database to Ordinary
         if (table->storesDataOnDisk())
             atomic_db.tryRemoveSymlink(table_name);
+        /// The table gives its UUID up, so a new table can get the paths and part names it had.
+        getContext()->clearCaches();
         /// Forget about UUID, now it's possible to reuse it for new table
         DatabaseCatalog::instance().removeUUIDMappingFinally(prev_uuid);
         atomic_db.setDetachedTableNotInUseForce(prev_uuid);

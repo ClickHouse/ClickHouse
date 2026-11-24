@@ -33,3 +33,18 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t SELECT number, 'apple' FROM num
 SELECT name FROM system.parts WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't' AND active;
 SELECT sum(k) FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE length(s) = 5;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+-- The same for the uncompressed cache and the text index caches.
+CREATE TABLE t2 (k UInt64, s String, INDEX idx s TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY k
+SETTINGS old_parts_lifetime = 0;
+INSERT INTO t2 SELECT number, if(number < 10, 'apple', 'pear') FROM numbers(1000);
+SELECT sum(k) FROM t2 WHERE length(s) = 5 SETTINGS use_uncompressed_cache = 1;
+SELECT count() FROM t2 WHERE hasToken(s, 'apple')
+SETTINGS use_query_condition_cache = 0, use_skip_indexes = 1, use_text_index_tokens_cache = 1, use_text_index_header_cache = 1, use_text_index_postings_cache = 1;
+TRUNCATE TABLE t2;
+DETACH TABLE t2;
+ATTACH TABLE t2;
+INSERT INTO t2 SELECT number + 1000, if(number = 999, 'apple', 'pear') FROM numbers(1000);
+SELECT sum(k) FROM t2 WHERE length(s) = 5 SETTINGS use_uncompressed_cache = 1;
+SELECT count() FROM t2 WHERE hasToken(s, 'apple')
+SETTINGS use_query_condition_cache = 0, use_skip_indexes = 1, use_text_index_tokens_cache = 1, use_text_index_header_cache = 1, use_text_index_postings_cache = 1;

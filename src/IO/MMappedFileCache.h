@@ -40,6 +40,9 @@ public:
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset, ssize_t length = -1);
 
+    /// Remove the mappings of the files whose paths start with one of the prefixes.
+    void removeEntriesUnderPaths(const Strings & prefixes);
+
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
