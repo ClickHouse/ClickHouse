@@ -1406,6 +1406,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Aliases aliases;
             RowPolicyDataOpt row_policy_data_opt;
+            ContextPtr row_policy_context;
             StorageMetadataPtr storage_metadata_snapshot = std::get<StorageMetadataPtr>(table);
             if (!storage_metadata_snapshot)
                 storage_metadata_snapshot = getChildMetadataSnapshot(storage, modified_context);
@@ -1483,9 +1484,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     for (const auto & row_policy : row_policy_filter_ptr->policies)
                         modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
+                /// TODO: build the filter with the analyzer and pass the restriction as an argument.
+                if (modified_context->isCompoundTableIdentifierQualificationAllowed())
+                {
+                    auto copy = Context::createCopy(modified_context);
+                    copy->setAllowCompoundTableIdentifierQualification(false);
+                    row_policy_context = std::move(copy);
+                }
+                else
+                    row_policy_context = modified_context;
+
                 /// A row policy is a stored definition: read table names in it as written.
-                row_policy_data_opt = RowPolicyData(
-                    row_policy_filter_ptr, storage_metadata_snapshot, Context::createCopyForStoredDefinition(modified_context));
+                row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage_metadata_snapshot, row_policy_context);
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
@@ -1633,6 +1643,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 current_streams);
 
             child.plan.addInterpreterContext(modified_context);
+            if (row_policy_context)
+                child.plan.addInterpreterContext(row_policy_context);
 
             /// Bucket numbers depend on the aggregation key types, and the merging step merges the children's buckets as they are.
             if (child.plan.isInitialized() && common_processed_stage == QueryProcessingStage::WithMergeableState && query_info.need_aggregate)

@@ -25,6 +25,21 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace
+{
+
+/// TODO: analyze constraints with the analyzer and pass the restriction as an argument.
+ContextPtr makeStoredDefinitionContext(const ContextPtr & context)
+{
+    if (!context->isCompoundTableIdentifierQualificationAllowed())
+        return context;
+    auto copy = Context::createCopy(context);
+    copy->setAllowCompoundTableIdentifierQualification(false);
+    return copy;
+}
+
+}
+
 CheckConstraintsTransform::CheckConstraintsTransform(
     const StorageID & table_id_,
     SharedHeader header,
@@ -34,7 +49,7 @@ CheckConstraintsTransform::CheckConstraintsTransform(
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
     /// Constraints are stored SQL: read table names in them as written.
-    , context(Context::createCopyForStoredDefinition(context_))
+    , context(makeStoredDefinitionContext(context_))
     , expressions(constraints_.getExpressions(context, header->getNamesAndTypesList()))
 {
 }
