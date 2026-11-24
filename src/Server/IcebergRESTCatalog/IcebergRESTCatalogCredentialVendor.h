@@ -42,12 +42,12 @@ public:
         const std::shared_ptr<const S3::Client> & warehouse_s3_client_);
 
     /// Calls STS for new credentials each time.
-    VendedCredentials vend(const String & location, VendedAccessLevel access) const;
+    [[nodiscard]] VendedCredentials vend(const String & location, VendedAccessLevel access) const;
 
 private:
-    S3::AssumeRoleResult assumeRole(const String & location, VendedAccessLevel access) const;
-    String buildSessionPolicy(const String & bucket, const String & key, VendedAccessLevel access) const;
-    VendedCredentials toVendedCredentials(const String & location, const S3::AssumeRoleResult & sts_result) const;
+    [[nodiscard]] S3::AssumeRoleResult assumeRole(const String & location, VendedAccessLevel access) const;
+    [[nodiscard]] String buildSessionPolicy(const String & bucket, const String & key, VendedAccessLevel access) const;
+    [[nodiscard]] VendedCredentials toVendedCredentials(const String & location, const S3::AssumeRoleResult & sts_result) const;
 
     const std::shared_ptr<S3::AWSAssumeRoleClient> sts_client;
     const IcebergRESTCatalogWarehouseCredential warehouse_role;
