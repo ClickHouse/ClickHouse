@@ -2,7 +2,8 @@
 # Tags: no-fasttest
 # no-fasttest: the Fast test build has neither simdjson nor rapidjson.
 
-# Every function of src/Functions/FunctionsJSON.cpp must return for a `JSON` column what it returns for the same
+# Every function of src/Functions/FunctionsJSON.cpp that takes a `JSON` argument (all but `JSONExtractLeafValues` and
+# `JSONExtractLeafPathsAndValues`, which reject it) must return for a `JSON` column what it returns for the same
 # document as a `String`. The expected side runs the function on the source document where the `JSON` type keeps it
 # as is, and on `c::String` where the type normalizes it (dropped nulls and empty objects, sorted keys, a dotted key
 # stored as a nested path, typed paths). Every mismatching (call, column, row) is printed.
@@ -215,6 +216,18 @@ SELECT count(), countIf(JSONExtractInt(j, materialize(['a', 'd', 'zz'][number % 
     sum(JSONExtractInt(j, 'd', materialize(number % 5)))
 FROM numbers(256) SETTINGS max_execution_time = 10;
 "
+
+# A path of plain constant keys reads the subcolumn of the path, so the other paths of the row are not written. The
+# whole-row route (a CaseInsensitive call) writes them and goes over the same memory limit.
+$CLICKHOUSE_CLIENT -q "
+SELECT '-- a constant path does not write the row';
+CREATE TABLE tm (j JSON) ENGINE = Memory;
+INSERT INTO tm SELECT concat('{\"a\":7,\"pad\":\"', repeat(repeat('x', 1000000), 30), '\"}');
+SELECT JSONExtractInt(j, 'a'), JSONHas(j, 'a'), JSONExtractRaw(j, 'a'), JSONExtract(j, 'a', 'Nullable(Int64)')
+FROM tm SETTINGS max_memory_usage = '20M';
+"
+$CLICKHOUSE_CLIENT -q "SELECT JSONExtractIntCaseInsensitive(j, 'a') FROM tm SETTINGS max_memory_usage = '20M'" 2>&1 \
+    | grep -c -m1 'MEMORY_LIMIT_EXCEEDED'
 
 # Prints each call on the JSON document, then on the same document as String (and with a third column: as `j::String`).
 examples()
