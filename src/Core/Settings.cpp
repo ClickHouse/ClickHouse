@@ -10062,7 +10062,8 @@ After the first such outcome for a query plan, the next execution builds the pla
 
 0 disables deferral after undecided outcomes. It is independent of `automatic_parallel_replicas_remember_boundary`, which spares the build for plans decided from statistics.
 )", 0, \
-        {"26.12", 0, 10, "New setting. Automatic parallel replicas now skips building the plan with parallel replicas for a number of executions of a query plan whose last build ended without a decision; previously every execution built it."}) \
+        {"26.12", 10, 10, "The setting was backported to 26.10 and is recorded there."}, \
+        {"26.10", 0, 10, "New setting. Automatic parallel replicas now skips building the plan with parallel replicas for a number of executions of a query plan whose last build ended without a decision; previously every execution built it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
@@ -10085,7 +10086,8 @@ The rows are the ones the initiator's index analysis selects, so pruning that on
 example by their own query condition caches) is not seen. A lower ratio recollects the statistics sooner as the table
 changes. Should be greater than 1.
 )", 0, \
-        {"26.11", 2.0, 1.5, "New setting. The ratio was 2 and could not be changed; statistics are now recollected sooner as the data changes."}) \
+        {"26.11", 1.5, 1.5, "The setting was backported to 26.10 and is recorded there."}, \
+        {"26.10", 2.0, 1.5, "New setting. The ratio was 2 and could not be changed; statistics are now recollected sooner as the data changes."}) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.

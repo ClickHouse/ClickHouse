@@ -101,3 +101,13 @@ SELECT name, value FROM system.settings
 WHERE name IN ('query_plan_join_order_use_interesting_orders', 'query_plan_optimize_join_order_algorithm',
                'query_plan_optimize_join_order_conflict_detector')
 ORDER BY name;
+
+SELECT 'automatic parallel replicas settings backported to 26.10';
+SET compatibility = '26.10';
+SELECT name, value FROM system.settings
+WHERE name IN ('automatic_parallel_replicas_statistics_drift_ratio', 'automatic_parallel_replicas_undecided_retry_after_executions')
+ORDER BY name;
+SET compatibility = '26.9';
+SELECT name, value FROM system.settings
+WHERE name IN ('automatic_parallel_replicas_statistics_drift_ratio', 'automatic_parallel_replicas_undecided_retry_after_executions')
+ORDER BY name;
