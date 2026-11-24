@@ -3129,8 +3129,9 @@ protected:
     {
         auto codec = codecFor(sizeof(FloatType));
         std::vector<char> source(values.size() * sizeof(FloatType) + trailing_bytes);
-        if (!values.empty())
-            memcpy(source.data(), values.data(), values.size() * sizeof(FloatType));
+        /// The codec works on the serialized little-endian stream on every host.
+        for (size_t i = 0; i < values.size(); ++i)
+            unalignedStoreLittleEndian<FloatType>(source.data() + i * sizeof(FloatType), values[i]);
         for (size_t i = 0; i < trailing_bytes; ++i)
             source[values.size() * sizeof(FloatType) + i] = static_cast<char>(0xA0 + i);
         const UInt32 source_size = static_cast<UInt32>(source.size());
@@ -3178,7 +3179,7 @@ protected:
         for (size_t i = 0; i < count; ++i)
         {
             const FloatType value = static_cast<FloatType>(generator(i));
-            memcpy(bytes.data() + i * sizeof(FloatType), &value, sizeof(FloatType));
+            unalignedStoreLittleEndian<FloatType>(bytes.data() + i * sizeof(FloatType), value);
         }
         for (size_t i = 0; i < trailing_bytes; ++i)
             bytes[count * sizeof(FloatType) + i] = static_cast<char>(0xA0 + i);
