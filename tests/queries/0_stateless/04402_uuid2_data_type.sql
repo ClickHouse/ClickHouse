@@ -92,17 +92,15 @@ SET uuid_type_version = 1;
 ALTER TABLE t_alter ADD COLUMN f UUID, ADD COLUMN g Array(UUID);
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter' AND name IN ('f', 'g') ORDER BY name;
 
-SELECT '-- CREATE ON CLUSTER with a legacy DDL format version still materializes bare UUID as UUID2 on the initiator';
+SELECT '-- CREATE ON CLUSTER materializes bare UUID as UUID2 on the initiator';
 SET distributed_ddl_output_mode = 'none';
--- A version below NORMALIZE_CREATE_ON_INITIATOR_VERSION (3) takes the legacy path that enqueues the query before it is
--- normalized in `createTable`; the initiator must still bake in `uuid_type_version` so workers do not fall back to `UUID`.
-SET distributed_ddl_entry_format_version = 2;
+-- Workers treat the forwarded query as already-normalized internal DDL and ignore the setting, so the initiator
+-- must bake in `uuid_type_version` before the query is enqueued.
 SET uuid_type_version = 2;
-DROP TABLE IF EXISTS t_cluster_legacy ON CLUSTER test_shard_localhost SYNC;
-CREATE TABLE t_cluster_legacy ON CLUSTER test_shard_localhost (a UUID, b UUID1, c UUID2, d Array(UUID), e Nullable(UUID)) ENGINE = MergeTree ORDER BY tuple();
-SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_cluster_legacy' ORDER BY name;
-DROP TABLE IF EXISTS t_cluster_legacy ON CLUSTER test_shard_localhost SYNC;
-SET distributed_ddl_entry_format_version = DEFAULT;
+DROP TABLE IF EXISTS t_cluster ON CLUSTER test_shard_localhost SYNC;
+CREATE TABLE t_cluster ON CLUSTER test_shard_localhost (a UUID, b UUID1, c UUID2, d Array(UUID), e Nullable(UUID)) ENGINE = MergeTree ORDER BY tuple();
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_cluster' ORDER BY name;
+DROP TABLE IF EXISTS t_cluster ON CLUSTER test_shard_localhost SYNC;
 SET distributed_ddl_output_mode = DEFAULT;
 SET uuid_type_version = 1;
 

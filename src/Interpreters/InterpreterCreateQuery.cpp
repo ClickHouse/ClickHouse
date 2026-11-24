@@ -3764,10 +3764,8 @@ namespace
   * `ASTDictionaryAttributeDeclaration::type`) then stays consistent with `children` without extra bookkeeping.
   *
   * This runs on the initiator, from `getTablePropertiesAndNormalizeCreateQuery`, for a primary user-issued
-  * `CREATE` only. It is also called explicitly on the legacy `ON CLUSTER` path
-  * (`distributed_ddl_entry_format_version < NORMALIZE_CREATE_ON_INITIATOR_VERSION`), which enqueues the query
-  * verbatim before normalization runs while workers treat it as already-normalized internal DDL - so without it
-  * a bare `UUID` would be created as historical `UUID` there regardless of the initiator's `uuid_type_version`.
+  * `CREATE` only. An `ON CLUSTER` query is normalized on the initiator before it is enqueued, so workers, which
+  * treat the forwarded query as already-normalized internal DDL, receive the materialized type names.
   */
 void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_version)
 {
@@ -4205,20 +4203,6 @@ BlockIO InterpreterCreateQuery::execute()
 
         if (is_create_database)
         {
-            /// This legacy path enqueues the query before it is normalized on the initiator (see `createTable`), so
-            /// materialize the `uuid_type_version` setting into the column types here; otherwise workers, which treat
-            /// the forwarded query as already-normalized internal DDL, would ignore the setting and create a bare
-            /// `UUID` as the historical `UUID` type. SQL UDF bodies may introduce bare `UUID` carriers of their own
-            /// (`CAST(x, 'UUID')` and the like), so under version 2 they are expanded first; otherwise the legacy
-            /// path stays byte-identical and workers expand the UDFs themselves as before.
-            if (!is_create_database)
-            {
-                if (getContext()->getSettingsRef()[Setting::uuid_type_version] == 2
-                    && !UserDefinedSQLFunctionFactory::instance().empty())
-                    UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
-                materializeUUIDTypeVersion(create, getContext()->getSettingsRef()[Setting::uuid_type_version]);
-            }
-
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
             if (create.storage && create.storage->engine

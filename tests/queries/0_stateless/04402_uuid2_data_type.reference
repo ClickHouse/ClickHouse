@@ -50,7 +50,7 @@ id	UInt64
 -- ALTER version 1 (default) leaves UUID as UUID
 f	UUID
 g	Array(UUID)
--- CREATE ON CLUSTER with a legacy DDL format version still materializes bare UUID as UUID2 on the initiator
+-- CREATE ON CLUSTER materializes bare UUID as UUID2 on the initiator
 a	UUID2
 b	UUID
 c	UUID2

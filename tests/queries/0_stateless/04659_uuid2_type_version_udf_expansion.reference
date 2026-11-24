@@ -5,7 +5,7 @@ a UDF-introduced bare UUID in a mutation expression
 61f0c404-5cb3-11e7-907b-a6006ad3dba0	UUID2
 a UDF-introduced bare UUID in ALTER MODIFY QUERY
 SELECT k, CAST(s, \'UUID2\') AS x FROM t_udf_uuid2_mv_source
-a UDF-introduced bare UUID in a legacy ON CLUSTER CREATE
+a UDF-introduced bare UUID in an ON CLUSTER CREATE
 x	UUID2	CAST(s, \'UUID2\')
 the historical type is unchanged under uuid_type_version = 1
 x	UUID	CAST(s, \'UUID\')

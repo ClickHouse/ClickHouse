@@ -7,9 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # With `uuid_type_version = 2`, a bare `UUID` introduced by an expanded SQL UDF body (`CAST(x, 'UUID')` and
-# the like) must be materialized as well. The `ALTER` path expands UDFs after parsing, and the legacy
-# `CREATE ... ON CLUSTER` path (`distributed_ddl_entry_format_version < 3`) enqueues the query before the
-# normal on-worker UDF expansion, so both have to order UDF expansion before the materialization pass.
+# the like) must be materialized as well. The `ALTER` path expands UDFs after parsing, and the
+# `CREATE ... ON CLUSTER` path normalizes the query on the initiator before it is enqueued, so both have to
+# order UDF expansion before the materialization pass.
 
 # SQL user-defined functions are server-global rather than per-database, so the name has to embed the test
 # database; otherwise concurrent copies of this test drop each other's function.
@@ -50,9 +50,8 @@ DROP TABLE t_udf_uuid2_mutation;
 DROP TABLE t_udf_uuid2_mv;
 DROP TABLE t_udf_uuid2_mv_source;
 
-SELECT 'a UDF-introduced bare UUID in a legacy ON CLUSTER CREATE';
+SELECT 'a UDF-introduced bare UUID in an ON CLUSTER CREATE';
 SET distributed_ddl_output_mode = 'none';
-SET distributed_ddl_entry_format_version = 2;
 DROP TABLE IF EXISTS t_udf_uuid2_cluster ON CLUSTER test_shard_localhost SYNC;
 CREATE TABLE t_udf_uuid2_cluster ON CLUSTER test_shard_localhost (k UInt8, s String, x UUID DEFAULT ${function_name}(s)) ENGINE = MergeTree ORDER BY k;
 SELECT name, type, default_expression FROM system.columns WHERE database = currentDatabase() AND table = 't_udf_uuid2_cluster' AND name = 'x';
