@@ -2755,8 +2755,8 @@ ObjectConversionPlan buildObjectConversionPlan(
     }
 
     /// Find new skip rules.
-    const auto & src_skip = src_type.getPathsToSkip();
-    const auto & dst_skip = dst_type.getPathsToSkip();
+    const auto & src_skip = src_type.getPathsToSkip()->getPaths();
+    const auto & dst_skip = dst_type.getPathsToSkip()->getPaths();
     for (const auto & path : dst_skip)
     {
         if (!src_skip.contains(path))
@@ -2773,7 +2773,7 @@ ObjectConversionPlan buildObjectConversionPlan(
     /// Apply every destination regexp, including one already in the source type: its match mode is a
     /// setting, so the source may have been filtered under another mode (see shouldSkip). A true
     /// self-conversion is handled earlier by the identity wrapper, so this does not re-filter a no-op cast.
-    for (const auto & regexp : dst_type.getPathRegexpsToSkip())
+    for (const auto & regexp : dst_type.getPathsToSkip()->getRegexps())
         plan.skip_regexps.push_back(std::make_shared<const re2::RE2>(regexp));
 
     return plan;
