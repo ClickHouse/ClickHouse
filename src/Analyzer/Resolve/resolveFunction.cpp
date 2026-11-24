@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -26,7 +27,9 @@
 #include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
+#include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -36,6 +39,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -46,6 +50,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -75,7 +80,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int UNKNOWN_FUNCTION;
-    extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
@@ -113,6 +117,56 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+
+/** The number of arguments of `function_name` when it is a `groupConcat` alias, possibly with combinators,
+  * called with the separator as its second argument. Nothing for any other name.
+  * `STRING_AGG(DISTINCT x, sep) FILTER (WHERE cond)` is parsed as `STRING_AGGDistinctIf(x, sep, cond)`.
+  * Only combinators that keep the separator as the second argument are matched, `-If` appends the condition and `-ArgMin`/`-ArgMax` the key.
+  */
+std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & function_name)
+{
+    const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
+    if (std::none_of(aliases.begin(), aliases.end(), [&](const auto & alias) { return equalsCaseInsensitive(alias, std::string_view(function_name).substr(0, alias.size())); }))
+        return {};
+
+    String nested_name = function_name;
+    size_t arguments_count = 2;
+    while (true)
+    {
+        if (std::any_of(aliases.begin(), aliases.end(), [&](const auto & alias) { return equalsCaseInsensitive(alias, nested_name); }))
+            return arguments_count;
+
+        auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(nested_name);
+        if (!combinator)
+            return {};
+
+        const auto suffix = combinator->getName();
+        if (suffix == "If" || suffix == "ArgMin" || suffix == "ArgMax")
+            ++arguments_count;
+        else if (suffix != "Distinct" && suffix != "OrNull" && suffix != "OrDefault" && suffix != "State" && suffix != "Array")
+            return {};
+
+        nested_name.resize(nested_name.size() - suffix.size());
+    }
+}
+
+}
+
+bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, const ContextPtr & context)
+{
+    if (function_node.getArguments().getNodes().size() < 2)
+        return false;
+
+    const auto & function_name = function_node.getFunctionName();
+    auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
+    return arguments_count && function_node.getArguments().getNodes().size() == *arguments_count
+        && (function_node.isWindowCall()
+            || (!UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
+                && !UserDefinedExecutableFunctionFactory::has(function_name, context))); /// NOLINT(readability-static-accessed-through-instance)
+}
+
+namespace
+{
 
 /// The arity of a registered function name, or nothing when no function with this name is
 /// registered. Used by the rewrites that turn a function name into a lambda (the bare function
@@ -214,7 +268,7 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
         || function_node->getFunctionName() != function_name_to_fold
         || !function_node->getParameters().getNodes().empty()
         || function_node->getNullsAction() != NullsAction::EMPTY
-        || function_node->isWindowFunction())
+        || function_node->isWindowCall())
         return {};
 
     const bool decisive_value = function_name_to_fold == "or";
@@ -1159,6 +1213,55 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
     }
 }
 
+/// Returns whether the `rewrite_in_to_join` rewrite of `x IN (subquery)` into
+/// `EXISTS (SELECT 1 FROM (subquery) WHERE x = <row> LIMIT 1)` keeps the semantics of regular `IN`: the
+/// same result or the same error. The left operand has the type `left_type`, and the subquery has the
+/// columns `subquery_columns`. The caller guarantees that `left_type` is not null and that
+/// `validateInColumnsCountMatch` accepted both sides.
+///
+/// Regular `IN` rejects a left operand with dynamic structure before it builds the set. With
+/// `transform_null_in = 0`, which the rewrite requires, it returns NULL for a NULL left operand, while
+/// `NOT EXISTS` returns 1.
+///
+/// For any other operand, the set has one key per subquery column. `FunctionIn` compares the whole left
+/// operand with the only column of a subquery, even when the operand is a tuple. Otherwise it compares
+/// each element of the left tuple with its own column. `Set::execute` converts each key to the type of
+/// its column, and a value that the column cannot hold is not a member. For example,
+/// `(t, 1) IN (SELECT toFloat64(1767225600), 1)` returns 0 for
+/// `t = fromUnixTimestamp64Nano(1767225600000000001, 'UTC')` because `Float64` cannot hold the nanosecond,
+/// while `equals` compares in a common supertype and matches. The conversion also parses text as a number,
+/// where `equals` finds no common type. A key of a `Bool` column is converted even when it has the column's
+/// type, which turns every byte other than 0 into `true`, while `equals` compares the bytes. The set holds
+/// NULL as a value of a `Variant` key and NULL fields as values of a tuple key, while `equals` returns NULL
+/// for them. And the set compares floating-point values by their bits, also inside `Array` and `Map`: a NaN
+/// is a member of a set that holds it, and `-0.0` is not a member of a set of `0.0`, while `equals` compares
+/// the numbers. The set also accepts a key that is not comparable for equality, such as an `AggregateFunction`
+/// state, while `equals` rejects it, even inside a `Variant`. So the rewrite keeps the semantics only when every
+/// key has the type of its column, holds only types comparable for equality, is neither a tuple nor a
+/// `Variant`, holds no floating-point type, and its column is not `Bool`. A `Nullable` element of the left
+/// tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element, neither does
+/// `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
+static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const NamesAndTypes & subquery_columns)
+{
+    if (left_type->hasDynamicStructure() || isNullableOrLowCardinalityNullable(left_type))
+        return false;
+
+    /// `validateInColumnsCountMatch` made a left operand without dynamic structure a tuple as wide as a
+    /// subquery with several columns.
+    const DataTypes key_types = subquery_columns.size() == 1 ? DataTypes{left_type} : getInKeyColumnTypes(left_type);
+    chassert(key_types.size() == subquery_columns.size());
+    for (size_t i = 0; i < key_types.size(); ++i)
+    {
+        const auto key_type_without_nullable = removeNullable(key_types[i]);
+        const DataTypePtr & column_type = subquery_columns[i].type;
+        if (isTuple(key_type_without_nullable) || isVariant(key_type_without_nullable) || !key_types[i]->equals(*column_type)
+            || anyInTypeTree(*column_type, [](const IDataType & node) { return !node.isComparableForEquality(); })
+            || hasTypeThatCanContainFloat(column_type) || isBool(removeNullable(removeLowCardinality(column_type))))
+            return false;
+    }
+    return true;
+}
+
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
 QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
@@ -1173,16 +1276,16 @@ QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     has_fn->getArguments().getNodes().push_back(element_arg);
 
     QueryTreeNodePtr in_result = has_fn;
-    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
-    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
-    /// elements to preserve `IN` semantics in the row-wise rewrite.
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(element_arg->getResultType()).get());
-        tuple_type && !tuple_type->getElements().empty())
+    /// `IN` compares the columns of a multi-column key separately, and with `transform_null_in = 0` a NULL
+    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match.
+    /// Guard the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are
+    /// values.
+    if (const size_t key_column_count = getInKeyColumnTypes(element_arg->getResultType()).size(); key_column_count > 1)
     {
         auto and_fn = std::make_shared<FunctionNode>("and");
         and_fn->getArguments().getNodes() =
         {
-            makeTupleHasNoNullElementsPredicate(element_arg, tuple_type->getElements().size()),
+            makeTupleHasNoNullElementsPredicate(element_arg, key_column_count),
             std::move(in_result),
         };
         in_result = std::move(and_fn);
@@ -1371,15 +1474,15 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
   *
   * Steps:
-  * 1. Resolve function parameters. Validate that each function parameter must be constant node.
-  * 2. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 1. Try to lookup function as lambda in current scope. If it is lambda we can skip `in` and `count` special handling.
+  * 2. Resolve function parameters. Validate that each function parameter must be constant node.
   * 3. If function is count function, that take unqualified ASTERISK matcher, remove it from its arguments. Example: SELECT count(*) FROM test_table;
   * 4. If function is `IN` function, then right part of `IN` function is replaced as subquery.
   * 5. Resolve function arguments list, lambda expressions are allowed as function arguments.
   * For `IN` function table expressions are allowed as function arguments.
   * 6. Initialize argument_columns, argument_types, function_lambda_arguments_indexes arrays from function arguments.
   * 7. If function name identifier was not resolved as function in current scope, try to lookup lambda from sql user defined functions factory.
-  * 8. If function was resolve as lambda from step 2 or 7, then resolve lambda using function arguments and replace function node with lambda result.
+  * 8. If function was resolve as lambda from step 1 or 7, then resolve lambda using function arguments and replace function node with lambda result.
   * After than function node is resolved.
   * 9. If function was not resolved during step 6 as lambda, then try to resolve function as window function or executable user defined function
   * or ordinary function or aggregate function.
@@ -1401,7 +1504,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
     if (function_name == "arrayElement"
         && function_node_ptr->isOperator()
-        && !function_node_ptr->isWindowFunction()
+        && !function_node_ptr->isWindowCall()
         && function_node_ptr->getParameters().getNodes().empty()
         && function_node_ptr->getArguments().getNodes().size() == 2)
     {
@@ -1419,6 +1522,52 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             node = std::move(array_function_node);
             return resolveFunction(node, scope, allow_niladic_functions);
         }
+    }
+
+    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
+      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
+      * argument is a composition. A composition being resolved by itself denotes a function,
+      * not a value, so explain the operator instead of resolving further. Only a node the parser
+      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
+      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
+      * function name is looked up in the scope, so that a lambda bound in the query under the
+      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
+      * and cannot change the meaning of the operator syntax.
+      */
+    if (isFunctionComposition(*function_node_ptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The function composition `f | g` can be used only where a function is expected: "
+            "as an argument of a higher-order function such as arrayMap. "
+            "For bitwise OR, use the function bitOr. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    //// If function node is not window function try to lookup function node name as lambda identifier.
+    QueryTreeNodePtr lambda_expression_untyped;
+    if (!function_node_ptr->isWindowCall())
+    {
+        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
+        lambda_expression_untyped = function_lookup_result.resolved_identifier;
+    }
+
+    /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda, a SQL UDF or an executable UDF
+    /// with this name keeps its arguments.
+    if (isGroupConcatWithSeparatorArgument(*function_node_ptr, scope.context)
+        && (function_node_ptr->isWindowCall() || !lambda_expression_untyped))
+    {
+        auto & arguments_nodes = function_node_ptr->getArguments().getNodes();
+        const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();
+        if (!separator_node || separator_node->getValue().getType() != Field::Types::String)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "If groupConcat is used with a separator argument, the separator must be a constant String");
+
+        /// The separator replaces the raw delimiter parameter and keeps the optional limit. This happens
+        /// before the parameters are resolved, so an overridden delimiter expression is never evaluated.
+        auto & raw_parameters_nodes = function_node_ptr->getParameters().getNodes();
+        if (raw_parameters_nodes.empty())
+            raw_parameters_nodes.push_back(arguments_nodes[1]);
+        else
+            raw_parameters_nodes[0] = arguments_nodes[1];
+        arguments_nodes.erase(arguments_nodes.begin() + 1);
     }
 
     /// Resolve function parameters
@@ -1450,31 +1599,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         parameters.push_back(constant_node->getValue());
     }
 
-    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
-      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
-      * argument is a composition. A composition being resolved by itself denotes a function,
-      * not a value, so explain the operator instead of resolving further. Only a node the parser
-      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
-      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
-      * function name is looked up in the scope, so that a lambda bound in the query under the
-      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
-      * and cannot change the meaning of the operator syntax.
-      */
-    if (isFunctionComposition(*function_node_ptr))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The function composition `f | g` can be used only where a function is expected: "
-            "as an argument of a higher-order function such as arrayMap. "
-            "For bitwise OR, use the function bitOr. In scope {}",
-            scope.scope_node->formatASTForErrorMessage());
-
-    //// If function node is not window function try to lookup function node name as lambda identifier.
-    QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->isWindowFunction())
-    {
-        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
-        lambda_expression_untyped = function_lookup_result.resolved_identifier;
-    }
-
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
       * user-defined function with the same name.
@@ -1485,7 +1609,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && (function_name == "and" || function_name == "or")
         && parameters.empty()
         && function_node_ptr->getNullsAction() == NullsAction::EMPTY
-        && !function_node_ptr->isWindowFunction()
+        && !function_node_ptr->isWindowCall()
         /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
         /// the regular path so a preserved scalar-subquery source is never sent to the planner.
         && !(scope.resolving_join_on_expression && scope.resolving_join_on_expression->getNodeType() == QueryTreeNodeType::JOIN)
@@ -1525,7 +1649,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_scope.projection_mask_map
                 = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
 
-            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
+            QueryAnalyzer type_inference_analyzer(
+                /*only_analyze_=*/ false,
+                /*positional_arguments_already_resolved_=*/ false,
+                replaced_storage,
+                view_source_in_subqueries);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
 
@@ -1670,7 +1798,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (is_special_function_dict_get)
             {
-                scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(identifier.getFullName(), scope.context);
+                /// Check access before reading the dictionary definition, so that a user without access learns nothing
+                /// about the dictionary.
+                const auto & external_loader = scope.context->getExternalDictionariesLoader();
+                (void)external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(identifier.getFullName(), scope.context));
             }
             else
             {
@@ -1965,41 +2096,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 validateInColumnsCountMatch(in_first_argument, in_second_argument);
             }
 
-            /// When the right side is a single column and the left side is kept as one key,
-            /// regular IN does not unpack the left value: the whole left value is one set key, and
-            /// `Set::execute` accurately casts it to the right column type before probing (so
-            /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
-            /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
-            /// compares element-wise over a common supertype instead and cannot reproduce those
-            /// semantics, so skip the rewrite for this shape and fall through to the regular IN
-            /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
-            /// The mutated clones are discarded; the regular path re-resolves the original
-            /// arguments and flattens/validates them again itself.
-            /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
-            /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
-            /// `ColumnTuple`/`DataTypeTuple`. The same is true for every type with dynamic
-            /// structure, which regular `IN` rejects before building the set, and for plain
-            /// `Variant`, which still needs the accurate set-key cast when it has no dynamic
-            /// member. Scalar values also need that cast when their type differs from the sole
-            /// subquery column type. Unwrap the wrappers before identifying the structural types.
-            bool left_value_compared_as_single_key = false;
-            if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
-            {
-                const auto & left_result_type = in_first_argument->getResultType();
-                const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
-                left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
-                    && left_key_type
-                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
-                        || isNullableOrLowCardinalityNullable(left_result_type)
-                        || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
-            }
-
-            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
+            /// The rewrite applies only where it keeps the semantics of regular `IN`, see
+            /// `existsRewriteKeepsInSemantics`. The other shapes fall through to the regular `IN` handling
+            /// below, so the observable behavior does not depend on `rewrite_in_to_join`. The mutated
+            /// clones are discarded: the regular path re-resolves the original arguments and flattens and
+            /// validates them again itself. A lambda on the left has no result type, and the rewrite
+            /// rejects it like regular `IN`.
+            const auto * rhs_query_node = in_second_argument->as<QueryNode>();
+            const auto left_type = in_first_argument->getResultType();
+            if (rhs_query_node
+                && (!left_type || existsRewriteKeepsInSemantics(left_type, rhs_query_node->getProjectionColumns())))
             {
                 /// The rewrite below produces a correlated subquery, so it requires the setting.
                 /// Checked here rather than at the gate above, so that the shapes which are not
                 /// rewritten at all are never rejected because of it: a constant or tuple `IN`, and
-                /// the single-key shape just identified, which stays on the regular `IN` path.
+                /// the shapes whose semantics the rewrite would change, which stay on the regular path.
                 /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
                 /// though no correlated rewrite happens.
                 if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
@@ -2193,7 +2304,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
+                IdentifierResolveScope & exists_subquery_scope = createIdentifierResolveScope(new_exists_argument, &scope /*parent_scope*/);
+                exists_subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+                evaluateScalarSubqueryIfNeeded(new_exists_argument, exists_subquery_scope, true);
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
                 res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
@@ -2578,6 +2692,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
+        /// Replace storage with values storage of insertion block.
+        /// The inner query of an ordinary view referenced by the view query reads the table itself.
+        if (StoragePtr storage = getViewSourceIfRead(scope.context, view_source_in_subqueries);
+            storage && !in_second_argument->as<TableFunctionNode>())
+            replaceStorageInQueryTree(in_second_argument, scope.context, storage);
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -2641,36 +2761,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block.
-            /// The inner query of an ordinary view referenced by the view query reads the table itself.
-            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
-            {
-                QueryTreeNodePtr table_expression = in_second_argument;
-
-                /// Process possibly nested sub-selects
-                while (table_expression)
-                {
-                    if (auto * query_node = table_expression->as<QueryNode>())
-                        table_expression = extractLeftTableExpression(query_node->getJoinTreeNodeTyped());
-                    else if (auto * union_node = table_expression->as<UnionNode>())
-                        table_expression = union_node->getQueries().getNodes().at(0);
-                    else
-                        break;
-                }
-
-                TableNode * table_expression_table_node = table_expression ? table_expression->as<TableNode>() : nullptr;
-
-                if (table_expression_table_node &&
-                    table_expression_table_node->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-                {
-                    auto replacement_table_expression_table_node = table_expression_table_node->clone();
-                    replacement_table_expression_table_node->as<TableNode &>().updateStorage(storage, scope.context);
-                    in_second_argument = in_second_argument->cloneAndReplace(
-                        static_pointer_cast<ITableExpressionNode>(table_expression),
-                        static_pointer_cast<ITableExpressionNode>(std::move(replacement_table_expression_table_node)));
-                }
-            }
-
             /// If the subquery's single column is an Array one dimension deeper than the left
             /// argument, flatten it with arrayJoin so its elements become the set elements.
             flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
@@ -2823,15 +2913,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         if (tuple_function_is_set)
                         {
                             tuple_args = candidate_arguments;
-                            /// For a `Nullable(Tuple(...))` LHS, the constant `Set` path interprets an
-                            /// explicit all-`NULL` RHS tuple as both top-level `NULL` set elements and,
-                            /// when its elements are nullable, the tuple value itself. Preserve both
-                            /// interpretations in the row-wise rewrite.
-                            if (rhs_tuple_all_null
-                                && compare_nulls
-                                && candidate_arguments.size() == nullable_left_tuple_type->getElements().size()
-                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
-                                    [](const auto & type) { return type->isNullable(); }))
+                            /// An explicit all-`NULL` RHS tuple, such as `(NULL, NULL)`, is read as in the
+                            /// constant `Set` path: as top-level `NULL` set elements and, when the key can
+                            /// hold it, as the tuple value too (see `nullableTupleKeyCanHoldAllNullTuple`).
+                            if (rhs_tuple_all_null && nullableTupleKeyCanHoldAllNullTuple(
+                                    *nullable_left_tuple_type, candidate_arguments.size()))
                                 tuple_args.push_back(fn_args[1]);
                         }
                         else
@@ -3013,7 +3099,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            argument_column.column = constant_node->getColumn();
+            /// A deferred right side of `IN` needs no column: it becomes a set, unless the call is folded with a constant left side.
+            if (!(is_special_function_in && function_argument_index == 1 && !all_arguments_constants
+                  && constant_node->tryGetDeferredField()))
+                argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
@@ -3049,7 +3138,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       *
       * TODO: Provide better error hints.
       */
-    if (!function_node.isWindowFunction())
+    if (!function_node.isWindowCall())
     {
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
@@ -3141,10 +3230,37 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & untuple_argument_projection_name = arguments_projection_names.at(0);
             result_projection_names.clear();
 
+            /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
+            /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
+            /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
+            String untuple_alias = node->getAlias();
+            const auto * current_scope = &scope;
+            const auto * current_node = node.get();
+            while (current_scope->parent_scope)
+            {
+                const auto * lambda_scope_node = current_scope->scope_node->as<LambdaNode>();
+                if (!lambda_scope_node || lambda_scope_node->getExpression().get() != current_node)
+                    break;
+
+                const auto & parent_expressions_stack = current_scope->parent_scope->expressions_in_resolve_process_stack;
+                if (parent_expressions_stack.empty())
+                    break;
+
+                /// Only a call is inlined; the lambda of an `APPLY` transformer sits under the matcher it expands.
+                const auto & call_node = parent_expressions_stack.getTop();
+                if (call_node->getNodeType() != QueryTreeNodeType::FUNCTION)
+                    break;
+
+                if (call_node->hasAlias())
+                    untuple_alias = call_node->getAlias();
+                current_node = call_node.get();
+                current_scope = current_scope->parent_scope;
+            }
+
             for (const auto & element_name : element_names)
             {
-                if (node->hasAlias())
-                    result_projection_names.push_back(node->getAlias() + '.' + element_name);
+                if (!untuple_alias.empty())
+                    result_projection_names.push_back(untuple_alias + '.' + element_name);
                 else
                     result_projection_names.push_back(fmt::format("tupleElement({}, '{}')", untuple_argument_projection_name, element_name));
             }
@@ -3173,14 +3289,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    if (function_node.isWindowFunction())
+    if (function_node.isWindowCall())
     {
-        if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
+        const auto & window_function_factory = WindowFunctionFactory::instance();
+        const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
+        const bool is_window_function = window_function_factory.isWindowFunctionName(function_name);
+        const bool is_aggregate_function = aggregate_function_factory.isAggregateFunctionName(function_name);
+
+        if (!is_window_function && !is_aggregate_function)
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist{}. In scope {}",
-                            function_name,
-                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)),
-                            scope.scope_node->formatASTForErrorMessage());
+            VectorWithMemoryTracking<String> possible_function_names;
+            possible_function_names.append_range(window_function_factory.getAllRegisteredNames());
+            possible_function_names.append_range(aggregate_function_factory.getAllRegisteredNames());
+
+            auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
+
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Window function or aggregate function with name {} does not exist{}. In scope {}",
+                backQuote(function_name),
+                getHintsErrorMessageSuffix(hints),
+                scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -3189,38 +3317,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name);
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
 
-        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types), scope.context);
-        for (size_t i = 0; i < argument_types.size(); ++i)
-            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
+        if (is_window_function)
+        {
+            argument_types = window_function_factory.bindArgumentTypes(function_name, std::move(argument_types));
+            for (size_t i = 0; i < function_arguments.size(); ++i)
+                if (!function_arguments[i]->getResultType()->equals(*argument_types[i]))
+                    function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
-        AggregateFunctionProperties properties;
-        auto aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                aggregate_function_name,
-                action,
-                argument_types,
-                parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
+            function_node.resolveAsWindowFunction(window_function_factory.get(function_name, action, argument_types, parameters));
+        }
+        else
+        {
+            std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
-        function_node.resolveAsWindowFunction(std::move(aggregate_function));
+            AggregateFunctionProperties properties;
+            function_node.resolveAsAggregateFunction(
+                aggregate_function_factory.get(aggregate_function_name, action, argument_types, parameters, properties, AggregateFunctionStateVariant::Window));
+        }
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
-
-        if (function_name == "lag" || function_name == "lead")
-        {
-            auto & frame = function_node.getWindowNode()->as<WindowNode>()->getWindowFrame();
-            if (!frame.is_default)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window function '{}' does not expect window frame to be explicitly specified. In expression {}",
-                    function_name,
-                    function_node.formatASTForErrorMessage());
-            }
-        }
 
         if (window_node_is_identifier)
             result_projection_names[0] += " OVER " + window_projection_name;
@@ -3272,11 +3389,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
         /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
         /// is the documented way to ask for two different constants in one query.
+        ///
+        /// Server-constant functions (`hostName`, `tcpPort`, `serverUUID`, ...) capture
+        /// `context->isDistributed()` when they are built, and it decides whether they are folded to a
+        /// constant (see `FunctionConstantBase::isSuitableForConstantFolding`). A sub-SELECT over
+        /// `clusterAllReplicas` and the outer query disagree on it, so a base shared between them makes
+        /// the shard query and the local plan disagree on the header. Hence for them the flag is a part
+        /// of the key. Other functions (`randConstant`, `now64`, ...) do not depend on it and must keep
+        /// a single value for the whole query, so they are shared regardless of the flag.
         if (function && !function->isDeterministic() && !function->isStateful()
             && function->isDeterministicInScopeOfQuery())
         {
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
-            function_base_cache = &functions_cache[hash];
+            bool distributed = function->isServerConstant() && scope.context->isDistributed();
+            function_base_cache = &functions_cache[{hash, distributed}];
         }
     }
 
@@ -3286,6 +3412,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
     else
     {
+        if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} is a window function and requires an OVER clause", function_name);
+
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
             VectorWithMemoryTracking<std::string> possible_function_names;
@@ -3300,6 +3429,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
 
             function_names = AggregateFunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = WindowFunctionFactory::instance().getAllRegisteredNames();
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
 
             for (auto & [name, lambda_node] : scope.aliases.alias_name_to_lambda_node)
@@ -3323,7 +3455,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 backQuote(function_name));
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name
+            = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
@@ -3555,6 +3688,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto & cached_function = *function_base_cache;
             if (!cached_function)
                 cached_function = function->build(argument_columns);
+            else
+            {
+                /// The cache is shared by all scopes of the query, but the access rights depend on the settings
+                /// of the scope (for example, `allow_introspection_functions` in the `SETTINGS` of a subquery).
+                /// `build` checks them, so check them also when the cached function is reused.
+                function->checkAccessOnBuild();
+            }
 
             function_base = cached_function;
         }
