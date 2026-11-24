@@ -76,6 +76,8 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char iceberg_rest_catalog_lose_commit_response[];
+    extern const char iceberg_rest_catalog_resend_commit[];
 }
 
 namespace ProfileEvents
@@ -1899,7 +1901,13 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-String RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+String RestCatalog::sendRequest(
+    const CatalogState & catalog_state,
+    const String & endpoint,
+    Poco::JSON::Object::Ptr request_body,
+    const String & method,
+    bool ignore_result,
+    size_t * sent_requests) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1918,8 +1926,10 @@ String RestCatalog::sendRequest(const CatalogState & catalog_state, const String
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](DB::WriteBuffer & out)
+        out_stream_callback = [body_str, sent_requests](DB::WriteBuffer & out)
         {
+            if (sent_requests)
+                ++*sent_requests;
             DB::writeString(body_str, out);
         };
     }
@@ -2195,9 +2205,17 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("updates", updates);
     }
 
+    size_t sent_requests = 0;
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, &sent_requests);
+        /// The transport sends the commit again, as after a lost response.
+        fiu_do_on(DB::FailPoints::iceberg_rest_catalog_resend_commit, {
+            sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, &sent_requests);
+        });
+        fiu_do_on(DB::FailPoints::iceberg_rest_catalog_lose_commit_response, {
+            throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Failpoint: the response to the commit of {}.{} was lost", namespace_name, table_name);
+        });
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2205,7 +2223,30 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
         {
             LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
-            return false;
+            if (sent_requests <= 1)
+                return false;
+
+            /// The conflict may come from an earlier attempt of the transport that landed, but whose response was lost.
+            /// The snapshot proves it, but its absence does not prove the opposite: it may have been expired since.
+            const auto snapshot_id = new_snapshot->getValue<Int64>("snapshot-id");
+            const auto table = sendRequest(*state_snapshot, endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ false);
+            Poco::JSON::Parser parser;
+            const auto table_object = parser.parse(table).extract<Poco::JSON::Object::Ptr>();
+            const auto metadata = table_object ? table_object->getObject("metadata") : nullptr;
+            const auto snapshots = metadata ? metadata->getArray("snapshots") : nullptr;
+            if (snapshots)
+                for (UInt32 i = 0; i < snapshots->size(); ++i)
+                    if (snapshots->getObject(i)->getValue<Int64>("snapshot-id") == snapshot_id)
+                        return true;
+
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Unknown outcome of the commit of snapshot {} to the Iceberg catalog table {}.{}: the request was sent {} times, "
+                "a retry conflicted, and the table does not have the snapshot, which may have been expired since",
+                snapshot_id,
+                namespace_name,
+                table_name,
+                sent_requests);
         }
         /// TODO: 500, 502 and 504 mean the commit state is unknown. The client should keep the written files
         /// until it re-reads the table, instead of treating this as a failure and cleaning them up.
