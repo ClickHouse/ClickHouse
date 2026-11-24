@@ -378,26 +378,6 @@ void forEachChild(const ASTPtr & ast, F && f)
     anyChild(ast, [&](const ASTPtr & child) { f(child); return false; });
 }
 
-/// A `{name:Identifier}` placeholder is an empty name part with an `ASTQueryParameter` child, substituted only
-/// when the query text is executed. Returns the name parts after substitution, or nothing if a value is missing.
-std::optional<Strings> substitutedNameParts(const ASTPtr & ast, const NameToNameMap & query_parameters)
-{
-    Strings parts = ast->as<ASTIdentifier &>().name_parts;
-    auto param = ast->children.begin();
-    for (auto & part : parts)
-    {
-        if (!part.empty())
-            continue;
-        if (param == ast->children.end())
-            return std::nullopt;
-        const auto it = query_parameters.find((*param++)->as<ASTQueryParameter &>().name);
-        if (it == query_parameters.end() || it->second.empty())
-            return std::nullopt;
-        part = it->second;
-    }
-    return parts;
-}
-
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
