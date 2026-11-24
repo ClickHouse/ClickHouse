@@ -26,7 +26,7 @@ These appear on the table in [Monitoring](/products/cloud/features/monitoring/cl
 | Recommendation | When it appears | What to do |
 | --- | --- | --- |
 | Change the sorting key | Many queries filter on the same columns, and those columns are not in the sorting key. | Consider changing the sorting key so the usual filters match the key. This rebuilds the table. [Schema Advisor](/products/cloud/features/ai-ml/schema-advisor) can plan and deploy this change. |
-| Add a projection | A lot of queries filter a small set of columns that sit outside the sorting key. | Add a [projection](/data-modeling/projections) on those columns. This speeds those queries without changing the sorting key. Schema Advisor does not create projections in this preview. |
+| Add a projection | A lot of queries filter a small set of columns that sit outside the sorting key. | Add a [projection](/data-modeling/projections) on those columns. This speeds those queries without changing the sorting key. [Schema Advisor](/products/cloud/features/ai-ml/schema-advisor) applies this in place with `ALTER TABLE`, with no rebuild and no `EXCHANGE TABLES`. |
 | Use a dictionary | Most queries against the table are single-row lookups. | For a dimension table that is read often and updated rarely, consider a [dictionary](/sql-reference/statements/create/dictionary). |
 | Batch inserts | The table receives many small inserts, and those inserts create many small parts. | Batch inserts so each part is larger. Fewer parts means less merge work. See [asynchronous inserts](/optimize/asynchronous-inserts). |
 
@@ -41,7 +41,7 @@ These appear when you open a normalized query on **Monitoring** > **Query perfor
 | List the columns you need | The query uses `SELECT *` or `alias.*` on a wide table. | Name the columns you need so ClickHouse does not read the rest. |
 | Avoid routine `OPTIMIZE ... FINAL` | The query runs [`OPTIMIZE`](/sql-reference/statements/optimize) with `FINAL`, which rewrites the table. | Do not run `OPTIMIZE ... FINAL` as a regular step. It is heavy on I/O and CPU, and it can block inserts. |
 | Use a sort-merge join | Both sides of a `JOIN` are already sorted by the join keys. | Set [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) to `full_sorting_merge` so ClickHouse does not sort the inputs again. |
-| Filter on the leading sorting-key columns | The query's filters skip the leading columns of the sorting key, so ClickHouse cannot prune granules. | Add the missing leading-key filters when the query can, so the sorting key can skip data. |
+| Filter on the leading sorting-key columns | The query's filters skip the leading columns of the sorting key. ClickHouse can still prune granules from later key columns, and that pruning can be weaker. See [filtering on secondary key columns](/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns). | Check the plan with `EXPLAIN indexes = 1`. Add a leading-key filter only when the query result stays the same. |
 | Allow asynchronous inserts | An `INSERT` turns asynchronous inserts off and creates many small parts. | Leave [asynchronous inserts](/optimize/asynchronous-inserts) enabled, or batch the inserts in the client, so small writes are combined. |
 
 ## Related pages {#related-pages}
