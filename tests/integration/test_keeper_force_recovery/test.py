@@ -70,14 +70,6 @@ def close_zk(zk):
     zk.close()
 
 
-def replace_zk(node_zks, i, nodename):
-    try:
-        close_zk(node_zks[i])
-    except Exception:
-        pass
-    node_zks[i] = get_fake_zk(nodename)
-
-
 def wait_nodes_with_retries(cluster, nodes, timeout=120):
     """
     Wait for Keeper nodes to be ready, handling ConnectionRefusedError.
@@ -162,8 +154,7 @@ def test_cluster_recovery(started_cluster):
         # Use retry wrapper in case Keeper is still starting after reset
         wait_nodes_with_retries(cluster, nodes[:CLUSTER_SIZE])
 
-        for node in nodes[:CLUSTER_SIZE]:
-            node_zks.append(get_fake_zk(node.name))
+        node_zks = [get_fake_zk(node.name) for node in nodes[:CLUSTER_SIZE]]
 
         data_in_cluster = []
 
@@ -186,7 +177,7 @@ def test_cluster_recovery(started_cluster):
         # we potentially killed the leader node so we give time for election
         for _ in range(100):
             try:
-                replace_zk(node_zks, 1, nodes[1].name)
+                node_zks[1] = get_fake_zk(nodes[1].name, timeout=30.0)
                 add_data(node_zks[1], "/test_force_recovery_extra", "somedataextra")
                 break
             except Exception as ex:
@@ -200,7 +191,7 @@ def test_cluster_recovery(started_cluster):
 
         nodes[0].start_clickhouse()
         keeper_utils.wait_until_connected(cluster, nodes[0])
-        replace_zk(node_zks, 0, nodes[0].name)
+        node_zks[0] = get_fake_zk(nodes[0].name)
         wait_and_assert_data(node_zks[0], "/test_force_recovery_extra", "somedataextra")
 
         # stop last quorum size nodes
@@ -273,7 +264,7 @@ def test_cluster_recovery(started_cluster):
 
         # refresh old zk sessions
         for i, node in enumerate(nodes[:nodes_left]):
-            replace_zk(node_zks, i, node.name)
+            node_zks[i] = get_fake_zk(node.name)
 
         for zk in node_zks:
             assert_all_data(zk)
@@ -284,7 +275,7 @@ def test_cluster_recovery(started_cluster):
         # we potentially killed the leader node so we give time for election and refresh the connection
         for _ in range(100):
             try:
-                replace_zk(node_zks, -2, nodes[-2].name)
+                node_zks[-2] = get_fake_zk(nodes[-2].name, timeout=30.0)
                 add_data(node_zks[-2], "/test_force_recovery_last", "somedatalast")
                 break
             except Exception as ex:
@@ -296,7 +287,7 @@ def test_cluster_recovery(started_cluster):
         # the leader election above can also fail this connect, so retry it
         for _ in range(100):
             try:
-                replace_zk(node_zks, -1, nodes[-1].name)
+                node_zks[-1] = get_fake_zk(nodes[-1].name, timeout=30.0)
                 break
             except Exception as ex:
                 time.sleep(0.5)
@@ -308,12 +299,12 @@ def test_cluster_recovery(started_cluster):
 
         nodes[0].start_clickhouse()
         keeper_utils.wait_until_connected(cluster, nodes[0])
-        replace_zk(node_zks, 0, nodes[0].name)
+        node_zks[0] = get_fake_zk(nodes[0].name)
         for zk in node_zks[:nodes_left]:
             assert_all_data(zk)
     finally:
-        for zk_conn in node_zks:
-            try:
+        try:
+            for zk_conn in node_zks:
                 close_zk(zk_conn)
-            except Exception:
-                pass
+        except:
+            pass

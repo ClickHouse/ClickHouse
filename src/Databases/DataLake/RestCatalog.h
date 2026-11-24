@@ -5,7 +5,6 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Common/MultiVersion.h>
-#include <Common/SecretString.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
@@ -23,7 +22,7 @@ namespace DataLake
 {
 
 /// Parses "Name: value" into a header entry.
-DB::HTTPHeaderEntry parseAuthHeader(std::string_view auth_header);
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
 class RestCatalog : public ICatalog, public DB::WithContext
 {
@@ -31,14 +30,13 @@ public:
     explicit RestCatalog(
         const std::string & warehouse_,
         const std::string & base_url_,
-        std::string_view catalog_credential_,
+        const std::string & catalog_credential_,
         const std::string & auth_scope_,
-        std::string_view auth_header_,
+        const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
 
@@ -78,8 +76,6 @@ public:
 
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    void createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const override;
-
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
@@ -115,11 +111,8 @@ public:
         /// Base location is location of data in storage
         /// (in filesystem or object storage).
         std::string default_base_location;
-        /// `snapshot-loading-mode` from `defaults` and from `overrides`, empty if absent.
-        std::string default_snapshot_loading_mode;
-        std::string override_snapshot_loading_mode;
 
-        [[nodiscard]] std::string toString() const;
+        std::string toString() const;
     };
 
     /// Credentials together with the catalog configuration they resolve to
@@ -129,10 +122,10 @@ public:
     {
         std::optional<DB::HTTPHeaderEntry> auth_header;
         std::string client_id;
-        DB::SecretString client_secret;
+        std::string client_secret;
         std::string tenant_id;
-        DB::SecretString bearer_token;
-        DB::SecretString refresh_token;
+        std::string bearer_token;
+        std::string refresh_token;
         Config config;
     };
     using CatalogStateVersion = MultiVersion<CatalogState>::Version;
@@ -161,8 +154,7 @@ protected:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
@@ -179,7 +171,6 @@ protected:
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
     bool flat_namespaces = false;
-    const DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
     mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -196,9 +187,6 @@ protected:
         const std::optional<DB::HTTPHeaderEntries> & auth_headers) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
-
-    /// ClickHouse reads snapshots from the metadata file, so the load-table response needs only the referenced ones.
-    Poco::URI::QueryParameters getLoadTableParams(const Config & config) const;
 
     using StopCondition = std::function<bool(const std::string & namespace_name)>;
     using ExecuteFunc = std::function<void(const std::string & namespace_name)>;
@@ -239,8 +227,7 @@ protected:
     virtual DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const;
 
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
-    static void parseCatalogConfigurationSettings(
-        const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode);
+    static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     /// Returns the body of the response, empty with `ignore_result`.
     virtual String sendRequest(
@@ -252,7 +239,7 @@ protected:
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 
-    AccessToken retrieveAccessToken(const std::string & client_id, std::string_view client_secret) const;
+    AccessToken retrieveAccessToken(const std::string & client_id, const std::string & client_secret) const;
 
     struct PreparedAuthChanges;
 
@@ -267,13 +254,6 @@ protected:
         CatalogState & new_state,
         std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
         std::unique_ptr<AccessToken> & new_access_token);
-
-private:
-    /// Builds the body of the `POST /tables` request. If there is no `location`, the catalog uses its default location.
-    Poco::JSON::Object::Ptr buildCreateTableRequestBody(
-        const String & table_name, const std::optional<String> & location, Poco::JSON::Object::Ptr metadata_content) const;
-
-    std::string getCreateTableEndpoint(const CatalogState & catalog_state, const String & namespace_name) const;
 };
 
 class OneLakeCatalog : public RestCatalog
@@ -289,7 +269,7 @@ public:
         ClientCredentials,
     };
 
-    static AuthMode getAuthMode(std::string_view bearer_token, std::string_view refresh_token)
+    static AuthMode getAuthMode(const std::string & bearer_token, const std::string & refresh_token)
     {
         if (!bearer_token.empty())
             return AuthMode::BearerToken;
@@ -303,15 +283,14 @@ public:
         const std::string & base_url_,
         const std::string & onelake_tenant_id,
         const std::string & onelake_client_id,
-        std::string_view onelake_client_secret,
-        std::string_view bearer_token_,
-        std::string_view refresh_token_,
+        const std::string & onelake_client_secret,
+        const std::string & bearer_token_,
+        const std::string & refresh_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -328,7 +307,7 @@ public:
 
     /// A currently valid access token together with its expiration time, for object storage
     /// access in refresh-token mode. Renews the token transparently when it is expired.
-    std::pair<DB::SecretString, std::chrono::system_clock::time_point> getCurrentAccessToken() const;
+    std::pair<std::string, std::chrono::system_clock::time_point> getCurrentAccessToken() const;
 
 protected:
     void applySettingsChangesToState(
@@ -358,13 +337,11 @@ public:
         const std::string & google_service_account_,
         const std::string & google_metadata_service_,
         const std::string & google_adc_client_id_,
-        std::string_view google_adc_client_secret_,
-        std::string_view google_adc_refresh_token_,
+        const std::string & google_adc_client_secret_,
+        const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
-        std::string_view google_service_account_key_,
         DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        bool allow_server_credentials_in_user_queries_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -374,9 +351,8 @@ public:
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
-    std::string_view getGoogleADCClientSecret() const { return google_adc_client_secret; }
-    std::string_view getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
-    std::string_view getGoogleServiceAccountKey() const { return google_service_account_key; }
+    const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
+    const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).
@@ -384,23 +360,15 @@ private:
     const std::string google_service_account;
     const std::string google_metadata_service;
     const std::string google_adc_client_id;
-    const DB::SecretString google_adc_client_secret;
-    const DB::SecretString google_adc_refresh_token;
+    const std::string google_adc_client_secret;
+    const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
-    const DB::SecretString google_service_account_key;
     /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
     /// catalog is cached and holds the global context, whose settings never reflect the creating session.
     const bool allow_server_credentials_in_user_queries;
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
-    AccessToken retrieveGoogleCloudAccessTokenFromServiceAccountKey() const;
-
-    /// Whether Google OAuth is explicitly configured; otherwise the generic REST catalog auth is used.
-    bool usesGoogleOAuth() const
-    {
-        return !google_project_id.empty() || !google_adc_client_id.empty() || !google_service_account_key.empty();
-    }
 };
 
 /// Databricks Delta Sharing exposes an Iceberg REST catalog with a flat, single-level namespace model
@@ -435,14 +403,13 @@ public:
     explicit HorizonCatalog(
         const std::string & warehouse_,
         const std::string & base_url_,
-        std::string_view catalog_credential_,
+        const std::string & catalog_credential_,
         const std::string & auth_scope_,
-        std::string_view auth_header_,
+        const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -452,7 +419,7 @@ public:
     static void validateSettingsChanges(const DB::SettingsChanges & changes, bool credential_mode, bool header_mode);
 
     /// Horizon credentials are secret-only: the whole string is the OAuth client_secret.
-    static std::pair<std::string, DB::SecretString> parseHorizonCredential(std::string_view catalog_credential);
+    static std::pair<std::string, std::string> parseHorizonCredential(const std::string & catalog_credential);
 
 protected:
     void applySettingsChangesToState(

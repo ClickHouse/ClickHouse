@@ -2,6 +2,8 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <WindowFunctions/IWindowFunction.h>
+
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -368,10 +370,10 @@ public:
 
                 buffer << ')';
 
-                if (function_node.hasWindow())
+                if (function_node.isWindowFunction())
                 {
                     buffer << " OVER (";
-                    buffer << calculateWindowNodeActionName(function_node.getWindowNode());
+                    buffer << calculateWindowNodeActionName(node, function_node.getWindowNode());
                     buffer << ')';
                 }
 
@@ -450,8 +452,9 @@ public:
         return name + "_" + constant_node.getResultType()->getName();
     }
 
-    String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node_)
+    String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)
     {
+        const auto & function_node = function_nodew_node_->as<const FunctionNode&>();
         const auto & window_node = window_node_->as<const WindowNode &>();
         WriteBufferFromOwnString buffer;
 
@@ -519,9 +522,10 @@ public:
             }
         }
 
-        const WindowFrame & window_frame = window_node.getWindowFrame();
-        if (!window_frame.is_default)
+        auto window_frame_opt = extractWindowFrame(function_node);
+        if (window_frame_opt)
         {
+            auto & window_frame = *window_frame_opt;
             if (window_node.hasPartitionBy() || window_node.hasOrderBy())
                 buffer << ' ';
 
@@ -553,7 +557,7 @@ public:
     ActionsScopeNode & operator=(const ActionsScopeNode &) = delete;
     ActionsScopeNode & operator=(ActionsScopeNode &&) = delete;
 
-    [[nodiscard]] const QueryTreeNodePtr & getScopeNode() const
+    const QueryTreeNodePtr & getScopeNode() const
     {
         return scope_node;
     }
@@ -742,7 +746,7 @@ private:
 
         void add(Levels levels) { mask |= levels.mask; }
 
-        [[nodiscard]] size_t max() const { return 64 - getLeadingZeroBits(mask); }
+        size_t max() const { return 64 - getLeadingZeroBits(mask); }
 
     private:
         uint64_t mask = 0;
@@ -978,7 +982,69 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & constant_node = node->as<ConstantNode &>();
     const auto & constant_type = constant_node.getResultType();
 
-    auto constant_node_name = !override_column_name.empty() ? override_column_name : action_node_name_helper.calculateActionNodeName(node);
+    auto constant_node_name = !override_column_name.empty() ? override_column_name : [&]()
+    {
+        /// A masked secret must be named by its placeholder, never by its value or source expression,
+        /// identically on initiator and secondary servers so distributed headers still match.
+        if (constant_node.isMasked())
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+
+        /* To ensure that headers match during distributed query we need to simulate action node naming on
+         * secondary servers. If we don't do that headers will mismatch due to constant folding.
+         *
+         *                                +--------+
+         *               -----------------| Server |----------------
+         *              /                 +--------+                \
+         *             /                                             \
+         *            v                                               v
+         *      +-----------+                                   +-----------+
+         *      | Initiator |                            ------ | Secondary |------
+         *      +-----------+                           /       +-----------+      \
+         *            |                                /                            \
+         *            |                               /                              \
+         *            v                              /                                \
+         *    +---------------+                     v                                  v
+         *    | Wrap in _CAST |      +----------------------------+        +----------------------+
+         *    | if needed     |      | Constant folded from _CAST |        | Constant folded from |
+         *    +---------------+      +----------------------------+        | another expression   |
+         *                                          |                      +----------------------+
+         *                                          v                                  |
+         *                           +----------------------------+                    v
+         *                           | Name ConstantNode the same |      +--------------------------+
+         *                           | as on initiator server     |      | Generate action name for |
+         *                           | (wrap in _CAST if needed)  |      | original expression      |
+         *                           +----------------------------+      +--------------------------+
+         */
+        if (planner_context->isASTLevelOptimizationAllowed())
+        {
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+        }
+
+        // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression()
+            && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
+        {
+            if (constant_node.receivedFromInitiatorServer())
+                return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+            return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
+        }
+
+        if (!constant_node.hasSourceExpression())
+        {
+            /** The constant did not come from the query text: a query tree pass built it the same way
+              * on this server as on the initiator (for example the index mask that
+              * `GroupingFunctionsResolvePass` adds as a trailing argument of `__groupingOrdinary`).
+              * There is no initiator naming to simulate, so name it exactly as the initiator does,
+              * or a header the initiator expects from this shard would not match. A constant that
+              * does come from the query text is unaffected: the initiator writes the ones that need
+              * a cast as `_CAST(...)`, which arrive here with a source expression, and the rest
+              * need no cast, so their name is the same either way.
+              */
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+        }
+
+        return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+    }();
 
     actions_stack[0].addConstantIfNecessary(
         constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
@@ -1286,7 +1352,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
      * are wrapped into Nullable but keep their names, and a lambda capture built over such a constant
      * fails with a type mismatch.
      */
-    bool is_input_node = function_node.isAggregationCall() || function_node.isWindowCall()
+    bool is_input_node = function_node.isAggregateFunction() || function_node.isWindowFunction()
         || actions_stack.front().containsInputOrConstantNode(function_node_name);
     if (is_input_node)
     {
@@ -1492,11 +1558,11 @@ String calculateConstantActionNodeName(const Field & constant_literal)
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
 }
 
-String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node, const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
     ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(window_node);
+    return helper.calculateWindowNodeActionName(function_node, window_node);
 }
 
 }

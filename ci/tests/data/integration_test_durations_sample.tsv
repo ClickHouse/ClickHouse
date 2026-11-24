@@ -891,6 +891,7 @@ test_keeper_sanitizer_logs/test.py	16139
 test_storage_delta/test_sts.py	16112
 test_shutdown_static_destructor_failure/test.py	16067
 test_storage_iceberg_with_spark/test_manifest_data_path_security.py	16012
+test_keeper_ipv4_fallback/test.py	15921
 test_block_structure_mismatch/test.py	15818
 test_prometheus_protocols/test_query_api.py	15818
 test_composable_protocols/test.py	15751

@@ -32,7 +32,7 @@ namespace DB::ErrorCodes
 
 namespace DB::Graphite
 {
-[[clang::no_destroy]] static UnorderedMapWithMemoryTracking<RuleType, const String> ruleTypeMap =
+static UnorderedMapWithMemoryTracking<RuleType, const String> ruleTypeMap =
 {
    { RuleTypeAll, "all" },
    { RuleTypePlain, "plain" },

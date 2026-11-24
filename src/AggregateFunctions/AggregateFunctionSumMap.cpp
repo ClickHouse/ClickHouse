@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Formats/FormatSettings.h>
 #include <Functions/FunctionHelpers.h>
 
 
@@ -10,7 +9,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
-#include <IO/VarInt.h>
 
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -127,11 +125,11 @@ public:
         }
     }
 
-    [[nodiscard]] bool isVersioned() const override { return true; }
+    bool isVersioned() const override { return true; }
 
-    [[nodiscard]] size_t getDefaultVersion() const override { return 1; }
+    size_t getDefaultVersion() const override { return 1; }
 
-    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(size_t revision) const override
     {
         if (revision >= STATE_VERSION_1_MIN_REVISION)
             return 1;
@@ -196,7 +194,7 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     static auto getArgumentColumns(const IColumn ** columns)
     {
@@ -218,7 +216,7 @@ public:
         const ColumnArray & array_column0 = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets0 = array_column0.getOffsets();
         const IColumn & key_column = array_column0.getData();
-        const size_t keys_vec_offset = offsets0[static_cast<ssize_t>(row_num) - 1];
+        const size_t keys_vec_offset = offsets0[row_num - 1];
         const size_t keys_vec_size = (offsets0[row_num] - keys_vec_offset);
 
         // Columns 1..n contain arrays of numeric values to sum
@@ -228,7 +226,7 @@ public:
             const auto & array_column = assert_cast<const ColumnArray &>(*columns[col + 1]);
             const IColumn & value_column = array_column.getData();
             const IColumn::Offsets & offsets = array_column.getOffsets();
-            const size_t values_vec_offset = offsets[static_cast<ssize_t>(row_num) - 1];
+            const size_t values_vec_offset = offsets[row_num - 1];
             const size_t values_vec_size = (offsets[row_num] - values_vec_offset);
 
             // Expect key and value arrays to be of same length
@@ -476,8 +474,6 @@ public:
             to_values_arr.getData().reserve(size);
         }
 
-        const DataTypes & result_types = assert_cast<const DataTypeTuple &>(*this->result_type).getElements();
-
         // Write arrays of keys and values
         for (const auto & elem : merged_maps)
         {
@@ -489,21 +485,15 @@ public:
             {
                 auto & to_values_col = assert_cast<ColumnArray &>(to_tuple.getColumn(col + 1)).getData();
                 if (elem.second[col].isNull())
-                {
-                    const auto & value_type = assert_cast<const DataTypeArray &>(*result_types[col + 1]).getNestedType();
-                    if (value_type->isDefaultInsertTrivial())
-                        to_values_col.insertDefault();
-                    else
-                        value_type->insertDefaultInto(to_values_col);
-                }
+                    to_values_col.insertDefault();
                 else
                     to_values_col.insert(elem.second[col]);
             }
         }
     }
 
-    [[nodiscard]] bool keepKey(const Field & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    [[nodiscard]] String getName() const override { return Derived::getNameImpl(); }
+    bool keepKey(const Field & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
+    String getName() const override { return Derived::getNameImpl(); }
 };
 
 template <bool overflow, bool tuple_argument, typename Compare>
@@ -537,7 +527,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool keepKey(const Field &) const { return true; }
+    bool keepKey(const Field &) const { return true; }
 };
 
 
@@ -593,7 +583,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool keepKey(const Field & key) const
+    bool keepKey(const Field & key) const
     {
         if (keys_to_keep.contains(key))
             return true;
@@ -747,7 +737,7 @@ public:
 
     static String getNameImpl() { return "minMap"; }
 
-    [[nodiscard]] bool keepKey(const Field &) const { return true; }
+    bool keepKey(const Field &) const { return true; }
 };
 
 template <bool tuple_argument, typename Compare>
@@ -771,7 +761,7 @@ public:
 
     static String getNameImpl() { return "maxMap"; }
 
-    [[nodiscard]] bool keepKey(const Field &) const { return true; }
+    bool keepKey(const Field &) const { return true; }
 };
 
 

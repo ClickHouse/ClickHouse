@@ -42,39 +42,14 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShiftRotate>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
+    size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
+    bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Declarative signature for `Rotate` (preserves the element type);
-    /// docs-only for `Shift` because its optional default-value uses a
-    /// more permissive "must not widen past the element type" rule that
-    /// the current DSL doesn't capture.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if constexpr (strategy == ShiftRotateStrategy::Rotate)
-            return "(Array(T : Any), NativeInteger) -> Array(T)";
-        else
-            return "(Array(T : Any), NativeInteger, [Any]) -> Array(T)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        /// Authoritative for `Rotate` (DSL drives the result); bypass for
-        /// `Shift` so the legacy `getReturnTypeImpl(DataTypes)` runs.
-        if constexpr (strategy == ShiftRotateStrategy::Rotate)
-            return IFunction::getReturnTypeImpl(arguments);
-
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if constexpr (strategy == ShiftRotateStrategy::Shift)
         {
@@ -126,7 +101,7 @@ public:
         return std::make_shared<DataTypeArray>(elem_type);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -217,16 +192,12 @@ struct ArrayRotateImpl
             }
 
             size_t shift_num = static_cast<size_t>(shift_num_value);
-            /// An empty array is rotated by nothing at all: the loop below does not run, and
-            /// `nested_size - shift_num` would underflow here, having had no size to reduce against.
-            if (nested_size > 0)
-            {
+            if (nested_size > 0 && shift_num >= nested_size)
                 shift_num %= nested_size;
 
-                // Rotating left to N is the same as shifting right to (size - N).
-                if (actual_direction == ShiftRotateDirection::Right)
-                    shift_num = nested_size - shift_num;
-            }
+            // Rotating left to N is the same as shifting right to (size - N).
+            if (actual_direction == ShiftRotateDirection::Right)
+                shift_num = nested_size - shift_num;
 
             for (size_t j = 0; j < nested_size; ++j)
                 permutation[current_offset + j] = current_offset + (j + shift_num) % nested_size;

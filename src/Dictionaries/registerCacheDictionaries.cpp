@@ -2,7 +2,6 @@
 #include <Dictionaries/CacheDictionaryStorage.h>
 #include <Dictionaries/SSDCacheDictionaryStorage.h>
 #include <Common/filesystemHelpers.h>
-#include <base/arithmeticOverflow.h>
 #include <Core/Settings.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
@@ -70,53 +69,29 @@ static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
 
     static constexpr size_t DEFAULT_PARTITIONS_COUNT = 16;
 
-    /// All sizes must be positive: zero `block_size` leads to division by zero below, zero `write_buffer_size`
-    /// leads to a null memory buffer, and negative values would wrap around when converted to `size_t`.
-    auto get_positive_setting = [&](const String & setting_name, Int64 default_value) -> size_t
-    {
-        Int64 value = config.getInt64(dictionary_layout_prefix + "." + setting_name, default_value);
-        if (value <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "{}: dictionary of layout '{}' setting '{}' must be greater than 0",
-                full_name,
-                layout_type,
-                setting_name);
-        return static_cast<size_t>(value);
-    };
+    size_t max_partitions_count = config.getInt64(dictionary_layout_prefix + ".max_partitions_count", DEFAULT_PARTITIONS_COUNT);
 
-    size_t max_partitions_count = get_positive_setting("max_partitions_count", static_cast<Int64>(DEFAULT_PARTITIONS_COUNT));
-
-    size_t block_size = get_positive_setting("block_size", static_cast<Int64>(DEFAULT_SSD_BLOCK_SIZE_BYTES));
-    size_t file_size = get_positive_setting("file_size", static_cast<Int64>(DEFAULT_FILE_SIZE_BYTES));
+    size_t block_size = config.getInt64(dictionary_layout_prefix + ".block_size", DEFAULT_SSD_BLOCK_SIZE_BYTES);
+    size_t file_size = config.getInt64(dictionary_layout_prefix + ".file_size", DEFAULT_FILE_SIZE_BYTES);
     if (file_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'file_size' must be a multiple of block_size",
             full_name,
             layout_type);
 
-    size_t read_buffer_size = get_positive_setting("read_buffer_size", static_cast<Int64>(DEFAULT_READ_BUFFER_SIZE_BYTES));
+    size_t read_buffer_size = config.getInt64(dictionary_layout_prefix + ".read_buffer_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
     if (read_buffer_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'read_buffer_size' must be a multiple of block_size",
             full_name,
             layout_type);
 
-    size_t write_buffer_size = get_positive_setting("write_buffer_size", static_cast<Int64>(DEFAULT_WRITE_BUFFER_SIZE_BYTES));
+    size_t write_buffer_size = config.getInt64(dictionary_layout_prefix + ".write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
     if (write_buffer_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'write_buffer_size' must be a multiple of block_size",
             full_name,
             layout_type);
-
-    /// A write buffer larger than the total capacity of the cache file can never be flushed.
-    size_t max_file_capacity = 0;
-    if (!common::mulOverflow(max_partitions_count, file_size, max_file_capacity) && write_buffer_size > max_file_capacity)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "{}: dictionary of layout '{}' setting 'write_buffer_size' ({}) cannot be greater than maximum file capacity (max_partitions_count * file_size = {})",
-            full_name,
-            layout_type,
-            write_buffer_size,
-            max_file_capacity);
 
     auto file_path = config.getString(dictionary_layout_prefix + ".path");
     if (file_path.empty())
@@ -322,7 +297,7 @@ SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
 3
 ```
 
-So a cache dictionary is meant to be used through the dictionary functions. If you need a lookup of arbitrary keys to always reach the source, use `dictGet` with the [direct](/reference/statements/create/dictionary/layouts/direct) layout, which queries the source on every lookup and caches nothing. Note that a table read of a `direct` dictionary is not a keyed fetch either: `SELECT ... FROM <dictionary> WHERE key IN (...)` loads the whole source and filters afterwards, because ClickHouse does not push the key filter into the dictionary. To read a dictionary as a table, use a layout that holds all of it, such as [flat](/reference/statements/create/dictionary/layouts/flat) or [hashed](/reference/statements/create/dictionary/layouts/hashed).
+So a cache dictionary is meant to be used through the dictionary functions. If you need a lookup of arbitrary keys to always reach the source, use `dictGet` with the [direct](/sql-reference/statements/create/dictionary/layouts/direct) layout, which queries the source on every lookup and caches nothing. Note that a table read of a `direct` dictionary is not a keyed fetch either: `SELECT ... FROM <dictionary> WHERE key IN (...)` loads the whole source and filters afterwards, because ClickHouse does not push the key filter into the dictionary. To read a dictionary as a table, use a layout that holds all of it, such as [flat](/sql-reference/statements/create/dictionary/layouts/flat) or [hashed](/sql-reference/statements/create/dictionary/layouts/hashed).
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
@@ -426,7 +401,7 @@ Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionar
 
 Cache contents are local to each server and are lost when a server restarts or is replaced. Do not use `ssd_cache` or `complex_key_ssd_cache` for reliable insert-time enrichment: an empty cache makes inserts depend on lookups to the dictionary source. In ClickHouse Cloud, autoscaling and managed node replacement make this condition more likely. Use a layout that loads the complete dictionary on each server instead; see [Dictionary best practices](/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
 
-Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held that hold a value: it cannot discover keys absent from the cache, and it skips the default cells that record keys which were looked up but not found at the source. Resident cells that have expired are still re-requested from the source. See [cache](/reference/statements/create/dictionary/layouts/cache).
+Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held that hold a value: it cannot discover keys absent from the cache, and it skips the default cells that record keys which were looked up but not found at the source. Resident cells that have expired are still re-requested from the source. See [cache](/sql-reference/statements/create/dictionary/layouts/cache).
 
 The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 

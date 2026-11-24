@@ -7,6 +7,10 @@ concurrency:
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: Git reference (branch or commit SHA) to cut the new release branch from
+        required: true
+        default: ''
       dry-run:
         description: Dry run — show what would be done without making changes
         required: false
@@ -14,6 +18,11 @@ on:
         default: false
   workflow_call:
     inputs:
+      ref:
+        description: Git reference (branch or commit SHA) to cut the new release branch from
+        required: true
+        type: string
+        default: ''
       dry-run:
         description: Dry run — show what would be done without making changes
         required: false

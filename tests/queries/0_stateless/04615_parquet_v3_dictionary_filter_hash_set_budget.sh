@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Random settings limits: input_format_parquet_local_file_min_bytes_for_seek=(None, 8192); output_format_parquet_compression_method=('zstd', 'zstd')
+# Tags: no-fasttest
+# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 # The value-set reservation in `hashDictionaryValues` must track what the pruning path really
 # allocates: the vector of dictionary-value hashes (sorted in place; exactly 8 bytes per entry),

@@ -278,16 +278,7 @@ struct LoggerDeleter
 		}
 
 		auto it = _pLoggerMap->find(logger->name());
-
-		/// `Logger::shutdown` deletes the map but leaves the loggers owned by shared pointers alive,
-		/// and a later `Logger::get` creates a new map. The logger released here may then be missing
-		/// from the new map, or the map may hold a different logger with the same name. In both cases
-		/// the map has no entry of this logger, so just drop the reference, like when there is no map.
-		if (it == _pLoggerMap->end() || it->second.logger != logger)
-		{
-			logger->release();
-			return;
-		}
+		assert(it != _pLoggerMap->end());
 
 		/** If reference count is 1, this means this shared pointer owns logger
 		  * and need destroy it.

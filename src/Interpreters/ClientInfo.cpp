@@ -6,7 +6,6 @@
 #include <Interpreters/ClientInfo.h>
 #include <base/EnumReflection.h>
 #include <base/getFQDNOrHostName.h>
-#include <base/sanitizer_defs.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -166,7 +165,6 @@ ClientInfo::ClientInfo()
     initial_address = Poco::Net::SocketAddress();
 }
 
-NO_SANITIZE_UNSIGNED_OVERFLOW
 std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
 {
     if (forwarded_for.empty())

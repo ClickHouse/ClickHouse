@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -12,7 +11,6 @@ namespace DB
 class LazilyReadFromObjectStorage;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
-struct ObjectStorageTopKQueryConditionCacheKey;
 
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
@@ -38,11 +36,6 @@ public:
     std::string getName() const override { return STEP_NAME; }
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
-    const StorageID & getStorageID() const { return storage_id; }
-
-    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. nullptr when the storage gives
-    /// no estimate and with distributed processing.
-    std::shared_ptr<const DataLakeReadEstimate> getOrCreateDataLakeReadEstimate() const;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
@@ -54,13 +47,6 @@ public:
     /// identity partitions rewrite the values the reader returns).
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
-    bool supportsTopKStatisticsOnlyFilter() const override { return true; }
-    bool isSelectedForTopKFilterOptimization() const { return top_k_filter != nullptr; }
-    /// A filter above the read whose contents the key does not cover (a join runtime filter) changes the
-    /// threshold of the TopN filter, so the read must neither consult nor write the TopK cache entries.
-    void disableTopKQueryConditionCache() { allow_top_k_query_condition_cache = false; }
-
-    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
@@ -96,9 +82,6 @@ public:
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
-    /// Registers a JOIN runtime filter on `descriptor.key_column_name` that every row of this read passes.
-    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor);
-
 private:
     /// What the main read keeps besides `required_names` when columns are split off.
     NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
@@ -107,17 +90,6 @@ private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
-    /// The metadata `iterator_wrapper` was created with: for a data lake, it always has the table state
-    /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
-    StorageMetadataPtr iterator_metadata;
-
-    RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
-    /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, shared by the file iterator and the formats.
-    std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
-
-    /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
-    /// A storage without an estimate returns nullptr without any work, so nullptr is not memoized.
-    mutable std::shared_ptr<const DataLakeReadEstimate> data_lake_read_estimate;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
@@ -133,7 +105,6 @@ private:
     const size_t max_num_streams;
     const bool distributed_processing;
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
-    bool allow_top_k_query_condition_cache = true;
 
     /// Set by a successful requestReadingInOrder. `read_in_order_files` is the file list
     /// enumerated there, so initializePipeline consumes it instead of re-deciding.
@@ -152,16 +123,8 @@ private:
 
     void createIterator();
 
-    std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey() const;
-
-    /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
-    bool isReadPinnedToListedGeneration() const;
-
-    [[nodiscard]] bool sortingKeyIsComputableFromSourceHeader() const;
-    Pipe buildInOrderPipe(
-        const ContextPtr & local_context,
-        const FormatFilterInfoPtr & format_filter_info,
-        const std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey> & top_k_query_condition_cache_key);
+    bool sortingKeyIsComputableFromSourceHeader() const;
+    Pipe buildInOrderPipe(const ContextPtr & local_context, const FormatFilterInfoPtr & format_filter_info);
 };
 
 }

@@ -18,34 +18,9 @@
 #include <vector>
 
 #if defined(OS_LINUX)
-std::optional<uint32_t> countCPUsInList(const std::string & cpu_list)
+namespace
 {
-    if (cpu_list.empty())
-        return std::nullopt;
-
-    auto parse = [](const std::string & text, int & value)
-    {
-        return std::from_chars(text.data(), text.data() + text.size(), value).ec == std::errc{};
-    };
-
-    std::vector<std::string> cpu_ranges;
-    boost::split(cpu_ranges, cpu_list, boost::is_any_of(","));
-    uint32_t cpus_count = 0;
-    for (const std::string & cpu_number_or_range : cpu_ranges)
-    {
-        std::vector<std::string> cpu_range;
-        boost::split(cpu_range, cpu_number_or_range, boost::is_any_of("-"));
-
-        int start = 0;
-        int end = 0;
-        if (cpu_range.size() == 1 && parse(cpu_range[0], start))
-            end = start;
-        else if (cpu_range.size() != 2 || !parse(cpu_range[0], start) || !parse(cpu_range[1], end) || end < start)
-            return std::nullopt;
-
-        cpus_count += static_cast<uint32_t>(end - start) + 1;
-    }
-    return cpus_count;
+    std::optional<uint32_t> countCPUsInList(const std::string & cpu_list);
 }
 #endif
 
@@ -86,6 +61,38 @@ int32_t readFrom(const std::filesystem::path & filename, int default_value)
     return default_value;
 }
 
+/// Parse a kernel cpu-list such as "0-15" or "0,2-4,7" (the format of /sys/devices/system/cpu/* and
+/// cgroup cpuset files) and return the number of CPUs in it, or nullopt if the text is not a cpu-list.
+std::optional<uint32_t> countCPUsInList(const std::string & cpu_list)
+{
+    if (cpu_list.empty())
+        return std::nullopt;
+
+    auto parse = [](const std::string & text, int & value)
+    {
+        return std::from_chars(text.data(), text.data() + text.size(), value).ec == std::errc{};
+    };
+
+    std::vector<std::string> cpu_ranges;
+    boost::split(cpu_ranges, cpu_list, boost::is_any_of(","));
+    uint32_t cpus_count = 0;
+    for (const std::string & cpu_number_or_range : cpu_ranges)
+    {
+        std::vector<std::string> cpu_range;
+        boost::split(cpu_range, cpu_number_or_range, boost::is_any_of("-"));
+
+        int start = 0;
+        int end = 0;
+        if (cpu_range.size() == 1 && parse(cpu_range[0], start))
+            end = start;
+        else if (cpu_range.size() != 2 || !parse(cpu_range[0], start) || !parse(cpu_range[1], end) || end < start)
+            return std::nullopt;
+
+        cpus_count += static_cast<uint32_t>(end - start) + 1;
+    }
+    return cpus_count;
+}
+
 /// Try to look at cgroups limit if it is available.
 uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 {
@@ -102,7 +109,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 
         // Looking for cpu.max in directories from the current cgroup to the top level
         // It does not stop on the first time since the child could have a greater value than parent
-        while (current_cgroup != std::filesystem::path(default_cgroups_mount).parent_path())
+        while (current_cgroup != default_cgroups_mount.parent_path())
         {
             std::ifstream cpu_max_file(current_cgroup / "cpu.max");
             if (cpu_max_file.is_open())
@@ -120,7 +127,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
         }
         current_cgroup = cgroup_path;
         // Looking for cpuset.cpus.effective in directories from the current cgroup to the top level
-        while (current_cgroup != std::filesystem::path(default_cgroups_mount).parent_path())
+        while (current_cgroup != default_cgroups_mount.parent_path())
         {
             std::ifstream cpuset_cpus_file(current_cgroup / "cpuset.cpus.effective");
             current_cgroup = current_cgroup.parent_path();
@@ -142,14 +149,14 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
     /// cgroupsv1
     /// Return the number of milliseconds per period process is guaranteed to run.
     /// -1 for no quota
-    int cgroup_quota = readFrom(std::filesystem::path(default_cgroups_mount) / "cpu/cpu.cfs_quota_us", -1);
-    int cgroup_period = readFrom(std::filesystem::path(default_cgroups_mount) / "cpu/cpu.cfs_period_us", -1);
+    int cgroup_quota = readFrom(default_cgroups_mount / "cpu/cpu.cfs_quota_us", -1);
+    int cgroup_period = readFrom(default_cgroups_mount / "cpu/cpu.cfs_period_us", -1);
     if (cgroup_quota > -1 && cgroup_period > 0)
         quota_count = static_cast<uint32_t>(ceil(static_cast<float>(cgroup_quota) / static_cast<float>(cgroup_period)));
 
     /// The base count is the online CPUs, which ignores the affinity mask, so a container limited
     /// only by `cpuset.cpus` (e.g. `docker run --cpuset-cpus`) must be accounted for here.
-    std::ifstream cpuset_cpus_file(std::filesystem::path(default_cgroups_mount) / "cpuset/cpuset.cpus");
+    std::ifstream cpuset_cpus_file(default_cgroups_mount / "cpuset/cpuset.cpus");
     if (cpuset_cpus_file.is_open())
     {
         std::string cpuset_line;

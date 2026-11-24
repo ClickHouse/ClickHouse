@@ -92,7 +92,7 @@ DROP TABLE reload_src;
 SELECT '-- errors';
 SELECT assignCentroid([1.0, 2.0]::Array(Float32)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT assignCentroid(1.0::Float32, [[0.0]]::Array(Array(Float32))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT assignCentroid([1000, 2000], [[0, 0], [1, 2]]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT assignCentroid([1, 2], [[0, 0], [1, 2]]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT assignCentroid(['a'], [[0.0]]::Array(Array(Float32))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- The vector and the centroids must agree on dimension.
 SELECT assignCentroid([1.0, 2.0, 3.0]::Array(Float32), [[0.0, 0.0]]::Array(Array(Float32))); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }

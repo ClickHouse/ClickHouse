@@ -129,7 +129,6 @@ public:
 
     void recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info);
     void moveDirectory(const std::string & from, const std::string & to);
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void removeDirectory(const std::string & path);
     /// Switches the directory to the explicit file list form. This is a one-way transition.
     void markDirectoryExplicit(const std::string & path);

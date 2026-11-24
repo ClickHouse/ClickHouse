@@ -228,7 +228,9 @@ Calculates the approximate number of different values of the argument.
 
 The function uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536. This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using uniq is almost as fast as using other aggregate functions.
 
-<Accordion title="Implementation details">
+<details>
+<summary>Implementation details</summary>
+
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses an adaptive sampling algorithm.
 For the calculation state, the function uses a sample of element hash values up to 65536.
@@ -241,7 +243,8 @@ bounded by 16384 hashes), and the estimate switches to it at around two billion.
 accurate (within about 1%) for cardinalities of hundreds of billions and more, where servers older
 than 26.8 returned garbage (issue #6078). States written by those servers carry no 64-bit sample,
 so merging with them keeps only the 32-bit precision for the merged-in values.
-</Accordion>
+
+</details>
 
 <Tip>
 We recommend using this function over other variants in almost all scenarios.
@@ -309,7 +312,8 @@ Calculates the approximate number of different argument values, using the [Hyper
 We do not recommend using this function. In most cases, use the [uniq](/reference/functions/aggregate-functions/uniq) or [uniqCombined](/reference/functions/aggregate-functions/uniqCombined) function.
 </Warning>
 
-<Accordion title="Implementation details">
+<details>
+<summary>Implementation details</summary>
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses the HyperLogLog algorithm to approximate the number of different argument values.
 
@@ -320,7 +324,7 @@ However, the result is fairly accurate for high-cardinality data sets (10K-100M)
 Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
 Provides a determinate result (it does not depend on the query processing order).
-</Accordion>
+</details>
     )";
     FunctionDocumentation::Syntax syntax_uniqHLL12 = R"(
 uniqHLL12(x[, ...])
@@ -437,7 +441,9 @@ FROM example_data;
     FunctionDocumentation::Description description_uniqTheta = R"(
 Calculates the approximate number of different argument values, using the [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketches.html#theta-sketch-framework).
 
-<Accordion title="Implementation details">
+<details>
+<summary>Implementation details</summary>
+
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses the [KMV](https://datasketches.apache.org/docs/Theta/InverseEstimate.html) algorithm to approximate the number of different argument values.
 
@@ -445,7 +451,7 @@ It uses the [KMV](https://datasketches.apache.org/docs/Theta/InverseEstimate.htm
 The size of the state is about 41 KB.
 
 The relative error is 3.125% (95% confidence), see the [relative error table](https://datasketches.apache.org/docs/Theta/ThetaErrorTable.html) for detail.
-</Accordion>
+</details>
     )";
     FunctionDocumentation::Syntax syntax_uniqTheta = R"(
 uniqTheta(x[, ...])

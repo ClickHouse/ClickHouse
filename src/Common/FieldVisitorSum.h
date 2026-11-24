@@ -2,7 +2,6 @@
 
 #include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -20,7 +19,6 @@ public:
 
     // We can add all ints as unsigned regardless of their actual signedness.
     bool operator() (Int64 & x) const;
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     bool operator() (UInt64 & x) const;
     bool operator() (Float64 & x) const;
     bool operator() (Null &) const;

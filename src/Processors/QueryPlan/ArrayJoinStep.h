@@ -4,7 +4,6 @@
 #include <Interpreters/ArrayJoin.h>
 
 #include <optional>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -26,53 +25,48 @@ public:
         , element_filter(other.element_filter ? std::optional<ActionsDAG>(other.element_filter->clone()) : std::nullopt)
         , element_filter_column_name(other.element_filter_column_name)
         , remove_element_filter_column(other.remove_element_filter_column)
-        , has_relaxed_filter_below(other.has_relaxed_filter_below)
     {}
 
-    [[nodiscard]] String getName() const override { return "ArrayJoin"; }
+    String getName() const override { return "ArrayJoin"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] const Names & getColumns() const { return array_join.columns; }
-    [[nodiscard]] bool isLeft() const { return array_join.is_left; }
-    [[nodiscard]] bool isUnaligned() const { return is_unaligned; }
+    const Names & getColumns() const { return array_join.columns; }
+    bool isLeft() const { return array_join.is_left; }
+    bool isUnaligned() const { return is_unaligned; }
 
     /// the step as arrayJoin(col), or arrayJoin(emptyArrayToSingle(col)) for LEFT, empty if it has no such form
-    [[nodiscard]] std::optional<ActionsDAG> toActionsDAG() const;
+    std::optional<ActionsDAG> toActionsDAG() const;
 
     /// Attach an element-space filter (the fuse-filter pass sets this); the DAG references only joined columns
     void setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column);
-    [[nodiscard]] bool hasElementFilter() const { return element_filter.has_value(); }
-    [[nodiscard]] const std::optional<ActionsDAG> & getElementFilter() const { return element_filter; }
-    [[nodiscard]] const String & getElementFilterColumnName() const { return element_filter_column_name; }
-
-    /// the filter push down adds a relaxed copy of a filter below the step only one time
-    [[nodiscard]] bool hasRelaxedFilterBelow() const { return has_relaxed_filter_below; }
-    void setHasRelaxedFilterBelow() { has_relaxed_filter_below = true; }
+    bool hasElementFilter() const { return element_filter.has_value(); }
+    const std::optional<ActionsDAG> & getElementFilter() const { return element_filter; }
+    const String & getElementFilterColumnName() const { return element_filter_column_name; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
     /// Every column of the input is a column of the output at the same position, an array joined column with the type of
     /// its elements. The step cannot drop a column, and the ones it reads are always needed: the array joined ones decide
     /// how many rows there are, and the filter of the elements reads row columns as well.
-    [[nodiscard]] bool canRemoveUnusedColumns() const override;
-    [[nodiscard]] UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
+    bool canRemoveUnusedColumns() const override;
+    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
 private:
     void updateOutputHeader() override;
 
     /// The columns of the input the step reads: the array joined ones, and the ones the filter of the elements reads.
-    [[nodiscard]] NameSet getReadColumns() const;
+    NameSet getReadColumns() const;
 
     ArrayJoin array_join;
     bool is_unaligned = false;
@@ -82,7 +76,6 @@ private:
     std::optional<ActionsDAG> element_filter;
     String element_filter_column_name;
     bool remove_element_filter_column = false;
-    bool has_relaxed_filter_below = false;
 };
 
 }

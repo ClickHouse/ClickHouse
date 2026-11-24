@@ -1,6 +1,5 @@
 #include <Storages/StorageLogSettings.h>
 #include <Core/BaseSettings.h>
-#include <Disks/DiskFromAST.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -36,10 +35,7 @@ String getDiskName(ASTStorage & storage_def, ContextPtr context)
                 BaseSettingsHelpers::throwValuelessSettingIsNotBool(change->name);
 
         if (disk_change != changes.end())
-        {
-            DiskFromAST::ensureDiskIsNotInline(disk_change->value);
             return disk_change->value.safeGet<String>();
-        }
 
         if (storage_policy_change != changes.end())
         {

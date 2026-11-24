@@ -1,7 +1,6 @@
 #pragma once
 
 #include <limits>
-#include <optional>
 #include <type_traits>
 #include <absl/base/attributes.h>
 #include <base/types.h>
@@ -12,8 +11,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 
@@ -103,32 +100,6 @@ struct MatchImpl
 
     using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitiveUTF8, VolnitskyUTF8>;
 
-    /// On a string haystack with a constant pattern, [I]LIKE throws only while building the pattern, see `vectorConstant`.
-    static std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments)
-    {
-        if constexpr (!is_like)
-            return {};
-        else
-        {
-            if (arguments.size() != 2 || !isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0].type)))
-                return true;
-
-            const ColumnConst * pattern = arguments[1].column ? checkAndGetColumnConstStringOrFixedString(arguments[1].column) : nullptr;
-            if (!pattern)
-                return true;
-
-            try
-            {
-                Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(pattern->getValue<String>());
-            }
-            catch (const Exception &)
-            {
-                return true;
-            }
-            return false;
-        }
-    }
-
 #ifndef NDEBUG
     /// Assert that the JIT-compiled matcher agrees with RE2 for every row. Debug builds only.
     static void verifyMatchAgainstRE2(
@@ -209,7 +180,7 @@ struct MatchImpl
                     {
                         const auto * str_begin = reinterpret_cast<const uint8_t *>(haystack_data.data() + prev_offset);
                         const auto * str_end = reinterpret_cast<const uint8_t *>(haystack_data.data() + haystack_offsets[i]);
-                        const bool matched = callJITFunction(matcher.func, str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
+                        const bool matched = matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
                         res[i] = negate ^ matched;
                         prev_offset = haystack_offsets[i];
                     }
@@ -247,7 +218,7 @@ struct MatchImpl
                 }
 
                 /// We check that the entry does not pass through the boundaries of strings.
-                if (matchFitsInRow(searcher, pos, begin + haystack_offsets[i], strstr_pattern.size()))
+                if (pos + strstr_pattern.size() <= begin + haystack_offsets[i])
                     res[i] = !negate;
                 else
                     res[i] = negate;
@@ -318,8 +289,7 @@ struct MatchImpl
                 }
 
                 /// We check that the entry does not pass through the boundaries of strings.
-                const UInt8 * row_end = begin + haystack_offsets[i];
-                if (matchFitsInRow(searcher, pos, row_end, required_substring.size()))
+                if (pos + required_substring.size() <= begin + haystack_offsets[i])
                 {
                     /// And if it does not, if necessary, we check the regexp.
                     if (is_trivial)
@@ -328,14 +298,15 @@ struct MatchImpl
                     }
                     else if (isAnchoredLiteralMatchKind(match_kind))
                     {
-                        const UInt8 * const row_begin = begin + haystack_offsets[static_cast<ssize_t>(i) - 1];
+                        const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
+                        const UInt8 * const row_end = begin + haystack_offsets[i];
 
                         res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, row_end, pos);
                     }
                     else
                     {
-                        const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[static_cast<ssize_t>(i) - 1]]);
-                        size_t str_size = haystack_offsets[i] - haystack_offsets[static_cast<ssize_t>(i) - 1];
+                        const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
+                        size_t str_size = haystack_offsets[i] - haystack_offsets[i - 1];
 
                         /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
                           *  so that it can match when `required_substring` occurs into the string several times,
@@ -407,8 +378,8 @@ struct MatchImpl
             size_t i = 0;
             const UInt8 * next_pos = begin;
 
-            /// If needle is larger than string size - it cannot be found (not for case-insensitive: the match can be shorter than the needle).
-            if (case_insensitive || strstr_pattern.size() <= N)
+            /// If needle is larger than string size - it cannot be found.
+            if (strstr_pattern.size() <= N)
             {
                 Searcher searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
 
@@ -425,7 +396,7 @@ struct MatchImpl
                     next_pos += N;
 
                     /// We check that the entry does not pass through the boundaries of strings.
-                    if (matchFitsInRow(searcher, pos, next_pos, strstr_pattern.size()))
+                    if (pos + strstr_pattern.size() <= next_pos)
                         res[i] = !negate;
                     else
                         res[i] = negate;
@@ -484,8 +455,8 @@ struct MatchImpl
             size_t i = 0;
             const UInt8 * next_pos = begin;
 
-            /// If required substring is larger than string size - it cannot be found (not for case-insensitive: the match can be shorter).
-            if (case_insensitive || required_substring.size() <= N)
+            /// If required substring is larger than string size - it cannot be found.
+            if (required_substring.size() <= N)
             {
                 Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
 
@@ -501,7 +472,7 @@ struct MatchImpl
                     }
                     next_pos += N;
 
-                    if (matchFitsInRow(searcher, pos, next_pos, required_substring.size()))
+                    if (pos + required_substring.size() <= next_pos)
                     {
                         /// And if it does not, if necessary, we check the regexp.
                         if (is_trivial)
@@ -570,7 +541,7 @@ struct MatchImpl
 
         if (is_like_or_similar_to && likePatternIsSubstring<is_similar_to>(needle, required_substr))
         {
-            if (!case_insensitive && required_substr.size() > haystack_length)
+            if (required_substr.size() > haystack_length)
                 return negate;
 
             Searcher searcher(required_substr.data(), required_substr.size(), haystack_length);

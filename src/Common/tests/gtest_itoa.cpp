@@ -4,18 +4,10 @@
 #include <vector>
 
 #include <base/itoa.h>
-#include <base/sanitizer_defs.h>
 #include <gtest/gtest.h>
 
 namespace
 {
-
-/// A linear congruential generator; wrapping around is how it mixes, so the overflow is intended.
-UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW lcgNext(UInt64 & state)
-{
-    state = state * 6364136223846793005ULL + 1442695040888963407ULL;
-    return state;
-}
 
 /// The obvious, slow implementation, used as the reference for `writeFixedDigits`.
 template <typename T>
@@ -112,7 +104,8 @@ std::vector<UInt64> interestingUInt64Values()
     UInt64 state = 0x9E3779B97F4A7C15ULL;
     for (int i = 0; i < 20000; ++i)
     {
-        values.push_back(lcgNext(state) >> (i % 64));
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        values.push_back(state >> (i % 64));
     }
     return values;
 }
@@ -198,7 +191,8 @@ TEST(Itoa, WideIntegersMatchReference)
     UInt64 state = 0xB7E151628AED2A6BULL;
     auto next = [&]
     {
-        return lcgNext(state);
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return state;
     };
     for (int i = 0; i < 5000; ++i)
     {
@@ -262,8 +256,10 @@ TEST(Itoa, WriteFixedDigitsWideIntegers)
     UInt64 state = 0x243F6A8885A308D3ULL;
     for (int i = 0; i < 2000; ++i)
     {
-        UInt64 low = lcgNext(state);
-        values_128.push_back((UInt128(lcgNext(state)) << 64) + low);
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        UInt64 low = state;
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        values_128.push_back((UInt128(state) << 64) + low);
     }
 
     forBothImplementations([&](const char * implementation)
