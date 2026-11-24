@@ -89,7 +89,7 @@ SQLQueryPiece applyFunction(
     if (isFunctionSort(function_name))
         return applyFunctionSort(function_node, std::move(arguments), context);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented", function_node->getTypeAndName());
 }
 
 }
