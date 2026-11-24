@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Random settings limits: query_plan_max_limit_for_lazy_materialization=(10000, None); use_columns_cache=(0, 0); input_format_parquet_local_file_min_bytes_for_seek=(None, 8192); output_format_parquet_batch_size=(None, 1024); output_format_parquet_max_dictionary_size=(1048576, None)
+# Random settings limits: query_plan_max_limit_for_lazy_materialization=(10000, None); use_columns_cache=(0, 0); input_format_parquet_local_file_min_bytes_for_seek=(None, 8192); output_format_parquet_batch_size=(None, 1024); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_data_page_row_limit=(20000, None)
 
 # Lazy materialization reads the deferred columns only for the rows that survive the `LIMIT`. In a local Parquet file
 # without an offset index, the pages holding these rows are located from the page headers, and only these pages are

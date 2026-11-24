@@ -22,6 +22,9 @@ SET collect_hash_table_stats_during_aggregation = 0;
 -- The aggregation of `GROUP BY ... LIMIT` without `ORDER BY` always disables the top-K freeze. CI may disable it for the
 -- other queries too, which makes their aggregation step equal, so the statistics they collect are found for it.
 SET group_by_top_k_optimization_observation_rows = 65536;
+-- A freeze threshold of 1 sends every new key to the backlogs of the adaptive aggregator, which the top-K boundary does not
+-- filter, so the aggregation output the statistics record grows and the priced queries are not switched.
+SET adaptive_aggregator_freeze_threshold = 16384;
 -- The top-K boundary of a run can leave an entry in the query condition cache, so that the next run reads fewer rows,
 -- which looks like changed data and recollects the statistics instead of pricing.
 SET use_query_condition_cache = 0;
