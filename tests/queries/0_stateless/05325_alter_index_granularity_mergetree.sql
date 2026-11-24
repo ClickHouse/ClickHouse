@@ -56,6 +56,30 @@ CREATE TABLE t_alter_granularity_fixed (a UInt64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 ALTER TABLE t_alter_granularity_fixed MODIFY SETTING index_granularity = 4096; -- { serverError READONLY_SETTING }
+
+-- A non-adaptive part brought into an adaptive table is read with that table's index_granularity, so
+-- the setting stays readonly while the part is there, attached or detached.
+DROP TABLE IF EXISTS t_alter_granularity_import;
+CREATE TABLE t_alter_granularity_import (a UInt64)
+ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
+INSERT INTO t_alter_granularity_fixed SELECT number FROM numbers(20000);
+ALTER TABLE t_alter_granularity_import ATTACH PARTITION ID 'all' FROM t_alter_granularity_fixed;
+ALTER TABLE t_alter_granularity_import MODIFY SETTING index_granularity = 1024; -- { serverError READONLY_SETTING }
+
+-- The reload leaves the part only in the detached directory.
+ALTER TABLE t_alter_granularity_import DETACH PARTITION ID 'all';
+DETACH TABLE t_alter_granularity_import;
+ATTACH TABLE t_alter_granularity_import;
+ALTER TABLE t_alter_granularity_import MODIFY SETTING index_granularity = 1024; -- { serverError READONLY_SETTING }
+
+-- Without the part the change is allowed, and a non-adaptive part of the old granularity is not accepted anymore.
+ALTER TABLE t_alter_granularity_import DROP DETACHED PARTITION ID 'all' SETTINGS allow_drop_detached = 1;
+ALTER TABLE t_alter_granularity_import MODIFY SETTING index_granularity = 1024;
+ALTER TABLE t_alter_granularity_import ATTACH PARTITION ID 'all' FROM t_alter_granularity_fixed; -- { serverError BAD_ARGUMENTS }
+SELECT 'import_after_change', count() FROM t_alter_granularity_import;
+
+DROP TABLE t_alter_granularity_import;
 DROP TABLE t_alter_granularity_fixed;
 
 -- On ReplicatedMergeTree both settings stay readonly: they are immutable table-identity fields stored

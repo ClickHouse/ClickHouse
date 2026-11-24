@@ -342,6 +342,12 @@ private:
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) override;
+
+    /// Throws if the table has a non-adaptive part, in any state or detached. Such a part takes its granule size from
+    /// `index_granularity` whenever it is loaded, so the setting cannot change under it. Called under
+    /// `lockOperationsWithParts`, which `ATTACH`, `REPLACE` and `MOVE PARTITION` hold.
+    void checkNoNonAdaptivePartsForGranularityChange() const;
+
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
