@@ -720,8 +720,10 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                     || isNullableOrLowCardinalityNullable(type))
                     continue;
 
-                /// A stored column of another type is converted after these patches, NULLs included.
-                if (order == ColumnForPatch::Order::BeforeConversions && !columns_in_part[pos].type->equals(*type))
+                /// Before the conversions, only a column the part does not store holds the default of the requested type.
+                if (order == ColumnForPatch::Order::BeforeConversions
+                    && (merge_tree_reader->data_part_info_for_read->getColumnPosition(columns_in_part[pos].getNameInStorage()).has_value()
+                        || !columns_in_part[pos].type->equals(*type)))
                     continue;
 
                 if (columns_for_other_patches.empty())
