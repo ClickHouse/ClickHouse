@@ -35,6 +35,13 @@ SELECT count(), sum(b.v)
 FROM fp_card_probe AS p ALL INNER JOIN fp_card_build AS b USING (k)
 SETTINGS log_comment = '05876_plain';
 
+-- A join-key expression can change the probe count even when the child is a plain read.
+TRUNCATE TABLE fp_card_arrays;
+INSERT INTO fp_card_arrays SELECT if(number < 4096, [number + 1048576], []) FROM numbers(4194304);
+SELECT count(), sum(b.v)
+FROM fp_card_arrays AS p ALL INNER JOIN fp_card_build AS b ON arrayJoin(p.keys) = b.k
+SETTINGS query_plan_optimize_join_order_limit = 0, log_comment = '05876_direct';
+
 SYSTEM FLUSH LOGS query_log;
 WITH (SELECT lower(value) IN ('aarch64', 'arm64') FROM system.build_options WHERE name = 'SYSTEM_PROCESSOR') AS is_arm
 SELECT log_comment,
@@ -43,7 +50,7 @@ SELECT log_comment,
        (ProfileEvents['HashJoinAutoFingerprintProbeEstimate'] > 0) = (is_arm AND log_comment = '05876_plain'),
        (ProfileEvents['HashJoinAutoFingerprintSelected'] > 0) = (is_arm AND log_comment = '05876_plain')
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05876_array', '05876_group', '05876_plain')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05876_array', '05876_direct', '05876_group', '05876_plain')
 ORDER BY log_comment, event_time_microseconds DESC LIMIT 1 BY log_comment;
 
 DROP TABLE fp_card_probe;

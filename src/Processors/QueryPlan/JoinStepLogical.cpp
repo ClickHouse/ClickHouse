@@ -2662,6 +2662,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 table_join->setRightColumnComputed(output->result_name);
     }
 
+    /// The extracted probe-key expression runs after the child read. An `arrayJoin` in `ON`
+    /// can discard empty arrays or emit several keys from one row.
+    if (join_algorithm_params.probe_rows_estimation && left_dag.hasArrayJoin())
+        join_algorithm_params.probe_rows_estimation.reset();
+
     JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         prepared_join_storage,
