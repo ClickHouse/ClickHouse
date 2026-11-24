@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -252,6 +253,32 @@ std::string extractConfigValue(const std::string & config_file, const std::strin
 
     auto [code, lines] = captureCommand(args);
     return (code == 0 && !lines.empty()) ? lines[0] : std::string{};
+}
+
+/// The value of a configuration override passed to the server on the command line, as
+/// `--key=value` or `--key value` (see `argsToConfig`). The last occurrence wins, like in the server.
+std::optional<std::string> findConfigOverride(const std::vector<std::string> & args, std::string_view key)
+{
+    std::optional<std::string> result;
+    for (std::size_t i = 0; i < args.size(); ++i)
+    {
+        std::string_view arg = args[i];
+        const auto key_start = arg.find_first_not_of('-');
+        if (key_start == 0 || key_start == std::string_view::npos)
+            continue;
+        arg.remove_prefix(key_start);
+
+        if (const auto pos_eq = arg.find('='); pos_eq != std::string_view::npos)
+        {
+            if (arg.substr(0, pos_eq) == key)
+                result = std::string(arg.substr(pos_eq + 1));
+        }
+        else if (arg == key && i + 1 < args.size() && !args[i + 1].starts_with('-'))
+        {
+            result = args[++i];
+        }
+    }
+    return result;
 }
 
 /// Extract multiple values from a ClickHouse config key (wildcard patterns return multiple lines).
@@ -627,13 +654,16 @@ bool initClickHouseDB(
     if (!has_init_files && clickhouse_db.empty())
         return true;
 
-    std::string native_port = extractConfigValue(config_file, "tcp_port");
+    /// The temporary server gets `extra_server_args`, which override the configuration file, so the
+    /// effective `tcp_port` and `port_offset` have to take them into account as well.
+    std::string native_port = findConfigOverride(extra_server_args, "tcp_port").value_or(extractConfigValue(config_file, "tcp_port"));
     if (native_port.empty())
         native_port = "9000";
 
     /// The server shifts its listeners by `port_offset`, so the readiness check and the initialization
     /// client must connect to the shifted port. A zero port is never shifted, like in the server.
-    if (std::string port_offset = extractConfigValue(config_file, "port_offset"); !port_offset.empty())
+    if (std::string port_offset = findConfigOverride(extra_server_args, "port_offset").value_or(extractConfigValue(config_file, "port_offset"));
+        !port_offset.empty())
     {
         int64_t port = 0;
         int64_t offset = 0;

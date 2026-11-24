@@ -331,6 +331,21 @@ def test_port_offset_unshifted_port_is_not_local(start_cluster):
         node_offset.query("DROP TABLE dict_unshifted_port_source")
 
 
+def test_port_offset_absent_secure_listener_is_not_local(start_cluster):
+    """A secure address is never this server when the server has no secure listener.
+
+    `node_cmdline_offset` has a `port_offset` and no `tcp_port_secure`. The default secure port
+    `9440` of a destination server is not shifted, and nothing in this process listens on it, so
+    `remoteSecure('127.0.0.1:9440', ...)` (and the address without a port, which gets the same
+    default) must be a remote server - the connection fails - instead of reading local tables.
+    """
+    for address in ("127.0.0.1:9440", "127.0.0.1"):
+        error = node_cmdline_offset.query_and_get_error(
+            f"SELECT * FROM remoteSecure('{address}', system.one)"
+        )
+        assert "9440" in error, error
+
+
 def test_port_offset_replicated_database_replica_is_local(start_cluster):
     """A `Replicated` database recognizes its own replica as local on an offset node.
 

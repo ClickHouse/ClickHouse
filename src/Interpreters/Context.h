@@ -1609,9 +1609,17 @@ public:
     /// port shifted by `port_offset`. Use it wherever the server advertises itself to peers
     /// (cluster discovery, DDL host IDs, replica endpoints) or answers "which port do I
     /// listen on".
+    /// If `tcp_port` is not configured (there is no plain listener) and `port_offset` moves its
+    /// built-in default out of the valid range, `getBoundTCPPort` returns `0` instead of throwing.
     UInt16 getBoundTCPPort() const;
 
     std::optional<UInt16> getBoundTCPPortSecure() const;
+
+    /// The value for `ClusterConnectionParameters::local_port` of the clusters built from
+    /// user-supplied addresses (`remote`, `ENGINE = Remote`), whose default port is the unshifted
+    /// one of the destination server. With a nonzero `port_offset` it is the bound port, or `0`
+    /// when this server has no such listener, so that no address is mistaken for this server.
+    std::optional<UInt16> getLocalPortForRemoteAddresses(bool secure) const;
 
     /// Register a server listener port. May be called concurrently from
     /// `SYSTEM START LISTEN` at runtime (in `clickhouse-local`); re-registering

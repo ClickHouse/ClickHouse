@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Common/Exception.h>
 
 namespace Poco::Util
@@ -36,6 +37,22 @@ inline UInt16 applyPortOffset(UInt16 port, Int32 offset)
             effective_port,
             MIN_PORT_NUMBER,
             MAX_PORT_NUMBER);
+
+    return static_cast<UInt16>(effective_port);
+}
+
+/// Like `applyPortOffset`, but returns `std::nullopt` instead of throwing when the shifted port is
+/// out of range. It is meant for the built-in default of a port that is *not configured*: such a
+/// listener does not exist, so an offset that is valid for all the configured ports must not be
+/// rejected only because it moves an unused default out of range.
+inline std::optional<UInt16> tryApplyPortOffset(UInt16 port, Int32 offset)
+{
+    if (offset == 0 || port == 0)
+        return port;
+
+    Int64 effective_port = static_cast<Int64>(port) + offset;
+    if (effective_port < MIN_PORT_NUMBER || effective_port > MAX_PORT_NUMBER)
+        return {};
 
     return static_cast<UInt16>(effective_port);
 }

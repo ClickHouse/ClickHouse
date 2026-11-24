@@ -65,8 +65,11 @@ struct ClusterConnectionParameters
     /// The port this server listens on, used only to detect whether an address points to this server.
     /// It differs from `clickhouse_port` when the latter is the default port to connect to *other*
     /// servers (`remote`, `ENGINE = Remote`), which is not shifted by `port_offset`, while the local
-    /// listener is. `0` means that `clickhouse_port` is the local port as well.
-    UInt16 local_port = 0;
+    /// listener is. Not set means that `clickhouse_port` is the local port as well, while `0` means
+    /// that this server has no such listener at all, so no address points to it.
+    /// It is not used with `treat_local_port_as_remote` (`clickhouse-local`): there an address is
+    /// local only when it has no port, regardless of any listener.
+    std::optional<UInt16> local_port = std::nullopt;
 };
 
 /// Cluster contains connection pools to each node

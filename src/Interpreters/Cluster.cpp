@@ -199,8 +199,10 @@ Cluster::Address::Address(
     priority = params.priority;
     if (info.is_local.has_value())
         is_local = *info.is_local;
+    else if (params.local_port && !params.treat_local_port_as_remote)
+        is_local = *params.local_port != 0 && isLocal(*params.local_port);
     else
-        is_local = can_be_local && isLocal(params.local_port ? params.local_port : params.clickhouse_port);
+        is_local = can_be_local && isLocal(params.clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
     cluster = params.cluster_name;

@@ -7897,7 +7897,13 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 UInt16 Context::getBoundTCPPort() const
 {
     const auto & config = getConfigRef();
-    return applyPortOffset(getTCPPort(), getPortOffsetFromConfig(config));
+    const Int32 offset = getPortOffsetFromConfig(config);
+    if (config.has("tcp_port"))
+        return applyPortOffset(getTCPPort(), offset);
+    /// There is no plain listener. The built-in default is kept for compatibility as long as the
+    /// offset leaves it in range, but an offset that is valid for the configured listeners must
+    /// not be rejected because of a port nobody listens on.
+    return tryApplyPortOffset(getTCPPort(), offset).value_or(0);
 }
 
 std::optional<UInt16> Context::getBoundTCPPortSecure() const
@@ -7907,6 +7913,15 @@ std::optional<UInt16> Context::getBoundTCPPortSecure() const
     if (!port)
         return {};
     return applyPortOffset(*port, getPortOffsetFromConfig(config));
+}
+
+std::optional<UInt16> Context::getLocalPortForRemoteAddresses(bool secure) const
+{
+    /// Without an offset the bound and the configured ports coincide, so the default port keeps
+    /// deciding locality, exactly as it did before `port_offset` existed.
+    if (getPortOffsetFromConfig(getConfigRef()) == 0)
+        return {};
+    return secure ? getBoundTCPPortSecure().value_or(0) : getBoundTCPPort();
 }
 
 void Context::registerServerPort(String port_name, UInt16 port)

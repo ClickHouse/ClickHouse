@@ -1185,8 +1185,7 @@ static DatabaseRemoteClusters buildClusters(
         /* cluster_secret = */ "",
         /// The default port above is the one of the destination server, so it is not shifted by
         /// `port_offset`; whether an address points to this server is decided by the bound port.
-        /* local_port = */ static_cast<UInt16>(
-            secure ? context->getBoundTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getBoundTCPPort())};
+        /* local_port = */ context->getLocalPortForRemoteAddresses(secure)};
 
     auto all_replicas_cluster = std::make_shared<Cluster>(context->getSettingsRef(), names, params);
 

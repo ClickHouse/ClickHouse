@@ -707,16 +707,21 @@ void Client::connect()
 #else
             const bool build_supports_tls = false;
 #endif
-            const bool detect_transport = port_unspecified && secure_unspecified && build_supports_tls;
+            /// The secure candidate is derived from the server-side `tcp_port_secure` like the plain port
+            /// (see `ConnectionParameters::getPortFromConfig`), so it is shifted by the same `port_offset`.
+            /// When `tcp_port_secure` is not configured, the candidate is only a guess at the built-in
+            /// default: if the offset moves it out of range, there is no secure candidate, and the
+            /// configuration, valid for the plain port, must not be rejected because of it.
+            const std::optional<UInt16> secure_candidate_port = config().has("tcp_port_secure")
+                ? applyPortOffset(static_cast<UInt16>(config().getInt("tcp_port_secure")), getPortOffsetFromConfig(config()))
+                : tryApplyPortOffset(DBMS_DEFAULT_SECURE_PORT, getPortOffsetFromConfig(config()));
+
+            const bool detect_transport = port_unspecified && secure_unspecified && build_supports_tls && secure_candidate_port.has_value();
 
             if (detect_transport)
             {
                 const auto plain_port = connection_parameters.port;
-                /// Derived from the server-side `tcp_port_secure` like the plain port (see
-                /// `ConnectionParameters::getPortFromConfig`), so it is shifted by the same `port_offset`.
-                const auto secure_port = applyPortOffset(
-                    static_cast<UInt16>(config().getInt("tcp_port_secure", DBMS_DEFAULT_SECURE_PORT)),
-                    getPortOffsetFromConfig(config()));
+                const auto secure_port = *secure_candidate_port;
 
                 /// The addresses of a port are attempted one at a time, this much apart, so that a host
                 /// that resolves to several reachable backends is not connected to on all of them at once
