@@ -2,7 +2,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-work_dir=$(mktemp -d)
+mkdir -p tmp
+work_dir=$(mktemp -d "$PWD/tmp/mtls-certs.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT
 
 # These keys are test fixtures only. Re-run this script to replace the PEM files.
