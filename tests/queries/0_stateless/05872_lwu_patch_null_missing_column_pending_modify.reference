@@ -56,6 +56,15 @@ done v v1 stored	1
 done v v1	1	abc	0
 done v v1	2	u	0
 done v v1	3	abc	0
+pending dyn v1	1	0
+dyn v1	1	abc	0
+dyn v1	2	u	0
+dyn v1	3	\N	1
+done dyn v1	1	
+done dyn v1 stored	1
+done dyn v1	1	abc	0
+done dyn v1	2	u	0
+done dyn v1	3	abc	0
 pending y v1	1	0
 y v1	1	7
 y v1	2	5
@@ -70,6 +79,11 @@ killed v1 patch type	Nullable(String)
 killed v1	1	[7]
 killed v1	2	[5]
 killed v1	3	[7]
+nodefault v1 pending	1	0
+nodefault v1 default		
+nodefault v1	1	
+nodefault v1	2	u
+nodefault v1	3	
 pending s v2	1	0
 s v2	1	abc
 s v2	2	u
@@ -128,6 +142,15 @@ done v v2 stored	1
 done v v2	1	abc	0
 done v v2	2	u	0
 done v v2	3	abc	0
+pending dyn v2	1	0
+dyn v2	1	abc	0
+dyn v2	2	u	0
+dyn v2	3	\N	1
+done dyn v2	1	
+done dyn v2 stored	1
+done dyn v2	1	abc	0
+done dyn v2	2	u	0
+done dyn v2	3	abc	0
 pending y v2	1	0
 y v2	1	7
 y v2	2	5
@@ -142,3 +165,8 @@ killed v2 patch type	Nullable(String)
 killed v2	1	[7]
 killed v2	2	[5]
 killed v2	3	[7]
+nodefault v2 pending	1	0
+nodefault v2 default		
+nodefault v2	1	
+nodefault v2	2	u
+nodefault v2	3	

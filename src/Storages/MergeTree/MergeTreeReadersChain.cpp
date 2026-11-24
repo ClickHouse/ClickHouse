@@ -692,7 +692,84 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             result.columns_for_patches);
     };
 
-    apply_patches(ColumnForPatch::Order::BeforeConversions);
+    /// Patches older than a pending `MODIFY COLUMN` have the old type. The NULLs they write into a column the part
+    /// does not store become the column's DEFAULT, as the conversion of a stored column does.
+    auto apply_patches_converting_old_nulls = [&](ColumnForPatch::Order order)
+    {
+        const auto & columns_in_part = merge_tree_reader->getColumnsToRead();
+        ColumnsForPatches columns_for_other_patches;
+        Columns defaults;
+        for (size_t i = 0; i < patch_readers.size(); ++i)
+        {
+            if (patch_readers[i]->getPatchPart().perform_alter_conversions)
+                continue;
+
+            UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
+            Block header;
+            Columns current;
+            std::vector<std::pair<size_t, IColumn::Versions>> versions_before;
+            for (const auto & column_for_patch : columns_for_patches[i])
+            {
+                if (column_for_patch.order != order)
+                    continue;
+
+                size_t pos = result_header.getPositionByName(column_for_patch.column_name);
+                const auto & type = result_header.getByPosition(pos).type;
+                auto type_in_patch = patch_readers[i]->getColumnTypeInPatch(column_for_patch.column_name);
+                if (!read_columns[pos] || !type_in_patch || !isNullableOrLowCardinalityNullable(type_in_patch)
+                    || isNullableOrLowCardinalityNullable(type))
+                    continue;
+
+                /// A stored column of another type is converted after these patches, NULLs included.
+                if (order == ColumnForPatch::Order::BeforeConversions && !columns_in_part[pos].type->equals(*type))
+                    continue;
+
+                if (columns_for_other_patches.empty())
+                {
+                    columns_for_other_patches = columns_for_patches;
+                    defaults.resize(read_columns.size());
+                }
+                if (versions_before.empty())
+                {
+                    header = result_header;
+                    current.resize(read_columns.size());
+                }
+                if (!defaults[pos])
+                    defaults[pos] = read_columns[pos];
+
+                size_t num_rows = read_columns[pos]->size();
+                const auto & versions = addDataVersionForColumn(result.patch_versions_block, column_for_patch.column_name, num_rows, source_data_version);
+                versions_before.emplace_back(pos, IColumn::Versions(versions.begin(), versions.end()));
+                current[pos] = read_columns[pos];
+                read_columns[pos] = type_in_patch->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                header.getByPosition(pos).type = type_in_patch;
+            }
+
+            if (versions_before.empty())
+                continue;
+
+            ColumnsForPatches selected(columns_for_patches.size());
+            selected[i] = std::exchange(columns_for_other_patches[i], {});
+            applyPatches(header, read_columns, result.patch_versions_block, /*min_version=*/ {}, patch_max_version, selected,
+                {order}, result.columns_for_patches);
+
+            for (const auto & [pos, before] : versions_before)
+            {
+                const auto & column = result_header.getByPosition(pos);
+                const auto & versions = addDataVersionForColumn(result.patch_versions_block, column.name, before.size(), source_data_version);
+                read_columns[pos] = mergePatchedRows(
+                    current[pos], read_columns[pos], header.getByPosition(pos).type, defaults[pos], column.type, before, versions);
+            }
+        }
+
+        if (columns_for_other_patches.empty())
+            apply_patches(order);
+        else
+            applyPatches(result_header, read_columns, result.patch_versions_block, /*min_version=*/ {}, patch_max_version,
+                columns_for_other_patches, {order}, result.columns_for_patches);
+    };
+
+    apply_patches_converting_old_nulls(ColumnForPatch::Order::BeforeConversions);
 
     /// Apply alter conversions for columns read by this step.
     ///
@@ -768,68 +845,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     if (should_evaluate_missing_defaults)
         evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
 
-    /// Patches older than a pending `MODIFY COLUMN` have the old type. The NULLs they write into a column the part
-    /// does not store become the column's DEFAULT, as the conversion of a stored column does.
-    ColumnsForPatches columns_for_other_patches;
-    Columns defaults;
-    for (size_t i = 0; i < patch_readers.size(); ++i)
-    {
-        if (patch_readers[i]->getPatchPart().perform_alter_conversions)
-            continue;
-
-        UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
-        Block header = result_header;
-        Columns current(read_columns.size());
-        std::vector<std::pair<size_t, IColumn::Versions>> versions_before;
-        for (const auto & column_for_patch : columns_for_patches[i])
-        {
-            if (column_for_patch.order != ColumnForPatch::Order::AfterEvaluatingDefaults)
-                continue;
-
-            size_t pos = result_header.getPositionByName(column_for_patch.column_name);
-            auto type_in_patch = patch_readers[i]->getColumnTypeInPatch(column_for_patch.column_name);
-            if (!read_columns[pos] || !type_in_patch || !isNullableOrLowCardinalityNullable(type_in_patch)
-                || isNullableOrLowCardinalityNullable(header.getByPosition(pos).type))
-                continue;
-
-            if (columns_for_other_patches.empty())
-            {
-                columns_for_other_patches = columns_for_patches;
-                defaults.resize(read_columns.size());
-            }
-            if (!defaults[pos])
-                defaults[pos] = read_columns[pos];
-
-            size_t num_rows = read_columns[pos]->size();
-            const auto & versions = addDataVersionForColumn(result.patch_versions_block, column_for_patch.column_name, num_rows, source_data_version);
-            versions_before.emplace_back(pos, IColumn::Versions(versions.begin(), versions.end()));
-            current[pos] = read_columns[pos];
-            read_columns[pos] = type_in_patch->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
-            header.getByPosition(pos).type = type_in_patch;
-        }
-
-        if (versions_before.empty())
-            continue;
-
-        ColumnsForPatches selected(columns_for_patches.size());
-        selected[i] = std::exchange(columns_for_other_patches[i], {});
-        applyPatches(header, read_columns, result.patch_versions_block, /*min_version=*/ {}, patch_max_version, selected,
-            {ColumnForPatch::Order::AfterEvaluatingDefaults}, result.columns_for_patches);
-
-        for (const auto & [pos, before] : versions_before)
-        {
-            const auto & column = result_header.getByPosition(pos);
-            const auto & versions = addDataVersionForColumn(result.patch_versions_block, column.name, before.size(), source_data_version);
-            read_columns[pos] = mergePatchedRows(
-                current[pos], read_columns[pos], header.getByPosition(pos).type, defaults[pos], column.type, before, versions);
-        }
-    }
-
-    if (columns_for_other_patches.empty())
-        apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
-    else
-        applyPatches(result_header, read_columns, result.patch_versions_block, /*min_version=*/ {}, patch_max_version,
-            columns_for_other_patches, {ColumnForPatch::Order::AfterEvaluatingDefaults}, result.columns_for_patches);
+    apply_patches_converting_old_nulls(ColumnForPatch::Order::AfterEvaluatingDefaults);
 }
 
 void MergeTreeReadersChain::evaluateMissingDefaults(

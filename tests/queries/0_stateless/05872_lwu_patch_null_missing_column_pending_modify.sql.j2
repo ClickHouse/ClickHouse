@@ -12,6 +12,7 @@ SET enable_nullable_tuple_type = 1;
     ('x', 'Nullable(Tuple(a Nullable(UInt64)))', 'tuple(1)', 'Tuple(a Nullable(UInt64))', 'tuple(7)', 'tuple(5)', 'x'),
     ('arr', 'Nullable(String)', "'[9]'", 'Array(UInt8)', '[7]', "'[5]'", 'arr'),
     ('v', 'Nullable(String)', "'old'", 'Variant(String, UInt64)', "'abc'", "'u'", 'v, isNull(v)'),
+    ('dyn', 'Nullable(String)', "'old'", 'Dynamic', "'abc'", "'u'", 'dyn, isNull(dyn)'),
     ('y', 'Nullable(Tuple(a UInt64))', 'tuple(1)', 'Tuple(a UInt64)', 'tuple(7)', 'tuple(5)', 'y.a'),
 ] -%}
 
@@ -29,9 +30,9 @@ UPDATE t_pending_{{ col }}_{{ version }} SET {{ col }} = NULL WHERE id = 1;
 UPDATE t_pending_{{ col }}_{{ version }} SET {{ col }} = {{ value }} WHERE id = 2;
 ALTER TABLE t_pending_{{ col }}_{{ version }} MODIFY COLUMN {{ col }} {{ new_type }} DEFAULT {{ new_default }}
 SETTINGS alter_sync = 0, mutations_sync = 0;
-{% if col == 'v' -%}
+{% if col in ('v', 'dyn') -%}
 -- A newer update writes a NULL that the new type holds.
-UPDATE t_pending_{{ col }}_{{ version }} SET v = NULL WHERE id = 3;
+UPDATE t_pending_{{ col }}_{{ version }} SET {{ col }} = NULL WHERE id = 3;
 {% endif -%}
 SELECT 'pending {{ col }} {{ version }}',
     (SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_pending_{{ col }}_{{ version }}' AND NOT is_done),
@@ -82,5 +83,25 @@ WHERE database = currentDatabase() AND table = 't_killed_{{ version }}' AND acti
 ORDER BY type;
 SELECT 'killed {{ version }}', id, arr FROM t_killed_{{ version }} ORDER BY id;
 DROP TABLE t_killed_{{ version }} SYNC;
+
+-- nodefault ({{ version }}): a second ALTER removes the DEFAULT while the MODIFY is pending.
+DROP TABLE IF EXISTS t_nodefault_{{ version }} SYNC;
+CREATE TABLE t_nodefault_{{ version }} (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_nodefault_{{ version }} VALUES (1), (2), (3);
+SYSTEM STOP MERGES t_nodefault_{{ version }};
+ALTER TABLE t_nodefault_{{ version }} ADD COLUMN s Nullable(String) DEFAULT 'old';
+UPDATE t_nodefault_{{ version }} SET s = NULL WHERE id = 1;
+UPDATE t_nodefault_{{ version }} SET s = 'u' WHERE id = 2;
+ALTER TABLE t_nodefault_{{ version }} MODIFY COLUMN s String DEFAULT 'abc' SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_nodefault_{{ version }} MODIFY COLUMN s REMOVE DEFAULT;
+SELECT 'nodefault {{ version }} pending',
+    (SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_nodefault_{{ version }}' AND NOT is_done),
+    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_nodefault_{{ version }}'
+        AND active AND name NOT LIKE 'patch-%' AND column = 's');
+SELECT 'nodefault {{ version }} default', default_kind, default_expression FROM system.columns
+WHERE database = currentDatabase() AND table = 't_nodefault_{{ version }}' AND name = 's';
+SELECT 'nodefault {{ version }}', id, s FROM t_nodefault_{{ version }} ORDER BY id;
+DROP TABLE t_nodefault_{{ version }} SYNC;
 
 {% endfor -%}
