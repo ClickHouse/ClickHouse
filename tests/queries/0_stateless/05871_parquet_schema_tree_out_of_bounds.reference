@@ -1,0 +1,15 @@
+variant_nested_first_child
+INCORRECT_DATA
+INCORRECT_DATA
+tuple_nested_first_child
+INCORRECT_DATA
+INCORRECT_DATA
+variant_extra_child
+INCORRECT_DATA
+INCORRECT_DATA
+variant_huge_num_children
+INCORRECT_DATA
+INCORRECT_DATA
+variant_negative_num_children
+INCORRECT_DATA
+INCORRECT_DATA

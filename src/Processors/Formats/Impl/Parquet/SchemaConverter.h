@@ -164,7 +164,9 @@ private:
     };
     VectorWithMemoryTracking<TupleInArray> tuples_in_arrays;
 
-    void checkHasColumns();
+    /// Checks that the file has columns and that the schema tree fits in `FileMetaData::schema`.
+    /// The traversal below relies on it for bounds.
+    void checkSchema();
 
     void processSubtree(TraversalNode & node);
 
