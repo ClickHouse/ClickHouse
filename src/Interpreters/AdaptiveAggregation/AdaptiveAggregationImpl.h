@@ -252,6 +252,11 @@ struct AdaptiveAggregationSession
     /// `Aggregator::parallelMergeThreshold`).
     size_t estimated_merge_work = 0;
 
+    /// The producers that handed their tables over, counted under the same mutex. An ascending top-K offers
+    /// the NULL key's count before the merge only when every producer of the session did, because only then
+    /// do the counts in their tables sum to its final count (see `AdaptiveTopKNullKey::offerBeforeMerge`).
+    size_t finished_producers = 0;
+
     /// The producers whose tables froze at least once, and those of them that thawed. Published under the
     /// same mutex, they make the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).
     size_t frozen_producers = 0;
