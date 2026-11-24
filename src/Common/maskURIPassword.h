@@ -186,26 +186,16 @@ inline bool maskURIPassword(std::string & uri, const std::string_view authority_
         switch (const char c = uri[i]; c)
         {
             case '@': {
-                if (current_end_matches(tokens_and_offset, COLON, AT | PIPE | AUTHORITY_TERMINATOR, PIPE | COLON))
+                if (current_end_matches(tokens_and_offset, COLON, AT | PIPE | AUTHORITY_TERMINATOR, PIPE | COLON | AT))
                 {
                     tokens_and_offset.pop_back();
                     tokens_and_offset.back() = {AT, i};
                 }
-                else if (current_end_matches(tokens_and_offset, SCHEMA_SEPARATOR, PIPE))
-                    tokens_and_offset.back() = {AT, i};
                 else if (
-                    tokens_and_offset.size() == 2
-                    && current_end_matches(tokens_and_offset, AUTHORITY_TERMINATOR | SCHEMA_SEPARATOR, COLON))
-                {
-                    tokens_and_offset[0] = tokens_and_offset[1];
-                    tokens_and_offset.back() = {AT, i};
-                }
-                else if (
-                    current_end_matches(tokens_and_offset, AT)
+                    current_end_matches(tokens_and_offset, COLON, AT | PIPE | COLON)
+                    || current_end_matches(tokens_and_offset, SCHEMA_SEPARATOR, PIPE) || current_end_matches(tokens_and_offset, AT)
                     || current_end_matches(
-                        tokens_and_offset, AUTHORITY_TERMINATOR | SCHEMA_SEPARATOR, COLON, AUTHORITY_TERMINATOR | SCHEMA_SEPARATOR | PIPE)
-                    || (tokens_and_offset.size() == 2
-                        && current_end_matches(tokens_and_offset, AUTHORITY_TERMINATOR | SCHEMA_SEPARATOR, PIPE)))
+                        tokens_and_offset, AUTHORITY_TERMINATOR | SCHEMA_SEPARATOR, COLON, AUTHORITY_TERMINATOR | SCHEMA_SEPARATOR | PIPE))
                     tokens_and_offset.back() = {AT, i};
                 else if (!(current_end_matches(tokens_and_offset, SCHEMA_SEPARATOR) && tokens_and_offset.back().second + 2 == i))
                     tokens_and_offset.emplace_back(AT, i);
@@ -217,7 +207,7 @@ inline bool maskURIPassword(std::string & uri, const std::string_view authority_
                     tokens_and_offset.emplace_back(SCHEMA_SEPARATOR, i + 1);
                     i += 2;
                 }
-                else if (current_end_matches(tokens_and_offset, COLON, PIPE))
+                else if (current_end_matches(tokens_and_offset, PIPE))
                     tokens_and_offset.back() = {PIPE, i};
                 else
                     tokens_and_offset.emplace_back(PIPE, i);
@@ -232,21 +222,30 @@ inline bool maskURIPassword(std::string & uri, const std::string_view authority_
                         tokens_and_offset.emplace_back(SCHEMA_SEPARATOR, i + 1);
                     i += 2;
                 }
+                else if (current_end_matches(tokens_and_offset, COLON, PIPE))
+                    tokens_and_offset.pop_back();
                 else if (!current_end_matches(tokens_and_offset, COLON))
                     tokens_and_offset.emplace_back(COLON, i);
                 break;
             }
             case '{': {
-                first_glob_open = first_glob_open == std::string::npos ? i : first_glob_open;
-                ++glob_balance;
+                const size_t open_pos = i;
+                i++;
+                static constexpr std::string_view controls = "@|:/{}";
+                while (i < uri.length() && !controls.contains(uri[i]) && !authority_terminators.contains(uri[i]))
+                    i++;
+                if (i < uri.length() && uri[i] != '}')
+                {
+                    first_glob_open = first_glob_open == std::string::npos ? i : open_pos;
+                    ++glob_balance;
+                    --i;
+                }
                 break;
             }
             case '}': {
                 --glob_balance;
                 if (!glob_balance)
-                {
                     last_glob_balance_zero = i;
-                }
                 break;
             }
             case '/': {
@@ -266,6 +265,11 @@ inline bool maskURIPassword(std::string & uri, const std::string_view authority_
                              std::string_view(uri).substr(tokens_and_offset[0].second + 2, i - tokens_and_offset[0].second - 2)))
                         || current_end_matches(tokens_and_offset, AUTHORITY_TERMINATOR))
                         tokens_and_offset.back() = {AUTHORITY_TERMINATOR, i};
+                    else if (current_end_matches(tokens_and_offset, COLON, AUTHORITY_TERMINATOR, COLON))
+                    {
+                        tokens_and_offset.pop_back();
+                        tokens_and_offset.back() = {AUTHORITY_TERMINATOR, i};
+                    }
                     else
                         tokens_and_offset.emplace_back(AUTHORITY_TERMINATOR, i);
                 }
@@ -286,10 +290,12 @@ inline bool maskURIPassword(std::string & uri, const std::string_view authority_
         result.append("[HIDDEN]");
         copied_offset = end;
     };
-    if (first_glob_open != std::string::npos && last_glob_balance_zero != std::string::npos && first_glob_open < tokens_and_offset.back().second)
+    if (first_glob_open != std::string::npos && last_glob_balance_zero != std::string::npos
+        && first_glob_open < tokens_and_offset.back().second)
     {
-        mask_range(0, std::max(tokens_and_offset.back().second - 1, last_glob_balance_zero));
-        result.append(uri, copied_offset + 1);
+        const size_t maybe_schema_offset
+            = tokens_and_offset[0].first == SCHEMA_SEPARATOR ? std::min(tokens_and_offset[0].second + 2, first_glob_open) : 0;
+        result.append(uri, 0, maybe_schema_offset).append("[HIDDEN]");
         uri = result;
         return true;
     }
