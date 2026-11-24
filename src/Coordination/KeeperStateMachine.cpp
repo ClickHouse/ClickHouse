@@ -45,8 +45,6 @@
 namespace ProfileEvents
 {
     extern const Event KeeperCommits;
-    extern const Event KeeperStateMachineCommit;
-    extern const Event KeeperStateMachineCommitMicroseconds;
     extern const Event KeeperReconfigRequest;
     extern const Event KeeperSnapshotCreations;
     extern const Event KeeperSnapshotCreationsFailed;
@@ -1428,12 +1426,6 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    Stopwatch watch;
-    SCOPE_EXIT({
-        ProfileEvents::increment(ProfileEvents::KeeperStateMachineCommit);
-        ProfileEvents::increment(ProfileEvents::KeeperStateMachineCommitMicroseconds, watch.elapsedMicroseconds());
-    });
-
     auto batch = parseRequestBatch(data, true);
     assignZxidToLegacyEntry(*batch, log_idx);
     batch->log_idx = log_idx;

@@ -1281,8 +1281,6 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
     M(KeeperLogStoreAppend, "Number of entries appended to the Keeper log store", ValueType::Number) \
     M(KeeperLogStoreAppendMicroseconds, "Time spent appending entries to the Keeper log store, including the changelog lock wait (the entry is written and fsynced by the background changelog writer, see KeeperChangelogFileSyncMicroseconds)", ValueType::Microseconds) \
-    M(KeeperStateMachineCommit, "Number of committed log batches applied by the Keeper state machine", ValueType::Number) \
-    M(KeeperStateMachineCommitMicroseconds, "Time spent applying committed log batches in the Keeper state machine", ValueType::Microseconds) \
     M(KeeperSnapshotWriteMicroseconds, "Time spent writing a Keeper snapshot file (serialization, compression and sync)", ValueType::Microseconds) \
     M(KeeperSnapshotApplyMicroseconds, "Time spent applying a Keeper snapshot to the Keeper state machine", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of batches that hit max_requests_batch_size limit", ValueType::Number) \
