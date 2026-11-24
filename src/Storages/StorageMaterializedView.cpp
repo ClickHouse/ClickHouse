@@ -864,12 +864,17 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
         refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
         /// The temporary table repeats the stored definition of the existing target.
         refresh_context->setSetting("allow_reserved_column_names", Field(UInt64{1}));
+        /// For the same reason it must be accepted as it is, like any other replay of a stored definition: checks that
+        /// only apply to a fresh definition (e.g. `checkKeyExpressionNamesForCollision`) would otherwise make every
+        /// refresh of a view created by an earlier version fail. Only the `CREATE` is marked, not the `INSERT` below.
+        refresh_context->setRecoveryFromStoredMetadata(true);
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
         /// Notice that we discard the BlockIO that execute() returns. This means that in case of DatabaseReplicated we don't wait
         /// for other replicas to execute the query, only the current replica. Same in exchangeTargetTable() and dropTempTable().
         create_interpreter.execute();
+        refresh_context->setRecoveryFromStoredMetadata(false);
 
         target_table = StorageID(db_name, new_table_name, create_query->uuid);
         out_temp_table_id = target_table;
