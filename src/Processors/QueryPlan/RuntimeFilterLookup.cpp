@@ -202,7 +202,8 @@ bool RuntimeFilterEvaluationState::shouldSkip(size_t next_block_rows) const
 
 namespace
 {
-ALWAYS_INLINE UInt64 mix64(UInt64 h)
+/// The multiplications wrap around on purpose.
+ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 mix64(UInt64 h)
 {
     h ^= h >> 33;
     h *= 0xff51afd7ed558ccdULL;
@@ -257,7 +258,7 @@ RuntimeBloomFilter::RuntimeBloomFilter(size_t bytes, size_t hashes_, UInt64 seed
 
     /// A power of two number of blocks: the block is selected by masking the first hash.
     const size_t num_blocks = normalizeRuntimeBloomFilterBytes(bytes) / (RUNTIME_BLOOM_BLOCK_WORDS * sizeof(UInt64));
-    word_index_mask = num_blocks - 1; /// a block index mask, despite the name
+    block_index_mask = num_blocks - 1;
     words.assign(num_blocks * RUNTIME_BLOOM_BLOCK_WORDS, 0);
 }
 
@@ -267,7 +268,7 @@ void RuntimeBloomFilter::addHashPairs(const BloomFilterHashPair * pairs, size_t 
     {
         for (size_t i = 0; i < count; ++i)
         {
-            UInt64 * block = words.data() + (pairs[i].hash1 & word_index_mask) * RUNTIME_BLOOM_BLOCK_WORDS;
+            UInt64 * block = words.data() + (pairs[i].hash1 & block_index_mask) * RUNTIME_BLOOM_BLOCK_WORDS;
             forEachBlockBit<k>(pairs[i].hash2, hashes, [&](size_t word, UInt64 bit) { block[word] |= bit; });
         }
     };
@@ -284,7 +285,7 @@ size_t RuntimeBloomFilter::findHashPairs(const BloomFilterHashPair * pairs, size
         size_t found_count = 0;
         for (size_t i = 0; i < count; ++i)
         {
-            const UInt64 * block = words.data() + (pairs[i].hash1 & word_index_mask) * RUNTIME_BLOOM_BLOCK_WORDS;
+            const UInt64 * block = words.data() + (pairs[i].hash1 & block_index_mask) * RUNTIME_BLOOM_BLOCK_WORDS;
             bool found = true;
             forEachBlockBit<k>(pairs[i].hash2, hashes, [&](size_t word, UInt64 bit) { found &= (block[word] & bit) != 0; });
             out_mask[i] = found;
@@ -425,7 +426,7 @@ bool canDropNullKeys(const DataTypePtr & type)
 /// high bits of the product, which mix all bits of the first hash. Longer keys keep CityHash. The
 /// choice depends only on the byte length, so the build and the probe side of a filter always agree.
 template <size_t value_size>
-ALWAYS_INLINE BloomFilterHashPair hashFixedKey(const char * data, UInt64 seed)
+ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW BloomFilterHashPair hashFixedKey(const char * data, UInt64 seed)
 {
     UInt64 value = 0;
     memcpy(&value, data, value_size);
@@ -547,6 +548,7 @@ struct Overloaded : Ts...
 
 template <typename... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
+
 }
 
 static size_t countPassedStats(ColumnPtr values);
@@ -825,7 +827,7 @@ struct BloomFilterBitCounts
     size_t total_bit_count{0};
 };
 
-static BloomFilterBitCounts countBloomFilterBits(const BloomFilter & bloom_filter)
+static BloomFilterBitCounts countBloomFilterBits(const RuntimeBloomFilter & bloom_filter)
 {
     const auto & raw_filter_words = bloom_filter.getFilter();
     const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;

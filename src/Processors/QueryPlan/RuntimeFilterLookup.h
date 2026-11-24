@@ -270,17 +270,21 @@ public:
     /// Writes 1 for the keys that may be present, 0 for the ones that are certainly absent; returns the count of 1-s.
     size_t findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const;
 
-    const std::vector<UInt64> & getFilter() const { return words; }
-    std::vector<UInt64> & getFilter() { return words; }
-    size_t getFilterSizeBytes() const { return words.size() * sizeof(UInt64); }
-    size_t getHashes() const { return hashes; }
-    UInt64 getSeed() const { return seed; }
+    /// The allocation is checked against the memory limit, like the one of `BloomFilter`.
+    using Container = VectorWithMemoryTracking<UInt64>;
+
+    [[nodiscard]] const Container & getFilter() const { return words; }
+    [[nodiscard]] Container & getFilter() { return words; }
+    [[nodiscard]] size_t getFilterSizeBytes() const { return words.size() * sizeof(UInt64); }
+    [[nodiscard]] size_t getHashes() const { return hashes; }
+    [[nodiscard]] UInt64 getSeed() const { return seed; }
 
 private:
     size_t hashes;
     UInt64 seed;
-    size_t word_index_mask;
-    std::vector<UInt64> words;
+    /// The number of blocks is a power of two, so a block is selected by masking the first hash.
+    size_t block_index_mask;
+    Container words;
 };
 
 /// Bloom-backed runtime filter for approximate set membership checks.
