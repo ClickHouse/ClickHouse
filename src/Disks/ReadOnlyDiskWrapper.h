@@ -105,9 +105,6 @@ public:
     bool supportsStat() const override { return delegate->supportsStat(); }
     struct stat stat(const String & path) const override { return delegate->stat(path); }
 
-    bool supportsChmod() const override { return delegate->supportsChmod(); }
-    void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
-
     DiskPtr getDelegateDiskIfExists() const override { return delegate; }
 
     bool isReadOnly() const override { return true; }
