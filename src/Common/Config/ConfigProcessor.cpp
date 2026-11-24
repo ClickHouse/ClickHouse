@@ -12,6 +12,8 @@
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
+#include <Poco/FileStream.h>
+#include <Poco/SAX/InputSource.h>
 #include <Poco/XML/XMLWriter.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/NumberParser.h>
@@ -795,6 +797,15 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     return files;
 }
 
+/// Poco would normalize `..` in the path lexically, which differs from how the kernel resolves it after a symlink.
+static XMLDocumentPtr parseXMLFile(const std::string & config_path, Poco::XML::DOMParser & dom_parser)
+{
+    Poco::FileInputStream stream(config_path);
+    Poco::XML::InputSource source(stream);
+    source.setSystemId(toXMLString(config_path));
+    return dom_parser.parse(&source);
+}
+
 XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser)
 {
     fs::path p(config_path);
@@ -802,13 +813,13 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
     boost::algorithm::to_lower(extension);
 
     if (extension == ".xml")
-        return dom_parser.parse(toXMLString(config_path));
+        return parseXMLFile(config_path, dom_parser);
     if (extension == ".yaml" || extension == ".yml")
         return YAMLParser::parse(config_path);
 
     /// Suppose non regular file parsed as XML, such as pipe: /dev/fd/X (regardless it has .xml extension or not)
     if (!fs::is_regular_file(config_path))
-        return dom_parser.parse(toXMLString(config_path));
+        return parseXMLFile(config_path, dom_parser);
 
     /// If the regular file begins with < it might be XML, otherwise it might be YAML.
     bool maybe_xml = false;
@@ -832,7 +843,7 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
         }
     }
     if (maybe_xml)
-        return dom_parser.parse(toXMLString(config_path));
+        return parseXMLFile(config_path, dom_parser);
     return YAMLParser::parse(config_path);
 }
 
@@ -1041,7 +1052,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
         LOG_WARNING(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
 
-        config_xml = dom_parser.parse(toXMLString(preprocessed_path));
+        config_xml = parseXMLFile(preprocessed_path, dom_parser);
     }
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
