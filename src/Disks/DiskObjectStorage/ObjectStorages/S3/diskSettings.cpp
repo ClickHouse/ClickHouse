@@ -273,6 +273,9 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         server_side_encryption_kms_config = {};
     }
 
+    /// Not request-auth material, so it survives the metadata-load clear above.
+    headers.append(auth_settings.getRequestPayerHeaders());
+
     if (refresh_credentials_callback)
     {
         auto updated_credentials = (*refresh_credentials_callback)();
