@@ -1083,7 +1083,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
                 return false;
 
             bloom_filters.back().emplace_back(params);
-            forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());
+            tokenizer->stringToBloomFilter(element.data(), element.size(), bloom_filters.back().back());
         }
     }
 

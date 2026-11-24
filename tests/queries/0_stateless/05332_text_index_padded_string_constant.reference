@@ -27,6 +27,7 @@ String column IN, UTF-8 tail	1	1
 FixedString column IN, UTF-8 tail	1	1
 FixedString column IN prunes exactly	1
 String column IN declines	1
+tokenbf_v1 IN, 20-byte element	1
 text ngrams, UTF-8 tail	1	1
 text sparseGrams, UTF-8 tail	1	1
 text splitByNonAlpha, UTF-8 tail	1	1

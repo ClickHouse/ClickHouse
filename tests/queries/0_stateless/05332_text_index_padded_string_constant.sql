@@ -99,6 +99,8 @@ SELECT 'String column IN, UTF-8 tail', (SELECT count() FROM w_log WHERE s IN (SE
 SELECT 'FixedString column IN, UTF-8 tail', (SELECT count() FROM u_log WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))), (SELECT count() FROM u_idx WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8)));
 SELECT 'FixedString column IN prunes exactly', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM u_idx WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))) WHERE explain ILIKE '%Granules: 1/64%';
 SELECT 'String column IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w_str WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))) WHERE explain ILIKE '%idx_s%';
+-- A set element is tokenized from its own copy, which has no padding past its end for a block-wise tokenizer to read.
+SELECT 'tokenbf_v1 IN, 20-byte element', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM w_token WHERE s IN (SELECT repeat('a', 20))) WHERE explain ILIKE '%Granules: 0/64%';
 
 -- The `text` index has the same trimming step behind its own guard, and the same incomplete sequence reaches it.
 DROP TABLE IF EXISTS t_ngrams;
