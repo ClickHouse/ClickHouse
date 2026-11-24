@@ -263,11 +263,10 @@ def run_timed_out_query_before_s3(node, query, query_id):
     try:
         node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
         wait_until_query_is_cancelled(node, query_id)
-        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         _, error = query_future.result(timeout=10)
         assert "TIMEOUT_EXCEEDED" in error, error
     finally:
-        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         executor.shutdown(wait=False, cancel_futures=True)
 
@@ -345,13 +344,12 @@ def test_s3_read_stops_after_kill_query(s3_cancellation_table, allow_prefetched_
         node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
         node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
         wait_until_query_is_cancelled(node, query_id)
-        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
         answer, error = query_future.result(timeout=10)
         assert answer == "", answer
         assert "QUERY_WAS_CANCELLED" in error, error
     finally:
-        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         executor.shutdown(wait=False, cancel_futures=True)
 

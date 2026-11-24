@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+import uuid
 
 import boto3
 import pytest
@@ -86,6 +87,64 @@ def wait_for(node, query, predicate, attempts=300, sleep_time=0.2):
             return True
         time.sleep(sleep_time)
     return False
+
+
+def test_stop_background_merge_before_first_s3_get(cluster, broken_s3):
+    node = cluster.instances["node"]
+    database = f"s3_merge_cancellation_{uuid.uuid4().hex}"
+    table = f"{database}.parts"
+    failpoint = "s3_read_before_get_object"
+    table_filter = f"database = '{database}' AND table = 'parts'"
+
+    node.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+    try:
+        node.query(
+            f"CREATE TABLE {table} (id UInt64) ENGINE = MergeTree ORDER BY id "
+            "SETTINGS storage_policy = 'broken_s3', min_bytes_for_wide_part = 0, "
+            "prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, "
+            "min_age_to_force_merge_seconds = 1, "
+            "merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 100"
+        )
+        node.query(f"SYSTEM STOP MERGES {table}")
+        node.query(f"INSERT INTO {table} VALUES (1)")
+        node.query(f"INSERT INTO {table} VALUES (2)")
+        assert node.query(
+            f"SELECT count() FROM system.parts WHERE {table_filter} AND active"
+        ).strip() == "2"
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        node.query(f"SYSTEM START MERGES {table}")
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        parts = node.query(
+            f"SELECT result_part_name FROM system.merges WHERE {table_filter}"
+        ).split()
+        assert len(parts) == 1, parts
+        part = parts[0]
+        node.query(f"SYSTEM STOP MERGES {table}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        result_query = (
+            "SYSTEM FLUSH LOGS part_log; "
+            "SELECT errorCodeToName(error), ProfileEvents['S3GetObject'], "
+            "ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.part_log "
+            f"WHERE {table_filter} AND event_type = 'MergeParts' AND part_name = '{part}'"
+        )
+        def check_merge_result(result):
+            if not result:
+                return False
+            assert result == "ABORTED\t0\t0", (
+                f"unexpected merge result for {table} part {part}: {result!r}"
+            )
+            return True
+
+        assert wait_for(
+            node, result_query, check_merge_result
+        ), f"no merge event recorded for {table} part {part}"
+    finally:
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        finally:
+            node.query(f"DROP DATABASE {database} SYNC")
 
 
 @pytest.mark.parametrize("replicated", [False, True])

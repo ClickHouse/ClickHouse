@@ -16,7 +16,7 @@ output="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.out"
 error="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.err"
 client_pid=""
 failpoints=(mt_pause_before_loading_outdated_part merge_tree_outdated_parts_loading_cancelled
-            merge_tree_load_outdated_parts_pause s3_pause_merge_before_get_object)
+            merge_tree_load_outdated_parts_pause)
 
 query()
 {
@@ -94,37 +94,3 @@ query --query "
     EXISTS TABLE ${database}.replica;
     SELECT n FROM ${database}.survival;
 "
-
-# Stop a background merge before its first `GetObject`. Its cancellation predicate throws
-# `ABORTED` without a `QueryStatus`. Read the counters for this merge from `system.part_log`.
-# The table name identifies this merge to the S3 failpoint even while other tables are merging.
-merge_table=s3_pause_merge_before_get_object
-query --query "
-    CREATE TABLE ${database}.${merge_table} (n UInt64) ENGINE=MergeTree ORDER BY n
-    SETTINGS storage_policy='s3_no_cache', prewarm_mark_cache=0, prewarm_primary_key_cache=0,
-             min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=100, max_merge_selecting_sleep_ms=100;
-    SYSTEM STOP MERGES ${database}.${merge_table};
-    INSERT INTO ${database}.${merge_table} VALUES (1);
-    INSERT INTO ${database}.${merge_table} VALUES (2);
-    SYSTEM ENABLE FAILPOINT s3_pause_merge_before_get_object;
-    SYSTEM START MERGES ${database}.${merge_table};
-    SYSTEM WAIT FAILPOINT s3_pause_merge_before_get_object PAUSE;
-"
-part=$(query --query "SELECT result_part_name FROM system.merges
-    WHERE database='${database}' AND table='${merge_table}'")
-[[ -n "$part" ]]
-merge_paused_at=$(query --query "SYSTEM STOP MERGES ${database}.${merge_table}; SELECT now64(6)")
-query --query "SYSTEM DISABLE FAILPOINT s3_pause_merge_before_get_object"
-
-merge_result="SELECT errorCodeToName(error), ProfileEvents['S3GetObject'], ProfileEvents['ReadBufferFromS3RequestsErrors']
-    FROM system.part_log WHERE database='${database}' AND table='${merge_table}'
-        AND event_type='MergeParts' AND part_name='${part}' AND event_time_microseconds >= '${merge_paused_at}'"
-deadline=$((SECONDS + 60))
-result=''
-while clickhouse_test_time_left && (( SECONDS < deadline )); do
-    result=$(query --query "SYSTEM FLUSH LOGS part_log; ${merge_result}")
-    [[ -n "$result" ]] && break
-    sleep 0.1
-done
-[[ -n "$result" ]]
-printf '%s\n' "$result"

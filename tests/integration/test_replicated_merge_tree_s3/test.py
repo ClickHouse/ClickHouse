@@ -178,7 +178,7 @@ def test_custom_query_cancellation_does_not_report_broken_part(cluster):
             retry_count=20,
             sleep_time=0.25,
         )
-        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_pause_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {s3_pause_failpoint}")
         node.query(
             f"SYSTEM WAIT FAILPOINT {report_broken_pause_failpoint} PAUSE",
             timeout=60,
@@ -217,9 +217,8 @@ def test_custom_query_cancellation_does_not_report_broken_part(cluster):
         assert parts_to_check == 0
         assert part_checks_after == part_checks_before
     finally:
-        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_pause_failpoint}")
-        node.query(f"SYSTEM NOTIFY FAILPOINT {report_broken_pause_failpoint}")
         node.query(f"SYSTEM DISABLE FAILPOINT {s3_pause_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {report_broken_pause_failpoint}")
         node.query(f"SYSTEM DISABLE FAILPOINT {report_broken_pause_failpoint}")
         node.query(f"SYSTEM DISABLE FAILPOINT {cancellation_failpoint}")
         executor.shutdown(wait=False, cancel_futures=True)
