@@ -137,7 +137,7 @@ void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
     if (needed > max_chunk_bytes / 2)
     {
         capacity = needed;
-        data = static_cast<char *>(Allocator<false, false>().alloc(capacity));
+        data = static_cast<char *>(Allocator<false, false>().alloc(capacity, alignof(ChunkHeader)));
         live_allocations.fetch_add(1, std::memory_order_relaxed);
     }
     else
@@ -259,7 +259,7 @@ void PartitionedRecordBuffer::releasePartitions(size_t first_partition, size_t c
             }
             else
             {
-                Allocator<false, false>().free(chunk, chunk->capacity);
+                Allocator<false, false>().free(chunk, chunk->capacity, alignof(ChunkHeader));
                 live_allocations.fetch_sub(1, std::memory_order_release);
             }
             chunk = next;
