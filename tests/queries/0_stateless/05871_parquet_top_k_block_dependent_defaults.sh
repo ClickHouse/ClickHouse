@@ -12,7 +12,7 @@ trap 'rm -rf "${DIR}"' EXIT
 # 20 row groups of 1000 rows. The first two hold k = 0..9, the others k >= 10: the boundary k = 0 is
 # set by the first row group, drops rows of the second one and skips the rest by their statistics.
 DATA="SELECT intDiv(number, 2000) * 10 + number % 10 AS k, number AS v FROM numbers(20000)"
-SETTINGS="max_threads = 1, max_parsing_threads = 1, max_block_size = 1000, use_query_condition_cache = 0,
+SETTINGS="max_threads = 1, max_parsing_threads = 1, max_block_size = 1000, use_query_condition_cache = 0, max_rows_to_group_by = 0,
     input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_preserve_order = 1,
     enable_group_by_top_k_optimization = 1, group_by_top_k_optimization_observation_rows = 0"
 ON="enable_group_by_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering = 1"
