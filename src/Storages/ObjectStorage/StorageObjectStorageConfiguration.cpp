@@ -227,6 +227,7 @@ void StorageObjectStorageConfiguration::initialize(
         /// silently dropped here. Reject it before taking the named-collection branch.
         rejectBodyArgument(engine_args);
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
+        configuration_to_initialize.initialized_from_named_collection = true;
 
         /// A base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from the named
         /// collection. Materialize the resolved URL back into the engine args as a `url='...'`

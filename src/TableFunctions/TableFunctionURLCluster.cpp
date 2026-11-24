@@ -48,7 +48,7 @@ ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr c
 
 StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/, bool is_insert_query) const
+    const std::string & table_name, const String & /*compression_method_*/, bool is_insert_query, bool is_table_definition) const
 {
     /// The `body(...)` argument only makes sense for reading, where it forms the HTTP request body.
     /// For `INSERT INTO FUNCTION urlCluster(...)` the inserted rows themselves are sent as the request body
@@ -82,8 +82,13 @@ StoragePtr TableFunctionURLCluster::getStorage(
             configuration.body,
             configuration.http_method,
             nullptr,
-            /*distributed_processing=*/ true);
+            /*distributed_processing=*/ true,
+            globCaller(),
+            /*is_replayed_definition=*/ false,
+            /*check_redirect_access=*/ !is_table_definition);
     }
+
+    checkCallerGrantAppliesOnWorkers(context, cluster_name);
 
     return std::make_shared<StorageURLCluster>(
         context,

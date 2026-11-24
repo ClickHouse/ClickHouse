@@ -102,6 +102,12 @@ public:
     }
 
 protected:
+    /// Whether the caller's `READ ON URL` bounds what the workers of `cluster_name` fetch after a redirect: they run as
+    /// the cluster user unless an interserver secret carries the caller's identity, so a filter bounds nothing there.
+    static bool callerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name);
+    /// Throws `ACCESS_DENIED` when `callerGrantAppliesOnWorkers` is false.
+    static void checkCallerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name);
+
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override;
 
@@ -122,6 +128,11 @@ protected:
     /// Whether the structure is a `NOT OVERRIDABLE` "auto" of a named collection, so it cannot be sent to the nodes of a cluster.
     bool is_structure_not_overridable = false;
 
+    /// How the surface the user invoked is named when a glob in the URL generates more addresses
+    /// than allowed. `urlCluster` overrides it so that the shared code paths (schema inference,
+    /// the `StorageURL` constructed for a secondary query on a worker) report `urlCluster`.
+    virtual RemoteDescriptionCaller globCaller() const { return tableFunctionURLCaller(); }
+
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate
     /// table function (`file`, `s3`, `azureBlobStorage`, `hdfs`) from the already-parsed arguments.
@@ -138,7 +149,7 @@ private:
 
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
+        const std::string & table_name, const String & compression_method_, bool is_insert_query, bool is_table_definition) const override;
 
     const char * getStorageEngineName() const override { return delegate_engine_name; }
     std::string_view getFunctionURI() const override { return delegate ? delegate_function_uri : filename; }
