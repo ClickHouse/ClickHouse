@@ -39,9 +39,6 @@ include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
 include (cmake/utils.cmake)
 
-# This is needed to set up the CMAKE_INSTALL_BINDIR variable.
-include (GNUInstallDirs)
-
 # Ignore export() since we don't use it,
 # but it gets broken with global targets via link_libraries()
 macro (export)
@@ -857,13 +854,6 @@ option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will 
 # call that crosses into or out of a library that is not part of the same link.
 if (ENABLE_CFI AND ENABLE_OPENSSL_DYNAMIC)
     message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_OPENSSL_DYNAMIC.")
-endif ()
-
-# when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
-if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-    set (CLICKHOUSE_ETC_DIR "/etc")
-else ()
-    set (CLICKHOUSE_ETC_DIR "${CMAKE_INSTALL_PREFIX}/etc")
 endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
