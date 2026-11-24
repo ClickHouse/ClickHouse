@@ -20,6 +20,8 @@ common = dict(
     max_threads=1, max_block_size=65536, preferred_block_size_bytes=0,
     query_plan_join_shard_by_pk_ranges=0, query_plan_read_in_order_through_join=0,
     query_plan_join_swap_table=0, query_plan_optimize_join_order_limit=1, query_plan_convert_join_to_in=0,
+    # Automatic selection uses the estimated probe cardinality.
+    query_plan_optimize_join_order_randomize=0,
     enable_join_key_only_hash_tables=1, enable_join_runtime_filters=0, enable_join_fixed_hash_table_conversion=0,
     enable_hash_join_row_store=0, collect_hash_table_stats_during_joins=0, any_join_distinct_right_table_keys=0,
     max_bytes_before_external_join=0, max_bytes_ratio_before_external_join=0,
