@@ -4,6 +4,7 @@
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/UnavailableShardTracker.h>
 
+#include <Analyzer/TableQualifiers.h>
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -438,20 +439,38 @@ static Block adaptBlockStructure(Block block, const Block & header)
     source_positions.reserve(header.columns());
     /// A column may be moved out of `block` only on its last use.
     VectorWithMemoryTracking<size_t> remaining_uses(block.columns());
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
+    for (const auto & elem : header)
     {
-        UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
-        for (const auto & elem : header)
+        const size_t occurrence = occurrences[elem.name]++;
+        auto it = block_positions_by_name.find(elem.name);
+        if (it == block_positions_by_name.end())
         {
-            const size_t occurrence = occurrences[elem.name]++;
-            auto it = block_positions_by_name.find(elem.name);
-            if (it == block_positions_by_name.end())
-            {
-                source_positions.emplace_back();
+            source_positions.emplace_back();
+            continue;
+        }
+        const size_t position = it->second[std::min(occurrence, it->second.size() - 1)];
+        source_positions.emplace_back(position);
+        ++remaining_uses[position];
+    }
+
+    /// A shard may name an `IN` set differently. It returns the columns of the same query in the same order, so a
+    /// missing column reads the one at its position if that differs from it only in set hashes.
+    if (block.columns() == header.columns())
+    {
+        for (size_t position = 0; position < header.columns(); ++position)
+        {
+            const auto & elem = header.getByPosition(position);
+            if (source_positions[position] || (elem.column && isColumnConst(*elem.column)))
                 continue;
+
+            const auto & candidate = block.getByPosition(position);
+            if (!occurrences.contains(candidate.name) && candidate.type->equals(*elem.type)
+                && normalizeGeneratedSetKeys(candidate.name) == normalizeGeneratedSetKeys(elem.name))
+            {
+                source_positions[position] = position;
+                ++remaining_uses[position];
             }
-            const size_t position = it->second[std::min(occurrence, it->second.size() - 1)];
-            source_positions.emplace_back(position);
-            ++remaining_uses[position];
         }
     }
 

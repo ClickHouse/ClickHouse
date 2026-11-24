@@ -1,6 +1,8 @@
 #include <Analyzer/TableQualifiers.h>
 
+#include <Analyzer/Utils.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <IO/WriteHelpers.h>
 
@@ -28,6 +30,71 @@ size_t skipQuotedSpan(const String & name, size_t at)
             ++pos;
     }
     return name.size();
+}
+
+/// Parse a key written by `PlannerContext::createSetKey` at `at`: `__set_<hash>` or `__set_<type>_<hash>`, where `<hash>`
+/// is `<digits>_<digits>`, followed by the `)` that closes the `IN` call. On success, set the offsets of the hash and of that `)`.
+bool parseSetKey(const String & name, size_t at, size_t & hash_begin, size_t & hash_end)
+{
+    static constexpr std::string_view prefix = "__set_";
+    if (name.compare(at, prefix.size(), prefix) != 0)
+        return false;
+
+    auto skip_digits = [&](size_t begin)
+    {
+        while (begin < name.size() && isNumericASCII(name[begin]))
+            ++begin;
+        return begin;
+    };
+    auto parse_hash = [&](size_t begin)
+    {
+        const size_t low_end = skip_digits(begin);
+        if (low_end == begin || low_end == name.size() || name[low_end] != '_')
+            return false;
+        const size_t end = skip_digits(low_end + 1);
+        if (end == low_end + 1 || end == name.size() || name[end] != ')')
+            return false;
+        hash_begin = begin;
+        hash_end = end;
+        return true;
+    };
+
+    const size_t key_begin = at + prefix.size();
+    if (parse_hash(key_begin))
+        return true;
+
+    /// `IDataType::getName` of the left operand: letters and digits, then optionally one balanced `(...)`.
+    size_t type_end = key_begin;
+    while (type_end < name.size() && isAlphaNumericASCII(name[type_end]))
+        ++type_end;
+    if (type_end == key_begin)
+        return false;
+
+    if (type_end < name.size() && name[type_end] == '(')
+    {
+        size_t depth = 0;
+        do
+        {
+            const char c = name[type_end];
+            if (c == '\'' || c == '`')
+            {
+                type_end = skipQuotedSpan(name, type_end);
+                continue;
+            }
+            if (c == '(')
+                ++depth;
+            else if (c == ')')
+                --depth;
+            ++type_end;
+        } while (depth > 0 && type_end < name.size());
+
+        if (depth > 0)
+            return false;
+    }
+
+    if (type_end == name.size() || name[type_end] != '_')
+        return false;
+    return parse_hash(type_end + 1);
 }
 
 }
@@ -82,6 +149,59 @@ String normalizeGeneratedTableQualifiers(const String & name, const std::unorder
             }
         }
         result.push_back(name[pos]);
+        ++pos;
+    }
+    return result;
+}
+
+String normalizeGeneratedSetKeys(const String & name)
+{
+    struct Call
+    {
+        bool is_in_function = false;
+        size_t argument = 0;
+    };
+    VectorWithMemoryTracking<Call> calls;
+
+    String result;
+    result.reserve(name.size());
+    size_t pos = 0;
+    while (pos < name.size())
+    {
+        const char c = name[pos];
+        if (c == '\'' || c == '`')
+        {
+            const size_t span_end = skipQuotedSpan(name, pos);
+            result.append(name, pos, span_end - pos);
+            pos = span_end;
+            continue;
+        }
+
+        size_t hash_begin = 0;
+        size_t hash_end = 0;
+        if (!calls.empty() && calls.back().is_in_function && calls.back().argument == 1 && pos >= 2
+            && name.compare(pos - 2, 2, ", ") == 0 && parseSetKey(name, pos, hash_begin, hash_end))
+        {
+            result.append(name, pos, hash_begin - pos);
+            pos = hash_end;
+            continue;
+        }
+
+        if (c == '(')
+        {
+            size_t function_begin = pos;
+            while (function_begin > 0 && isWordCharASCII(name[function_begin - 1]))
+                --function_begin;
+            calls.push_back({isNameOfInFunction(name.substr(function_begin, pos - function_begin)), 0});
+        }
+        else if (c == '[')
+            calls.push_back({});
+        else if (c == ',' && !calls.empty())
+            ++calls.back().argument;
+        else if ((c == ')' || c == ']') && !calls.empty())
+            calls.pop_back();
+
+        result.push_back(c);
         ++pos;
     }
     return result;
