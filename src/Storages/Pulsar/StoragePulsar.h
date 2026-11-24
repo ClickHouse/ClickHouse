@@ -5,7 +5,7 @@
 #include <Storages/IStreamingStorage.h>
 #include <Storages/Pulsar/PulsarConsumer.h>
 #include <Storages/Pulsar/PulsarSettings.h>
-#include <pulsar/Client.h>
+#include <Storages/Pulsar/Client/Client.h>
 #include <Poco/Semaphore.h>
 
 #include <atomic>
@@ -15,8 +15,8 @@ namespace DB
 {
 
 using PulsarConsumerPtr = std::shared_ptr<PulsarConsumer>;
-using ConsumerPtr = std::shared_ptr<pulsar::Consumer>;
-using ProducerPtr = std::shared_ptr<pulsar::Producer>;
+using ConsumerPtr = std::shared_ptr<Pulsar::Consumer>;
+using ProducerPtr = std::shared_ptr<Pulsar::Producer>;
 
 class ReadFromStoragePulsar;
 
@@ -102,7 +102,7 @@ private:
     LoggerPtr log;
 
 
-    pulsar::Client pulsar_client;
+    Pulsar::Client pulsar_client;
 
     Names topics;
 
@@ -124,7 +124,7 @@ private:
     /// Owned by the single streaming task; used by `stream_control.claimCycle`.
     UInt64 last_seen_refresh_epoch = 0;
 
-    void createConsumer(pulsar::Consumer & consumer);
+    void createConsumer(Pulsar::Consumer & consumer);
     /// Create consumers until there are `num_consumers` of them. Throws on the first failure.
     void createConsumers();
     /// The body of `init_task`: retries `createConsumers` until it succeeds.

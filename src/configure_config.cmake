@@ -25,7 +25,15 @@ endif()
 if (TARGET ch_contrib::rdkafka)
     set(USE_RDKAFKA 1)
 endif()
-if (TARGET ch_contrib::pulsar)
+# The Pulsar table engine uses a small, self-contained client built from `src/Storages/Pulsar/Client`.
+# It needs protobuf (the binary protocol is protobuf-based) and the compression codecs the broker may use.
+option(ENABLE_PULSAR "Enable the Pulsar table engine" ${ENABLE_LIBRARIES})
+if (ENABLE_PULSAR AND (NOT TARGET ch_contrib::protobuf OR NOT TARGET ch_contrib::lz4
+        OR NOT TARGET ch_contrib::zstd OR NOT TARGET ch_contrib::zlib OR NOT TARGET ch_contrib::snappy))
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't enable the Pulsar table engine without protobuf and the lz4, zstd, zlib and snappy codecs")
+    set(ENABLE_PULSAR OFF)
+endif()
+if (ENABLE_PULSAR)
     set(USE_PULSAR 1)
 endif()
 if (TARGET ch_rust::prql)

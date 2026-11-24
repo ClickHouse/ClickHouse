@@ -4,12 +4,12 @@
 #include <chrono>
 #include <string>
 #include <Storages/IMessageProducer.h>
-#include <pulsar/Producer.h>
+#include <Storages/Pulsar/Client/Producer.h>
 
 namespace DB
 {
 
-using ProducerPtr = std::shared_ptr<pulsar::Producer>;
+using ProducerPtr = std::shared_ptr<Pulsar::Producer>;
 
 class PulsarProducer : public IMessageProducer
 {

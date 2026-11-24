@@ -2,9 +2,7 @@
 
 #include <IO/ReadBuffer.h>
 #include <Common/Logger.h>
-#include <pulsar/BatchReceivePolicy.h>
-#include <pulsar/Consumer.h>
-#include <pulsar/MessageBatch.h>
+#include <Storages/Pulsar/Client/Consumer.h>
 
 namespace DB
 {
@@ -56,11 +54,11 @@ public:
 
 private:
     LoggerPtr log;
-    pulsar::Consumer consumer;
+    Pulsar::Consumer consumer;
     bool usable = true;
-    pulsar::Messages polled_messages;
-    pulsar::Messages::const_iterator next_message;
-    pulsar::MessageIdList pending_acks;
+    Pulsar::Messages polled_messages;
+    Pulsar::Messages::const_iterator next_message;
+    Pulsar::MessageIdList pending_acks;
 
     bool hasPolledMessages() const { return next_message != polled_messages.end(); }
 };

@@ -7,7 +7,7 @@
 #include <Common/Logger.h>
 #include <Common/assert_cast.h>
 
-#include <pulsar/MessageBuilder.h>
+#include <Storages/Pulsar/Client/Message.h>
 
 namespace DB
 {
@@ -42,7 +42,7 @@ PulsarProducer::~PulsarProducer()
 
 void PulsarProducer::produce(const String & message, size_t /* rows_in_message */, const Columns & columns, size_t last_row)
 {
-    pulsar::MessageBuilder builder;
+    Pulsar::MessageBuilder builder;
     builder.setContent(message);
 
     // Note: if it will be few rows per message - it will take the value from last row of block
@@ -62,23 +62,23 @@ void PulsarProducer::produce(const String & message, size_t /* rows_in_message *
     /// handled by blocking inside `send` (bounded by the send timeout). Every non-OK result is
     /// therefore a real error and must fail the insert instead of being retried indefinitely.
     auto result = producer->send(final_message);
-    if (result != pulsar::ResultOk)
+    if (result != Pulsar::ResultOk)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_PULSAR,
             "Failed to send message to Pulsar topic {}: {}",
             topic,
-            pulsar::strResult(result));
+            Pulsar::strResult(result));
 }
 
 void PulsarProducer::finish()
 {
     auto result = producer->flush();
-    if (result != pulsar::ResultOk)
+    if (result != Pulsar::ResultOk)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_PULSAR,
             "Failed to flush messages to Pulsar topic {}: {}",
             topic,
-            pulsar::strResult(result));
+            Pulsar::strResult(result));
 
     /// Unregister the publisher on the broker: each `INSERT` creates its own producer
     /// on the connection shared by the table, so an unclosed one would stay there.
@@ -86,12 +86,12 @@ void PulsarProducer::finish()
     /// after a failure. The failure cases leave nothing on the broker anyway: a timed out
     /// `CloseProducer` request has already been sent, and a broken connection drops its producers.
     result = producer->close();
-    if (result != pulsar::ResultOk)
+    if (result != Pulsar::ResultOk)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_PULSAR,
             "Failed to close the producer for Pulsar topic {}: {}",
             topic,
-            pulsar::strResult(result));
+            Pulsar::strResult(result));
     closed = true;
 }
 

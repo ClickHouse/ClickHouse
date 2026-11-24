@@ -196,8 +196,10 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
-if (TARGET ch_contrib::pulsar)
+if (USE_PULSAR)
+    add_subdirectory(Storages/Pulsar/Client)
     add_headers_and_sources(dbms Storages/Pulsar)
+    add_headers_and_sources(dbms Storages/Pulsar/Client)
 endif()
 
 
@@ -758,8 +760,11 @@ if (TARGET ch_contrib::rdkafka)
     target_link_libraries(dbms PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
-if (TARGET ch_contrib::pulsar)
-    target_link_libraries(dbms PRIVATE ch_contrib::pulsar)
+if (USE_PULSAR)
+    target_link_libraries(dbms PRIVATE clickhouse_pulsar_proto ch_contrib::lz4 ch_contrib::zstd ch_contrib::zlib ch_contrib::snappy)
+    # The hand-written client sources are compiled into `dbms` and include the generated protocol header,
+    # so the protobuf code must be generated before `dbms` is compiled.
+    add_dependencies(dbms clickhouse_pulsar_proto)
 endif()
 
 if (TARGET ch_contrib::nats_io)

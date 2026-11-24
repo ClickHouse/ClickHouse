@@ -21,7 +21,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/Pulsar/PulsarLogger.h>
 #include <Storages/Pulsar/PulsarProducer.h>
 #include <Storages/Pulsar/PulsarSettings.h>
 #include <Storages/Pulsar/PulsarSource.h>
@@ -181,12 +180,12 @@ private:
 namespace
 {
 
-pulsar::InitialPosition parseSubscriptionInitialPosition(const String & value)
+Pulsar::InitialPosition parseSubscriptionInitialPosition(const String & value)
 {
     if (value == "earliest")
-        return pulsar::InitialPositionEarliest;
+        return Pulsar::InitialPositionEarliest;
     if (value == "latest")
-        return pulsar::InitialPositionLatest;
+        return Pulsar::InitialPositionLatest;
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Invalid `pulsar_subscription_initial_position` '{}': it must be `earliest` or `latest`",
@@ -245,12 +244,9 @@ void checkServiceURLIsAllowed(const String & service_url, const ContextPtr & con
     }
 }
 
-pulsar::ClientConfiguration createClientConfiguration()
+Pulsar::ClientConfiguration createClientConfiguration()
 {
-    pulsar::ClientConfiguration config;
-    /// Route the client library logs into the server logging (`setLogger` takes ownership).
-    /// The default logger writes to stdout from the client's internal threads without synchronization.
-    config.setLogger(new PulsarLoggerFactory());
+    Pulsar::ClientConfiguration config;
     /// The client verifies only the certificate chain of a `pulsar+ssl://` broker by default, so any
     /// trusted certificate issued for another host would be accepted. Check the hostname as well.
     config.setValidateHostName(true);
@@ -590,8 +586,8 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
 
 ProducerPtr StoragePulsar::createProducer()
 {
-    ProducerPtr producer = std::make_shared<pulsar::Producer>();
-    pulsar::ProducerConfiguration config;
+    ProducerPtr producer = std::make_shared<Pulsar::Producer>();
+    Pulsar::ProducerConfiguration config;
     /// The client treats a zero (or negative) send timeout as no timeout at all: a synchronous `send` would
     /// then wait forever for a broker that stopped acknowledging, and `KILL QUERY` could not interrupt it.
     /// Use the same effective timeout as the consumers and require it to fit into the client's `int`.
@@ -610,16 +606,16 @@ ProducerPtr StoragePulsar::createProducer()
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Pulsar table with multiple topics!");
 
     auto result = pulsar_client.createProducer(topics[0], config, *producer);
-    if (result != pulsar::ResultOk)
+    if (result != Pulsar::ResultOk)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_PULSAR,
             "Cannot create Pulsar producer for topic {}: {}",
             topics[0],
-            pulsar::strResult(result));
+            Pulsar::strResult(result));
     return producer;
 }
 
-void StoragePulsar::createConsumer(pulsar::Consumer & consumer)
+void StoragePulsar::createConsumer(Pulsar::Consumer & consumer)
 {
     const size_t poll_timeout_ms = getPollTimeoutMilliseconds();
     /// A zero timeout would make `batchReceive` wait for a full batch without a timer, so a read from
@@ -629,20 +625,20 @@ void StoragePulsar::createConsumer(pulsar::Consumer & consumer)
             ErrorCodes::BAD_ARGUMENTS,
             "The setting `pulsar_poll_timeout_ms` (or the inherited `stream_poll_timeout_ms`) must be positive");
 
-    pulsar::ConsumerConfiguration config;
-    config.setConsumerType(pulsar::ConsumerType::ConsumerShared);
+    Pulsar::ConsumerConfiguration config;
+    config.setConsumerType(Pulsar::ConsumerType::ConsumerShared);
     /// NOLINTNEXTLINE(google-runtime-int)
     config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(poll_timeout_ms)});
     /// The client defaults to `InitialPositionLatest`, which would silently skip the backlog of a non-empty topic.
     config.setSubscriptionInitialPosition(parseSubscriptionInitialPosition((*pulsar_settings)[PulsarSetting::pulsar_subscription_initial_position].value));
 
     auto result = pulsar_client.subscribe(topics, group_name, config, consumer);
-    if (result != pulsar::ResultOk)
+    if (result != Pulsar::ResultOk)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_PULSAR,
             "Cannot subscribe to Pulsar topics [{}]: {}",
             fmt::join(topics, ", "),
-            pulsar::strResult(result));
+            Pulsar::strResult(result));
 }
 
 size_t StoragePulsar::getPollTimeoutMilliseconds() const

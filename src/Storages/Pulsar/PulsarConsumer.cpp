@@ -1,7 +1,7 @@
 #include <Storages/Pulsar/PulsarConsumer.h>
 
 #include <IO/ReadBufferFromMemory.h>
-#include <pulsar/Client.h>
+#include <Storages/Pulsar/Client/Client.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -47,19 +47,19 @@ ReadBufferPtr PulsarConsumer::consume()
         polled_messages.clear();
         next_message = polled_messages.end();
     }
-    pulsar::Messages new_messages;
+    Pulsar::Messages new_messages;
     auto result = consumer.batchReceive(new_messages);
     /// On the batch receive timeout the client completes the call with `ResultOk` and whatever
     /// messages were collected (possibly none). Any other result is a terminal condition of the
     /// consumer (e.g. `ResultAlreadyClosed`, `ResultConsumerNotInitialized`) and must not be
     /// mistaken for an idle topic, otherwise background streaming would silently stall forever.
-    if (result != pulsar::ResultOk)
+    if (result != Pulsar::ResultOk)
     {
         /// The consumer must not be reused after a terminal error: the next poll would fail the
         /// same way, so the storage drops it and recreates the slot (see `returnConsumer`).
         usable = false;
         throw Exception(
-            ErrorCodes::CANNOT_CONNECT_PULSAR, "Failed to receive messages from Pulsar: {}", pulsar::strResult(result));
+            ErrorCodes::CANNOT_CONNECT_PULSAR, "Failed to receive messages from Pulsar: {}", Pulsar::strResult(result));
     }
     if (new_messages.empty())
         return nullptr;
@@ -75,13 +75,13 @@ void PulsarConsumer::commit()
         return;
 
     auto result = consumer.acknowledge(pending_acks);
-    if (result != pulsar::ResultOk)
+    if (result != Pulsar::ResultOk)
     {
         /// Not a fatal error for the query: the engine provides at-least-once semantics, so the
         /// messages may be processed again. To make sure they are actually redelivered, the consumer
         /// must not go back to the pool: the storage closes it (which puts all its unacknowledged
         /// messages onto the redelivery path) and recreates the slot (see `returnConsumer`).
-        LOG_WARNING(log, "Failed to acknowledge {} messages: {}", pending_acks.size(), pulsar::strResult(result));
+        LOG_WARNING(log, "Failed to acknowledge {} messages: {}", pending_acks.size(), Pulsar::strResult(result));
         usable = false;
     }
     pending_acks.clear();
