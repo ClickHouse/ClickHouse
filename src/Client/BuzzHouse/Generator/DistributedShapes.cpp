@@ -433,7 +433,7 @@ public:
             }
             case 12: {
                 /// Virtual columns describe the parts a replica reads, which differ from the parts of the initiator
-                static const DB::Strings parts = {"_part", "_partition_id", "_part_index", "_part_uuid", "_partition_value"};
+                static const DB::Strings parts = {"_part", "_partition_id", "_part_index", "_part_uuid"};
                 static const DB::Strings offsets = {"_part_offset", "_part_starting_offset", "_part_granule_offset", "_block_number"};
                 return fmt::format(
                     "SELECT {}, count(), min({}), max({}) FROM {}{} GROUP BY ALL ORDER BY ALL",
