@@ -6,6 +6,7 @@
 #include <Processors/Executors/Runtime/V1/PollingQueue.h>
 #include <Processors/Executors/Runtime/V1/ThreadsQueue.h>
 #include <Processors/Executors/Runtime/V1/TasksQueue.h>
+#include <Common/CacheLine.h>
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
 #include <Common/Scheduler/MemoryReservation.h>
@@ -75,7 +76,7 @@ class ExecutorTasks : public ISpillRequestListener
 
     /// Requested threads (for queued tasks or in place of downscaled ones) that wait for a CPU slot.
     /// Changed under `mutex`, read without it after every task, so it has its own cache line.
-    alignas(64) std::atomic<size_t> threads_to_spawn = 0;
+    alignas(CH_CACHE_LINE_SIZE) std::atomic<size_t> threads_to_spawn = 0;
 
     /// Threshold found by rolling dice.
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
@@ -112,7 +113,7 @@ public:
     void finish();
     bool isFinished() const { return finished; }
 
-    void rethrowFirstThreadException(const LoggerPtr & log);
+    void logLogicalErrors(const LoggerPtr & log);
 
     void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
     void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<IProcessor> & queue, std::unique_lock<std::mutex> & lock);

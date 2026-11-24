@@ -602,8 +602,17 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearIndexUncompressedCache();
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            system_context->clearVectorSimilarityIndexCache();
+            if (table_id.empty())
+            {
+                /// Clearing the whole cache evicts the entries of every table, so it requires the privilege on all tables.
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+                system_context->clearVectorSimilarityIndexCache();
+            }
+            else
+            {
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, table_id);
+                getContext()->clearVectorSimilarityIndexCache(table_id);
+            }
             break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
@@ -650,8 +659,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->clear();
-            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`,
-            /// `LLVMContext`-interned types/constants accumulated across compiles) is reclaimed too.
+            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`) is reclaimed too.
             /// Each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`, so
             /// concurrent operations are not affected: the actual CHJIT survives until every user
             /// has released its handle. After the cache->clear() above, the only remaining
@@ -1532,7 +1540,6 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
     std::optional<Exception> exception;
     auto [database, table] = DatabaseCatalog::instance().getTableImpl(replica, getContext(), &exception);
-    ASTPtr create_ast;
 
     if (!table)
     {
@@ -1569,6 +1576,24 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
+    /// Analyze the stored definition while the table is still attached and working, so that a failure
+    /// (e.g. a constraint's subquery reads a missing table) aborts the restart instead of losing the table.
+    /// Not under the exclusive lock below: such a subquery may need to lock a table that is being restarted.
+    /// The DDL guard held above keeps the definition from changing until the detach.
+    ASTPtr create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
+
+    /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
+    auto & create = create_ast->as<ASTCreateQuery &>();
+    create.attach = true;
+    /// The definition comes from metadata stored on this server, not from a user, so it must load the
+    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
+    /// that only a freshly introduced definition needs.
+    create.attach_short_syntax = true;
+
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list, system_context, LoadingStrictnessLevel::ATTACH);
+    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
+    auto data_path = database->getTableDataPath(create);
+
     SCOPE_EXIT({
         if (table)
             table->is_being_restarted = false;
@@ -1592,32 +1617,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
-
         database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
-    {
-        QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-        database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
-        {
-            if (query_status)
-                query_status->throwIfKilled();
-        });
-    }
-
-    /// Attach actions
-    /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-    auto & create = create_ast->as<ASTCreateQuery &>();
-    create.attach = true;
-    /// The definition comes from metadata stored on this server, not from a user, so it must load the
-    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
-    /// that only a freshly introduced definition needs.
-    create.attach_short_syntax = true;
-
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list, system_context, LoadingStrictnessLevel::ATTACH);
-    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
-    auto data_path = database->getTableDataPath(create);
 
     /// After the table is detached, we must re-create and re-attach it.
     /// If table creation fails (e.g. due to memory allocation failure from fault injection),
@@ -1631,6 +1633,15 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     StoragePtr new_table;
     try
     {
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
+
         size_t non_zk_retries = 0;
         constexpr size_t max_non_zk_retries = 10;
         while (true)
@@ -2773,6 +2784,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
+    getContext()->checkAccess(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, database_name);
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
@@ -3134,8 +3146,13 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
+        }
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
             break;
@@ -3547,15 +3564,19 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM);
             break;
         }
-        /// The parser cases of the failpoint statements and of SYSTEM SET COVERAGE TEST never read an
-        /// ON CLUSTER clause, so those cluster spellings do not parse and reach no host. UNKNOWN and
-        /// END are not statements.
+        /// The parser cases of the failpoint statements, of SYSTEM SET COVERAGE TEST and of the Amber
+        /// statements never read an ON CLUSTER clause, so those cluster spellings do not parse and reach
+        /// no host. UNKNOWN and END are not statements.
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
+        case Type::DROP_AMBER_NODE:
+        case Type::ALLOCATE_AMBER_VOLUME:
+        case Type::CREATE_AMBER_VOLUME:
+        case Type::DROP_AMBER_VOLUME:
         case Type::UNKNOWN:
         case Type::END: break;
     }

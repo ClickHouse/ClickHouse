@@ -10,6 +10,7 @@
 #include <Functions/castTypeToEither.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <limits>
@@ -45,7 +46,7 @@ std::optional<typename NumberTraits::ResultOfIntegerDivision<A, B>::Type> tryDiv
     {
         /// Unsigned subtraction also represents the magnitude of the minimum signed value.
         const auto unsigned_value = static_cast<Unsigned>(value);
-        return negative ? Unsigned(0) - unsigned_value : unsigned_value;
+        return negative ? common::negateIgnoreOverflow(unsigned_value) : unsigned_value;
     };
 
     const Unsigned quotient = magnitude(a, negative_a) / magnitude(b, negative_b);
@@ -123,31 +124,31 @@ public:
     }
 
     /// Keep canonical expression names distinct from floating-point `divide` in indexes and projections.
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 2;
     }
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         /// The default wrapper executes a constant function once even for an empty block. Exact
         /// division handles constants directly so a masked-out division is not evaluated.
         return false;
     }
     /// Skip unused dictionary entries and rows masked by either input's null map before dividing.
-    bool canBeExecutedOnDefaultArguments() const override
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override
     {
         return false;
     }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
     {
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr result;
         const bool matched = dispatchIntegerTypes(arguments, [&]<typename A, typename B>()
@@ -160,7 +161,7 @@ public:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
     {
         ColumnPtr result;
         const bool matched = dispatchIntegerTypes({arguments[0].type, arguments[1].type}, [&]<typename A, typename B>()
