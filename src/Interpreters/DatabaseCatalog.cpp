@@ -1662,7 +1662,6 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
-        /// A table dropped without a storage could not be loaded, so it cannot be attached back.
         if (!dropped_table.table)
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} cannot be undropped because it could not be loaded",

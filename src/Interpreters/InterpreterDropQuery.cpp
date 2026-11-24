@@ -215,7 +215,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
 
-    /// A table whose loading failed has no storage to resolve: drop it by its stored definition if that is safe.
     if (query.kind == ASTDropQuery::Kind::Drop && !query.if_empty && !context_->getCurrentTransaction())
     {
         if (auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name))
@@ -508,7 +507,6 @@ BlockIO InterpreterDropQuery::executeToTableFailedToLoad(
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// The size of the table is unknown, so only an unlimited `max_table_size_to_drop` lets it go.
     if (create.storage->engine->name.ends_with("MergeTree"))
     {
         size_t max_table_size_to_drop = settings[Setting::max_table_size_to_drop].changed ? settings[Setting::max_table_size_to_drop].value
