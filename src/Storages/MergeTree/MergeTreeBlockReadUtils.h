@@ -19,6 +19,11 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+/// Whether the subcolumn is extracted from its converted column because the conversion replaces NULLs with the DEFAULT.
+/// A key subcolumn is read from the part, which is sorted and indexed by it.
+bool isSubcolumnReadFromConvertedColumn(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part);
+
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
 /// Otherwise they are computed by their default expressions.
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);

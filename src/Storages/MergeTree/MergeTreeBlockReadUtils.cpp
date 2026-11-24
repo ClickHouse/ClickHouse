@@ -19,6 +19,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/inplaceBlockConversions.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -171,6 +172,17 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+}
+
+bool isSubcolumnReadFromConvertedColumn(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    if (!conversionReplacesNullsWithDefault(column_type_in_part, subcolumn.getTypeInStorage()))
+        return false;
+
+    const auto & metadata = storage_snapshot->metadata;
+    return !std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
+        && !std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name);
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)

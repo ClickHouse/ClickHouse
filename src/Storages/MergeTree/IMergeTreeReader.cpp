@@ -2,6 +2,7 @@
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/ColumnsCache.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -620,11 +621,16 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         bool frozen = false;
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
         {
-            type_in_part = DataTypeFactory::instance().get(missing->type_name);
-            requested_type_in_part = name_pair.second.empty()
-                ? type_in_part
-                : type_in_part->getSubcolumnType(name_pair.second);
-            frozen = true;
+            auto frozen_type = DataTypeFactory::instance().get(missing->type_name);
+            /// The conversion replaces the omitted values, all NULL, with the DEFAULT: such a subcolumn is filled like one the part lacks.
+            if (name_pair.second.empty() || !isSubcolumnReadFromConvertedColumn(storage_snapshot, required_column, frozen_type))
+            {
+                type_in_part = std::move(frozen_type);
+                requested_type_in_part = name_pair.second.empty()
+                    ? type_in_part
+                    : type_in_part->getSubcolumnType(name_pair.second);
+                frozen = true;
+            }
         }
 
         NameAndTypePair missed_column{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
