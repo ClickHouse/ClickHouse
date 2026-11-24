@@ -43,6 +43,10 @@ folded min max	005
 folded sample	473
 folded sample without index	473
 folded sample expected	473
+nested folded min max	005
+nested folded sample	473
+nested folded sample without index	473
+nested folded sample expected	473
 modulo partition	(\'May\',1)
 modulo partition pruning	1
 distinct in order	300

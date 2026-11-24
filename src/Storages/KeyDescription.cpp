@@ -3,6 +3,7 @@
 #include <DataTypes/TypeTree.h>
 
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -18,6 +19,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -47,14 +49,42 @@ namespace ErrorCodes
 namespace
 {
 
-using FunctionPredicate = std::function<bool(const IFunctionBase &)>;
+/// Takes the canonical function name and the number of arguments.
+using FunctionPredicate = std::function<bool(const String &, size_t)>;
 
 bool callsAnyOf(const IFunctionBase & function, const FunctionPredicate & is_carrier);
+
+/// Folding erases the calls below a constant, e.g. `formatDateTime` in `upper(formatDateTime(<const>, '%M'))`,
+/// but its name is still the text of the whole expression. A name that does not parse counts as a carrier.
+bool textCallsAnyOf(const String & text, const FunctionPredicate & is_carrier)
+{
+    ParserExpression parser;
+    String error;
+    const char * begin = text.data();
+    ASTPtr ast = tryParseQuery(
+        parser, begin, text.data() + text.size(), error, false, "", false, 0,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
+    if (!ast)
+        return true;
+
+    const auto & factory = FunctionFactory::instance();
+    std::function<bool(const IAST &)> visit = [&](const IAST & node)
+    {
+        if (const auto * function = node.as<ASTFunction>())
+        {
+            const String name = factory.getCanonicalNameIfAny(factory.getAliasToOrName(function->name));
+            if (is_carrier(name, function->arguments ? function->arguments->children.size() : 0))
+                return true;
+        }
+        return std::ranges::any_of(node.children, [&](const ASTPtr & child) { return visit(*child); });
+    };
+    return visit(*ast);
+}
 
 bool nodeCallsAnyOf(const ActionsDAG::Node & node, const FunctionPredicate & is_carrier)
 {
     /// A constant-folded call is a COLUMN node that keeps the `function_base` of the call.
-    if (node.type == ActionsDAG::ActionType::COLUMN && node.function_base && callsAnyOf(*node.function_base, is_carrier))
+    if (node.type == ActionsDAG::ActionType::COLUMN && node.function_base && textCallsAnyOf(node.result_name, is_carrier))
         return true;
     return !allNodeFunctions(node, [&](const IFunctionBase & function) { return !callsAnyOf(function, is_carrier); });
 }
@@ -62,7 +92,7 @@ bool nodeCallsAnyOf(const ActionsDAG::Node & node, const FunctionPredicate & is_
 /// A lambda body is a separate DAG held by its `FunctionCapture` (`FunctionExpression` once folded), not a child node.
 bool callsAnyOf(const IFunctionBase & function, const FunctionPredicate & is_carrier)
 {
-    if (is_carrier(function))
+    if (is_carrier(function.getName(), function.getArgumentTypes().size()))
         return true;
 
     const ActionsDAG * body = nullptr;
@@ -100,11 +130,9 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
     static const std::unordered_set<std::string_view> parse_functions = {
         "parseDateTime", "parseDateTimeOrZero", "parseDateTimeOrNull", "parseDateTime64", "parseDateTime64OrZero", "parseDateTime64OrNull"};
 
-    auto is_carrier = [&](const IFunctionBase & function)
+    auto is_carrier = [&](const String & name, size_t num_arguments)
     {
-        const auto & name = function.getName();
-        if (format_deviates
-            && (name == "formatDateTime" || (name == "fromUnixTimestamp" && function.getArgumentTypes().size() >= 2)))
+        if (format_deviates && (name == "formatDateTime" || (name == "fromUnixTimestamp" && num_arguments >= 2)))
             return true;
         return parse_deviates && parse_functions.contains(name);
     };

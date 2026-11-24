@@ -28,6 +28,8 @@ DROP TABLE IF EXISTS t_final;
 DROP TABLE IF EXISTS t_sample;
 DROP TABLE IF EXISTS t_folded;
 DROP TABLE IF EXISTS t_folded_sample;
+DROP TABLE IF EXISTS t_nested_folded;
+DROP TABLE IF EXISTS t_nested_folded_sample;
 DROP TABLE IF EXISTS t_modulo;
 
 -- 12 months x 60 minutes.
@@ -86,6 +88,13 @@ INSERT INTO t_folded SELECT toString(number) FROM numbers(1000);
 CREATE TABLE t_folded_sample (s String) ENGINE = MergeTree ORDER BY cityHash64(s, formatDateTime(toDateTime('2024-05-01 00:05:00', 'UTC'), '%M'))
     SAMPLE BY cityHash64(s, formatDateTime(toDateTime('2024-05-01 00:05:00', 'UTC'), '%M')) SETTINGS index_granularity = 1;
 INSERT INTO t_folded_sample SELECT * FROM t_folded;
+-- The `formatDateTime` call inside another constant function is folded together with it.
+CREATE TABLE t_nested_folded (s String) ENGINE = MergeTree ORDER BY concat(s, upper(formatDateTime(toDateTime('2024-05-01 00:05:00', 'UTC'), '%M')))
+    SETTINGS index_granularity = 1;
+INSERT INTO t_nested_folded SELECT * FROM t_folded;
+CREATE TABLE t_nested_folded_sample (s String) ENGINE = MergeTree ORDER BY cityHash64(s, upper(formatDateTime(toDateTime('2024-05-01 00:05:00', 'UTC'), '%M')))
+    SAMPLE BY cityHash64(s, upper(formatDateTime(toDateTime('2024-05-01 00:05:00', 'UTC'), '%M'))) SETTINGS index_granularity = 1;
+INSERT INTO t_nested_folded_sample SELECT * FROM t_folded;
 
 CREATE TABLE t_modulo (dt DateTime('UTC'), id UInt32) ENGINE = MergeTree PARTITION BY (formatDateTime(dt, '%M'), id % 2) ORDER BY id;
 
@@ -159,6 +168,12 @@ SELECT 'folded sample', count() FROM t_folded_sample SAMPLE 0.5;
 SELECT 'folded sample without index', count() FROM t_folded_sample SAMPLE 0.5 SETTINGS use_primary_key = 0;
 SELECT 'folded sample expected', count() FROM t_folded_sample
 WHERE cityHash64(s, formatDateTime(toDateTime('2024-05-01 00:05:00', 'UTC'), '%M')) < 9223372036854775808;
+SELECT 'nested folded min max', min(concat(s, upper(formatDateTime(toDateTime('2024-05-01 00:05:00', 'UTC'), '%M')))) FROM t_nested_folded
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT 'nested folded sample', count() FROM t_nested_folded_sample SAMPLE 0.5;
+SELECT 'nested folded sample without index', count() FROM t_nested_folded_sample SAMPLE 0.5 SETTINGS use_primary_key = 0;
+SELECT 'nested folded sample expected', count() FROM t_nested_folded_sample
+WHERE cityHash64(s, upper(formatDateTime(toDateTime('2024-05-01 00:05:00', 'UTC'), '%M'))) < 9223372036854775808;
 
 -- A partition key with `modulo` is rebuilt for every INSERT: its values must not follow the inserting session.
 INSERT INTO t_modulo VALUES ('2024-05-01 00:05:00', 1);
@@ -185,4 +200,6 @@ DROP TABLE t_final;
 DROP TABLE t_sample;
 DROP TABLE t_folded;
 DROP TABLE t_folded_sample;
+DROP TABLE t_nested_folded;
+DROP TABLE t_nested_folded_sample;
 DROP TABLE t_modulo;
