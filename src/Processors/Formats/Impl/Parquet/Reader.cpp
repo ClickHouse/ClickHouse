@@ -150,6 +150,11 @@ static std::optional<size_t> maxByteSizeWithExpandedValues(const IColumn & colum
 {
     if (typeid_cast<const ColumnObject *>(&column) || typeid_cast<const ColumnDynamic *>(&column))
         return std::nullopt;
+    /// A `ColumnReplicated` holds each value once, while the query may materialize it in every row. This reader does not
+    /// write one to the columns cache (see `preparePrewhere`: a column that can be written to the cache is not decoded
+    /// as `ColumnReplicated`), so this is only a safeguard: its size is not risked.
+    if (typeid_cast<const ColumnReplicated *>(&column))
+        return std::nullopt;
     if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
     {
         const IColumn & dictionary = *low_cardinality->getDictionary().getNestedNotNullableColumn();
