@@ -1114,12 +1114,13 @@ one step takes longer time
     DECLARE(Bool, merge_use_batch_sorting_queue, false, R"(
 Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
 
-Only applies to merges that do not change rows: the merges of plain `MergeTree` parts
-(`Ordinary` merge mode) and of normal projection parts. The merges of parts of engines with
-merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`, `SummingMergeTree`,
-`AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
-`VersionedCollapsingMergeTree`, and of aggregate projection parts keep using the default queue
-regardless of this setting.
+Applies only to the merges in `Ordinary` merge mode: the merges of plain `MergeTree` parts, including
+the merges that drop or rewrite rows (lightweight deletes, TTL deletes, patch parts of lightweight
+updates and `OPTIMIZE ... DEDUPLICATE`), and the merges of normal projection parts. The merge
+algorithms of engines with merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
+`VersionedCollapsingMergeTree`, and of aggregate projection parts choose their own sorting queue, so
+this setting has no effect on them.
 )", 0, \
         {"26.8", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."}) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
