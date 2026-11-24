@@ -33,6 +33,13 @@ void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
     loop_state.store(Loop::RUN);
 }
 
+uint16_t RabbitMQHandler::onNegotiate(AMQP::TcpConnection * connection, uint16_t interval)
+{
+    const auto negotiated_interval = AMQP::LibUvHandler::onNegotiate(connection, interval);
+    heartbeat_interval.store(negotiated_interval);
+    return negotiated_interval;
+}
+
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
