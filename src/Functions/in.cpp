@@ -105,6 +105,36 @@ namespace
     return isNumber(left) && isNumber(right) && !left->equals(*right);
 }
 
+[[nodiscard]] bool hasCompoundCarrierForIn(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (isDynamic(right) || isVariant(right))
+        return nested || isArray(left) || isMap(left);
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasCompoundCarrierForIn(left_array->getNestedType(), right_array->getNestedType(), true);
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasCompoundCarrierForIn(left_map->getKeyType(), right_map->getKeyType(), true)
+                || hasCompoundCarrierForIn(left_map->getValueType(), right_map->getValueType(), true);
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasCompoundCarrierForIn(left_tuple->getElements()[i], right_tuple->getElements()[i], true))
+                    return true;
+        }
+    }
+    return false;
+}
+
 [[nodiscard]] bool hasMixedStringDomain(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -821,7 +851,8 @@ public:
             const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
             const bool mixed_string_domain = hasMixedStringDomain(left_type, key_type);
             if (!isDynamic(left_type) && !isVariant(left_type)
-                && (isDynamic(key_type) || isVariant(key_type)) && !only_null_key)
+                && (isDynamic(key_type) || isVariant(key_type) || hasCompoundCarrierForIn(left_type, key_type))
+                && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",

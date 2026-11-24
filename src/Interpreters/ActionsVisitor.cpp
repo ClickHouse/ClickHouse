@@ -621,6 +621,36 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
     return false;
 }
 
+bool hasCompoundCarrierForIn(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (isDynamic(right) || isVariant(right))
+        return nested || isArray(left) || isMap(left);
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasCompoundCarrierForIn(left_array->getNestedType(), right_array->getNestedType(), true);
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasCompoundCarrierForIn(left_map->getKeyType(), right_map->getKeyType(), true)
+                || hasCompoundCarrierForIn(left_map->getValueType(), right_map->getValueType(), true);
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasCompoundCarrierForIn(left_tuple->getElements()[i], right_tuple->getElements()[i], true))
+                    return true;
+        }
+    }
+    return false;
+}
+
 bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -784,7 +814,8 @@ ASTPtr makeComplexNonConstantInReplacement(
 
         const auto source_bare_type = removeNullable(removeLowCardinality(source_type));
         ASTPtr match;
-        if (hasCompoundStringToNumericLeaf(left_operand_type, source_type))
+        if (hasCompoundCarrierForIn(left_operand_type, source_type)
+            || hasCompoundStringToNumericLeaf(left_operand_type, source_type))
         {
             match = makeASTFunction(
                 isMap(left_bare_type) ? "__mapValueEqualsForIn" : "__arrayValueEqualsForIn",
@@ -1862,10 +1893,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     const bool left_is_temporal = left_argument_type
                         && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(
                             removeNullable(removeLowCardinality(left_argument_type)));
-                    const bool left_is_numeric = left_argument_type
-                        && isNumber(removeNullable(removeLowCardinality(left_argument_type)));
-                    const bool left_is_identifier = left_bare_type
-                        && (isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type));
+                    auto is_supported_scalar_source = [](const DataTypePtr & type)
+                    {
+                        const auto bare_type = removeNullable(removeLowCardinality(type));
+                        return type->onlyNull() || isNumber(bare_type) || isBool(bare_type)
+                            || isStringOrFixedString(bare_type) || isEnum(bare_type)
+                            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type)
+                            || isUUID(bare_type) || isIPv4(bare_type) || isIPv6(bare_type)
+                            || isDynamic(bare_type) || isVariant(bare_type);
+                    };
                     const bool compare_numeric_sources = use_standard_null_semantics
                         && left_argument_type
                         && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
@@ -1878,29 +1914,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             || left_is_temporal)
                         && element_types_known
                         && !element_types.empty()
-                        && std::all_of(element_types.begin(), element_types.end(), [left_is_temporal, left_is_numeric, left_is_identifier, &left_bare_type](const auto & type)
-                        {
-                            const auto bare_type = removeNullable(removeLowCardinality(type));
-                            return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
-                                || isDynamic(bare_type) || isVariant(bare_type)
-                                || (left_is_identifier && left_bare_type->equals(*bare_type))
-                                || (left_is_temporal && left_bare_type->equals(*bare_type))
-                                || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)))
-                                || (left_is_numeric && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type));
-                        });
+                        && std::all_of(element_types.begin(), element_types.end(), is_supported_scalar_source);
                     const bool compare_numeric_array_sources = use_standard_null_semantics && right_argument_is_array
                         && left_bare_type && (isNumber(left_bare_type) || isBool(left_bare_type)
                             || isStringOrFixedString(left_bare_type) || isEnum(left_bare_type) || isUUID(left_bare_type)
                             || isIPv4(left_bare_type) || isIPv6(left_bare_type) || left_is_temporal) && right_array_type
-                        && [&]
-                        {
-                            const auto & element_type = right_array_type->getNestedType();
-                            const auto bare_type = removeNullable(removeLowCardinality(element_type));
-                            return element_type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
-                                || isDynamic(bare_type) || isVariant(bare_type)
-                                || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)))
-                                || (left_is_numeric && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type));
-                        }();
+                        && is_supported_scalar_source(right_array_type->getNestedType());
                     auto needs_complex_candidate_rewrite = [](const DataTypePtr & type)
                     {
                         const auto bare_type = removeNullable(removeLowCardinality(type));
@@ -1923,12 +1942,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         {
                             return needs_complex_candidate_rewrite(type)
                                 || needsExactCompoundNumericInComparison(left_argument_type, type)
+                                || hasCompoundCarrierForIn(left_argument_type, type)
                                 || hasCompoundStringToNumericLeaf(left_argument_type, type);
                         });
                     const bool compare_complex_array_sources = use_standard_null_semantics && right_argument_is_array && left_is_complex
                         && right_array_type
                         && (needs_complex_candidate_rewrite(right_array_type->getNestedType())
                             || needsExactCompoundNumericInComparison(left_argument_type, right_array_type->getNestedType())
+                            || hasCompoundCarrierForIn(left_argument_type, right_array_type->getNestedType())
                             || hasCompoundStringToNumericLeaf(left_argument_type, right_array_type->getNestedType()));
                     const bool choose_carrier_array_shape = use_standard_null_semantics && right_argument_is_array && left_is_complex
                         && isArray(left_bare_type) && right_array_type

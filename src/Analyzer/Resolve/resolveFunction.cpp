@@ -1407,11 +1407,34 @@ static bool isIncompatibleNullableScalarForComplexIn(const DataTypePtr & source_
         && !isDynamic(bare_type) && !isVariant(bare_type);
 }
 
-static bool isCompoundCarrierForIn(const DataTypePtr & left_type, const DataTypePtr & right_type)
+static bool isCompoundCarrierForIn(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
     const auto right = removeNullable(removeLowCardinality(right_type));
-    return (isArray(left) || isMap(left)) && (isDynamic(right) || isVariant(right));
+    if (isDynamic(right) || isVariant(right))
+        return nested || isArray(left) || isMap(left);
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return isCompoundCarrierForIn(left_array->getNestedType(), right_array->getNestedType(), true);
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return isCompoundCarrierForIn(left_map->getKeyType(), right_map->getKeyType(), true)
+                || isCompoundCarrierForIn(left_map->getValueType(), right_map->getValueType(), true);
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (isCompoundCarrierForIn(left_tuple->getElements()[i], right_tuple->getElements()[i], true))
+                    return true;
+        }
+    }
+    return false;
 }
 
 static bool hasCompoundStringToNumericLeaf(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
@@ -4294,7 +4317,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             || isEnum(left_bare_type)
                             || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare_type)
                             || isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type))
-                        && (isDynamic(right_bare_type) || isVariant(right_bare_type)))
+                        && (isDynamic(right_bare_type) || isVariant(right_bare_type)
+                            || ((isNumber(right_bare_type) || isBool(right_bare_type) || isStringOrFixedString(right_bare_type)
+                                    || isEnum(right_bare_type)
+                                    || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right_bare_type)
+                                    || isUUID(right_bare_type) || isIPv4(right_bare_type) || isIPv6(right_bare_type))
+                                && !left_bare_type->equals(*right_bare_type)
+                                && !(isNumber(left_bare_type) && isNumber(right_bare_type)))))
                     {
                         auto match = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");
                         match->getArguments().getNodes() = {fn_args[0], fn_args[1]};
