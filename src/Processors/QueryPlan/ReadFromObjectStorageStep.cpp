@@ -118,7 +118,7 @@ public:
     }
 
     size_t estimatedKeysCount() override { return inner->estimatedKeysCount(); }
-    std::optional<UInt64> getSnapshotVersion() const override { return inner->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return inner->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
     {
