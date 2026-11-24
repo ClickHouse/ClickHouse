@@ -33,11 +33,16 @@ namespace ErrorCodes
   * Buckets share no state.
   * Threads may fill different buckets at the same time when every bucket is written under its own lock.
   *
-  * Experiment: with `CLICKHOUSE_TWO_LEVEL_GROUPED=1` the buckets whose allocator is `TwoLevelHashTableBucketAllocator`
-  * are placed in one memory area and grow together, see `growAllBuckets`. Then the area can be backed by huge pages,
-  * but the resizes are not amortized anymore, and threads must not fill different buckets at the same time:
-  * a table filled by several threads must call `disableGroupedGrowth` first.
+  * Experiment: a table opts in to the grouped growth by using `TwoLevelHashTableGroupedAllocator` as its allocator
+  * (the two-level maps of `Aggregator` do it). The default allocator leaves the buckets and their code as they were.
+  * With `CLICKHOUSE_TWO_LEVEL_GROUPED=1` the buckets of such a table are placed in one memory area and grow together,
+  * see `growAllBuckets`. Then the area can be backed by huge pages, but the resizes are not amortized anymore,
+  * and threads must not fill different buckets at the same time: a table filled by several threads must not opt in,
+  * or it must call `disableGroupedGrowth` first.
   */
+
+/// The allocator of a two-level hash table whose buckets can grow together.
+using TwoLevelHashTableGroupedAllocator = TwoLevelHashTableBucketAllocator<HashTableAllocator>;
 
 /// The buckets grow by 4 times while they are small, and switch to the Robin Hood mode when they become large,
 /// see `HashTableGrowerWithPrecalculationAndRobinHood`.
@@ -53,7 +58,7 @@ template
     typename Hash,
     typename Grower,
     typename Allocator,
-    typename ImplTable = HashTable<Key, Cell, Hash, Grower, TwoLevelHashTableBucketAllocator<Allocator>>,
+    typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
     size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET
 >
 class TwoLevelHashTable :
@@ -200,7 +205,7 @@ protected:
 
 public:
     /// Lets the buckets grow on their own, as without `CLICKHOUSE_TWO_LEVEL_GROUPED`. Must be called before
-    /// threads start to fill different buckets of the table at the same time, as the build of `parallel_hash` join does:
+    /// threads start to fill different buckets of a table with `TwoLevelHashTableGroupedAllocator` at the same time:
     /// `growAllBuckets` moves every bucket, including the ones that other threads are writing.
     void disableGroupedGrowth() { grouped_growth = false; }
 

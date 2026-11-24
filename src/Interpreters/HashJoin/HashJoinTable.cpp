@@ -61,20 +61,7 @@ HashJoinTable::HashJoinTable(
     , slots(layout.num_slots)
 {
     joinDispatchInit(kind, strictness, maps, maps_kind);
-    std::visit([&](auto & maps_)
-    {
-        maps_.create(key_type, robin_hood_allowed);
-        /// With several slots, build threads fill different buckets of the map at the same time,
-        /// so the buckets must not grow together, see `TwoLevelHashTable::disableGroupedGrowth`.
-        if (layout.num_slots > 1)
-        {
-            maps_.visit(key_type, []<typename Table>(std::shared_ptr<Table> & table)
-            {
-                if constexpr (requires { table->disableGroupedGrowth(); })
-                    table->disableGroupedGrowth();
-            });
-        }
-    }, maps);
+    std::visit([&](auto & maps_) { maps_.create(key_type, robin_hood_allowed); }, maps);
 
     arenas.reserve(layout.num_build_streams);
     for (size_t stream = 0; stream < layout.num_build_streams; ++stream)

@@ -14,8 +14,11 @@
   * See `TwoLevelHashTable::growAllBuckets`.
   *
   * The area is reference-counted by the buckets that have their buffers in it: a bucket can be moved to another
-  * table (`ConcurrentHashJoin` does it), or it can grow on its own when somebody inserts into it directly
-  * (the merge of two-level aggregation states does it). In the latter case the bucket moves to a private buffer.
+  * table, or it can grow on its own when somebody inserts into it directly (the merge of two-level aggregation
+  * states does it). In the latter case the bucket moves to a private buffer.
+  *
+  * It is opt-in: only a table whose allocator is `TwoLevelHashTableBucketAllocator` has this code,
+  * see `TwoLevelHashTableGroupedAllocator`.
   */
 struct TwoLevelHashTableArena
 {

@@ -74,8 +74,10 @@ using AggregatedDataWithKeys128AndPackedStringVoid = KeysAndPackedStringHashSet<
 using AggregatedDataWithKeys128Void = HashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256Void = HashSet<UInt256, UInt256HashCRC32>;
 
-using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
-using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+/// The two-level maps opt in to the grouped growth of their buckets, see `TwoLevelHashTableGroupedAllocator`.
+/// The two-level sets (for `GROUP BY` without aggregate functions) keep the default allocator.
+using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator>;
+using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator>;
 
 using AggregatedDataWithUInt32KeyVoidTwoLevel = TwoLevelHashSet<UInt32, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashSet<UInt64, HashCRC32<UInt64>>;
@@ -85,13 +87,13 @@ static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithUInt64KeyTwoLev
 static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithUInt64KeyVoidTwoLevel>::value);
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
-using AggregatedDataWithPackedStringKeyTwoLevel = TwoLevelHashMap<PackedStringRef, AggregateDataPtr>;
+using AggregatedDataWithPackedStringKeyTwoLevel = TwoLevelHashMap<PackedStringRef, AggregateDataPtr, DefaultHash<PackedStringRef>, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator>;
 
-using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr>;
+using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr, DefaultHash<std::string_view>, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator>;
 using AggregatedDataWithStringKeyVoidTwoLevel = TwoLevelHashSetWithSavedHash<std::string_view, DefaultHash<std::string_view>>;
 
-using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
-using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator>;
+using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator>;
 
 using AggregatedDataWithKeys32AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithKeys64AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
@@ -198,17 +200,17 @@ using AggregatedDataWithNullableShortStringKey = AggregationDataWithNullKey<Aggr
 
 using AggregatedDataWithNullableUInt32KeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
     TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>,
-                    TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+                    TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator, HashTableWithNullKey>>;
 using AggregatedDataWithNullableUInt64KeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>,
-        TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+        TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator, HashTableWithNullKey>>;
 
 using AggregatedDataWithNullableShortStringKeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelStringHashMap<AggregateDataPtr, HashTableAllocator, StringHashTableWithNullKey>>;
 
 using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr, DefaultHash<std::string_view>,
-        TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+        TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator, HashTableWithNullKey>>;
 
 /// Void (set) nullable single-number data for `GROUP BY` without aggregate functions. The null group's
 /// presence is tracked by `AggregationDataWithNullKey` (one bool + one dead ptr, O(1)); only the non-null

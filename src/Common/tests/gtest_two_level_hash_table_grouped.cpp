@@ -38,14 +38,18 @@ struct Grouped : Base
     static constexpr bool supports() { return Base::supports_grouped_growth; }
 };
 
-using Map = Grouped<TwoLevelHashMap<UInt64, UInt64>>;
+using Map = Grouped<TwoLevelHashMap<UInt64, UInt64, DefaultHash<UInt64>, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator>>;
 /// With fewer buckets, the buckets reach the Robin Hood mode with fewer elements.
-using Map16 = Grouped<TwoLevelHashMap<UInt64, UInt64, DefaultHash<UInt64>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, 4>>;
-using Set = Grouped<TwoLevelHashSet<UInt64>>;
+using Map16 = Grouped<TwoLevelHashMap<UInt64, UInt64, DefaultHash<UInt64>, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator, HashMapTable, 4>>;
+using Set = Grouped<TwoLevelHashSet<UInt64, DefaultHash<UInt64>, TwoLevelHashTableGrower<>, TwoLevelHashTableGroupedAllocator>>;
 
 static_assert(Map::supports());
 static_assert(Map16::supports());
 static_assert(Set::supports());
+
+/// The grouped growth is opt-in: the default types keep the plain allocator.
+static_assert(!Grouped<TwoLevelHashMap<UInt64, UInt64>>::supports());
+static_assert(!Grouped<TwoLevelHashSet<UInt64>>::supports());
 
 std::vector<UInt64> randomKeys(size_t n, UInt64 seed)
 {
@@ -234,8 +238,8 @@ TEST(TwoLevelHashTableGrouped, ExistingKeyAtFillLimitDoesNotGrow)
 }
 
 
-/// The build of `parallel_hash` join fills different buckets from several threads, each under the lock of its bucket.
-/// It calls `disableGroupedGrowth` first: otherwise `growAllBuckets` moves the buckets that other threads are writing.
+/// A table can be filled by several threads, with different buckets at the same time, each under the lock of its bucket.
+/// It must call `disableGroupedGrowth` first: otherwise `growAllBuckets` moves the buckets that other threads are writing.
 /// The TSan build of the unit tests reports a data race if the buckets still grow together.
 TEST(TwoLevelHashTableGrouped, ConcurrentFillAfterDisableGroupedGrowth)
 {
