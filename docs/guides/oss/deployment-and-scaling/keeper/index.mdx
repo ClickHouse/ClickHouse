@@ -756,7 +756,7 @@ entry size suggests. `KeeperLatestLogsCacheSize` reports the same quantity the t
 If the default values are too big, you can reduce the memory usage by reducing these configs.
 
 With `compress_logs = true` both limits are ignored and the cache is unlimited.
-The same holds after turning it off, until Keeper starts without compressed changelog files.
+The same holds after turning it off, while Keeper still reads compressed changelog files at startup.
 Entries of compressed changelog files cannot be read back from disk, so they are never evicted.
 
 Log entries needed next for committing are served by a decoded read-ahead reader, sized by
