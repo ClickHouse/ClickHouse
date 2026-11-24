@@ -362,6 +362,7 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         }
         catch (...)
         {
+            /// Ok: the only possible failure is a value that is not a boolean, and it is reported to the client.
             bad_request("Bad request: the value of the `decompress` parameter is not a boolean");
             return;
         }
