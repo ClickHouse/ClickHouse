@@ -126,7 +126,7 @@ public:
 
     virtual void setExplicitMetadataFilePath(const String & /*path*/) { }
     /// Whether the metadata file at `path` belongs to the table this object was opened for; false if that is unknown.
-    virtual bool isMetadataFileOfThisTable(const String & /*path*/, ContextPtr) const { return false; }
+    [[nodiscard]] virtual bool isMetadataFileOfThisTable(const String & /*path*/, ContextPtr) const { return false; }
 
     [[nodiscard]] virtual bool supportsWrites() const { return false; }
     [[nodiscard]] virtual bool supportsParallelInsert() const { return false; }
