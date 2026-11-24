@@ -4,6 +4,8 @@
 # no-replicated-database: named collections created by SQL are not replicated
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The dead broker's connection errors are logged by whichever query serves the consumer queue (the final DROP).
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -40,14 +42,12 @@ $CLICKHOUSE_CLIENT -q "
         kafka_group_name = 'group',
         kafka_format = 'JSONEachRow',
         \`kafka.test.mock.num.brokers\` = '1';
-    CREATE TABLE kafka_mock (x UInt64) ENGINE = Kafka(${collection}_mock);
 "
-$CLICKHOUSE_CLIENT -q "SELECT * FROM kafka_mock SETTINGS stream_like_engine_allow_direct_select = 1" 2>&1 \
+$CLICKHOUSE_CLIENT -q "CREATE TABLE kafka_mock (x UInt64) ENGINE = Kafka(${collection}_mock)" 2>&1 \
     | grep -o 'Kafka property test.mock.num.brokers is not allowed' | head -1
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE kafka_probe;
-    DROP TABLE kafka_mock;
     DROP NAMED COLLECTION $collection;
     DROP NAMED COLLECTION ${collection}_mock;
 "
