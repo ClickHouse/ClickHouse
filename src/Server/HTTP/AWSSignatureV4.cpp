@@ -694,12 +694,14 @@ AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & reque
     {
         String lower_name = Poco::toLower(header_name);
         bool must_be_signed = lower_name.starts_with("x-clickhouse-")
-            || (!presigned && (lower_name == "x-amz-content-sha256" || lower_name == "x-amz-date"
-                || lower_name == "content-type" || lower_name == "content-encoding"));
+            || (!presigned && (lower_name == "x-amz-date" || lower_name == "content-type" || lower_name == "content-encoding"));
         bool is_signed = std::ranges::binary_search(signed_headers, lower_name);
         if (must_be_signed && !is_signed)
             throwInvalid(fmt::format("the header '{}' must be signed", header_name));
-        if (!is_signed)
+        /// `x-amz-content-sha256` may be omitted from the list of signed headers: its value is covered by the signature
+        /// anyway, as the last line of the canonical request. So it is validated the same way as a signed header.
+        bool is_covered_by_signature = is_signed || (!presigned && lower_name == "x-amz-content-sha256");
+        if (!is_covered_by_signature)
             continue;
         if (!seen_headers.insert(lower_name).second)
             throwInvalid(fmt::format("the header '{}' is specified more than once", header_name));
