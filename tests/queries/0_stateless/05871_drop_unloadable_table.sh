@@ -38,7 +38,26 @@ local_run --query "SET max_table_size_to_drop = 1; DROP TABLE d.broken" 2>&1 | g
 local_run --query "SET max_table_size_to_drop = 0; DROP TABLE d.set_broken SYNC" 2>&1 | grep -o -m1 'ASYNC_LOAD_WAIT_FAILED'
 sed -i "s/persistent = 'from_a_newer_version'/persistent = 0/" "$(find "$data_dir/store" -name 'set_broken.sql')"
 
-local_run --query "SET max_table_size_to_drop = 0; DROP TABLE d.broken SYNC; DROP TABLE memory_broken SYNC;"
+# The user may drop d.broken only.
+users_xml="$(realpath "${CLICKHOUSE_TMP}")/users_${CLICKHOUSE_DATABASE}.xml"
+cat > "$users_xml" <<'EOF'
+<clickhouse>
+    <profiles><default></default></profiles>
+    <quotas><default></default></quotas>
+    <users>
+        <default>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants><query>GRANT DROP TABLE ON d.broken</query></grants>
+        </default>
+    </users>
+</clickhouse>
+EOF
+local_run --query "DROP TABLE memory_broken SYNC" -- --users_config="$users_xml" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+local_run --query "SET max_table_size_to_drop = 0; DROP TABLE d.broken SYNC" -- --users_config="$users_xml"
+local_run --query "DROP TABLE memory_broken SYNC"
 
 test -d "$data_dir/store/${uuid:0:3}/$uuid" || echo 'data removed'
 ls "$data_dir/metadata_dropped" | wc -l
@@ -50,4 +69,4 @@ local_run --query "
     SELECT database, name FROM system.tables WHERE name IN ('broken', 'memory_broken') ORDER BY name;
 "
 
-rm -rf "$data_dir"
+rm -rf "$data_dir" "$users_xml"

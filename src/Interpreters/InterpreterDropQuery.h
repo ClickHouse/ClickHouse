@@ -66,7 +66,7 @@ private:
         UUID & uuid_to_wait);
 
     /// The `ignore_drop_queries_probability` testing knob.
-    bool isDropIgnoredRandomly(const ASTDropQuery & query, bool is_drop_or_detach_database) const;
+    [[nodiscard]] bool isDropIgnoredRandomly(const ASTDropQuery & query, bool is_drop_or_detach_database) const;
 
     static void waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait, ContextPtr context_);
 
