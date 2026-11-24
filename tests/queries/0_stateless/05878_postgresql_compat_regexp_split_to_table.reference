@@ -1,0 +1,9 @@
+a
+b
+c
+y
+x
+4
+1	p
+1	q
+SELECT arrayJoin(regexp_split_to_array(s, r)) FROM t

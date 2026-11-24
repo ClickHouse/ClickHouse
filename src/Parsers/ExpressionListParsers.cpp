@@ -1998,6 +1998,22 @@ protected:
     }
 };
 
+/// `regexp_split_to_table(s, regexp)` of PostgreSQL returns a row for each substring, which a function cannot
+/// do. It is parsed as `arrayJoin(regexp_split_to_array(s, regexp))`, the way `date_part` above is parsed as
+/// the function of its unit. The number and the types of the arguments are checked by `regexp_split_to_array`.
+class RegexpSplitToTableLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
+{
+public:
+    RegexpSplitToTableLayer() : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("arrayJoin", makeASTFunction("regexp_split_to_array", std::move(elements)));
+        return true;
+    }
+};
+
 class SubstringLayer : public Layer
 {
     bool comma_mode = false; /// true when the first separator was a comma
@@ -3261,6 +3277,9 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
         return std::make_unique<ExtractLayer>();
     if (function_name_lowercase == "date_part" || function_name_lowercase == "datepart")
         return std::make_unique<DatePartLayer>();
+    /// As the name of a table function, in `FROM`, it is left alone: `arrayJoin` is not a table function.
+    if (function_name_lowercase == "regexp_split_to_table" && (!is_table_function || !is_first_identifier))
+        return std::make_unique<RegexpSplitToTableLayer>();
     if (function_name_lowercase == "substring")
         return std::make_unique<SubstringLayer>();
     if (function_name_lowercase == "overlay")

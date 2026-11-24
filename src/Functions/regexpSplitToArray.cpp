@@ -67,6 +67,8 @@ The result is the one of `splitByRegexp`, which differs from PostgreSQL in these
 - The regular expression uses the re2 syntax of ClickHouse, not the syntax of PostgreSQL, and the optional `flags` argument of PostgreSQL is not supported.
 - A match of an empty string does not split the string: `regexp_split_to_array('abc', 'x*')` is `['abc']`, while PostgreSQL splits it into characters.
 - An empty regular expression splits the string into bytes, not into characters.
+
+`regexp_split_to_table(s, regexp)`, which returns a row for each substring in PostgreSQL, is parsed as `arrayJoin(regexp_split_to_array(s, regexp))`.
 )";
     FunctionDocumentation::Syntax syntax = "regexp_split_to_array(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
