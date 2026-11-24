@@ -43,4 +43,10 @@ JSON advanced	1	('','a')	a
 JSON advanced	2	('','a')	a
 JSON map	1	('','a')	a
 JSON map	2	('','a')	a
+JSON advanced null map	1	1	1
+JSON advanced null map	2	1	1
+JSON map null map	1	1	1
+JSON map null map	2	1	1
+JSON advanced isNull	1	1
+JSON advanced isNull	2	1
 default	Nullable(Tuple(s String, e Enum8(\'a\' = 1, \'b\' = 2)))	\N	\N	\N

@@ -77,6 +77,12 @@ SELECT 'JSON', toTypeName(j.a.:\`$T\`.e) FROM j_memory LIMIT 1;
 SELECT 'JSON memory', id, j.a.:\`$T\`, j.a.:\`$T\`.e FROM j_memory ORDER BY id;
 SELECT 'JSON advanced', id, j.a.:\`$T\`, j.a.:\`$T\`.e FROM j_advanced ORDER BY id;
 SELECT 'JSON map', id, j.a.:\`$T\`, j.a.:\`$T\`.e FROM j_map ORDER BY id;
+
+-- A null map of the absent path reads 1, as in the map reader.
+SELECT 'JSON advanced null map', id, j.a.:Int64.null, j.a.:\`Tuple(e Nullable(Enum8('a' = 1)))\`.e.null FROM j_advanced ORDER BY id;
+SELECT 'JSON map null map', id, j.a.:Int64.null, j.a.:\`Tuple(e Nullable(Enum8('a' = 1)))\`.e.null FROM j_map ORDER BY id;
+SELECT 'JSON advanced isNull', id, isNull(j.a.:\`Tuple(e Nullable(Enum8('a' = 1)))\`.e) FROM j_advanced ORDER BY id
+    SETTINGS optimize_functions_to_subcolumns = 1;
 "
 
 # With the default the subcolumn is Nullable and such a row is NULL.

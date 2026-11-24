@@ -317,10 +317,18 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             /// Skip chunk if it doesn't have requested path.
             if (!paths_info_chunk.path_to_info.contains(path))
             {
-                if (subcolumn_type->isDefaultInsertTrivial())
+                if (path_subcolumn.empty())
+                {
                     column.insertManyDefaults(chunk_structure.limit);
+                }
+                /// A subcolumn of a NULL path value is not always the column default (a null map reads 1).
                 else
-                    subcolumn_type->insertManyDefaultsInto(column, chunk_structure.limit);
+                {
+                    auto null_dynamic_column = dynamic_type->createColumn();
+                    null_dynamic_column->insertManyDefaults(chunk_structure.limit);
+                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, std::move(null_dynamic_column));
+                    column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
+                }
                 continue;
             }
 
