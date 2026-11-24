@@ -237,10 +237,11 @@ FROM (EXPLAIN PLAN sorting = 1
     SELECT sum(a.v) + sum(b.v) + sum(c.v)
     FROM fsmj_order_a AS a LEFT ANY JOIN fsmj_order_b AS b ON a.id = b.id INNER ANY JOIN fsmj_order_c AS c ON a.id = c.id);
 
-SELECT 'any', count(), sum(a.v), sum(b.v), sum(c.v)
+-- `ANY` may take any of the duplicate rows of the right side, so only the right keys are summed.
+SELECT 'any', count(), sum(a.v), sum(b.id), sum(c.id)
 FROM fsmj_order_a AS a LEFT ANY JOIN fsmj_order_b AS b ON a.id = b.id LEFT ANY JOIN fsmj_order_c AS c ON a.id = c.id
 SETTINGS join_algorithm = 'hash';
-SELECT 'any', count(), sum(a.v), sum(b.v), sum(c.v)
+SELECT 'any', count(), sum(a.v), sum(b.id), sum(c.id)
 FROM fsmj_order_a AS a LEFT ANY JOIN fsmj_order_b AS b ON a.id = b.id LEFT ANY JOIN fsmj_order_c AS c ON a.id = c.id;
 
 WITH (SELECT groupArray((id, v)) FROM (SELECT a.id AS id, a.v AS v FROM fsmj_order_a AS a LEFT ANY JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY a.id, a.v)) AS rows
