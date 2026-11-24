@@ -296,6 +296,7 @@ void SortingStep::updateLimit(size_t limit_)
         use_buffering = false;
 }
 
+
 void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
 {
     type = Type::FinishSorting;
@@ -904,21 +905,37 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
 QueryPlanStepPtr SortingStep::clone() const
 {
-    /// Reconstructing another type as Full would silently drop its ordered-input contract.
-    if (type != Type::Full)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of SortingStep is implemented only for Full sorting");
-    /// The merge-join scattered sort carries extra state (`scatter_partitions`, the skip
-    /// flag) this reconstruction would drop.
-    if (!partition_by_description.empty() && (is_sorting_for_merge_join || scatter_partitions > 0 || skip_scatter_by_partition))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of a partitioned sorting with scatter state is not implemented for SortingStep");
-
+    /// Every type keeps its own ordered-input contract: `FinishSorting` needs the prefix, `MergingSorted`
+    /// merges already sorted streams, and a partitioned sort needs its partition key. Rebuilding all of
+    /// them through the matching constructor is therefore required; downgrading to `Full` would change
+    /// the pipeline the cached plan describes.
     std::unique_ptr<SortingStep> cloned;
-    if (partition_by_description.empty())
-        cloned = std::make_unique<SortingStep>(
-            input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
-    else
-        cloned = std::make_unique<SortingStep>(
-            input_headers.front(), result_description, partition_by_description, limit, sort_settings);
+    switch (type)
+    {
+        case Type::Full:
+            if (!partition_by_description.empty())
+                cloned = std::make_unique<SortingStep>(
+                    input_headers.front(), result_description, partition_by_description, limit, sort_settings);
+            else
+                cloned = std::make_unique<SortingStep>(
+                    input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+            cloned->scatter_partitions = scatter_partitions;
+            cloned->skip_scatter_by_partition = skip_scatter_by_partition;
+            break;
+        case Type::FinishSorting:
+        case Type::PartitionedFinishSorting:
+            cloned = std::make_unique<SortingStep>(
+                input_headers.front(), prefix_description, result_description, sort_settings, limit);
+            cloned->partition_by_description = partition_by_description;
+            cloned->type = type;
+            break;
+        case Type::MergingSorted:
+            cloned = std::make_unique<SortingStep>(
+                input_headers.front(), result_description, sort_settings, limit, always_read_till_end);
+            break;
+    }
+
+    cloned->is_sorting_for_merge_join = is_sorting_for_merge_join;
     cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
     cloned->is_window_sorting = is_window_sorting;

@@ -52,6 +52,11 @@ static void dropExtraColumns(QueryPipelineBuilder & pipeline, const Block & expe
     });
 }
 
+QueryPlanStepPtr InputSelectorStep::clone() const
+{
+    return std::make_unique<InputSelectorStep>(*this);
+}
+
 QueryPipelineBuilderPtr InputSelectorStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 3)

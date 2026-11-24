@@ -45,6 +45,9 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    /// Mutable access for the query plan cache: a restored plan rewrites the HAVING constants
+    /// (`HAVING count() > 91`) before the pipeline is built.
+    ActionsDAG * getActions() { return actions_dag ? &*actions_dag : nullptr; }
     [[nodiscard]] const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
     [[nodiscard]] const String & getFilterColumnName() const { return filter_column_name; }
 

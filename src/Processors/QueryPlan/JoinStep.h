@@ -179,6 +179,8 @@ class FilledJoinStep : public ITransformingStep
 public:
     FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
 
+    /// The stored JOIN is already filled and immutable, so a clone can share it.
+    QueryPlanStepPtr clone() const override;
     [[nodiscard]] String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

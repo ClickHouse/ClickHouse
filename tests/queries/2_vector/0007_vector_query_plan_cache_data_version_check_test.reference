@@ -1,0 +1,54 @@
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+insert: entries after INSERT	1
+10	0
+1000	0
+9	1.7321
+11	1.7321
+8	3.4641
+insert: entries at end	0
+insert uncached after mutation	10	0
+insert uncached after mutation	1000	0
+insert uncached after mutation	9	1.7321
+insert uncached after mutation	11	1.7321
+insert uncached after mutation	8	3.4641
+insert: hits, misses, result cache hits	1	1	0
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+delete: entries after DELETE	1
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+7	5.1962
+delete: entries at end	0
+delete uncached after mutation	9	1.7321
+delete uncached after mutation	11	1.7321
+delete uncached after mutation	8	3.4641
+delete uncached after mutation	12	3.4641
+delete uncached after mutation	7	5.1962
+delete: hits, misses, result cache hits	1	1	0
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+update: entries after UPDATE	1
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+7	5.1962
+update: entries at end	0
+update uncached after mutation	9	1.7321
+update uncached after mutation	11	1.7321
+update uncached after mutation	8	3.4641
+update uncached after mutation	12	3.4641
+update uncached after mutation	7	5.1962
+update: hits, misses, result cache hits	1	1	0

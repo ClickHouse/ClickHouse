@@ -12,6 +12,7 @@
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Interpreters/PasteJoin.h>
+#include <Interpreters/SpillingHashJoin.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
@@ -153,10 +154,16 @@ JoinStep::JoinStep(
     updateInputHeaders({left_header_, right_header_});
 }
 
-QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
+
+    /// A plan restored from the query plan cache keeps the join created when the plan was built,
+    /// together with the temporary-disk scope of that query. Charge the spills of this execution
+    /// to the current query instead, before the build phase starts.
+    if (auto * spilling_join = typeid_cast<SpillingHashJoin *>(join.get()))
+        spilling_join->setTemporaryDataOnDiskScope(settings.temp_data_on_disk);
 
     Block lhs_header = pipelines[0]->getHeader();
     Block rhs_header = pipelines[1]->getHeader();
@@ -679,6 +686,13 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 {
     if (!join->isFilled())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FilledJoinStep expects Join to be filled");
+}
+
+QueryPlanStepPtr FilledJoinStep::clone() const
+{
+    auto result = std::make_unique<FilledJoinStep>(getInputHeaders().front(), join, max_block_size);
+    result->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    return result;
 }
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

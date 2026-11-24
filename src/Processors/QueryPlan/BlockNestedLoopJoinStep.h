@@ -43,6 +43,7 @@ public:
     /// Whether the step can execute this join type.
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
+    QueryPlanStepPtr clone() const override;
     [[nodiscard]] String getName() const override { return "BlockNestedLoopJoin"; }
 
     /// The join the step executes. It never swaps its inputs, so its left input is the probe side and

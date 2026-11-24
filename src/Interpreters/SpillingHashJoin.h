@@ -5,6 +5,7 @@
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -105,6 +106,15 @@ public:
     bool hasDelayedBlocks() const override { return !keep_left_block_order; }
     bool isDelayedBlocksProcessingEnabled() const override;
 
+    /// Build a fresh spilling join with the same configuration (empty state) for plan-cache reuse.
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader left_sample_block_, SharedHeader right_sample_block_) const override;
+
+    /// Replace the temporary-disk scope with the one of the query that is about to execute this
+    /// join. A cached plan keeps the scope captured when it was built; spills of later executions
+    /// must be charged to the current query instead. Called before the build starts.
+    void setTemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr tmp_data_) { tmp_data = std::move(tmp_data_); }
+
     bool preservesLeftBlockOrder() const override { return keep_left_block_order; }
     bool canPreserveLeftBlockOrder() const override;
     void keepLeftPipelineInOrder() override;
@@ -158,6 +168,8 @@ private:
     size_t initial_num_buckets;
     size_t max_num_buckets;
     bool any_take_last_row;
+    HashJoinBuildLayout build_layout;
+    HashJoinStatsCollectingParams stats_collecting_params;
     size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;

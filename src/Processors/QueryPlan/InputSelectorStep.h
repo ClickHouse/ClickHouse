@@ -12,6 +12,7 @@ class InputSelectorStep : public IQueryPlanStep
 public:
     InputSelectorStep(SharedHeader signal_header, SharedHeader data_header);
 
+    QueryPlanStepPtr clone() const override;
     [[nodiscard]] String getName() const override { return "InputSelector"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
     void describePipeline(FormatSettings & settings) const override;

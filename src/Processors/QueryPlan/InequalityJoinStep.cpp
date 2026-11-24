@@ -131,7 +131,13 @@ static SharedHeader concatHeaders(const SharedHeaders & headers)
     return std::make_shared<const Block>(std::move(result));
 }
 
+QueryPlanStepPtr InequalityJoinStep::clone() const
+{
+    return std::make_unique<InequalityJoinStep>(*this);
+}
+
 QueryPipelineBuilderPtr InequalityJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "InequalityJoinStep expects two input pipelines, got {}", pipelines.size());

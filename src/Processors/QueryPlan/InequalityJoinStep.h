@@ -31,6 +31,7 @@ public:
     /// Whether the step can execute this join type.
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
+    QueryPlanStepPtr clone() const override;
     [[nodiscard]] String getName() const override { return "InequalityJoin"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;

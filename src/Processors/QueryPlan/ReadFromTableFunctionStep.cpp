@@ -22,6 +22,11 @@ ReadFromTableFunctionStep::ReadFromTableFunctionStep(
 {
 }
 
+QueryPlanStepPtr ReadFromTableFunctionStep::clone() const
+{
+    return std::make_unique<ReadFromTableFunctionStep>(*this);
+}
+
 void ReadFromTableFunctionStep::initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "initializePipeline is not implementad for ReadFromTableFunctionStep");
