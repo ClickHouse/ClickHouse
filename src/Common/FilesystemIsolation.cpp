@@ -67,12 +67,14 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
     return saved_status;
 }
 
+#if defined(OS_LINUX)
 void setFilesystemIsolationServingHostPid(int pid)
 {
     std::lock_guard lock(status_mutex);
     if (saved_status)
         saved_status->serving_host_pid = pid;
 }
+#endif
 
 }
 
