@@ -691,7 +691,25 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::ObfuscateUDF)]
         = fc.allow_infinite_tables && this->allow_not_deterministic && this->allow_engine_udf && can_recurse;
 
-    queryGen.setEnabled(queryMask);
+    /// Parallel replicas read only MergeTree tables: keep most sources of a distributed shape on them
+    const bool shape_on_mergetree = this->distributed_shapes && !under_remote && has_mergetree_table && rg.nextMediumNumber() < 81;
+    if (shape_on_mergetree)
+    {
+        /// A copy: some entries of the mask are never reset
+        std::vector<bool> mask = queryMask;
+
+        for (size_t i = 0; i < mask.size(); i++)
+        {
+            const auto op = static_cast<QueryOp>(i);
+
+            mask[i] = mask[i] && (op == QueryOp::Table || op == QueryOp::DerivatedTable || op == QueryOp::CTE);
+        }
+        queryGen.setEnabled(mask);
+    }
+    else
+    {
+        queryGen.setEnabled(queryMask);
+    }
     /// If MV chaining is requested, force the next source to be a view (clears flag after use)
     const bool chain_views_now = this->chain_views;
     this->chain_views = false;
@@ -740,11 +758,15 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             {
                 t = rg.pickRandomly(this->distributed_shape_tables);
             }
+            else if (shape_on_mergetree)
+            {
+                t = &rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda)).get();
+            }
             else
             {
                 t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
             }
-            if (this->distributed_shapes)
+            if (this->distributed_shapes && t->isMergeTreeFamily(true))
             {
                 this->distributed_shape_tables.emplace_back(t);
             }

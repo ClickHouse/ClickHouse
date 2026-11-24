@@ -678,9 +678,14 @@ std::optional<DB::Strings> FuzzConfig::queryLines(const String & query, const bo
 
 void FuzzConfig::logDistributedShapesReach()
 {
+    static const String bundled = "position(query, 'parallel_replicas_allow_in_with_subquery = 1, automatic_parallel_replicas_mode = ') > 0";
+    static const String from_log = R"(FROM "system"."query_log" WHERE is_initial_query AND type != 'QueryStart' AND query_kind = 'Select')";
+    static const String settings = R"(SETTINGS make_distributed_plan = 0, enable_parallel_replicas = 0, extremes = 0, limit = 0, offset = 0,
+    max_execution_time = 0, max_result_rows = 0, max_result_bytes = 0, max_rows_to_read = 0, max_bytes_to_read = 0,
+    max_rows_to_group_by = 0, max_memory_usage = 0, max_threads = 0)";
     /// Initial SELECTs carrying the parallel replicas bundle, with automatic mode or without, against the others
-    static const String query = R"(SELECT
-    position(query, 'parallel_replicas_allow_in_with_subquery = 1, automatic_parallel_replicas_mode = ') > 0 AS bundled,
+    static const String reach = fmt::format(R"(SELECT
+    {0} AS bundled,
     position(query, 'parallel_replicas_allow_in_with_subquery = 1, automatic_parallel_replicas_mode = 1') > 0 AS automatic,
     count() AS queries,
     countIf(type = 'QueryFinish') AS finished,
@@ -691,28 +696,38 @@ void FuzzConfig::logDistributedShapesReach()
     countIf(ProfileEvents['AutoParallelReplicasApplied'] > 0) AS autopr_applied,
     countIf(ProfileEvents['AutoParallelReplicasPlansNotComparable'] > 0) AS autopr_not_comparable,
     countIf(exception_code = 49) AS logical_errors
-FROM "system"."query_log"
-WHERE is_initial_query AND type != 'QueryStart' AND query_kind = 'Select'
-GROUP BY ALL ORDER BY ALL
-SETTINGS make_distributed_plan = 0, enable_parallel_replicas = 0, extremes = 0, limit = 0, offset = 0,
-    max_execution_time = 0, max_result_rows = 0, max_result_bytes = 0, max_rows_to_read = 0, max_bytes_to_read = 0,
-    max_rows_to_group_by = 0, max_memory_usage = 0, max_threads = 0)";
+{1} GROUP BY ALL ORDER BY ALL {2})", bundled, from_log, settings);
+    /// Why bundled queries fail
+    static const String errors = fmt::format(R"(SELECT errorCodeToName(exception_code) AS error, count() AS queries
+{1} AND {0} AND type != 'QueryFinish' GROUP BY ALL ORDER BY queries DESC LIMIT 15 {2})", bundled, from_log, settings);
+    /// What the finished bundled queries read: parallel replicas need a MergeTree table
+    static const String sources = fmt::format(R"(SELECT arrayJoin(if(empty(tables), ['<none>'], tables)) AS source, count() AS queries,
+    countIf(ProfileEvents['SelectedMarks'] > 0) AS reading_marks, countIf(ProfileEvents['ParallelReplicasQueryCount'] > 0) AS pr_plan_built
+{1} AND {0} AND type = 'QueryFinish' GROUP BY ALL ORDER BY queries DESC LIMIT 20 {2})", bundled, from_log, settings);
+    /// Bundled queries that read MergeTree data and still built no parallel replicas plan
+    static const String missed = fmt::format(R"(SELECT ProfileEvents['SelectedMarks'] AS marks, tables, substring(query, 1, 4000)
+{1} AND {0} AND type = 'QueryFinish' AND marks > 0 AND ProfileEvents['ParallelReplicasQueryCount'] = 0
+ORDER BY event_time_microseconds LIMIT 10 {2})", bundled, from_log, settings);
 
     if (!processServerQuery(false, "SYSTEM FLUSH LOGS;"))
     {
         LOG_INFO(log, "Distributed shapes reach: SYSTEM FLUSH LOGS failed");
         return;
     }
-    const std::optional<DB::Strings> lines = queryLines(query, false, "TabSeparatedWithNames");
+    for (const auto & [name, query] : std::vector<std::pair<String, String>>{
+             {"reach", reach}, {"errors", errors}, {"sources", sources}, {"missed", missed}})
+    {
+        const std::optional<DB::Strings> lines = queryLines(query, false, "TabSeparatedWithNames");
 
-    if (!lines.has_value())
-    {
-        LOG_INFO(log, "Distributed shapes reach: the query_log query failed");
-        return;
-    }
-    for (const auto & line : lines.value())
-    {
-        LOG_INFO(log, "Distributed shapes reach: {}", line);
+        if (!lines.has_value())
+        {
+            LOG_INFO(log, "Distributed shapes {}: the query_log query failed", name);
+            continue;
+        }
+        for (const auto & line : lines.value())
+        {
+            LOG_INFO(log, "Distributed shapes {}: {}", name, line);
+        }
     }
 }
 
