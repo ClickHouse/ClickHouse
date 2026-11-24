@@ -94,7 +94,7 @@ Test template:
 
 The drop queries also run when the test fails, and a test whose drop queries cannot be shown to have cleaned up stops the rest of its batch.
 
-Currently, do not use `run_all_queries="1"` outside the standard benchmarks `clickbench.xml`, `tpch.xml` and `tpcds.xml`. Master runs and full pull request runs measure at most 10 queries of a test, chosen at random, and the attribute makes them measure every query of the test, which slows down CI. The nightly job runs all queries of every test anyway.
+Currently, do not use `run_all_queries="1"` outside the standard benchmarks `clickbench.xml`, `tpch.xml` and `tpcds.xml`. Master runs and full pull request runs measure at most 10 queries of a test, chosen at random, and the attribute makes them measure every query of the test, which slows down CI. A pull request measures every query of each test XML it adds or changes without the attribute, and the nightly job runs all queries of every test anyway.
 
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
