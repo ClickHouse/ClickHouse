@@ -396,13 +396,20 @@ size_t replaceScalarSubqueries(const ASTPtr & ast, const ScalarSubqueryValues & 
     return replaced;
 }
 
+/// the settings that change what a projection query means: the stored query has their values that are not the default
+constexpr std::array kept_settings{
+    "count_distinct_implementation",
+    "rewrite_count_distinct_if_with_count_distinct_implementation",
+    "optimize_normalize_count_variants",
+    "optimize_if_chain_to_multiif"};
+
 /// session settings must not change what a projection means
 ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, const ContextPtr & context)
 {
     auto query_context = Context::createCopy(context);
     query_context->setSetting("enable_positional_arguments", false);
     query_context->setSetting("rewrite_in_to_join", false);
-    query_context->setSetting("rewrite_count_distinct_if_with_count_distinct_implementation", false);
+    query_context->resetSettingsToDefaultValue(Strings(kept_settings.begin(), kept_settings.end()));
     /// `*` in a projection never has `MATERIALIZED` and `ALIAS` columns
     query_context->setSetting("asterisk_include_materialized_columns", false);
     query_context->setSetting("asterisk_include_alias_columns", false);
@@ -432,9 +439,11 @@ void storeSettingsOfProjectionQuery(const ASTPtr & query_ast, const ContextPtr &
 {
     const auto & settings = context->getSettingsRef();
     auto & stored_settings = query_ast->as<ASTSelectQuery &>().settings()->as<ASTSetQuery &>().changes;
-    stored_settings.setSetting("enable_positional_arguments", settings[Setting::enable_positional_arguments_for_projections].value);
-    for (const auto * setting : {"count_distinct_implementation", "rewrite_count_distinct_if_with_count_distinct_implementation", "optimize_normalize_count_variants", "optimize_if_chain_to_multiif"})
-        stored_settings.setSetting(setting, settings.get(setting));
+    if (settings[Setting::enable_positional_arguments_for_projections])
+        stored_settings.setSetting("enable_positional_arguments", true);
+    for (const auto * setting : kept_settings)
+        if (settings.isChanged(setting))
+            stored_settings.setSetting(setting, settings.get(setting));
 }
 
 QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze)
