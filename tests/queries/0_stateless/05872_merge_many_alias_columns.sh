@@ -22,14 +22,16 @@ done
 $CLICKHOUSE_CLIENT --max_query_size 10000000 --query "
     CREATE TABLE t_alias (k UInt64, m Map(String, UInt64)$alias_columns, d1 UInt64 ALIAS c1 + 1, d2 UInt64 ALIAS d1 * 2)
     ENGINE = MergeTree ORDER BY k"
+# A Memory table, so reading it costs the same memory whatever part format the settings randomize.
 $CLICKHOUSE_CLIENT --max_query_size 10000000 --query "
-    CREATE TABLE t_plain (k UInt64$plain_columns, d1 UInt64, d2 UInt64) ENGINE = MergeTree ORDER BY k"
+    CREATE TABLE t_plain (k UInt64$plain_columns, d1 UInt64, d2 UInt64) ENGINE = Memory"
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_alias (k, m) VALUES (1, {'c1': 10, 'c$N': 7})"
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_plain (k, c1, c$N, d1, d2) VALUES (2, 20, 8, 21, 42)"
 
 $CLICKHOUSE_CLIENT --query "SELECT k, c1, c2, c$N, d1, d2 FROM merge(currentDatabase(), '^t_') ORDER BY k"
-$CLICKHOUSE_CLIENT --query "SELECT count(), sum(sipHash64(*)) FROM merge(currentDatabase(), '^t_')"
+# Planning the aliases one by one needs about 510 MB here.
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(sipHash64(*)) FROM merge(currentDatabase(), '^t_') SETTINGS max_memory_usage = 150000000"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_alias"
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_plain"
