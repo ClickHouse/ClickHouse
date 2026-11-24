@@ -213,6 +213,10 @@ bool ReadBufferFromWebServer::nextImpl()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
+    /// The buffer has no own memory, so an external buffer must be set before reading.
+    if (use_external_buffer && internal_buffer.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "External buffer is not set before reading from `ReadBufferFromWebServer`");
+
     if (!impl)
     {
         impl = initialize();
