@@ -26,6 +26,12 @@ dropreadd other v1 nodefault	2	u
 dropreadd other v1 nodefault	3	
 omitted frozen v1 stored	0
 omitted stored v1 stored	1
+twocolumns v1 b	1	bdef
+twocolumns v1 b	2	previous
+twocolumns v1 b	3	bdef
+twocolumns v1 a3, b	1	adef	bdef
+twocolumns v1 a3, b	2	adef	previous
+twocolumns v1 a3, b	3	adef	bdef
 killed v2 patch type	LowCardinality(Nullable(String))
 killed v2 patch type	LowCardinality(Nullable(String))
 killed v2 patch type	Nullable(String)
@@ -54,3 +60,9 @@ dropreadd other v2 nodefault	2	u
 dropreadd other v2 nodefault	3	
 omitted frozen v2 stored	0
 omitted stored v2 stored	1
+twocolumns v2 b	1	bdef
+twocolumns v2 b	2	previous
+twocolumns v2 b	3	bdef
+twocolumns v2 a3, b	1	adef	bdef
+twocolumns v2 a3, b	2	adef	previous
+twocolumns v2 a3, b	3	adef	bdef

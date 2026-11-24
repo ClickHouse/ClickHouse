@@ -91,4 +91,23 @@ SELECT 'omitted {{ suffix }} {{ version }}', id, s FROM t_omitted_{{ suffix }}_{
 DROP TABLE t_omitted_{{ suffix }}_{{ version }} SYNC;
 
 {% endfor -%}
+
+-- twocolumns ({{ version }}): an old patch that also writes another column reads the same with and without that column.
+DROP TABLE IF EXISTS t_twocolumns_{{ version }} SYNC;
+CREATE TABLE t_twocolumns_{{ version }} (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_twocolumns_{{ version }} VALUES (1), (2), (3);
+SYSTEM STOP MERGES t_twocolumns_{{ version }};
+ALTER TABLE t_twocolumns_{{ version }} ADD COLUMN a3 Nullable(String) DEFAULT 'old', ADD COLUMN b String DEFAULT 'bdef';
+UPDATE t_twocolumns_{{ version }} SET a3 = NULL, b = 'previous' WHERE id <= 2;
+ALTER TABLE t_twocolumns_{{ version }} MODIFY COLUMN b Nullable(String) SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_twocolumns_{{ version }}' SYNC FORMAT Null;
+UPDATE t_twocolumns_{{ version }} SET b = NULL WHERE id = 1;
+ALTER TABLE t_twocolumns_{{ version }} MODIFY COLUMN b String DEFAULT 'bdef' SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_twocolumns_{{ version }}' SYNC FORMAT Null;
+ALTER TABLE t_twocolumns_{{ version }} MODIFY COLUMN a3 String DEFAULT 'adef' SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'twocolumns {{ version }} b', id, b FROM t_twocolumns_{{ version }} ORDER BY id;
+SELECT 'twocolumns {{ version }} a3, b', id, a3, b FROM t_twocolumns_{{ version }} ORDER BY id;
+DROP TABLE t_twocolumns_{{ version }} SYNC;
+
 {% endfor -%}
