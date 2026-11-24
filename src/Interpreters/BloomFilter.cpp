@@ -118,11 +118,9 @@ void BloomFilter::resize(size_t size_)
 
 BloomFilterHashPair BloomFilter::computeHashPair(const char * data, size_t len, UInt64 seed_)
 {
-    return
-    {
-        CityHash_v1_0_2::CityHash64WithSeed(data, len, seed_),
-        CityHash_v1_0_2::CityHash64WithSeed(data, len, common::addIgnoreOverflow(common::mulIgnoreOverflow(SEED_GEN_A, seed_), SEED_GEN_B))
-    };
+    const auto [hash1, hash2] = CityHash_v1_0_2::CityHash64WithSeedPair(
+        data, len, seed_, common::addIgnoreOverflow(common::mulIgnoreOverflow(SEED_GEN_A, seed_), SEED_GEN_B));
+    return {hash1, hash2};
 }
 
 bool BloomFilter::find(const char * data, size_t len) const

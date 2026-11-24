@@ -92,6 +92,11 @@ uint64 CityHash64WithSeed(const char *buf, size_t len, uint64 seed);
 uint64 CityHash64WithSeeds(const char *buf, size_t len,
                            uint64 seed0, uint64 seed1);
 
+// Returns {CityHash64WithSeed(buf, len, seed0), CityHash64WithSeed(buf, len, seed1)},
+// hashing the input only once.
+std::pair<uint64, uint64> CityHash64WithSeedPair(const char *buf, size_t len,
+                                                 uint64 seed0, uint64 seed1);
+
 // Hash function for a byte array.
 uint128 CityHash128(const char *s, size_t len);
 
