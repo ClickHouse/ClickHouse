@@ -151,9 +151,7 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
         return selector.first + k;
 }
 
-/// Whether at least 15 of every 16 rows of a sample of `selector` look up a key in the range of `key_getter`. A row with a
-/// `NULL` key or one the `ON`-section mask filters out looks nothing up. The rows are split into `samples` equal strata, and
-/// the sample takes a pseudo-random row of each, so periodic data does not bias it.
+/// Whether at least 15 of 16 sampled rows look up a key in the range. A pseudo-random row per stratum, so periodic keys do not bias it.
 template <typename KeyGetter, typename Selector>
 bool mostSampledKeysInRange(const KeyGetter & key_getter, const JoinOnKeyColumns & keys, const Selector & selector, Arena & pool)
 {
@@ -174,14 +172,12 @@ bool mostSampledKeysInRange(const KeyGetter & key_getter, const JoinOnKeyColumns
     return 16 * in_range >= 15 * samples;
 }
 
-/// Prefetches the cell that the lookup of `row` will read. A range table has no cell for a key outside its range, and the
-/// lookup rejects such a key without reading the table.
+/// A range lookup rejects a key outside the range without reading the table. Such a key prefetches cell 0, which stays cached.
 template <typename KeyGetter, typename Map>
 ALWAYS_INLINE void prefetchJoinKey(const Map & map, KeyGetter & key_getter, size_t row, Arena & pool)
 {
     if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
     {
-        /// Such a key prefetches the first cell, which stays in the cache: a branch would be mispredicted.
         const auto [key, in_range] = key_getter.getKeyHolderInRange(row, pool);
         map.prefetch(in_range ? key : decltype(key){});
     }
@@ -674,16 +670,14 @@ public:
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();
 
-    /// Whether a probe of a `TYPE` table of `Maps` can prefetch its range table. An `ASOF` table is never a range table, and a
-    /// `range8` table of at most 256 cells always fits in the cache.
+    /// An `ASOF` table is never a range table, and a `range8` table of at most 256 cells always fits in the cache.
     template <Type TYPE, typename Maps>
     static constexpr bool range_prefetch_supported = !std::is_same_v<Maps, HashJoin::MapsAsof> && TYPE != Type::range8_key32
         && TYPE != Type::range8_key64
         && range_join_prefetch_supported<typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type, const JoinMapOf<TYPE, Maps>>;
 
-    /// Whether a probe of `selector` prefetches the range table: when a hash table with one cell per value of the range would
-    /// (it keeps at least twice as many cells as keys), and when nearly all rows look up a key in the range, because a probe
-    /// whose rows mostly look up nothing is slower with the prefetch. Runs once per block.
+    /// Once per block: whether a hash table holding every value of the range would prefetch (it has at least 2 cells per key)
+    /// and nearly all rows look up a key in the range.
     template <Type TYPE, typename Maps>
     NO_INLINE bool rangeProbePrefetches(
         const JoinOnKeyColumns & keys, const ScatteredBlock::Selector::Range & selector, bool enable_prefetch) const
@@ -702,7 +696,6 @@ public:
     /// Looks up the key of every row of `selector`. For each row, calls `on_row(i, ind, find_result, offset)` with the position `i`,
     /// the row `ind`, and the output offset. The loop keeps the offset so that it stays in a register. A row with a `NULL` key
     /// or one the `ON`-section mask filters out gets a result that is not found; `fast_path` assumes there is none. `TYPE` is `type()`.
-    /// `prefetch_range` prefetches a range table, for a block that `rangeProbePrefetches` selects.
     template <Type TYPE, typename Maps, bool fast_path, bool prefetch_range = false, typename OnRow>
     ALWAYS_INLINE void probe(
         const JoinOnKeyColumns & keys,
