@@ -75,6 +75,8 @@ private:
     /// Runtime information
     ReadState read_state;
     int64_t finished_rounds = 0;
+    /// Whether the cursor of the bounded read was reported to the query, see `surfaceFinalCursor`.
+    bool final_cursor_surfaced = false;
 
     /// Reconfiguration
     std::optional<ReadRound> pending_round;
