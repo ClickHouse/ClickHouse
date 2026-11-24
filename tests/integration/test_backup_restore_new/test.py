@@ -1527,6 +1527,19 @@ def test_definition_of_another_table():
     )
     assert instance.query("EXISTS test.temp_tbl") == "0\n"
 
+    # The definition of a database must be of that database.
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query("DROP DATABASE test")
+    path = os.path.join(get_path_to_backup(backup_name), "metadata/test.sql")
+    definition = open(path).read()
+    assert "CREATE DATABASE test" in definition
+    with open(path, "w") as f:
+        f.write(definition.replace("CREATE DATABASE test", "CREATE DATABASE tes2"))
+
+    assert "is of another object" in instance.query_and_get_error(f"RESTORE DATABASE test FROM {backup_name}")
+    assert instance.query("SELECT count() FROM system.databases WHERE name IN ('test', 'tes2')") == "0\n"
+
 
 def test_system_table():
     backup_name = new_backup_name()
