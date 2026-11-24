@@ -3642,10 +3642,8 @@ static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, con
     MergeTreeIndices recalc_indices(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end());
     recalc_indices.insert(recalc_indices.end(), ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
 
-    /// Build the index expression against the storage columns so a subcolumn (e.g. `t.a`) resolves to a
-    /// subcolumn input under the index's original output name (`plus(t.a, 1)`, not a `getSubcolumn` form
-    /// that would not match IndexDescription::column_names). The mutation stream carries only the whole
-    /// column `t`, so extract the required subcolumns from it first, like the whole-part mutation path.
+    /// The index expressions read subcolumns (`t.a`) under the output names the writer looks up, but the
+    /// stream carries only whole columns, so extract the subcolumns first, as the all-columns path does.
     auto indices_expression_dag = ctx->data->getSkipIndicesExpression(ctx->metadata_snapshot, recalc_indices)->getActionsDAG().clone();
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder.getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
     if (!extracting_subcolumns_dag.getNodes().empty())
@@ -5140,7 +5138,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             }
         }
     }
-
 }
 }
 

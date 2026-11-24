@@ -52,7 +52,8 @@ public:
     const Names & findColumnsToRecalculate(const String & column_name, const NameSet & changed_columns) const;
 
     /// Whether the expression of @column_name reads @source_column, directly or through other MATERIALIZED
-    /// columns. Unlike findColumnsToRecalculate, also true for a column that reads an EPHEMERAL one.
+    /// columns. Unlike findColumnsToRecalculate, also true for a column that reads an EPHEMERAL one, and
+    /// @source_column may be an ALIAS column.
     bool dependsOn(const String & column_name, const String & source_column) const;
 
 private:

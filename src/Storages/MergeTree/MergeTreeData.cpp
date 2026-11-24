@@ -6059,6 +6059,20 @@ void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metad
             metadata.table_ttl.definition_ast, columns, context, metadata.primary_key, TTLValidationMode::SkipValidation);
 }
 
+NameSet MergeTreeData::getStorageColumnsFixedInPart(const StorageInMemoryMetadata & metadata) const
+{
+    NameSet result = metadata.getStorageColumnsRequiredForKeys();
+    for (const auto & name : {merging_params.sign_column, merging_params.version_column})
+    {
+        if (name.empty())
+            continue;
+
+        auto column = metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        result.insert(column ? column->getNameInStorage() : name);
+    }
+    return result;
+}
+
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
@@ -6740,10 +6754,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         if (!index.isImplicitlyCreated())
         {
-            /// An index may read a subcolumn (e.g. `t.a`) or an ALIAS column; resolve its expression to
-            /// the columns it is stored in so an ALTER of such a column is matched against
-            /// alter_column_secondary_index_mode, just like an index on a whole column. A replay keeps
-            /// the raw names, as an initiator without this resolution judged it.
+            /// Resolved to stored columns, so an index over a subcolumn (`t.a`) or an ALIAS restricts an ALTER of
+            /// the column it is stored in. A replay keeps the raw names, which an older initiator judged by.
             const Names index_columns = is_secondary_replay
                 ? index.expression->getRequiredColumns()
                 : expressionSourceColumnsInStorage(index.expression_list_ast, old_metadata.getColumns(), local_context);
@@ -6759,32 +6771,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             columns_in_projections.emplace(col, projection.name);
     }
 
-    /// A MATERIALIZED column that is part of a key is computed from other columns, so changing the type
-    /// of one of them can change its values, even when the conversion keeps the values of the source
-    /// (e.g. `toTypeName(x)`). A mutation cannot apply that to an existing part: the sort order and the
-    /// partition id are fixed when the part is written, which is also why MATERIALIZE COLUMN refuses key
-    /// columns. So changing the type of such a source column is forbidden.
-    /// The engine's sign/version columns fix merge semantics like a key and are likewise not recomputed
-    /// in an existing part. They can be subcolumns (`ReplacingMergeTree(m.v)`), so resolve them to the
-    /// column they are stored in to match a MATERIALIZED parent (`m`), as getKeyColumns does.
-    auto storage_column_of = [&](const String & name) -> String
-    {
-        if (name.empty())
-            return {};
-        auto resolved = old_metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        return resolved ? resolved->getNameInStorage() : name;
-    };
-    const String sign_storage_column = storage_column_of(merging_params.sign_column);
-    const String version_storage_column = storage_column_of(merging_params.version_column);
-
+    /// A key MATERIALIZED column cannot be recomputed in an existing part, so changing the type of a column
+    /// it is computed from is forbidden, even when the conversion keeps the values (`toTypeName(x)`).
     Names key_materialized_columns;
-    for (const auto & column : old_metadata.getColumns())
+    for (const auto & column_name : getStorageColumnsFixedInPart(old_metadata))
     {
-        /// column_to_subcolumns_used_in_keys catches a key that is a subcolumn of this column (`ORDER BY m.a`).
-        if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
-            && (columns_in_keys.contains(column.name) || column_to_subcolumns_used_in_keys.contains(column.name)
-                || column.name == sign_storage_column || column.name == version_storage_column))
-            key_materialized_columns.push_back(column.name);
+        const auto * column = old_metadata.getColumns().tryGet(column_name);
+        if (column && column->default_desc.kind == ColumnDefaultKind::Materialized && column->default_desc.expression)
+            key_materialized_columns.push_back(column_name);
     }
 
     /// Nothing is analysed until a column is asked about below.
@@ -6798,101 +6792,26 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     NamesAndTypesList columns_to_check_conversion;
 
-    /// Rejects a type change of a column that a key MATERIALIZED column is computed from (see key_materialized_columns).
-    /// Whether the original expression of @column_name refers to the ALIAS column @alias_name, directly or through
-    /// other ALIAS and MATERIALIZED columns. The dependency graph expands aliases to the columns they read, so it
-    /// does not see that changing the type of the alias, which casts its value, changes the result.
-    auto reads_alias = [&](const String & column_name, const String & alias_name)
-    {
-        const auto & old_columns_desc = old_metadata.getColumns();
-        NameSet visited;
-        std::function<bool(const String &)> column_reads;
-
-        /// Names in @bound are lambda parameters, not columns of the table.
-        std::function<bool(const IAST &, const NameSet &)> expression_reads = [&](const IAST & node, const NameSet & bound)
-        {
-            if (const auto * identifier = node.as<ASTIdentifier>())
-            {
-                const auto & identifier_name = identifier->name();
-                if (bound.contains(identifier->compound() ? identifier->name_parts.front() : identifier_name))
-                    return false;
-                if (identifier_name == alias_name)
-                    return true;
-
-                /// Resolve the name before looking at its prefix: a stored column can itself be named `a.v` next
-                /// to an alias `a`. A subcolumn (`m.v`) is defined by the column it belongs to.
-                if (auto resolved = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier_name))
-                    return resolved->getNameInStorage() == alias_name || column_reads(resolved->getNameInStorage());
-
-                return identifier_name.starts_with(alias_name + ".");
-            }
-
-            if (const auto * function = node.as<ASTFunction>();
-                function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
-            {
-                NameSet lambda_bound = bound;
-                if (const auto * parameters = function->arguments->children[0]->as<ASTFunction>(); parameters && parameters->arguments)
-                    for (const auto & parameter : parameters->arguments->children)
-                        if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
-                            lambda_bound.insert(parameter_identifier->name());
-                return expression_reads(*function->arguments->children[1], lambda_bound);
-            }
-
-            return std::ranges::any_of(node.children, [&](const auto & child) { return expression_reads(*child, bound); });
-        };
-
-        column_reads = [&](const String & name)
-        {
-            if (!visited.insert(name).second)
-                return false;
-
-            const auto * column = old_columns_desc.tryGet(name);
-            if (!column || !column->default_desc.expression
-                || (column->default_desc.kind != ColumnDefaultKind::Alias && column->default_desc.kind != ColumnDefaultKind::Materialized))
-                return false;
-
-            return expression_reads(*column->default_desc.expression, {});
-        };
-
-        return column_reads(column_name);
-    };
-
     auto check_key_materialized_sources = [&](const AlterCommand & command)
     {
         if (!command.data_type || is_secondary_replay)
             return;
 
-        /// An ALIAS column is not in old_types, which holds physical columns only.
-        const IDataType * old_type = nullptr;
-        bool is_alias = false;
-        if (auto it = old_types.find(command.column_name); it != old_types.end())
-        {
-            old_type = it->second;
-        }
-        else if (const auto * column = old_metadata.getColumns().tryGet(command.column_name);
-                 column && column->default_desc.kind == ColumnDefaultKind::Alias)
-        {
-            old_type = column->type.get();
-            is_alias = true;
-        }
-
-        if (!old_type || old_type->equals(*command.data_type))
+        /// An EPHEMERAL column is not stored, so its type affects only new inserts.
+        const auto * column = old_metadata.getColumns().tryGet(command.column_name);
+        if (!column || column->default_desc.kind == ColumnDefaultKind::Ephemeral || column->type->equals(*command.data_type))
             return;
 
         for (const auto & key_materialized : key_materialized_columns)
         {
-            /// Also through other MATERIALIZED columns, and also when the key column reads an EPHEMERAL column,
-            /// which findColumnsToRecalculate leaves out because such a column is never recalculated.
-            bool depends = is_alias ? reads_alias(key_materialized, command.column_name)
-                                    : materialized_dependencies.dependsOn(key_materialized, command.column_name);
-            if (!depends)
+            if (!materialized_dependencies.dependsOn(key_materialized, command.column_name))
                 continue;
 
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "ALTER of column {} from type {} to type {} is forbidden because it is used by "
                             "the MATERIALIZED column {}, which is part of a key expression and cannot be "
                             "recalculated", backQuoteIfNeed(command.column_name),
-                            old_type->getName(), command.data_type->getName(),
+                            column->type->getName(), command.data_type->getName(),
                             backQuoteIfNeed(key_materialized));
         }
     };
@@ -7360,8 +7279,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             }
         }
 
-        /// Whether or not the ALTER rewrites data: a metadata-only conversion changes the values of a key
-        /// MATERIALIZED column computed from the column just as well.
+        /// Also for a metadata-only conversion, which changes a key MATERIALIZED column computed from it as well.
         if (command.type == AlterCommand::MODIFY_COLUMN)
             check_key_materialized_sources(command);
     }

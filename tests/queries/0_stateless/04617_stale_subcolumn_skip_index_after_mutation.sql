@@ -1,7 +1,6 @@
--- A skip index defined on a subcolumn (e.g. a Tuple element `t.a`) must be rebuilt (or dropped)
--- when a mutation changes the on-disk representation of that subcolumn. On wide parts the
--- skp_idx_* files are hardlinked from the source part, so a missed rebuild leaves the index holding
--- bytes serialized under the old subcolumn value/type, producing silent wrong results.
+-- A skip index, projection or TTL over a subcolumn (e.g. a Tuple element `t.a`) must be rebuilt (or dropped)
+-- when a mutation changes that subcolumn through its column. On wide parts the files of an index are
+-- hardlinked from the source part, so a missed rebuild leaves an index describing the old values.
 
 -- Case 1: ALTER MODIFY COLUMN of the parent (READ_COLUMN mutation path).
 DROP TABLE IF EXISTS t_stale_idx_modify;
@@ -115,3 +114,124 @@ SELECT sum(id) FROM t_stale_projection_where WHERE x < 0 SETTINGS optimize_use_p
 SELECT sum(id) FROM t_stale_projection_where WHERE x < 0 SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_stale_projection_where;
+
+-- Case 8: an index over an expression of a subcolumn (`t.a + 1`) keeps its stored expression name when it is
+-- rebuilt, so the mutation does not fail with NOT_FOUND_COLUMN_IN_BLOCK.
+DROP TABLE IF EXISTS t_expr_subcolumn_index;
+CREATE TABLE t_expr_subcolumn_index (id UInt32, t Tuple(a Int32, b String), INDEX idx (t.a + 1) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_expr_subcolumn_index SELECT number, (number, 'x') FROM numbers(16);
+
+ALTER TABLE t_expr_subcolumn_index UPDATE t = tuple(t.a, t.b) WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_expr_subcolumn_index WHERE t.a + 1 >= 2;
+SELECT count() FROM t_expr_subcolumn_index WHERE t.a + 1 >= 2 SETTINGS use_skip_indexes = 0;
+
+ALTER TABLE t_expr_subcolumn_index MODIFY COLUMN t Tuple(a Float32, b String) SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_expr_subcolumn_index WHERE t.a + 1 >= 2;
+SELECT count() FROM t_expr_subcolumn_index WHERE t.a + 1 >= 2 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_expr_subcolumn_index;
+
+-- Case 9: an index over a subcolumn and another column (`t.a + y`) reads the other input too when it is rebuilt.
+DROP TABLE IF EXISTS t_index_subcolumn_plus_other;
+CREATE TABLE t_index_subcolumn_plus_other (id UInt32, t Tuple(a Int32, b String), y Int32, INDEX idx (t.a + y) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_index_subcolumn_plus_other SELECT number, (number, 'x'), number FROM numbers(16);
+
+ALTER TABLE t_index_subcolumn_plus_other UPDATE t = tuple(t.a + 1, t.b) WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_index_subcolumn_plus_other WHERE t.a + y >= 2;
+SELECT count() FROM t_index_subcolumn_plus_other WHERE t.a + y >= 2 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_index_subcolumn_plus_other;
+
+-- Case 10: when one UPDATE changes both inputs, the index is rebuilt from the updated `t`, not from the subcolumn
+-- of the source part.
+DROP TABLE IF EXISTS t_idx_both_inputs;
+CREATE TABLE t_idx_both_inputs (id UInt64, t Tuple(a Int32), y Int32, s String, INDEX idx (t.a + y) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1;
+
+INSERT INTO t_idx_both_inputs SELECT number, tuple(toInt32(0)), 0, 'payload' FROM numbers(16);
+
+ALTER TABLE t_idx_both_inputs UPDATE t = tuple(100), y = 1 WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT count() FROM t_idx_both_inputs WHERE t.a + y > 50 SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_idx_both_inputs WHERE t.a + y > 50 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_idx_both_inputs;
+
+-- Case 11: a column TTL on `t` resets it, so MATERIALIZE TTL rebuilds an index over `t.a + y`: the mutation reads
+-- `y` as well, and the rebuilt index describes the reset value.
+DROP TABLE IF EXISTS t_ttl_index;
+CREATE TABLE t_ttl_index
+(
+    id UInt64,
+    d DateTime,
+    t Tuple(a Int32) TTL d + INTERVAL 1 SECOND,
+    y Int32,
+    payload String,
+    INDEX idx (t.a + y) TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, materialize_ttl_recalculate_only = 0;
+
+SYSTEM STOP TTL MERGES t_ttl_index;
+INSERT INTO t_ttl_index VALUES (1, '2000-01-01 00:00:00', tuple(100), 7, 'payload');
+
+ALTER TABLE t_ttl_index MATERIALIZE TTL SETTINGS mutations_sync = 2;
+
+SELECT t, y FROM t_ttl_index;
+SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 0;
+
+-- The same when an ordinary UPDATE of the TTL source makes the TTL reset `t`.
+DROP TABLE IF EXISTS t_ttl_index_update;
+CREATE TABLE t_ttl_index_update
+(
+    id UInt64,
+    d DateTime,
+    t Tuple(a Int32) TTL d + INTERVAL 1 SECOND,
+    y Int32,
+    payload String,
+    INDEX idx (t.a + y) TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, materialize_ttl_recalculate_only = 0;
+
+SYSTEM STOP TTL MERGES t_ttl_index_update;
+INSERT INTO t_ttl_index_update VALUES (1, '2100-01-01 00:00:00', tuple(100), 7, 'payload');
+
+ALTER TABLE t_ttl_index_update UPDATE d = toDateTime('2000-01-01 00:00:00') WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT t, y FROM t_ttl_index_update;
+SELECT count() FROM t_ttl_index_update WHERE t.a + y = 7 SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_ttl_index_update WHERE t.a + y = 7 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_ttl_index;
+DROP TABLE t_ttl_index_update;
+
+-- Case 12: a TTL on a subcolumn is evaluated through getSubcolumn, but the TTL infos stored in a part are keyed by
+-- the original expression (`ts.d + toIntervalDay(1)`), so parts written by older versions keep matching their rule.
+DROP TABLE IF EXISTS t_ttl_subcolumn_key;
+CREATE TABLE t_ttl_subcolumn_key (id UInt64, ts Tuple(d DateTime), v String)
+ENGINE = MergeTree ORDER BY id
+TTL ts.d + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(1)), ts.d + INTERVAL 1 DAY DELETE WHERE id < 3
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_ttl_subcolumn_key SELECT number, tuple(toDateTime('2000-01-01 00:00:00', 'UTC')), 'x' FROM numbers(10);
+
+OPTIMIZE TABLE t_ttl_subcolumn_key FINAL;
+
+SELECT recompression_ttl_info.expression, default_compression_codec
+FROM system.parts WHERE database = currentDatabase() AND table = 't_ttl_subcolumn_key' AND active;
+
+SELECT count() FROM t_ttl_subcolumn_key;
+
+DROP TABLE t_ttl_subcolumn_key;

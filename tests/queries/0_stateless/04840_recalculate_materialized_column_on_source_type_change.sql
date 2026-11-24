@@ -292,3 +292,156 @@ ALTER TABLE t_ttl_source_type MODIFY COLUMN x UInt16 SETTINGS mutations_sync = 2
 SELECT count() FROM t_ttl_source_type;
 
 DROP TABLE t_ttl_source_type;
+
+-- Case 18: the source is stored only as a missing-column marker (skip_empty_columns_on_insert), so its old type
+-- is taken from the serialization infos of the part.
+DROP TABLE IF EXISTS t_materialized_missing_column;
+CREATE TABLE t_materialized_missing_column (k UInt32, x FixedString(3), m String MATERIALIZED hex(x))
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+
+INSERT INTO t_materialized_missing_column (k, x) VALUES (1, '');
+
+-- FixedString(3) -> String strips the trailing zero bytes, so hex(x) changes from '000000' to ''.
+ALTER TABLE t_materialized_missing_column MODIFY COLUMN x String SETTINGS mutations_sync = 2;
+
+SELECT m = hex(x) FROM t_materialized_missing_column;
+
+DROP TABLE t_materialized_missing_column;
+
+-- Case 19: a type-dependent expression (`toTypeName(x)`) is folded to a constant by the analyzer, but still
+-- depends on `x`.
+DROP TABLE IF EXISTS t_type_dependent_materialized;
+CREATE TABLE t_type_dependent_materialized (x Int64, m String MATERIALIZED toTypeName(x))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_type_dependent_materialized (x) VALUES (1);
+SELECT m FROM t_type_dependent_materialized;
+
+ALTER TABLE t_type_dependent_materialized MODIFY COLUMN x Int32 SETTINGS mutations_sync = 2;
+SELECT m FROM t_type_dependent_materialized;
+
+DROP TABLE t_type_dependent_materialized;
+
+-- Case 20: a conversion that keeps the stored bytes (Enum8 -> Int8) can still change a MATERIALIZED column
+-- computed from the column, so it runs a mutation that recalculates it. Without such a column, with the same
+-- type or when an Enum only gains values, it stays a metadata-only change.
+DROP TABLE IF EXISTS t_enum_materialized;
+DROP TABLE IF EXISTS t_enum_plain;
+DROP TABLE IF EXISTS t_enum_extend;
+DROP TABLE IF EXISTS t_enum_materialized_key;
+
+CREATE TABLE t_enum_materialized (x Enum8('a' = 1, 'b' = 2), m String MATERIALIZED toString(x))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_enum_materialized (x) VALUES ('a'), ('b');
+ALTER TABLE t_enum_materialized MODIFY COLUMN x Int8 SETTINGS mutations_sync = 2;
+SELECT x, m, m = toString(x) FROM t_enum_materialized ORDER BY x;
+
+CREATE TABLE t_enum_plain (x Enum8('a' = 1, 'b' = 2)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_enum_plain VALUES ('a');
+ALTER TABLE t_enum_plain MODIFY COLUMN x Int8 SETTINGS mutations_sync = 2;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_enum_plain';
+
+-- Restating the same type (here with a new codec).
+ALTER TABLE t_enum_materialized MODIFY COLUMN x Int8 CODEC(ZSTD(1)) SETTINGS mutations_sync = 2;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_enum_materialized';
+
+CREATE TABLE t_enum_extend (x Enum8('a' = 1), m String MATERIALIZED toString(x)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_enum_extend (x) VALUES ('a');
+ALTER TABLE t_enum_extend MODIFY COLUMN x Enum8('a' = 1, 'b' = 2) SETTINGS mutations_sync = 2;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_enum_extend';
+SELECT x, m FROM t_enum_extend;
+
+-- A key column cannot be recalculated in an existing part, so the ALTER is rejected.
+CREATE TABLE t_enum_materialized_key (x Enum8('a' = 1, 'b' = 2), m String MATERIALIZED toString(x))
+ENGINE = MergeTree ORDER BY m;
+ALTER TABLE t_enum_materialized_key MODIFY COLUMN x Int8; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP TABLE t_enum_materialized;
+DROP TABLE t_enum_plain;
+DROP TABLE t_enum_extend;
+DROP TABLE t_enum_materialized_key;
+
+-- Case 21: one ALTER that changes the type of a source and of a MATERIALIZED column computed from it recalculates
+-- that column from the converted source (not just casting its stored value), and then the columns computed from it.
+DROP TABLE IF EXISTS t_modify_source_and_materialized;
+CREATE TABLE t_modify_source_and_materialized (x Int64, m1 Int64 MATERIALIZED x % 1000, m2 Int64 MATERIALIZED m1 * 2, s String)
+ENGINE = MergeTree ORDER BY s
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_modify_source_and_materialized (x, s) VALUES (5000000001, 'payload');
+
+ALTER TABLE t_modify_source_and_materialized MODIFY COLUMN x Int32, MODIFY COLUMN m1 Int32 SETTINGS mutations_sync = 2;
+
+SELECT x, m1, x % 1000, m2 FROM t_modify_source_and_materialized;
+
+DROP TABLE t_modify_source_and_materialized;
+
+-- Case 22: a type change of `x` and a later UPDATE reading a MATERIALIZED column computed from it (`y = m`) can be
+-- executed by one mutation of a part. The UPDATE sees `m` recomputed from the converted `x`, as when they run one
+-- after the other.
+DROP TABLE IF EXISTS t_batched;
+DROP TABLE IF EXISTS t_serial;
+
+CREATE TABLE t_batched (x Int64, m Int64 MATERIALIZED x % 1000, y Int64, s String)
+ENGINE = MergeTree ORDER BY s
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_batched (x, y, s) VALUES (5000000001, 0, 'payload');
+
+SYSTEM STOP MERGES t_batched;
+ALTER TABLE t_batched MODIFY COLUMN x Int32 SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_batched UPDATE y = m WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0;
+SYSTEM START MERGES t_batched;
+-- Mutations are applied in order, so waiting for this one waits for both above.
+ALTER TABLE t_batched UPDATE y = y WHERE 0 SETTINGS mutations_sync = 2;
+
+SELECT x, m, y FROM t_batched;
+
+CREATE TABLE t_serial (x Int64, m Int64 MATERIALIZED x % 1000, y Int64, s String)
+ENGINE = MergeTree ORDER BY s
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_serial (x, y, s) VALUES (5000000001, 0, 'payload');
+ALTER TABLE t_serial MODIFY COLUMN x Int32 SETTINGS mutations_sync = 2;
+ALTER TABLE t_serial UPDATE y = m WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT x, m, y FROM t_serial;
+
+DROP TABLE t_batched;
+DROP TABLE t_serial;
+
+-- With two conversions around the UPDATE, only the one before it affects what the UPDATE reads: `m` depends on
+-- `z`, which is converted after the UPDATE, so the UPDATE still reads the old `m`.
+CREATE TABLE t_batched (x Int64, z Int64, m Int64 MATERIALIZED z % 1000, y Int64, s String)
+ENGINE = MergeTree ORDER BY s
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_batched (x, z, y, s) VALUES (1, 5000000001, 0, 'payload');
+
+SYSTEM STOP MERGES t_batched;
+ALTER TABLE t_batched MODIFY COLUMN x Int32 SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_batched UPDATE y = m WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_batched MODIFY COLUMN z Int32 SETTINGS mutations_sync = 0, alter_sync = 0;
+SYSTEM START MERGES t_batched;
+ALTER TABLE t_batched UPDATE y = y WHERE 0 SETTINGS mutations_sync = 2;
+
+SELECT z, m, y FROM t_batched;
+
+CREATE TABLE t_serial (x Int64, z Int64, m Int64 MATERIALIZED z % 1000, y Int64, s String)
+ENGINE = MergeTree ORDER BY s
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_serial (x, z, y, s) VALUES (1, 5000000001, 0, 'payload');
+ALTER TABLE t_serial MODIFY COLUMN x Int32 SETTINGS mutations_sync = 2;
+ALTER TABLE t_serial UPDATE y = m WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE t_serial MODIFY COLUMN z Int32 SETTINGS mutations_sync = 2;
+
+SELECT z, m, y FROM t_serial;
+
+DROP TABLE t_batched;
+DROP TABLE t_serial;

@@ -1465,8 +1465,13 @@ bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_
 /// True metadata-only conversion: identical on-disk bytes, only the logical type changes
 /// (e.g. `Date`<->`UInt16`, enum widening). Safe everywhere, including positionally-persisted
 /// values. Recurses through `Array`/`Nullable`.
-bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
+/// @reinterprets_values is set when the stored values are read as another type (`Enum8` -> `Int8`), not
+/// when the types are equal or an Enum only gains values.
+bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to, bool * reinterprets_values = nullptr)
 {
+    if (reinterprets_values)
+        *reinterprets_values = false;
+
     auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
     {
         if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type))
@@ -1510,7 +1515,11 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
             if (it->second == typeid(*to))
+            {
+                if (reinterprets_values)
+                    *reinterprets_values = true;
                 return true;
+            }
         }
 
         const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
@@ -1713,29 +1722,14 @@ MutationStageDecision AlterCommand::getMutationStageDecision(
         if (column.name != column_name)
             continue;
 
-        if (isTrueMetadataOnlyConversion(column.type.get(), data_type.get()))
+        bool reinterprets_values = false;
+        if (isTrueMetadataOnlyConversion(column.type.get(), data_type.get(), &reinterprets_values))
         {
-            if (column.type->equals(*data_type))
-                return decision;
-
-            /// Adding values to an Enum keeps every existing value, so it stays a metadata-only change.
-            auto strip_containers = [](const IDataType * nested)
-            {
-                while (true)
-                {
-                    if (const auto * array_type = typeid_cast<const DataTypeArray *>(nested))
-                        nested = array_type->getNestedType().get();
-                    else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(nested))
-                        nested = nullable_type->getNestedType().get();
-                    else
-                        return nested;
-                }
-            };
-            if (WhichDataType(*strip_containers(column.type.get())).isEnum() && WhichDataType(*strip_containers(data_type.get())).isEnum())
+            if (!reinterprets_values)
                 return decision;
 
             /// The stored bytes do not change, but a MATERIALIZED column computed from this one can
-            /// (e.g. `toString` of an `Enum8` converted to `Int8`), so run a mutation that recalculates it.
+            /// (`toString` of an `Enum8` converted to `Int8`), so run a mutation that recalculates it.
             MaterializedColumnDependencies materialized_dependencies(metadata.columns, context);
             for (const auto & materialized : metadata.columns.getMaterialized())
             {

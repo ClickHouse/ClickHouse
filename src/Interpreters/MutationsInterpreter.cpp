@@ -737,17 +737,12 @@ static void validateUpdateColumns(
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, false);
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
-    NameSet key_storage_columns = source.getMergeTreeData() ? metadata_snapshot->getStorageColumnsRequiredForKeys() : NameSet{};
+    const auto * merge_tree_data = source.getMergeTreeData();
+    NameSet key_storage_columns = merge_tree_data ? merge_tree_data->getStorageColumnsFixedInPart(*metadata_snapshot) : NameSet{};
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
-    /// The sign and version columns may be subcolumns, so recomputing the column they belong to changes them as well.
-    for (const auto & key_column : key_columns)
-    {
-        if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
-            key_storage_columns.insert(column->getNameInStorage());
-    }
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
@@ -866,6 +861,19 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (!columns_for_analysis.has(virtual_column.name))
             columns_for_analysis.add(virtual_column);
     }
+
+    /// The columns a skip index is computed from, resolved to the columns they are stored in, so a change of
+    /// a column is matched against an index over its subcolumn (`t.a`) or over an ALIAS. Memoised, as each
+    /// resolution runs the query analyzer.
+    std::unordered_map<String, Names> index_storage_columns_cache;
+    auto get_index_storage_columns = [&](const IndexDescription & index) -> const Names &
+    {
+        if (auto it = index_storage_columns_cache.find(index.name); it != index_storage_columns_cache.end())
+            return it->second;
+
+        auto resolved = expressionSourceColumnsInStorage(index.expression_list_ast, columns_for_analysis, context);
+        return index_storage_columns_cache.emplace(index.name, std::move(resolved)).first->second;
+    };
 
     NameSet updated_columns;
     /// Columns whose values are changed by materializing patch parts (lightweight
@@ -1141,23 +1149,13 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!clear_column_names.empty())
         clear_affected_materialized = affected_materialized_closure(clear_column_names);
 
-    /// MATERIALIZED columns derived from a column read at another type: their stored values were
-    /// computed from data this mutation rewrites. A key column is skipped, because recomputing it would
-    /// break the sort order or the partition id of the part; checkAlterIsPossible rejects such an ALTER.
+    /// A key column cannot be recomputed in an existing part; checkAlterIsPossible rejects an ALTER that would need it.
     NameSet key_storage_columns;
-    if (!type_changed_columns.empty())
-    {
-        /// A key column may be a subcolumn (`ORDER BY m.a`), so resolve the key columns to the columns
-        /// they are stored in: a MATERIALIZED column whose subcolumn is a key cannot be recomputed in
-        /// an existing part, and checkAlterIsPossible rejects such an ALTER.
-        key_storage_columns = source.getMergeTreeData() ? metadata_snapshot->getStorageColumnsRequiredForKeys() : NameSet{};
-        const auto & storage_columns = metadata_snapshot->getColumns();
-        for (const auto & key_column : getKeyColumns(source, metadata_snapshot))
-            if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
-                key_storage_columns.insert(column->getNameInStorage());
-    }
+    if (!type_changed_columns.empty() && source.getMergeTreeData())
+        key_storage_columns = source.getMergeTreeData()->getStorageColumnsFixedInPart(*metadata_snapshot);
 
-    /// The MATERIALIZED columns to recompute because @converted_columns are read at another type.
+    /// The MATERIALIZED columns to recompute because @converted_columns are read at another type: their
+    /// stored values were computed from data this mutation rewrites.
     auto type_changed_dependents = [&](const NameSet & converted_columns)
     {
         NameSet to_recompute = affected_materialized_closure(converted_columns);
@@ -1199,11 +1197,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     all_affected_materialized.insert(clear_affected_materialized.begin(), clear_affected_materialized.end());
     all_affected_materialized.insert(type_changed_affected_materialized.begin(), type_changed_affected_materialized.end());
 
-    /// getColumnDependencies compares an index's required columns by raw name, so a change of a parent
-    /// column (`t`) is not recognized as affecting an index on its subcolumn (`t.a`), and the index's other
-    /// inputs (e.g. `y` in `t.a + y`) never enter the read set. Resolve each index's required columns to
-    /// their storage columns; when @changed_columns contains any of them, read all of them, so the index
-    /// recalculation downstream has every input.
+    /// getColumnDependencies matches index inputs by raw name, so it misses an index over a subcolumn (`t.a`)
+    /// of a changed column and does not read the index's other inputs (`y` in `t.a + y`). Read all inputs of
+    /// every index one of @changed_columns is stored in.
     auto add_index_dependencies_of_changed_columns = [&](const NameSet & changed_columns)
     {
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
@@ -1211,21 +1207,14 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
                 continue;
 
-            auto index_storage_columns = expressionSourceColumnsInStorage(index.expression_list_ast, columns_for_analysis, context);
-            bool affected = std::any_of(
-                index_storage_columns.begin(),
-                index_storage_columns.end(),
-                [&](const auto & col) { return changed_columns.contains(col); });
-
-            if (affected)
+            const auto & index_storage_columns = get_index_storage_columns(index);
+            if (std::ranges::any_of(index_storage_columns, [&](const auto & col) { return changed_columns.contains(col); }))
                 for (const auto & col : index_storage_columns)
                     dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
         }
 
-        /// The raw index inputs can still name a subcolumn (`t.a`, reached through another input `y`).
-        /// Reading it from the source part would put a stale `t.a` next to the updated `t` in the stream, and
-        /// the index recalculation takes a subcolumn present in the block as is. Read its storage column
-        /// instead, so the subcolumn is extracted from the updated value.
+        /// A subcolumn read from the source part would be stale next to its updated column, and the index
+        /// recalculation takes a subcolumn present in the block as is, so read the column it is stored in.
         ColumnDependencies normalized_dependencies;
         for (const auto & dependency : dependencies)
         {
@@ -1770,15 +1759,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
-                        /// Rebuild when the altered column feeds the projection's key or WHERE clause
-                        /// (which decide the stored rows/groups); a type change can then invalidate the
-                        /// stored data and the raw-byte primary index, left stale (hardlinked) on wide
-                        /// parts. SELECT outputs are excluded: they are read back with an on-the-fly cast.
+                        /// Rebuild when the column feeds the projection's key or WHERE clause, which decide its
+                        /// rows and its primary index. A SELECT output is cast on read.
                         Names affecting_columns;
                         if (projection.type == ProjectionDescription::Type::Aggregate)
                         {
-                            /// The key of an aggregate projection is built over its own columns (`GROUP BY
-                            /// f(x)` becomes the key `f(x)`), so take the group expressions instead.
+                            /// The key of an aggregate projection is over its own columns (`GROUP BY f(x)` gives
+                            /// the key `f(x)`), so take the group expressions.
                             if (const auto * select = projection.query_ast->as<ASTSelectQuery>())
                                 affecting_columns = expressionSourceColumnsInStorage(select->groupBy(), columns_for_analysis, context);
                         }
@@ -1803,12 +1790,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
-                        /// The index may read a subcolumn of the altered column (e.g. index on `t.a`
-                        /// while `ALTER ... MODIFY COLUMN t ...`); resolve required columns to their
-                        /// top-level columns so the parent change is recognized, otherwise a subcolumn
-                        /// index would be left stale (hardlinked unchanged) on wide parts.
-                        auto index_cols = expressionSourceColumnsInStorage(index.expression_list_ast, columns_for_analysis, context);
-                        if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
+                        const auto & index_cols = get_index_storage_columns(index);
+                        if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
                         {
                             switch (index_mode)
                             {
@@ -1845,9 +1828,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// availability depend on whether the value had physical files.
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
-                /// Resolved, so an index over a subcolumn of the cleared column is matched too.
-                auto index_cols = expressionSourceColumnsInStorage(index.expression_list_ast, columns_for_analysis, context);
-                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) == index_cols.end())
+                const auto & index_cols = get_index_storage_columns(index);
+                if (std::ranges::find(index_cols, command.column_name) == index_cols.end())
                     continue;
 
                 switch (index_mode)
@@ -2003,13 +1985,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             continue;
         }
 
-        /// Resolve required columns to their top-level columns so a mutation of a parent column
-        /// (e.g. `UPDATE`/`CLEAR COLUMN t`) is recognized as affecting an index on its subcolumn
-        /// (e.g. `t.a`); otherwise the index would be left stale (hardlinked unchanged) on wide parts.
-        auto index_cols = expressionSourceColumnsInStorage(index.expression_list_ast, columns_for_analysis, context);
-        bool changed = std::any_of(
-            index_cols.begin(),
-            index_cols.end(),
+        const auto & index_cols = get_index_storage_columns(index);
+        bool changed = std::ranges::any_of(
+            index_cols,
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)

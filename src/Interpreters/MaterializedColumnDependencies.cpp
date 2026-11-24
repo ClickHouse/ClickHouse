@@ -127,6 +127,9 @@ bool MaterializedColumnDependencies::willBeRecalculated(const String & column_na
 
 bool MaterializedColumnDependencies::dependsOn(const String & column_name, const String & source_column) const
 {
+    const auto * source = columns.tryGet(source_column);
+    const bool source_is_alias = source && source->default_desc.kind == ColumnDefaultKind::Alias;
+
     NameSet visited;
     auto walk = [&](const String & name, auto && self) -> bool
     {
@@ -136,6 +139,10 @@ bool MaterializedColumnDependencies::dependsOn(const String & column_name, const
         const auto * materialized = findNode(name);
         if (!materialized)
             return false;
+
+        /// The dependencies have aliases expanded, so an alias is looked for in the original expression.
+        if (source_is_alias && expressionReadsColumn(columns.get(name).default_desc.expression, columns, source_column, context))
+            return true;
 
         return std::ranges::any_of(materialized->dependencies, [&](const auto & dependency)
         {

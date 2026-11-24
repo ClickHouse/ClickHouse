@@ -23,4 +23,8 @@ Names expressionSourceColumnNames(const ASTPtr & ast, const ColumnsDescription &
 /// ALTER tracks.
 Names expressionSourceColumnsInStorage(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context);
 
+/// Whether `ast` refers to `column_name` or to one of its subcolumns, also through ALIAS columns. Unlike the
+/// functions above it keeps an ALIAS column itself, so it also answers for an ALIAS `column_name`.
+bool expressionReadsColumn(const ASTPtr & ast, const ColumnsDescription & columns, const String & column_name, const ContextPtr & context);
+
 }

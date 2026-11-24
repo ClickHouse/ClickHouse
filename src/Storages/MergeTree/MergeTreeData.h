@@ -1208,6 +1208,10 @@ public:
     /// transient guards. lets a caller ask whether a command is eligible at all
     void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
 
+    /// Stored columns whose values a mutation cannot recompute in an existing part: those of the keys and the
+    /// sign and version columns (or the columns they are subcolumns of).
+    NameSet getStorageColumnsFixedInPart(const StorageInMemoryMetadata & metadata) const;
+
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 

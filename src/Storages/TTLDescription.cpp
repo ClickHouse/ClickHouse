@@ -1371,6 +1371,22 @@ static ExpressionAndSets buildExpressionAndSets(
     return analyzeExpressionAndSets(ast, columns, context, required_source_columns, result_name);
 }
 
+/// A TTL expression reads a subcolumn via getSubcolumn from its whole column, so it depends on that column
+/// and sees a value a mutation has just updated. The result keeps the name of @ast, which is `result_column`
+/// and the key of the TTL infos stored in parts.
+static ExpressionAndSets buildTTLExpressionAndSets(
+    const ASTPtr & ast,
+    const NamesAndTypesList & columns,
+    const ContextPtr & context,
+    NamesAndTypesList * required_source_columns,
+    bool widen_temporal_columns)
+{
+    auto rewritten = ast->clone();
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(rewritten, columns);
+    return buildExpressionAndSets(
+        rewritten, columns, context, required_source_columns, widen_temporal_columns, ast->formatWithSecretsOneLine());
+}
+
 /// Collect the argument expressions of every aggregate function found in the AST.
 static void collectAggregateFunctionArguments(const ASTPtr & ast, ASTs & arguments)
 {
@@ -1428,13 +1444,8 @@ ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) co
     for (const auto & set_part : set_parts)
         checkTTLExpressionPreservesRowCount(set_part.expression, /*ast=*/ nullptr, /*expression_kind=*/ "GROUP BY SET ");
 
-    auto ast = expression_ast->clone();
-    /// Evaluate a subcolumn TTL via getSubcolumn from the whole (possibly just-updated) column,
-    /// not a stale pre-extracted subcolumn. The result keeps the name of the original expression,
-    /// which is `result_column` and the key of the TTL infos stored in parts.
-    replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, expression_source_columns);
-    return buildExpressionAndSets(
-        ast, expression_source_columns, getTTLExpressionContext(context), nullptr, true, expression_ast->formatWithSecretsOneLine());
+    return buildTTLExpressionAndSets(
+        expression_ast, expression_source_columns, getTTLExpressionContext(context), nullptr, /*widen_temporal_columns=*/ true);
 }
 
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
@@ -1443,13 +1454,11 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     {
         checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, where_expression_ast, /*expression_kind=*/ "WHERE ");
 
-        auto ast = where_expression_ast->clone();
-        replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, where_expression_source_columns);
         /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
         /// predicate must keep the table's original static column types.
-        return buildExpressionAndSets(
-            ast, where_expression_source_columns, getTTLExpressionContext(context), nullptr, false,
-            where_expression_ast->formatWithSecretsOneLine());
+        return buildTTLExpressionAndSets(
+            where_expression_ast, where_expression_source_columns, getTTLExpressionContext(context), nullptr,
+            /*widen_temporal_columns=*/ false);
     }
 
     return {};
@@ -1488,15 +1497,9 @@ TTLDescription TTLDescription::getTTLFromAST(
     else if (validation_mode == TTLValidationMode::Attach)
         build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
-    auto ttl_ast = result.expression_ast->clone();
-    /// Rewrite subcolumns to getSubcolumn so a subcolumn TTL resolves to its top-level column: a
-    /// mutation of the parent then affects the TTL (getColumnDependencies) and it recomputes from the
-    /// updated parent. Stored expression_ast is kept for SHOW CREATE, and the result keeps the name of
-    /// the original expression, because result_column is the key of the TTL infos stored in parts.
-    replaceSubcolumnsToGetSubcolumnFunctionInQuery(ttl_ast, columns.getAllPhysical());
-    auto expression = buildExpressionAndSets(
-        ttl_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns, true,
-        result.expression_ast->formatWithSecretsOneLine()).expression;
+    auto expression = buildTTLExpressionAndSets(
+        result.expression_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns,
+        /*widen_temporal_columns=*/ true).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
@@ -1521,12 +1524,9 @@ TTLDescription TTLDescription::getTTLFromAST(
             {
                 result.where_expression_ast = where_expr_ast->clone();
 
-                ASTPtr ast = where_expr_ast->clone();
-                replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, columns.getAllPhysical());
-                where_expression
-                = buildExpressionAndSets(
-                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false,
-                    where_expr_ast->formatWithSecretsOneLine()).expression;
+                where_expression = buildTTLExpressionAndSets(
+                    where_expr_ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns,
+                    /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
