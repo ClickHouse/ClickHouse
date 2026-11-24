@@ -737,7 +737,26 @@ bool CPULeaseAllocation::waitForGrant(std::unique_lock<std::mutex> & lock, size_
 
     if (timeout == std::chrono::milliseconds::max())
     {
-        threads.wake[thread_num].wait(lock, predicate);
+        if (thread_num == 0 && settings.on_master_wait)
+        {
+            // W/o lock for the same reason as on_preempt
+            while (!threads.wake[thread_num].wait_for(lock, settings.master_wait_period, predicate))
+            {
+                lock.unlock();
+                try
+                {
+                    settings.on_master_wait();
+                }
+                catch (...)
+                {
+                    lock.lock();
+                    throw;
+                }
+                lock.lock();
+            }
+        }
+        else
+            threads.wake[thread_num].wait(lock, predicate);
         return true; // Granted
     }
     else
@@ -831,6 +850,10 @@ void CPULeaseAllocation::release(Lease & lease)
 
     // Release the slot
     downscale(lease.slot_id);
+
+    // A preempted thread runs on the released slot
+    if (!shutdown)
+        resumePreempted();
 }
 
 bool CPULeaseAllocation::isRequesting() const
