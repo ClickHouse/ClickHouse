@@ -8,6 +8,8 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/KeyDescription.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
 #endif
@@ -153,6 +155,26 @@ IMergeTreeReader::IMergeTreeReader(
         for (const auto & column : getColumns())
             ++storage_column_use_count[column.getNameInStorage()];
 
+        /// `MergeOnKey` patches are matched to the rows of the part by comparing the sorting key values,
+        /// which happens before PREWHERE, so the columns of the sorting key must be read in full:
+        /// the substituted empty strings would break the order of rows and the patch would not be applied.
+        NameSet patch_key_columns;
+        if (alter_conversions && alter_conversions->hasPatches())
+        {
+            for (const auto & patch : alter_conversions->getAllPatches())
+            {
+                if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key)
+                    continue;
+
+                patch_key_columns.insert(patch.sorting_key->column_names.begin(), patch.sorting_key->column_names.end());
+                if (patch.sorting_key->expression)
+                {
+                    for (const auto & name : patch.sorting_key->expression->getRequiredColumns())
+                        patch_key_columns.insert(name);
+                }
+            }
+        }
+
         size_t pos = 0;
         for (const auto & column : getColumns())
         {
@@ -175,6 +197,9 @@ IMergeTreeReader::IMergeTreeReader(
             /// on the values computed by the mutation expression, not on the stored values,
             /// so the stored values must be read in full.
             if (alter_conversions && alter_conversions->getAllUpdatedColumns().contains(column.name))
+                continue;
+
+            if (patch_key_columns.contains(column.name) || patch_key_columns.contains(column.getNameInStorage()))
                 continue;
 
             /// Only the plain serialization reads values one by one and supports filtering.

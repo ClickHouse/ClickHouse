@@ -310,6 +310,15 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             new_readers.prewhere.back()->setReadHints(read_info->read_hints, pre_columns_per_step);
     }
 
+    /// Patches are applied before PREWHERE and are matched to the rows of the part by the values of
+    /// their key columns (e.g. the sorting key for `MergeOnKey` patches), so they must be read in full.
+    std::optional<MergeTreeReaderSettings> patch_reader_settings;
+    if (!read_info->patch_parts.empty())
+    {
+        patch_reader_settings.emplace(extras.reader_settings);
+        patch_reader_settings->string_value_filters = nullptr;
+    }
+
     auto create_patch_reader = [&](size_t part_idx)
     {
         return createMergeTreeReader(
@@ -323,7 +332,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.columns_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
-            extras.reader_settings,
+            *patch_reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };
