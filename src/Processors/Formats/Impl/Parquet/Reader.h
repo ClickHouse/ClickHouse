@@ -818,6 +818,8 @@ struct Reader
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
     void decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
+    /// Reads the header of every page that the offset index gives no rows, returns whether all of them have no values.
+    bool pagesWithoutRowsAreEmpty(const ColumnChunk & column);
     /// Builds the page locations an offset index would hold from the page headers; leaves them empty on anything unusual.
     void locatePagesFromHeaders(ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info);
     /// Call after prewhere is done on row subgroup. Un-requests prefetch for fully filtered out pages,

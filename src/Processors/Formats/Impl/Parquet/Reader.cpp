@@ -3266,6 +3266,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             {
                 size_t start_row = column.offset_index.page_locations[page_idx].first_row_index;
                 size_t end_row = page_idx + 1 < num_pages ? column.offset_index.page_locations[page_idx + 1].first_row_index : row_group.meta->num_rows;
+                if (end_row == start_row)
+                    continue; // page without rows (only kept by decodeOffsetIndex for non-repeated columns)
                 chassert(end_row > start_row); // validated in decodeOffsetIndex
                 if (start_row > prev_row_idx)
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
@@ -3700,9 +3702,12 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo &
         prev_row_index = loc.first_row_index;
     }
 
-    /// Arrow C++ gives a page with no rows (repeated columns) the next page's first_row_index. Such a
-    /// page can't be checked against the index without reading it, so neither index is used here.
-    if (has_page_without_rows)
+    /// Arrow C++ gives a page with no rows the next page's first_row_index. In a repeated column such
+    /// a page may still hold values (the tail of the previous page's last row), and it can't be checked
+    /// against the index without reading it, so neither index is used here. Without repetition every
+    /// value is a row, so the page must have no values: that is checked in its header, and then both
+    /// indexes stay usable, with the page skipped by `applyColumnIndex` and `determinePagesToPrefetch`.
+    if (has_page_without_rows && (column_info.levels.back().rep != 0 || !pagesWithoutRowsAreEmpty(column)))
     {
         column.offset_index.page_locations.clear();
         column.use_column_index = false;
@@ -3722,6 +3727,43 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo &
                  .offset_index = std::make_shared<const parq::OffsetIndex>(column.offset_index)});
         }
     }
+}
+
+bool Reader::pagesWithoutRowsAreEmpty(const ColumnChunk & column)
+{
+    const auto & locations = column.offset_index.page_locations;
+    PaddedPODArray<char> buf;
+    /// The last page has rows, as validated in `decodeOffsetIndex`.
+    for (size_t i = 0; i + 1 < locations.size(); ++i)
+    {
+        const auto & loc = locations[i];
+        if (loc.first_row_index != locations[i + 1].first_row_index)
+            continue;
+
+        /// A page without values is little more than its header.
+        buf.resize(std::min(size_t(loc.compressed_page_size), size_t(4096)));
+        prefetcher.readSync(buf.data(), buf.size(), size_t(loc.offset));
+        parq::PageHeader header;
+        try
+        {
+            decodePageHeader(header, buf.data(), buf.size());
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::INCORRECT_DATA)
+                throw;
+            return false;
+        }
+
+        bool empty = false;
+        if (header.type == parq::PageType::DATA_PAGE)
+            empty = header.data_page_header.num_values == 0;
+        else if (header.type == parq::PageType::DATA_PAGE_V2)
+            empty = header.data_page_header_v2.num_values == 0 && header.data_page_header_v2.num_rows == 0;
+        if (!empty)
+            return false;
+    }
+    return true;
 }
 
 void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, VectorWithMemoryTracking<PrefetchHandle *> & out)
@@ -3761,6 +3803,9 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
             while (ranges_idx < row_ranges.size() && row_ranges[ranges_idx].second <= size_t(loc.first_row_index))
                 ++ranges_idx;
             size_t page_end = size_t(page_idx + 1 < locations.size() ? locations[page_idx + 1].first_row_index : row_group.meta->num_rows);
+            /// A page without rows holds no values in a non-repeated column (see `decodeOffsetIndex`).
+            if (page_end == size_t(loc.first_row_index))
+                continue;
             if (ranges_idx < row_ranges.size() && row_ranges[ranges_idx].first < page_end)
             {
                 column.data_pages.push_back(DataPage {.meta = &loc, .end_row_idx = page_end});
