@@ -82,6 +82,23 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
         }
     }
 
+    if (disk->getDataSourceDescription().is_encrypted)
+    {
+        for (const auto & [saved_disk_name, saved_disk] : disks)
+        {
+            if (!saved_disk->getDataSourceDescription().is_encrypted)
+                continue;
+
+            if (disk->getDelegateDiskIfExists() != saved_disk->getDelegateDiskIfExists())
+                continue;
+
+            if (disk->getPath() == saved_disk->getPath())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Disk {} and disk {} cannot have the same path ({})",
+                    disk_name, saved_disk_name, disk->getPath());
+        }
+    }
+
     const auto [_, inserted] = disks.emplace(disk_name, std::move(disk));
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk with name `{}` is already in disks map", disk_name);
