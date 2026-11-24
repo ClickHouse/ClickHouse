@@ -808,6 +808,13 @@ public:
     /// The captured settings decide how a JSON value is parsed into the result, see `IFunctionBase::updateHash`.
     void updateHashImpl(SipHash & hash) const override { hash.update(settings_hash); }
 
+    /// The JSON (text or a `JSON` value) is converted into the result type.
+    bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
+    {
+        const auto & arguments = getArgumentTypes();
+        return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], getResultType());
+    }
+
     const DataTypes & getArgumentTypes() const override
     {
         return argument_types;
@@ -934,8 +941,10 @@ public:
         argument_types.reserve(arguments.size());
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
-        return std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
+        FunctionBasePtr base = std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
             null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings, settings_hash);
+        attachResultSettings(base);
+        return base;
     }
 
 private:

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -18,6 +19,12 @@ namespace DB
 
 class FunctionIfBase : public IFunction
 {
+public:
+    bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & /*arguments*/, const DataTypePtr & result_type) const override
+    {
+        return stringBranchesResultDependsOnSetting(setting, result_type);
+    }
+
 #if USE_EMBEDDED_COMPILER
 public:
     [[nodiscard]] bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override

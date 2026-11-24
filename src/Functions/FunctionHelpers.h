@@ -210,6 +210,21 @@ struct NullPresence
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
+struct FunctionResultSetting;
+
+/// For `resultDependsOnSetting` of a function that converts a value of type `from` to `to` (a `Dynamic`, `Variant` or `JSON` value
+/// counts as any type, since it holds one at runtime): the settings of parsing text apply only when `from` has text, of writing
+/// text only when `to` has text, of `JSON` only when either has `JSON`, of type inference only when `to` has a `Dynamic`, `Variant`
+/// or `JSON`. `session_timezone` applies when `to` has a `DateTime` or `DateTime64` without an explicit time zone that the function
+/// creates (`creates_result_type`), which takes the time zone of the session; otherwise only when text or a value without a time
+/// zone (`Date`, `Time`) becomes one. Any other setting always applies.
+bool conversionResultDependsOnSetting(
+    const FunctionResultSetting & setting, const DataTypePtr & from, const DataTypePtr & to, bool creates_result_type = true);
+
+/// For `resultDependsOnSetting` of `if`, `multiIf` and `transform`: `optimize_if_transform_const_strings_to_lowcardinality` and
+/// `optimize_if_transform_strings_to_enum` change only a result of text, any other setting always applies.
+bool stringBranchesResultDependsOnSetting(const FunctionResultSetting & setting, const DataTypePtr & result_type);
+
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 bool isLowCardinalityType(const IDataType & type);
 /// Returns true if any of the argument types is or contains LowCardinality

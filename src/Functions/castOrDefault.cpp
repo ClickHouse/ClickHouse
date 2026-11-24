@@ -60,6 +60,12 @@ public:
 
     [[nodiscard]] String getName() const override { return name; }
 
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], result_type);
+    }
+
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -252,6 +258,12 @@ public:
     }
 
     [[nodiscard]] String getName() const override { return name; }
+
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], result_type);
+    }
 
 private:
     FunctionCastOrDefault impl;

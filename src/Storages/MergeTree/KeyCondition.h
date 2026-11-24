@@ -82,8 +82,9 @@ public:
         bool single_point_ = false,
         bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
         bool require_ready_sets_ = false, /// Analyse only already-built `IN` sets; never execute a subquery.
-        /// Subexpressions of the key that must not be matched, see `KeyDescription::getExpressionsWithChangedResultSettings`.
-        const NameSet & unusable_key_expressions = {});
+        /// Subexpressions of the key that a filter expression must not match by name, see
+        /// `KeyDescription::getExpressionsWithChangedResultSettings`.
+        const NameSet & unusable_key_expressions_ = {});
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -997,6 +998,9 @@ private:
     /// `key_columns` may contain all columns of the key tuple or only the columns used in the
     /// KeyCondition. Either way, num_key_columns is the length of the whole key tuple.
     size_t num_key_columns = 0;
+    /// Key expressions that a filter expression must not match by name: the session computes them differently than the
+    /// stored values. The key's own functions can still be applied to a constant, e.g. a filter on a column it reads.
+    NameSet unusable_key_expressions;
 
     /// Space-filling curves in the key
     enum class SpaceFillingCurveType

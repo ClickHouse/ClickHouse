@@ -82,11 +82,7 @@ public:
         FunctionResultSettings result_settings_ = {});
 
     /// The declared result settings of `name` (an alias or any case of a case-insensitive name), or nullptr.
-    [[nodiscard]] const Names * tryGetResultSettings(const std::string & name) const;
-
-    /// `context` with every declared result setting set to its value in the global context, or `context` itself when none
-    /// differs. For an expression whose values are stored with the table, such as a projection.
-    [[nodiscard]] ContextPtr withGlobalResultSettings(const ContextPtr & context) const;
+    [[nodiscard]] const RegisteredResultSettings * tryGetResultSettings(const std::string & name) const;
 
     [[nodiscard]] FunctionDocumentation getDocumentation(const std::string & name) const;
 
@@ -99,15 +95,9 @@ private:
     Functions functions;
     Functions case_insensitive_functions;
     std::unordered_map<std::string, SecretArgumentsSpec> secret_arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    struct ResultSettings
-    {
-        Names names;
-        /// See `Settings::getIndexOfBuiltin`: creating a function must not look up the names.
-        VectorWithMemoryTracking<size_t> indices;
-    };
-    std::unordered_map<std::string, ResultSettings> result_settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::unordered_map<std::string, RegisteredResultSettings> result_settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     /// The same, by the creator of the function: `tryGetImpl` has it already, and looking up a name costs more.
-    std::unordered_map<const FunctionCreator *, const ResultSettings *> result_settings_by_creator; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::unordered_map<const FunctionCreator *, const RegisteredResultSettings *> result_settings_by_creator; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     [[nodiscard]] const Functions & getMap() const override { return functions; }
 

@@ -163,8 +163,8 @@ namespace
         Array result_settings;
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
-            if (const auto * names = factory.tryGetResultSettings(name))
-                result_settings.assign(names->begin(), names->end());
+            if (const auto * registered = factory.tryGetResultSettings(name))
+                result_settings.assign(registered->names.begin(), registered->names.end());
         }
         res_columns[i++]->insert(result_settings);
     }

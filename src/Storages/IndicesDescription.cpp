@@ -315,7 +315,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
 
     result_settings.clear();
-    collectResultSettings(*expr_list, context->getSettingsRef(), result_settings);
+    collectResultSettings(*expr_list, expression->getActionsDAG(), context->getSettingsRef(), result_settings);
 
     sample_block = expression->getSampleBlock();
 }

@@ -101,6 +101,11 @@ namespace
 
         String getName() const override { return name; }
 
+        bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & /*arguments*/, const DataTypePtr & result_type) const override
+        {
+            return stringBranchesResultDependsOnSetting(setting, result_type);
+        }
+
         bool isVariadic() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }

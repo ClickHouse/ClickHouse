@@ -8,7 +8,11 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Core/Settings.h>
+#include <DataTypes/TimezoneMixin.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
 
@@ -17,6 +21,46 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
+    extern const SettingsString bool_false_representation;
+    extern const SettingsString bool_true_representation;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    extern const SettingsDateTimeInputFormat date_time_input_format;
+    extern const SettingsDateTimeOutputFormat date_time_output_format;
+    extern const SettingsBool input_format_ipv4_default_on_conversion_error;
+    extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool input_format_read_datetime_number_as_raw_value;
+    extern const SettingsBool input_format_tsv_enum_as_number;
+    extern const SettingsIntervalOutputFormat interval_output_format;
+    extern const SettingsBool json_type_escape_dots_in_keys;
+    extern const SettingsBool output_format_always_write_decimal_point_in_float_and_decimal;
+    extern const SettingsBool output_format_decimal_trailing_zeros;
+    extern const SettingsUInt64 output_format_float_precision;
+    extern const SettingsBool output_format_trim_fixed_string;
+    extern const SettingsBool output_format_values_escape_quote_with_quote;
+    extern const SettingsBool precise_float_parsing;
+    extern const SettingsBool type_json_skip_invalid_typed_paths;
+    extern const SettingsBool type_json_skip_null_typed_paths;
+    extern const SettingsBool type_json_use_partial_match_to_skip_paths_by_regexp;
+    extern const SettingsBool cast_string_to_dynamic_use_inference;
+    extern const SettingsBool cast_string_to_variant_use_inference;
+    extern const SettingsBool input_format_json_try_infer_numbers_from_strings;
+    extern const SettingsBool input_format_try_infer_dates;
+    extern const SettingsBool input_format_try_infer_datetimes;
+    extern const SettingsBool input_format_try_infer_datetimes_only_datetime64;
+    extern const SettingsBool input_format_try_infer_exponent_floats;
+    extern const SettingsBool input_format_try_infer_integers;
+    extern const SettingsBool input_format_try_infer_variants;
+    extern const SettingsBool input_format_tsv_use_best_effort_in_schema_inference;
+    extern const SettingsUInt64Auto schema_inference_make_columns_nullable;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
+    extern const SettingsTimezone session_timezone;
+}
 
 namespace ErrorCodes
 {
@@ -468,6 +512,87 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
     }
 
     return res;
+}
+
+bool conversionResultDependsOnSetting(const FunctionResultSetting & setting, const DataTypePtr & from, const DataTypePtr & to, bool creates_result_type)
+{
+    /// The settings of inferring the type of a value from its text, used only for a `Dynamic`, `Variant` or `JSON` value.
+    static const FunctionResultSetting inference_settings[] = {
+        Setting::cast_string_to_dynamic_use_inference, Setting::cast_string_to_variant_use_inference,
+        Setting::input_format_json_try_infer_numbers_from_strings, Setting::input_format_try_infer_dates,
+        Setting::input_format_try_infer_datetimes, Setting::input_format_try_infer_datetimes_only_datetime64,
+        Setting::input_format_try_infer_exponent_floats, Setting::input_format_try_infer_integers,
+        Setting::input_format_try_infer_variants, Setting::input_format_tsv_use_best_effort_in_schema_inference,
+        Setting::schema_inference_make_columns_nullable};
+
+    /// The settings of parsing text.
+    static const FunctionResultSetting parsing_settings[] = {
+        Setting::date_time_input_format, Setting::cast_string_to_date_time_mode, Setting::precise_float_parsing,
+        Setting::input_format_ipv4_default_on_conversion_error, Setting::input_format_ipv6_default_on_conversion_error,
+        Setting::input_format_tsv_enum_as_number, Setting::input_format_read_datetime_number_as_raw_value,
+        Setting::aggregate_function_input_format};
+
+    /// The settings of writing a value as text.
+    static const FunctionResultSetting writing_settings[] = {
+        Setting::date_time_output_format, Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands,
+        Setting::interval_output_format, Setting::bool_true_representation, Setting::bool_false_representation,
+        Setting::output_format_decimal_trailing_zeros, Setting::output_format_always_write_decimal_point_in_float_and_decimal,
+        Setting::output_format_float_precision, Setting::output_format_trim_fixed_string,
+        Setting::output_format_values_escape_quote_with_quote};
+
+    /// The settings of the `JSON` type.
+    static const FunctionResultSetting json_settings[] = {
+        Setting::type_json_skip_null_typed_paths, Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_invalid_typed_paths,
+        Setting::type_json_use_partial_match_to_skip_paths_by_regexp};
+
+    auto has_type = [](const DataTypePtr & type, auto && predicate)
+    {
+        bool found = false;
+        forEachInTypeTree(*type, [&](const IDataType & element) { found = found || predicate(element); });
+        return found;
+    };
+    auto is_text = [](const IDataType & type) { return isStringOrFixedString(type); };
+    /// A `Dynamic`, `Variant` or `JSON` value can hold a value of any type at runtime.
+    auto may_hold_any = [](const IDataType & type) { return isDynamic(type) || isVariant(type) || isObject(type); };
+
+    if (std::ranges::contains(inference_settings, setting))
+        return has_type(to, [](const IDataType & type) { return isDynamic(type) || isVariant(type) || isObject(type); });
+    if (std::ranges::contains(parsing_settings, setting))
+        return has_type(from, [&](const IDataType & type) { return is_text(type) || may_hold_any(type); });
+    if (std::ranges::contains(writing_settings, setting))
+        return has_type(to, is_text);
+    if (std::ranges::contains(json_settings, setting))
+        return has_type(from, may_hold_any) || has_type(to, may_hold_any);
+
+    if (!(setting == FunctionResultSetting(Setting::session_timezone)))
+        return true;
+
+    bool has_implicit_time_zone = has_type(to, [](const IDataType & type)
+    {
+        const auto * time_zone = dynamic_cast<const TimezoneMixin *>(&type);
+        return time_zone && !time_zone->hasExplicitTimeZone();
+    });
+    if (!has_implicit_time_zone)
+        return false;
+
+    /// A type without an explicit time zone that the function creates takes the time zone of the session, which changes how its
+    /// values are written as text later, e.g. `toString(toDateTime(n))`.
+    if (creates_result_type)
+        return true;
+
+    /// Text, and values without a time zone of their own, are placed in the time zone of the result.
+    return has_type(from, [&](const IDataType & type)
+        { return is_text(type) || may_hold_any(type) || isDateOrDate32(type) || isTime(type) || isTime64(type); });
+}
+
+bool stringBranchesResultDependsOnSetting(const FunctionResultSetting & setting, const DataTypePtr & result_type)
+{
+    if (!(setting == FunctionResultSetting(Setting::optimize_if_transform_const_strings_to_lowcardinality))
+        && !(setting == FunctionResultSetting(Setting::optimize_if_transform_strings_to_enum)))
+        return true;
+
+    WhichDataType which(removeNullable(removeLowCardinality(result_type)));
+    return which.isStringOrFixedString() || which.isEnum();
 }
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type)

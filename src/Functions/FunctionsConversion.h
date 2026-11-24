@@ -3972,6 +3972,16 @@ public:
     }
 
     void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+    bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        if (arguments.empty())
+            return true;
+        /// `toUnixTimestamp` returns a number, but parses text into a `DateTime` with the implicit time zone.
+        if constexpr (std::is_same_v<Name, NameToUnixTimestamp>)
+            return conversionResultDependsOnSetting(setting, arguments[0], std::make_shared<DataTypeDateTime>(), /*creates_result_type=*/ false);
+        else
+            return conversionResultDependsOnSetting(setting, arguments[0], result_type);
+    }
 
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
@@ -4591,6 +4601,10 @@ public:
     }
 
     void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+    bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], result_type);
+    }
 
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -6127,6 +6141,11 @@ public:
     String getName() const override { return cast_name; }
 
     void updateHashImpl(SipHash & hash) const override { settings.updateHash(hash); }
+
+    bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
+    {
+        return argument_types.empty() || conversionResultDependsOnSetting(setting, argument_types[0], return_type);
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

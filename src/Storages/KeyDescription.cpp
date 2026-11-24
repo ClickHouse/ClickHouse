@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -15,6 +16,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -33,19 +35,33 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void collectResultSettings(const IAST & ast, const Settings & settings, SettingsChanges & result_settings)
+void collectResultSettings(const IAST & ast, const ActionsDAG & dag, const Settings & settings, SettingsChanges & result_settings)
 {
-    if (const auto * function = ast.as<ASTFunction>())
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> functions;
+    for (const auto & node : dag.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+            functions.emplace(node.result_name, &node);
+
+    auto visit = [&](this auto & self, const IAST & node) -> void
     {
-        if (const auto * names = FunctionFactory::instance().tryGetResultSettings(function->name))
+        if (const auto * function = node.as<ASTFunction>())
         {
-            for (const auto & name : *names)
-                if (!result_settings.tryGet(name))
-                    result_settings.emplace_back(name, settings.get(name));
+            if (const auto * registered = FunctionFactory::instance().tryGetResultSettings(function->name))
+            {
+                /// A call folded into a constant or inside a lambda has no node to ask, so all its declared settings count.
+                auto it = functions.find(function->getColumnName());
+                const IFunctionBase * built = it == functions.end() ? nullptr : it->second->function_base.get();
+                for (size_t i = 0; i < registered->settings.size(); ++i)
+                {
+                    if ((!built || built->resultDependsOnSetting(registered->settings[i])) && !result_settings.tryGet(registered->names[i]))
+                        result_settings.emplace_back(registered->names[i], settings.getByIndex(registered->indices[i]));
+                }
+            }
         }
-    }
-    for (const auto & child : ast.children)
-        collectResultSettings(*child, settings, result_settings);
+        for (const auto & child : node.children)
+            self(*child);
+    };
+    visit(ast);
 }
 
 bool resultSettingsChanged(const SettingsChanges & result_settings, const Settings & settings)
@@ -221,7 +237,8 @@ KeyDescription KeyDescription::getKeyFromAST(
 
         /// Collected from the analyzed AST: user-defined functions are expanded there, and no call is erased by constant folding yet.
         for (const auto & column_ast : expr->children)
-            collectResultSettings(*column_ast, context->getSettingsRef(), result.result_settings.emplace_back());
+            collectResultSettings(
+                *column_ast, result.expression->getActionsDAG(), context->getSettingsRef(), result.result_settings.emplace_back());
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)

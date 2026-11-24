@@ -8,8 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
-#include <Common/FieldVisitorHash.h>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 
 #include <Poco/String.h>
@@ -90,7 +88,8 @@ void FunctionFactory::registerResultSettings(const std::string & name, FunctionR
     auto function = functions.find(name);
     chassert(function != functions.end());
 
-    ResultSettings entry;
+    RegisteredResultSettings entry;
+    entry.settings.assign(settings.begin(), settings.end());
     for (const auto & setting : settings)
     {
         size_t index = Settings::getIndexOfBuiltinByOffset(*setting.offset);
@@ -106,30 +105,10 @@ void FunctionFactory::registerResultSettings(const std::string & name, FunctionR
     result_settings_by_creator.emplace(&function->second.first, &it->second);
 }
 
-const Names * FunctionFactory::tryGetResultSettings(const std::string & name) const
+const RegisteredResultSettings * FunctionFactory::tryGetResultSettings(const std::string & name) const
 {
     auto it = result_settings.find(getCanonicalNameIfAny(getAliasToOrName(name)));
-    return it == result_settings.end() ? nullptr : &it->second.names;
-}
-
-ContextPtr FunctionFactory::withGlobalResultSettings(const ContextPtr & context) const
-{
-    const auto & settings = context->getSettingsRef();
-    const auto & global_settings = context->getGlobalContext()->getSettingsRef();
-    ContextMutablePtr result;
-    for (const auto & [_, entry] : result_settings)
-    {
-        for (const auto & name : entry.names)
-        {
-            Field global_value = global_settings.get(name);
-            if (settings.get(name) == global_value)
-                continue;
-            if (!result)
-                result = Context::createCopy(context);
-            result->setSetting(name, global_value);
-        }
-    }
-    return result ? result : context;
+    return it == result_settings.end() ? nullptr : &it->second;
 }
 
 bool FunctionFactory::hasArgumentSecretsIgnoringCase(const std::string & name) const
@@ -245,10 +224,12 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
             /// A function created without a context uses the defaults of the settings.
             static const Settings default_settings;
             const auto & settings = context ? context->getSettingsRef() : default_settings;
-            SipHash hash;
+            auto captured = std::make_shared<CapturedResultSettings>();
+            captured->registered = settings_it->second;
+            captured->values.reserve(settings_it->second->indices.size());
             for (size_t index : settings_it->second->indices)
-                applyVisitor(FieldVisitorHash(hash), settings.getByIndex(index));
-            res->setResultSettingsHash(hash.get128());
+                captured->values.push_back(settings.getByIndex(index));
+            res->setCapturedResultSettings(std::move(captured));
         }
     }
 

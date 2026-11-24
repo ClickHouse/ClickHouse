@@ -11,11 +11,8 @@ distinct in order	10000
 read in order	1
 locate primary key	1
 locate primary key expected	1
-locate min max	5
-locate min max expected	5
 skip index	1
 skip index expected	1
-nested min max	005
 nested sample	473
 nested sample without primary key	473
 nested sample expected	473
@@ -25,11 +22,29 @@ partition filter	336
 partition filter expected	336
 groups per partition	60
 groups expected	60
+json inference expected	20
+json inference	20
 format row expected	1
 format row	1
 json string expected	1
 json string	1
 json to string expected	1
 json to string	1
+json has expected	1
+json has	1
 time zone expected	1
 time zone	1
+array time zone expected	1
+array time zone	1
+date to time expected	1
+date to time	1
+dynamic time expected	1
+dynamic time	1
+time as text expected	1
+time as text	1
+time as text index expected	1
+time as text index	1
+if of numbers uses the index	2
+cast to a number uses the index	1
+date of time uses the index	1
+explicit time zone uses the index	1

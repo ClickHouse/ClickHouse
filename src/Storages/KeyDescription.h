@@ -19,10 +19,11 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class IAST;
+class ActionsDAG;
 
-/// Adds the result settings (see `FunctionFactory::registerFunction`) of the functions called in `ast`, with their
-/// values in `settings`, to `result_settings`.
-void collectResultSettings(const IAST & ast, const Settings & settings, SettingsChanges & result_settings);
+/// Adds to `result_settings` the result settings (see `FunctionResultSetting`) that apply to the functions called in `ast`, the
+/// expression of `dag`, with their values in `settings`.
+void collectResultSettings(const IAST & ast, const ActionsDAG & dag, const Settings & settings, SettingsChanges & result_settings);
 
 /// Whether `settings` sets any of `result_settings` to another value.
 bool resultSettingsChanged(const SettingsChanges & result_settings, const Settings & settings);
