@@ -1,7 +1,9 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas, no-random-detach
 -- Tag no-parallel: the disjunction reuse checks assert a QueryConditionCacheHits on the
 -- instance-wide query condition cache; a sibling test's SYSTEM DROP QUERY CONDITION CACHE can
 -- evict the entry between the populate and the reuse query, flipping the hit to a miss.
+-- Tag no-random-detach: attaching a `MergeTree` table clears the query condition cache, so the
+-- reuse query would miss the entry written by the populate query.
 -- Tag no-parallel-replicas: this is a single-node test; parallel replicas relocate index
 -- analysis and the query condition cache writes, so the granule-level checks below do not apply.
 
