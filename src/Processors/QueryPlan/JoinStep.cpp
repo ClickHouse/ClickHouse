@@ -249,6 +249,16 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                     header, min_block_size_rows, min_block_size_bytes, max_rows, max_bytes));
             });
     }
+    else if (use_sharding && join->pipelineType() == JoinPipelineType::YShaped && (min_block_size_rows > 0 || min_block_size_bytes > 0))
+    {
+        /// A merge join emits a chunk each time one of its input chunks ends, and nothing re-chunks the shard
+        /// streams before the next join, so in a chain the chunks would get smaller with every join.
+        joined_pipeline->addSimpleTransform(
+            [&](const SharedHeader & header)
+            {
+                return tag_tail(std::make_shared<ProgressiveSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes));
+            });
+    }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
     const auto & expected_output_header = getOutputHeader();

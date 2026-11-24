@@ -102,8 +102,8 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     if (argument.type != ResultType::INSTANT_VECTOR)
     {
         throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Aggregation operator '{}' expects an argument of type {}, but expression {} has type {}",
-                        left_aggregation->operator_name, ResultType::INSTANT_VECTOR,
+                        "{} expects an argument of type {}, but expression {} has type {}",
+                        left_aggregation->getTypeAndName(), ResultType::INSTANT_VECTOR,
                         getPromQLText(argument, context), argument.type);
     }
 
