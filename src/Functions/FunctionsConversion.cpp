@@ -3,6 +3,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/NaNUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
 #include <Common/re2.h>
@@ -3809,13 +3810,17 @@ DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTy
         return leaf;
     };
     const auto & other_paths = other.getTypedPaths();
+    UnorderedSetWithMemoryTracking<std::string_view> overlapping;
+    for (const auto * paths : {&object.getTypedPaths(), &other_paths})
+        for (const auto & [path, _] : *paths)
+            for (size_t dot = path.find('.'); dot != String::npos; dot = path.find('.', dot + 1))
+                if (std::string_view above(path.data(), dot); object.getTypedPaths().contains(above) || other_paths.contains(above))
+                    overlapping.insert({above, path});
     auto typed_paths = object.getTypedPaths();
     for (auto & [path, path_type] : typed_paths)
     {
         auto it = other_paths.find(path);
-        auto overlaps = [&](const auto & typed_path)
-        { return path.starts_with(typed_path.first + ".") || typed_path.first.starts_with(path + "."); };
-        if (it == other_paths.end() || std::ranges::any_of(object.getTypedPaths(), overlaps) || std::ranges::any_of(other_paths, overlaps))
+        if (it == other_paths.end() || overlapping.contains(path))
             continue;
         auto relabeled = replaceNestedTypesInPair(path_type, it->second, to_utc, /*left_is_common_type=*/ false, /*as_json_text=*/ true);
         if (relabeled)
