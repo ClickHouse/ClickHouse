@@ -252,19 +252,13 @@ static bool doesQueryFilterImplyProjectionWhere(
     if (containsNonDeterministicFunctions(projection_where, context))
         return false;
 
-    /// Safety guard 3: reject if the projection has a non-empty WITH clause,
-    /// or if its SELECT list defines aliases. An identifier in projection WHERE
-    /// could resolve to an alias rather than a table column, in which case textual
-    /// conjunct matching against the query's WHERE (where the same identifier refers
-    /// to a table column) would produce false-positive implications.
+    /// Safety guard 3: reject if the projection has a non-empty WITH clause.
+    /// An alias of the SELECT list is safe: the projection WHERE is the resolved one.
     if (projection_query_ast)
     {
         if (const auto * projection_select = projection_query_ast->as<ASTSelectQuery>())
         {
             if (projection_select->with())
-                return false;
-
-            if (projection_select->select() && containsAliases(projection_select->select()))
                 return false;
         }
     }

@@ -208,8 +208,6 @@ static bool doesQueryFilterImplyProjectionWhere(
         {
             if (projection_select->with())
                 return false;
-            if (projection_select->select() && containsAliases(projection_select->select()))
-                return false;
         }
     }
 
