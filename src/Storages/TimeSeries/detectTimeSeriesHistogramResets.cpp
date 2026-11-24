@@ -22,7 +22,7 @@ void detectTimeSeriesHistogramResets(ColumnTuple & histograms, std::span<const s
     }
 }
 
-void setFirstTimeSeriesHistogramHints(ColumnTuple & histograms, std::span<const size_t> offsets)
+void setFirstTimeSeriesHistogramHints(ColumnTuple & histograms, std::span<const UInt64> offsets)
 {
     const TimeSeriesHistogramsColumnsMutableView columns{histograms};
     const TimeSeriesHistogramPayloadColumnsView payload{columns};
