@@ -64,6 +64,11 @@
   <query>SELECT count() FROM tab WHERE startsWith(message, 'toxx12')</query>
   <query>SELECT count() FROM tab WHERE endsWith(message, 'toxx12')</query>
 
+  <!-- Served as LIKE '%toxx12%' (ILIKE for positionCaseInsensitive), i.e. by the same dictionary scan -->
+  <query>SELECT count() FROM tab WHERE position(message, 'toxx12') > 0</query>
+  <query>SELECT count() FROM tab WHERE countSubstrings(message, 'toxx12') > 0</query>
+  <query>SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'TOXX12') > 0</query>
+
   <!-- This literal occurs in 500000 of the 500008 tokens, the other eight being the words every message
        shares, so almost no token is filtered out and the scan pays the filter on top of the matcher calls it
        still makes. One part keeps the query inside the harness's window. Each matching token has a single
