@@ -936,9 +936,14 @@ def test_filter_pushdown_boolean_column(started_cluster):
         assert ids(table, "deleted = 0 AND id > 1") == ["4"]
         # A constant of a signed type.
         assert ids(table, "deleted = toInt64(1)") == ["2"]
-        # A multi-column `IN`.
-        assert ids(table, "(deleted, id) IN ((0, 1), (1, 2))") == ["1", "2"]
-        assert ids(table, "(deleted, id) IN ((1, 2))") == ["2"]
+        # A list with an element that is not an integer.
+        assert ids(table, "deleted IN (1, '0')") == ["1", "2", "4"]
+
+    # A multi-column `IN` is rewritten if every column of its left side is `Nullable`, which is what
+    # the table function infers.
+    assert ids(inferred, "(deleted, id) IN ((0, 1), (1, 2))") == ["1", "2"]
+    assert ids(inferred, "(deleted, id) IN ((1, 2))") == ["2"]
+    assert ids(inferred, "(deleted, id) IN ((0, 1), (1, 2)) AND id < 2") == ["1"]
 
     # The same numbers compared with a column that is a number in PostgreSQL and `UInt8` in the table.
     assert ids("pg_boolean_filter", "num = 1") == ["2", "4"]
@@ -971,6 +976,21 @@ def test_filter_pushdown_boolean_column(started_cluster):
         assert ids(table, "deleted = 0 AND id > 1", settings) == ["3", "4"]
         assert ids(table, "deleted = 0 OR id = 2", settings) == ["1", "2", "3", "4"]
         assert ids(table, "deleted = toInt64(0)", settings) == ["1", "3", "4"]
+
+    # Where the rewritten filter could select other rows than ClickHouse does, it is not rewritten, and
+    # PostgreSQL rejects it as before instead of returning a part of the rows:
+    # - whether a list with a string has 0 is not known for a column that is not `Nullable`;
+    # - in a multi-column `IN`, a column that is not `Nullable` (here `id` of the declared table) reads
+    #   a `NULL` as a value that a row of the set can have;
+    # - a multi-column `NOT IN` selects a row with a `NULL` in ClickHouse and not in PostgreSQL.
+    for table, condition in [
+        ("pg_boolean_filter_not_null", "deleted IN (1, '0')"),
+        ("pg_boolean_filter", "(deleted, id) IN ((0, 0), (1, 2))"),
+        (inferred, "(deleted, id) NOT IN ((0, 1))"),
+    ]:
+        assert "operator does not exist: boolean = integer" in node1.query_and_get_error(
+            f"SELECT id FROM {table} WHERE {condition}"
+        )
 
     node1.query("DROP TABLE pg_boolean_filter_not_null")
     node1.query("DROP TABLE pg_boolean_filter")

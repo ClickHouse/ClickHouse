@@ -101,6 +101,7 @@ private:
                 {"lc_uuid_col", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())},
                 {"arr", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())},
                 {"nullable_flag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
+                {"nullable_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -674,7 +675,7 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         R"(SELECT "column" FROM "test"."table")");
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr"},
-        "SELECT * EXCEPT (is_value, nullable_flag) FROM table WHERE (column) IN (1)",
+        "SELECT * EXCEPT (is_value, nullable_flag, nullable_id) FROM table WHERE (column) IN (1)",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr" FROM "test"."table" WHERE ("column") IN (1))",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col", "arr" FROM "test"."table" WHERE "column" IN (1))");
 
@@ -1153,21 +1154,36 @@ TEST(TransformQueryForExternalDatabase, ZeroAndOneComparedWithUInt8ColumnForPost
         "SELECT column FROM table WHERE column IN (1, 2)",
         R"(SELECT "column" FROM "test"."table" WHERE "column" IN ('1', 2))");
 
-    /// In a multi-column `IN` the positions of the `Nullable` `UInt8` columns are rewritten in every row.
-    check_postgresql({"apply_id", "nullable_flag"},
-        "SELECT nullable_flag, apply_id FROM table WHERE (nullable_flag, apply_id) IN ((0, 1), (1, 2))",
-        R"(SELECT "apply_id", "nullable_flag" FROM "test"."table" WHERE ("nullable_flag", "apply_id") IN (('0', 1), ('1', 2)))");
-    check_postgresql({"apply_id", "nullable_flag"},
-        "SELECT nullable_flag, apply_id FROM table WHERE (nullable_flag, apply_id) IN ((1, 5))",
-        R"(SELECT "apply_id", "nullable_flag" FROM "test"."table" WHERE ("nullable_flag", "apply_id") IN (('1', 5)))");
-    /// It is left as it is for a column that is not `Nullable`, and when it is negated: the rows with a
-    /// `NULL` that ClickHouse selects then cannot be kept.
+    /// A list with an element that is not an integer: ClickHouse converts it to the type of the column, so
+    /// for a column that is not `Nullable` it is not known here whether the list has 0, and whether the rows
+    /// with `NULL` have to be kept. Such a list is left as it is; for a `Nullable` column it does not matter.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column IN (1, '0')",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" IN (1, '0'))");
+    check_postgresql({"nullable_flag"},
+        "SELECT nullable_flag FROM table WHERE nullable_flag IN (1, '0')",
+        R"(SELECT "nullable_flag" FROM "test"."table" WHERE "nullable_flag" IN ('1', '0'))");
+
+    /// In a multi-column `IN` the positions of the `UInt8` columns are rewritten in every row, if every
+    /// column of the left side is `Nullable`.
+    check_postgresql({"nullable_flag", "nullable_id"},
+        "SELECT nullable_flag, nullable_id FROM table WHERE (nullable_flag, nullable_id) IN ((0, 1), (1, 2))",
+        R"(SELECT "nullable_flag", "nullable_id" FROM "test"."table" WHERE ("nullable_flag", "nullable_id") IN (('0', 1), ('1', 2)))");
+    check_postgresql({"nullable_flag", "nullable_id"},
+        "SELECT nullable_flag, nullable_id FROM table WHERE (nullable_flag, nullable_id) IN ((1, 5))",
+        R"(SELECT "nullable_flag", "nullable_id" FROM "test"."table" WHERE ("nullable_flag", "nullable_id") IN (('1', 5)))");
+    /// It is left as it is if a column of the left side is not `Nullable`, whether it is the `UInt8` one or
+    /// another one, and when it is negated: the rows that ClickHouse selects by a value it reads a `NULL` as,
+    /// or by the negation, cannot be kept.
     check_postgresql({"column", "apply_id"},
         "SELECT column, apply_id FROM table WHERE (column, apply_id) IN ((0, 1), (1, 2))",
         R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column", "apply_id") IN ((0, 1), (1, 2)))");
     check_postgresql({"apply_id", "nullable_flag"},
-        "SELECT nullable_flag, apply_id FROM table WHERE (nullable_flag, apply_id) NOT IN ((0, 1), (1, 2))",
-        R"(SELECT "apply_id", "nullable_flag" FROM "test"."table" WHERE ("nullable_flag", "apply_id") NOT IN ((0, 1), (1, 2)))");
+        "SELECT nullable_flag, apply_id FROM table WHERE (nullable_flag, apply_id) IN ((0, 0), (1, 2))",
+        R"(SELECT "apply_id", "nullable_flag" FROM "test"."table" WHERE ("nullable_flag", "apply_id") IN ((0, 0), (1, 2)))");
+    check_postgresql({"nullable_flag", "nullable_id"},
+        "SELECT nullable_flag, nullable_id FROM table WHERE (nullable_flag, nullable_id) NOT IN ((0, 1), (1, 2))",
+        R"(SELECT "nullable_flag", "nullable_id" FROM "test"."table" WHERE ("nullable_flag", "nullable_id") NOT IN ((0, 1), (1, 2)))");
 
     /// The other comparisons, the columns of other types and the other databases are not changed.
     check_postgresql({"column"},
