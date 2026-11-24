@@ -375,9 +375,9 @@ private:
         CompareInt a = 1;
         CompareInt b = 1;
 
-        bool none() const { return a == 1 && b == 1; }
-        bool left() const { return a != 1; }
-        bool right() const { return b != 1; }
+        [[nodiscard]] bool none() const { return a == 1 && b == 1; }
+        [[nodiscard]] bool left() const { return a != 1; }
+        [[nodiscard]] bool right() const { return b != 1; }
     };
 
     template <bool check_overflow, typename T, typename U>

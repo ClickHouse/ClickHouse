@@ -534,13 +534,6 @@ struct stat DiskObjectStorage::stat(const String & path) const
     return metadata_storage->stat(path);
 }
 
-void DiskObjectStorage::chmod(const String & path, mode_t mode)
-{
-    auto transaction = createObjectStorageTransaction();
-    transaction->chmod(path, mode);
-    transaction->commit();
-}
-
 void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
@@ -773,6 +766,24 @@ bool DiskObjectStorage::prefersRecursiveRemoval() const
     /// `plain_rewritable` copies the blob of every unlinked file so that the unlink can be undone, while its
     /// recursive removal only rewrites the directory metadata and deletes all objects in bulk.
     return metadata_storage->getType() == MetadataStorageType::PlainRewritable;
+}
+
+bool DiskObjectStorage::supportsAtomicFileCreation() const
+{
+    if (metadata_storage->getType() != MetadataStorageType::PlainRewritable)
+        return false;
+
+    /// `plain_rewritable` writes a new file and, in a directory with an explicit file list, its `prefix.path`, with
+    /// ordinary writes, which S3 and Azure Blob Storage publish at once.
+    const auto object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
+    switch (object_storage->getType())
+    {
+        case ObjectStorageType::S3:
+        case ObjectStorageType::Azure:
+            return object_storage->supportsAtomicWrite();
+        default:
+            return false;
+    }
 }
 
 bool DiskObjectStorage::isSharedCompatible() const
