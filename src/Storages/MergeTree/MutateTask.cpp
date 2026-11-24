@@ -2183,7 +2183,14 @@ static NameToNameVector collectFilesForRenames(
         /// Delete files if they are no longer shared with another column.
         auto remove_stream = [&](const std::optional<String> & stream_name)
         {
-            if (stream_name && --stream_counts[*stream_name] == 0)
+            /// `operator[]` would insert a 0 for a stream that is not in the map and wrap it
+            /// to `SIZE_MAX`, so look the stream up and keep the decrement out of the condition.
+            auto stream_it = stream_name ? stream_counts.find(*stream_name) : stream_counts.end();
+            if (stream_it == stream_counts.end() || stream_it->second == 0)
+                return;
+
+            --stream_it->second;
+            if (stream_it->second == 0)
             {
                 add_rename(*stream_name + ".bin", "");
                 add_rename(*stream_name + mrk_extension, "");
@@ -2391,7 +2398,18 @@ static NameToNameVector collectFilesForRenames(
 
                 for (const auto & [old_stream, _] : old_streams)
                 {
-                    if (!new_streams.contains(old_stream) && --stream_counts[old_stream] == 0)
+                    if (new_streams.contains(old_stream))
+                        continue;
+
+                    /// Every such command walks all streams of the source part, so with several of them
+                    /// the count of a stream can already have reached zero (and the stream been removed)
+                    /// on behalf of an earlier command. Do not decrement it below zero.
+                    auto stream_it = stream_counts.find(old_stream);
+                    if (stream_it == stream_counts.end() || stream_it->second == 0)
+                        continue;
+
+                    --stream_it->second;
+                    if (stream_it->second == 0)
                     {
                         add_rename(old_stream + ".bin", "");
                         add_rename(old_stream + mrk_extension, "");
@@ -2751,13 +2769,13 @@ static void finalizeMutatedPart(
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
             written_files.push_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }
@@ -3066,8 +3084,8 @@ using MutationContextPtr = std::shared_ptr<MutationContext>;
 class PartMergerWriter
 {
 public:
-    explicit PartMergerWriter(MutationContextPtr ctx_)
-        : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
+    PartMergerWriter(MutationContextPtr ctx_, MergeTreeDataPartChecksums & subtask_checksums_)
+        : ctx(ctx_), subtask_checksums(subtask_checksums_), projections(ctx->metadata_snapshot->projections)
     {
     }
 
@@ -3135,6 +3153,7 @@ private:
 
     State state{State::NEED_PREPARE};
     MutationContextPtr ctx;
+    MergeTreeDataPartChecksums & subtask_checksums;
 
     size_t projection_block_num = 0;
     std::vector<std::unique_ptr<MergeProjectionsIndexesTask>> merge_subtasks;
@@ -3322,7 +3341,7 @@ void PartMergerWriter::createBuildTextIndexesTask()
         ctx->out->getWriterSettings(),
         ctx->compression_codec,
         ctx->mrk_extension,
-        *ctx->data->getSettings());
+        ctx->data->getSettings());
 }
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
@@ -3513,7 +3532,7 @@ bool PartMergerWriter::iterateThroughAllMergeSubtasks()
     if (task->executeStep())
         return true;
 
-    task->addToChecksums(ctx->new_data_part->checksums);
+    task->addToChecksums(subtask_checksums);
     merge_subtasks.pop_back();
 
     if (!projection_name.empty())
@@ -3809,7 +3828,10 @@ private:
 
             if (need_recalculate)
             {
-                skip_indices.push_back(std::move(index_ptr));
+                if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
+                    ctx->text_indices_to_recalc.insert(std::move(index_ptr));
+                else
+                    skip_indices.push_back(std::move(index_ptr));
             }
             else
             {
@@ -3930,7 +3952,8 @@ private:
                 ctx->new_data_part,
                 NamesAndTypesList{} /*expired_columns*/,
                 ctx->time_of_mutation,
-                true);
+                true /*apply_ttl*/,
+                true /*force*/);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -3951,7 +3974,10 @@ private:
         /// describing the data of the source part instead of the data of the new part.
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            MergeTreeIndices indices_to_calculate = skip_indices;
+            indices_to_calculate.insert(indices_to_calculate.end(), ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
+
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, indices_to_calculate)->getActionsDAG().clone();
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
             if (!extracting_subcolumns_dag.getNodes().empty())
                 indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
@@ -4036,7 +4062,8 @@ private:
         ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
-        part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
+        /// `finalizePart` replaces the checksums of the part with `all_gathered_data`.
+        part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx, ctx->all_gathered_data.checksums);
     }
 
     void finalize()
@@ -4253,7 +4280,7 @@ private:
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
         (*ctx->mutate_entry)->columns_written = ctx->recalculate_ttl_only
-            ? 0 : ctx->storage_columns.size() - ctx->updated_header.columns();
+            ? 0 : ctx->storage_columns.size() - std::min(ctx->storage_columns.size(), ctx->updated_header.columns());
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
@@ -4382,7 +4409,8 @@ private:
                     ctx->new_data_part,
                     NamesAndTypesList{} /*expired_columns*/,
                     ctx->time_of_mutation,
-                    true);
+                    true /*apply_ttl*/,
+                    true /*force*/);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }
@@ -4454,7 +4482,7 @@ private:
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
-            part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
+            part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx, ctx->new_data_part->checksums);
         }
     }
 
@@ -4871,26 +4899,40 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (auto alter = command.ast(); alter && alter->partition)
+    /// The partition ids of a command scoped with `IN PARTITION` are resolved once, when the mutation
+    /// entry is created or loaded (`MergeTreeData::resolvePartitionIdsOfScopedCommands`), and they are
+    /// the source of truth here. A partition expression is arbitrary user SQL and may evaluate to a
+    /// different partition later - re-evaluating it per part would let the set of parts the mutation
+    /// rewrites diverge from the one the pending on-the-fly reads have already been answering from.
+    /// The expression is re-evaluated below only for an entry whose ids are not resolved.
+    if (command.has_partition && command.partition_ids)
     {
-        auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-        if (part->info.getPartitionId() != command_partition_id)
+        if (!command.partition_ids->contains(part->info.getPartitionId()))
             return true;
     }
-    else if (alter && alter->partitions)
+    else if (auto alter = command.ast())
     {
-        bool part_in_partitions = false;
-        for (const auto & partition_ast : alter->partitions->children)
+        if (alter->partition)
         {
-            auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
-            if (part->info.getPartitionId() == command_partition_id)
-            {
-                part_in_partitions = true;
-                break;
-            }
+            auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+            if (part->info.getPartitionId() != command_partition_id)
+                return true;
         }
-        if (!part_in_partitions)
-            return true;
+        else if (alter->partitions)
+        {
+            bool part_in_partitions = false;
+            for (const auto & partition_ast : alter->partitions->children)
+            {
+                auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
+                if (part->info.getPartitionId() == command_partition_id)
+                {
+                    part_in_partitions = true;
+                    break;
+                }
+            }
+            if (!part_in_partitions)
+                return true;
+        }
     }
 
     /// APPLY PATCHES command is handled separately.

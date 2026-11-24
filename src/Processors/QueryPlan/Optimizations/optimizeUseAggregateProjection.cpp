@@ -45,7 +45,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Planner/PlannerProjection.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -303,7 +303,8 @@ static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 struct AggregateProjectionInfo
 {
     std::optional<ActionsDAG> before_aggregation;
-    Names keys;
+    /// the keys under the names of the columns of the projection part, they are not outputs of before_aggregation
+    ActionsDAG::NodeRawConstPtrs keys;
     AggregateDescriptions aggregates;
 
     /// A context copy from interpreter which was used for analysis.
@@ -319,32 +320,17 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
-    Block source_block;
-    for (const auto & column : metadata_snapshot->getColumns().getByNames(
-             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns))
-        source_block.insert({column.type->createColumn(), column.type, column.name});
-
-    /// This is a bad approach.
-    /// We'd better have a separate interpreter for projections.
-    /// Now it's not obvious we didn't miss anything here.
-    ///
-    /// Setting ignoreASTOptimizations is used because some of them are invalid for projections.
-    /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
-    /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
-    InterpreterSelectQuery interpreter(
-        projection.query_ast,
-        context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(source_block)))),
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
-
-    const auto & analysis_result = interpreter.getAnalysisResult();
-    const auto & query_analyzer = interpreter.getQueryAnalyzer();
+    auto source_columns = metadata_snapshot->getColumns().getByNames(
+        GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns);
+    /// a projection that only counts rows can need no column, but the planner needs a table with a column
+    if (source_columns.empty())
+        source_columns = metadata_snapshot->getColumns().getAllPhysical();
+    ProjectionPlanner projection_planner(projection.query_ast, ColumnsDescription(std::move(source_columns)), context);
 
     AggregateProjectionInfo info;
-    info.context = interpreter.getContext();
-    info.before_aggregation = analysis_result.before_aggregation->dag.clone();
-    info.keys = query_analyzer->aggregationKeys().getNames();
-    info.aggregates = query_analyzer->aggregates();
+    info.context = projection_planner.getContext();
+    info.before_aggregation = projection_planner.buildBeforeAggregationActions(info.keys);
+    info.aggregates = projection_planner.getAggregates();
 
     /// Add part/partition virtual columns to projection aggregation keys.
     /// We can do it because projection is stored for every part separately.
@@ -352,7 +338,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     {
         const auto * input = &info.before_aggregation->addInput(virt_column.name, virt_column.type);
         info.before_aggregation->getOutputs().push_back(input);
-        info.keys.push_back(virt_column.name);
+        info.keys.push_back(input);
     }
 
     return info;
@@ -443,7 +429,7 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                     break;
 
                 const auto * query_node = jt->second;
-                const auto * proj_node = kt->second;
+                const auto * proj_node = skipAliases(kt->second);
 
                 auto mt = matches.find(query_node);
                 if (mt == matches.end())
@@ -524,18 +510,18 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
 
     ActionsDAG::NodeRawConstPtrs query_key_nodes;
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> proj_key_nodes;
+    /// A key of the projection can be an alias of an expression. A query expression matches the expression,
+    /// and the name of the alias is the name of the column in the projection part.
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> proj_key_outputs;
 
     {
         /// Just, filling the set above.
 
-        for (const auto & key : info.keys)
+        for (const auto * key : info.keys)
         {
-            auto it = proj_index.find(key);
-            /// This should not happen ideally.
-            if (it == proj_index.end())
-                return {};
-
-            proj_key_nodes.insert(it->second);
+            const auto * key_node = skipAliases(key);
+            proj_key_nodes.insert(key_node);
+            proj_key_outputs.emplace(key_node, key);
         }
 
         query_key_nodes.reserve(keys.size() + 1);
@@ -567,6 +553,9 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
     auto new_inputs = resolveMatchedInputs(matches, proj_key_nodes, query_key_nodes);
     if (!new_inputs)
         return {};
+
+    for (auto & [_, proj_key_node] : *new_inputs)
+        proj_key_node = proj_key_outputs.at(proj_key_node);
 
     auto proj_dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
     appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
@@ -1540,8 +1529,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 }
                 chassert(i == len);
 
-                ssize_t range_diff = new_ranges.size() - part_with_ranges.ranges.size();
-                inexact_ranges_select_result->selected_ranges += range_diff;
+                inexact_ranges_select_result->selected_ranges += new_ranges.size();
+                inexact_ranges_select_result->selected_ranges -= part_with_ranges.ranges.size();
                 part_with_ranges.ranges = std::move(new_ranges);
             }
 
