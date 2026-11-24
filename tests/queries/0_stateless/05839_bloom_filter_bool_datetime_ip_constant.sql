@@ -22,7 +22,7 @@ SELECT count() FROM t_bf_bool_map WHERE m['k'] = -1;
 SELECT count() FROM t_bf_bool_map WHERE m['k'] = true SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_bf_bool_map WHERE m['k'] = true;
 -- The index is still used: only the granule with the byte 2 is read.
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_bool_map WHERE m['k'] = toInt64(2)) WHERE explain LIKE '%Granules: 1/2%';
+SELECT DISTINCT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_bool_map WHERE m['k'] = toInt64(2)) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE t_bf_bool_map;
 
@@ -37,7 +37,7 @@ SELECT count() FROM t_bf_bool WHERE b = toInt64(2) SETTINGS use_skip_indexes = 0
 SELECT count() FROM t_bf_bool WHERE b = toInt64(2);
 SELECT count() FROM t_bf_bool WHERE b = 256 SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_bf_bool WHERE b = 256;
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_bool WHERE b = toInt64(2)) WHERE explain LIKE '%Granules: 1/2%';
+SELECT DISTINCT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_bool WHERE b = toInt64(2)) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE t_bf_bool;
 
@@ -60,7 +60,7 @@ SELECT count() FROM t_bf_datetime_map WHERE m['k'] = toUInt128(1) SETTINGS use_s
 SELECT count() FROM t_bf_datetime_map WHERE m['k'] = toUInt128(1);
 SELECT count() FROM t_bf_datetime_map WHERE m['k'] = toInt128(1) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_bf_datetime_map WHERE m['k'] = toInt128(1);
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_datetime_map WHERE m['k'] = toFloat64(1)) WHERE explain LIKE '%Granules: 1/2%';
+SELECT DISTINCT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_datetime_map WHERE m['k'] = toFloat64(1)) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE t_bf_datetime_map;
 
@@ -75,7 +75,7 @@ SELECT count() FROM t_bf_datetime WHERE d = toFloat64(1) SETTINGS use_skip_index
 SELECT count() FROM t_bf_datetime WHERE d = toFloat64(1);
 SELECT count() FROM t_bf_datetime WHERE d = toUInt128(1) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_bf_datetime WHERE d = toUInt128(1);
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_datetime WHERE d = toFloat64(1)) WHERE explain LIKE '%Granules: 1/2%';
+SELECT DISTINCT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_datetime WHERE d = toFloat64(1)) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE t_bf_datetime;
 
@@ -90,7 +90,7 @@ SELECT 'IPv6 map values';
 SELECT count() FROM t_bf_ipv6_map WHERE m['k'] = toIPv4('127.0.0.1') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_bf_ipv6_map WHERE m['k'] = toIPv4('127.0.0.1');
 SELECT count() FROM t_bf_ipv6_map WHERE m['k'] = toIPv6('::ffff:127.0.0.1');
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_ipv6_map WHERE m['k'] = toIPv6('::ffff:127.0.0.1')) WHERE explain LIKE '%Granules: 1/2%';
+SELECT DISTINCT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_ipv6_map WHERE m['k'] = toIPv6('::ffff:127.0.0.1')) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE t_bf_ipv6_map;
 
@@ -104,7 +104,7 @@ SELECT 'IPv4 map values';
 SELECT count() FROM t_bf_ipv4_map WHERE m['k'] = toIPv6('::ffff:127.0.0.1') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_bf_ipv4_map WHERE m['k'] = toIPv6('::ffff:127.0.0.1');
 SELECT count() FROM t_bf_ipv4_map WHERE m['k'] = toIPv4('127.0.0.1');
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_ipv4_map WHERE m['k'] = toIPv4('127.0.0.1')) WHERE explain LIKE '%Granules: 1/2%';
+SELECT DISTINCT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_ipv4_map WHERE m['k'] = toIPv4('127.0.0.1')) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE t_bf_ipv4_map;
 
