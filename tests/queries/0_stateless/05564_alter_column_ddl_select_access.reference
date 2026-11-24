@@ -38,6 +38,8 @@ OK
 NOT_IMPLEMENTED
 -- alias table, same type
 OK
+-- alias table, modify to a constant
+OK
 -- alias table, missing column
 OK
 -- alias table, rename of a missing column

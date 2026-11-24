@@ -118,6 +118,7 @@ check default "alias table, constant" "ALTER TABLE t_alias ADD COLUMN via_alias_
 check default "alias table, lambda only" "ALTER TABLE t_alias ADD COLUMN via_alias_lambda Array(UInt8) DEFAULT arrayMap(x -> x + 1, [1])"
 check default "alias table, type change" "ALTER TABLE t_alias MODIFY COLUMN other LowCardinality(String)"
 check default "alias table, same type" "ALTER TABLE t_alias MODIFY COLUMN other String COMMENT 'c'"
+check default "alias table, modify to a constant" "ALTER TABLE t_alias MODIFY COLUMN other String DEFAULT 'k'"
 check default "alias table, missing column" "ALTER TABLE t_alias MODIFY COLUMN IF EXISTS missing LowCardinality(String)"
 check default "alias table, rename of a missing column" "ALTER TABLE t_alias RENAME COLUMN IF EXISTS missing TO missing2"
 check "${U_ALIAS}" "alias table without target grants, same type" "ALTER TABLE t_alias MODIFY COLUMN other String"
