@@ -841,20 +841,22 @@ static void buildORCSearchArgumentImpl(
                     break;
                 }
 
-                /// Under a negation ORC keeps the atom NULL for a NULL, which the reader returns as the default,
-                /// so read the row groups with NULLs. Element statistics need not count the NULLs of ancestors.
-                if (negated)
+                /// Element statistics need not count the NULLs of ancestors (the Java writer writes the children
+                /// of a struct only for its non-NULL rows), so when a row read as the default satisfies the whole
+                /// condition, an element cannot be pruned. This covers a false atom under a negation and an atom
+                /// with a built-in negation, such as `notIn`, that is true for the default.
+                bool is_top_level = false;
+                for (UInt64 i = 0; i < schema.getSubtypeCount() && !is_top_level; ++i)
+                    is_top_level = schema.getSubtype(i) == orc_type;
+                if (!is_top_level && match_if_default != negated)
                 {
-                    bool is_top_level = false;
-                    for (UInt64 i = 0; i < schema.getSubtypeCount() && !is_top_level; ++i)
-                        is_top_level = schema.getSubtype(i) == orc_type;
-                    if (!is_top_level)
-                    {
-                        builder.literal(ORC::TruthValue::YES_NO_NULL);
-                        break;
-                    }
-                    and_not_null = true;
+                    builder.literal(ORC::TruthValue::YES_NO_NULL);
+                    break;
                 }
+
+                /// Under a negation ORC keeps the atom NULL for a NULL, which the reader returns as the default,
+                /// so read the row groups with NULLs.
+                and_not_null = negated;
             }
 
             auto predicate_type = convertORCTypeToPredicateType(*orc_type);
