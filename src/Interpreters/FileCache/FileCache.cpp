@@ -2433,8 +2433,11 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     fs::directory_iterator offset_it{key_directory};
     if (offset_it == fs::directory_iterator())
     {
-        /// An empty directory which is not named by a key cannot be queued by key, so it is removed here.
-        if (key_string.size() != Key::KEY_STRING_SIZE)
+        /// The cleanup finds a queued directory by the name which `Key::toString` gives. An empty directory
+        /// with any other name, e.g. in upper case, would never be found, so it is removed here.
+        const bool named_by_key
+            = key_string.size() == Key::KEY_STRING_SIZE && Key::fromKeyString(key_string).toString() == key_string;
+        if (!named_by_key)
         {
             if (fs::remove(key_directory))
                 LOG_DEBUG(log, "Removed empty key directory: {}", key_directory.string());

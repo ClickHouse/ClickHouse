@@ -4960,6 +4960,15 @@ TEST_F(FileCacheTest, LoadMetadataLeavesEmptyKeyDirectoriesToCleanupThread)
         fs::create_directories(empty_key_directories.back());
     }
 
+    /// Empty key directories which share the key prefix directory with a loaded key: one cleanup task takes them all.
+    for (const char last_character : {'0', '1', '2'})
+    {
+        auto key_string = loaded_keys[0].toString();
+        key_string.back() = key_string.back() == last_character ? 'f' : last_character;
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromKeyString(key_string)));
+        fs::create_directories(empty_key_directories.back());
+    }
+
     /// A key which is used again after the load: its empty directory is either skipped by the cleanup
     /// or removed and created again, and the key keeps its file in both cases.
     const auto returning_key = FileCacheKey::fromPath("returning");
@@ -4983,12 +4992,12 @@ TEST_F(FileCacheTest, LoadMetadataLeavesEmptyKeyDirectoriesToCleanupThread)
     ASSERT_TRUE(progress_line.contains(", 3 keys with 3 file segments loaded")) << progress_line;
     ASSERT_TRUE(progress_line.contains(", 0 keys removed because no file segment was loaded for them")) << progress_line;
     ASSERT_TRUE(progress_line.contains(", 0 file segments removed because they do not fit")) << progress_line;
-    ASSERT_TRUE(progress_line.contains(", 6 empty key directories left for background cleanup")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 9 empty key directories left for background cleanup")) << progress_line;
     ASSERT_FALSE(fs::exists(empty_key_prefix_directory));
 
     download(cache->getOrSet(returning_key, 0, segment_size, segment_size, {}, 0, user));
 
-    waitForCleanupQueue(delayed_cleanup_elements_before);
+    ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
     /// Joins the cleanup thread, so a removal that it has already taken from the queue is finished.
     cache.reset();
 
@@ -5045,14 +5054,60 @@ TEST_F(FileCacheTest, LoadMetadataRemovesEmptyDirectoryWhichIsNotNamedByKey)
 
     const auto key_directory = getKeyDirectory(FileCacheKey::fromPath("empty"));
     const auto other_directory = key_directory.parent_path() / "tmp";
+    /// The right length, but a key is printed in lower case, so the cleanup would look for another name.
+    const auto upper_case_directory = key_directory.parent_path() / std::string(FileCacheKey::KEY_STRING_SIZE, 'A');
     fs::create_directories(key_directory);
     fs::create_directories(other_directory);
+    fs::create_directories(upper_case_directory);
 
     auto cache = DB::FileCache("RemovesEmptyDirectoryWhichIsNotNamedByKey", getSettingsForLoadTests(/* max_size */ 1000));
     cache.initialize();
 
-    /// The cache is still alive, so the directory was removed by the load and not by the cleanup.
+    /// The cache is still alive, so the directories were removed by the load and not by the cleanup.
     ASSERT_FALSE(fs::exists(other_directory));
+    ASSERT_FALSE(fs::exists(upper_case_directory));
+}
+
+TEST_F(FileCacheTest, FailedLoadDoesNotLeaveEmptyKeyDirectoriesInCleanupQueue)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_empty_keys = 5;
+    const auto settings = getSettingsForLoadTests(/* max_size */ 1000);
+
+    std::vector<fs::path> empty_key_directories;
+    for (size_t i = 0; i < num_empty_keys; ++i)
+    {
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromPath("empty_" + std::to_string(i))));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    /// A directory which is not empty and not named by a key fails the load.
+    const auto bad_directory = empty_key_directories[0].parent_path() / "not_a_key";
+    fs::create_directories(bad_directory);
+    std::ofstream(bad_directory / "0").close();
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+    {
+        auto cache = DB::FileCache("FailedLoad", settings);
+        ASSERT_THROW(cache.initialize(), DB::Exception);
+        /// The cache is still alive, so the queue was emptied by the failed load and not by the shutdown.
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements), delayed_cleanup_elements_before);
+    }
+    for (const auto & directory : empty_key_directories)
+        ASSERT_TRUE(fs::exists(directory)) << directory;
+
+    fs::remove_all(bad_directory);
+
+    std::optional<DB::FileCache> cache;
+    const auto progress_line = loadCacheAndGetProgressLine(cache, "FailedLoad_retry", settings);
+    ASSERT_TRUE(progress_line.contains(", 5 empty key directories left for background cleanup")) << progress_line;
+
+    ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
+    cache.reset();
+    for (const auto & directory : empty_key_directories)
+        ASSERT_FALSE(fs::exists(directory)) << directory;
 }
 
 TEST_F(FileCacheTest, LoadMetadataCountsKeysWithoutFileSegments)
@@ -5114,11 +5169,14 @@ TEST_F(FileCacheTest, EmptiedKeyDirectoryWithUntrackedFileIsRemoved)
         cache.removeFileSegment(key_with_untracked_file, 0, user.user_id);
         cache.removeFileSegment(plain_key, 0, user.user_id);
 
-        waitForCleanupQueue(delayed_cleanup_elements_before);
+        ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
     }
 
     ASSERT_FALSE(fs::exists(getKeyDirectory(plain_key)));
     ASSERT_FALSE(fs::exists(getKeyDirectory(key_with_untracked_file)));
+    /// A key prefix directory goes with its last key.
+    ASSERT_FALSE(fs::exists(getKeyDirectory(plain_key).parent_path()));
+    ASSERT_FALSE(fs::exists(getKeyDirectory(key_with_untracked_file).parent_path()));
     ASSERT_EQ(countFilesInKeyDirectories(), 0);
 }
 
@@ -5127,7 +5185,8 @@ TEST_F(FileCacheTest, ManyEmptiedKeysAreRemovedInBackground)
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
-    /// Enough for helper cleanup threads to start if the keys are queued faster than they are removed.
+    /// Helper cleanup threads start only if the keys are queued faster than one thread removes them,
+    /// which these settings make likely but do not guarantee.
     const size_t num_keys = 3000;
     const size_t segment_size = 10;
     const auto & user = FileCache::getCommonOrigin();
@@ -5138,7 +5197,10 @@ TEST_F(FileCacheTest, ManyEmptiedKeysAreRemovedInBackground)
 
     const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
     {
-        auto cache = DB::FileCache("ManyEmptiedKeys", getSettingsForLoadTests(/* max_size */ num_keys * segment_size));
+        auto settings = getSettingsForLoadTests(/* max_size */ num_keys * segment_size);
+        settings[FileCacheSetting::background_cleanup_threads] = 4;
+        settings[FileCacheSetting::background_cleanup_tasks_per_thread] = 1;
+        auto cache = DB::FileCache("ManyEmptiedKeys", settings);
         cache.initialize();
 
         for (const auto & key : keys)
@@ -5146,7 +5208,7 @@ TEST_F(FileCacheTest, ManyEmptiedKeysAreRemovedInBackground)
         for (const auto & key : keys)
             cache.removeFileSegment(key, 0, user.user_id);
 
-        waitForCleanupQueue(delayed_cleanup_elements_before);
+        ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
     }
 
     for (const auto & key : keys)
@@ -5178,6 +5240,12 @@ TEST_F(FileCacheTest, EmptyKeyDirectoriesFromStartupStartHelperCleanupThreads)
     /// share it, and it keeps the level and the channel which the root logger had when it was created.
     setupLogs("debug");
     auto & metadata_logger = Poco::Logger::get("CacheMetadata");
+    const auto previous_channel = metadata_logger.getChannel();
+    const auto previous_level = metadata_logger.getLevel();
+    SCOPE_EXIT({
+        metadata_logger.setChannel(previous_channel);
+        metadata_logger.setLevel(previous_level);
+    });
     metadata_logger.setChannel(Poco::Logger::root().getChannel());
     metadata_logger.setLevel("debug");
 
@@ -5187,7 +5255,7 @@ TEST_F(FileCacheTest, EmptyKeyDirectoriesFromStartupStartHelperCleanupThreads)
         SCOPE_EXIT({ log_output = testing::internal::GetCapturedStderr(); });
         auto cache = DB::FileCache("StartHelperCleanupThreads", settings);
         cache.initialize();
-        waitForCleanupQueue(delayed_cleanup_elements_before);
+        ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
     }
 
     ASSERT_TRUE(log_output.contains("Started a helper cleanup thread")) << log_output;
