@@ -2354,7 +2354,7 @@ namespace
             if (row_num < column_nullable.size())
                 return;
             auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
-            insertDefaultBorrowed(nested_column);
+            nested_serializer->insertDefaults(row_num);
             /// Same rollback contract as in `insertDefaults` above.
             try
             {
@@ -4096,10 +4096,8 @@ namespace
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
             if (reader_or_writer.reader)
             {
-                if (check_nested_while_filling_missing_columns)
-                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
-                else
-                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
+                missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(
+                    num_columns, column_names, data_types, check_nested_while_filling_missing_columns);
                 if (columns_are_reordered_outside && oneof_presence)
                 {
                     ::sort(used_column_indices.begin(), used_column_indices.end());
