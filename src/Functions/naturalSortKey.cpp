@@ -7,6 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 extern const int TOO_LARGE_STRING_SIZE;
 }
@@ -23,13 +24,17 @@ public:
 
     [[nodiscard]] String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+
+    [[nodiscard]] bool isVariadic() const override { return true; }
+
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override
     {
-        return "(T : String) -> T";
+        return "(T : String, [const mode UInt]) -> T";
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -45,21 +50,55 @@ public:
         size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
+        Mode mode = Mode::Default;
+        if (arguments.size() == 2)
+        {
+            const UInt64 mode_value = arguments[1].column->getUInt(0);
+            switch (mode_value)
+            {
+                case 0: mode = Mode::Default; break;
+                case 1: mode = Mode::TextAsChunks; break;
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Illegal value {} of the second argument of function {}, expected 0 or 1", mode_value, getName());
+            }
+        }
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
-            executeNaturalSortKey(col, col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            executeNaturalSortKey(col, col_res->getChars(), col_res->getOffsets(), input_rows_count, mode);
             return col_res;
         }
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 private:
+    /// The order that the key gives to strings with non-digit characters.
+    /// Numbers are compared by value in both modes.
+    enum class Mode : UInt8
+    {
+        /// The behavior of the function without the second argument.
+        /// The characters are compared one by one with the characters or the number at the same position
+        /// of the other string. So `host-1` is before `host2`: `-` is compared with the number 2.
+        Default = 0,
+        /// A sequence of non-digit characters is compared as a whole chunk with the chunk at the same position
+        /// of the other string, and a number is compared only if the chunks before it are equal.
+        /// So `host2` is before `host-1`: `host` is compared with `host-`.
+        /// This is the order of the PromQL function `sort_by_label`.
+        TextAsChunks = 1,
+    };
+
+    /**
+     * Writes the natural sort key of each row of `src` to the result column.
+     * `res_data` and `res_offsets` are the characters and the offsets of the result column, and must be empty.
+     * `mode` selects the order of the keys, see `Mode`.
+     */
     static void executeNaturalSortKey(
         const ColumnString * src,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        size_t input_rows_count,
+        Mode mode)
     {
         if (input_rows_count == 0)
             return;
@@ -69,7 +108,7 @@ private:
 
         for (size_t row = 0; row != input_rows_count; ++row)
         {
-            encodeString(src->getDataAt(row), res_data);
+            encodeString(src->getDataAt(row), res_data, mode);
             res_offsets.push_back(res_data.size());
         }
     }
@@ -77,8 +116,9 @@ private:
     /**
      * Encode the input string by replacing sequences of digits with a length prefix followed by the digits themselves.
      * Leading zeros are trimmed.
+     * Sequences of non-digit characters are encoded according to `mode`, see `appendTextToResult`.
      */
-    static void encodeString(const std::string_view str, ColumnString::Chars & res_data)
+    static void encodeString(const std::string_view str, ColumnString::Chars & res_data, Mode mode)
     {
         if (str.empty())
             return;
@@ -91,6 +131,7 @@ private:
 
         size_t digits = 0; // Length of the current sequence of digits (not counting leading zeros).
         bool leading_zero = false;
+        size_t chars_to_escape = 0; // Number of characters up to the space in the current sequence of non-digit characters.
 
         for (; data_curr != data_end; ++data_curr)
         {
@@ -105,13 +146,17 @@ private:
                     digits = 0;
                     leading_zero = false;
                     data_non_digits_start = data_curr;
+                    chars_to_escape = 0;
                 }
                 else if (leading_zero) // End of a sequence of zeros.
                 {
                     appendNumberToResult(data_curr - 1, 1, res_data);
                     data_non_digits_start = data_curr;
                     leading_zero = false;
+                    chars_to_escape = 0;
                 }
+                if (c <= ' ') // Special characters to escape.
+                    ++chars_to_escape;
             }
             else
             {
@@ -120,7 +165,7 @@ private:
                 else // Start of a new sequence of digits or zeros.
                 {
                     if (!leading_zero) // End of a sequence of non-digit characters.
-                        res_data.insert(data_non_digits_start, data_curr);
+                        appendTextToResult(data_non_digits_start, data_curr, res_data, mode, chars_to_escape);
 
                     if (c != '0') // Start of a new sequence of digits (non-zero).
                     {
@@ -138,7 +183,7 @@ private:
         else if (leading_zero) // String ends with a sequence of zeros.
             appendNumberToResult(data_curr - 1, 1, res_data);
         else // String ends with non-digit characters.
-            res_data.insert(data_non_digits_start, data_curr);
+            appendTextToResult(data_non_digits_start, data_curr, res_data, mode, chars_to_escape);
     }
 
     /**
@@ -148,6 +193,76 @@ private:
     {
         appendNumberPrefixToResult(digits, res_data);
         res_data.insert(num_start, num_start + digits);
+    }
+
+    /**
+     * Append a sequence of non-digit characters to the result.
+     * `chars_to_escape` is the number of characters up to the space (code 32 or less) in the sequence.
+     *
+     * In `Mode::Default` the sequence is copied as is.
+     *
+     * In `Mode::TextAsChunks` the keys are still compared byte by byte, so the end of a chunk must be visible in the key:
+     * - The sequence is followed by an end mark of two spaces. The mark is less than any character of a longer chunk,
+     *   so a chunk sorts before every longer chunk that starts with it. Without the mark, the next byte would be
+     *   the length prefix of the following number, which is greater than characters such as `-` and `.`.
+     * - A character `c` up to the space is written as a space followed by `'!' + c`. So it cannot be taken for the end mark,
+     *   it sorts after the end mark and before all other characters, and such characters keep their order.
+     *
+     * Examples:
+     *   `host2`   ->  `host<space><space>02`
+     *   `host-1`  ->  `host-<space><space>01`
+     *   `host 3`  ->  `host<space>A<space><space>03`
+     * They sort as `host2`, `host 3`, `host-1`.
+     */
+    static void appendTextToResult(const UInt8 * text_start, const UInt8 * text_end, ColumnString::Chars & res_data, Mode mode, size_t chars_to_escape)
+    {
+        if (text_start == text_end)
+            return;
+
+        switch (mode)
+        {
+            case Mode::Default:
+                res_data.insert(text_start, text_end);
+                break;
+            case Mode::TextAsChunks:
+            {
+                static constexpr UInt8 end_mark[] = {' ', ' '};
+                const size_t init_size = res_data.size();
+                const size_t bytes_to_write = static_cast<size_t>(text_end - text_start) + chars_to_escape + std::size(end_mark);
+
+                if (chars_to_escape == 0)
+                {
+                    res_data.reserve(init_size + bytes_to_write);
+                    res_data.insert_assume_reserved(text_start, text_end);
+                    res_data.insert_assume_reserved(std::begin(end_mark), std::end(end_mark));
+                }
+                else
+                {
+                    /// The pointer is taken after `resize`, which can move the data.
+                    res_data.resize(init_size + bytes_to_write);
+                    UInt8 * out = res_data.data() + init_size;
+                    for (const UInt8 * p = text_start; p != text_end; ++p)
+                    {
+                        const UInt8 c = *p;
+                        if (c > ' ')
+                            *out++ = c;
+                        else
+                        {
+                            /// A character up to the space would sort before the end mark or look like a part of it,
+                            /// so it is written as two bytes that start with a space.
+                            *out++ = ' ';
+                            /// The second byte is from '!' to 'A': greater than the second space of the end mark,
+                            /// in the order of the original characters, and printable.
+                            *out++ = static_cast<UInt8>('!' + c);
+                        }
+                    }
+                    for (const UInt8 c : end_mark)
+                        *out++ = c;
+                    chassert(out == res_data.end());
+                }
+                break;
+            }
+        }
     }
 
     /**
