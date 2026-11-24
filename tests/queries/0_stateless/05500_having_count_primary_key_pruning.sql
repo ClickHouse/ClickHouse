@@ -144,6 +144,7 @@ SELECT 'pruned rows';
 SELECT count() FROM (SELECT k FROM t_having_pk GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_on';
 SELECT count() FROM (SELECT k FROM t_having_pk GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_off';
 SELECT count() FROM (SELECT k FROM t_having_pk GROUP BY k HAVING count() > 1) SETTINGS query_plan_aggregation_having_count_pruning = 1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_low';
+SELECT count() FROM (SELECT k FROM t_having_pk GROUP BY k HAVING count() >= 50000) SETTINGS query_plan_aggregation_having_count_pruning = 1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_ge_on';
 SELECT count() FROM (SELECT k FROM t_having_pk_desc GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_desc_on';
 SELECT count() FROM (SELECT k FROM t_having_pk_desc GROUP BY k HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_desc_off';
 SELECT count() FROM (SELECT s FROM t_having_pk_lc GROUP BY s HAVING count() > 49999) SETTINGS query_plan_aggregation_having_count_pruning = 1, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05500_prune_lc_on';
@@ -187,6 +188,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     sumIf(read_rows, log_comment = '05500_prune_on') < sumIf(read_rows, log_comment = '05500_prune_off'),
     sumIf(read_rows, log_comment = '05500_prune_low') = sumIf(read_rows, log_comment = '05500_prune_off'),
+    sumIf(read_rows, log_comment = '05500_prune_ge_on') = sumIf(read_rows, log_comment = '05500_prune_on'),
     sumIf(read_rows, log_comment = '05500_prune_desc_on') = sumIf(read_rows, log_comment = '05500_prune_desc_off'),
     sumIf(read_rows, log_comment = '05500_prune_lc_on') < sumIf(read_rows, log_comment = '05500_prune_lc_off'),
     sumIf(read_rows, log_comment = '05500_prune_policy_on') = sumIf(read_rows, log_comment = '05500_prune_policy_off'),
