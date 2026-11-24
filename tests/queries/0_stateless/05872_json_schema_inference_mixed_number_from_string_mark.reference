@@ -1,0 +1,5 @@
+[[1,18446744073709551615],['abc']]	Array(Dynamic)
+[[18446744073709551615,1],['abc']]	Array(Dynamic)
+x	Nullable(String)					
+x	Nullable(String)					
+[['18446744073709551615','1'],['abc']]	Array(Array(Nullable(String)))

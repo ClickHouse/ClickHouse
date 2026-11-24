@@ -389,6 +389,58 @@ namespace
         }
     }
 
+    /// A number type is marked as parsed from a JSON string by being a specific shared instance.
+    /// Equal types are later collapsed into one of their instances (for example, the element type of an array),
+    /// so if numbers of the same type were parsed both from strings and from bare JSON numbers,
+    /// drop the parsed-from-string mark. Otherwise a bare number could be converted to String later.
+    /// The negative mark of Int64 is kept.
+    void dropNumbersParsedFromStringMarkIfMixed(DataTypes & data_types, JSONInferenceInfo * json_info)
+    {
+        if (!json_info)
+            return;
+
+        auto has_mixed_marks = [&](TypeIndex type_index)
+        {
+            bool have_parsed_from_string = false;
+            bool have_not_parsed_from_string = false;
+            for (const auto & type : data_types)
+            {
+                if (type->getTypeId() != type_index)
+                    continue;
+                if (json_info->isNumberParsedFromString(*type))
+                    have_parsed_from_string = true;
+                else
+                    have_not_parsed_from_string = true;
+            }
+            return have_parsed_from_string && have_not_parsed_from_string;
+        };
+
+        const bool mixed_int64 = has_mixed_marks(TypeIndex::Int64);
+        const bool mixed_uint64 = has_mixed_marks(TypeIndex::UInt64);
+        const bool mixed_float64 = has_mixed_marks(TypeIndex::Float64);
+        if (!mixed_int64 && !mixed_uint64 && !mixed_float64)
+            return;
+
+        for (auto & type : data_types)
+        {
+            if (!json_info->isNumberParsedFromString(*type))
+                continue;
+
+            WhichDataType which(type);
+            if (which.isInt64() && mixed_int64)
+            {
+                if (json_info->isNegativeInteger(*type))
+                    type = json_info->getNegativeInt64();
+                else
+                    type = std::make_shared<DataTypeInt64>();
+            }
+            else if (which.isUInt64() && mixed_uint64)
+                type = std::make_shared<DataTypeUInt64>();
+            else if (which.isFloat64() && mixed_float64)
+                type = std::make_shared<DataTypeFloat64>();
+        }
+    }
+
     /// If we have numbers (Int64/UInt64/Float64) and String types and numbers were parsed from String,
     /// convert all numbers to String.
     void transformJSONNumbersBackToString(
@@ -726,6 +778,9 @@ namespace
             }
 
             /// Check settings specific for JSON formats.
+
+            /// Numbers of the same type parsed both from strings and from bare numbers are not parsed-from-string.
+            dropNumbersParsedFromStringMarkIfMixed(data_types, json_info);
 
             /// Convert numbers inferred from strings back to strings if needed.
             if (settings.json.try_infer_numbers_from_strings || settings.json.read_numbers_as_strings)
