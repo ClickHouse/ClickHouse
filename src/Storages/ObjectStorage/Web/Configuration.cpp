@@ -1,7 +1,9 @@
 #include <Storages/ObjectStorage/Web/Configuration.h>
 
-#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/Hex.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/SipHash.h>
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -111,6 +113,19 @@ StorageWebConfiguration::StorageWebConfiguration()
 StorageWebConfiguration::StorageWebConfiguration(RemoteDescriptionCaller glob_caller_)
     : glob_caller(std::move(glob_caller_))
 {
+}
+
+std::string StorageWebConfiguration::getHeadersHash() const
+{
+    SipHash header_hash;
+    for (const auto & [name, value] : headers_from_ast)
+    {
+        header_hash.update(name);
+        header_hash.update(std::string_view{"\0"});
+        header_hash.update(value);
+        header_hash.update(std::string_view{"\0"});
+    }
+    return getHexUIntLowercase(header_hash.get128());
 }
 
 StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(const ContextPtr & context) const

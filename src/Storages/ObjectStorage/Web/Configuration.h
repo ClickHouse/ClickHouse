@@ -89,6 +89,11 @@ public:
     [[nodiscard]] String getNamespace() const override { return namespace_prefix; }
     [[nodiscard]] String getDataSourceDescription() const override { return raw_url; }
 
+    /// A hash of the request headers, for cache identities that have to tell two header sets apart
+    /// (the headers select what the server returns for the same URL). The values are secret, so only
+    /// the hash is exposed, never the header contents themselves.
+    [[nodiscard]] std::string getHeadersHash() const;
+
     [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
 
     [[nodiscard]] bool isArchive() const override { return archive_pattern.has_value(); }

@@ -53,6 +53,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/Web/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -762,6 +763,21 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
     std::string result = formatObjectPath(configuration, object_info.getPath(), include_connection_info);
+
+    /// Request headers select what the server returns for the same URL, so they belong to the identity of
+    /// the schema and the row count the way the shard index does: without them a read with one header value
+    /// would answer from the cache another header value warmed. Only the Web storage takes headers, and
+    /// they are cached under this identifier, never printed, so the hash of the values does not expose
+    /// the header contents in a log or a cache key dump.
+    if (include_connection_info)
+    {
+        if (const auto * web_configuration = dynamic_cast<const StorageWebConfiguration *>(&configuration))
+        {
+            const auto headers_hash = web_configuration->getHeadersHash();
+            if (!headers_hash.empty())
+                result += "#headers=" + headers_hash;
+        }
+    }
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
