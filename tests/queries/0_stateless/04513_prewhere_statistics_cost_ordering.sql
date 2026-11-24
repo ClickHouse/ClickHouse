@@ -194,7 +194,7 @@ SELECT part_type, rows FROM system.parts WHERE database = currentDatabase() AND 
 SELECT '-- one wide and one compact part order the conditions as one wide part';
 SELECT position(explain, 'toString(') > 0 AND position(explain, 'toString(') < position(explain, 'equals(__table1.s,')
 FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_mixed_parts WHERE s = concat('k7', repeat('x', 96)) AND toString(u) = '7'
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_mixed_parts WHERE toString(u) = '7' AND s = concat('k7', repeat('x', 96))
     SETTINGS min_marks_per_part_to_load_statistics = 0
 ) WHERE explain LIKE '%Prewhere filter column%';
 
@@ -202,7 +202,7 @@ SYSTEM START MERGES t_prewhere_cost_mixed_parts;
 OPTIMIZE TABLE t_prewhere_cost_mixed_parts FINAL;
 SELECT position(explain, 'toString(') > 0 AND position(explain, 'toString(') < position(explain, 'equals(__table1.s,')
 FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_mixed_parts WHERE s = concat('k7', repeat('x', 96)) AND toString(u) = '7'
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_mixed_parts WHERE toString(u) = '7' AND s = concat('k7', repeat('x', 96))
     SETTINGS min_marks_per_part_to_load_statistics = 0
 ) WHERE explain LIKE '%Prewhere filter column%';
 
@@ -222,7 +222,7 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 
 SELECT '-- a patch part of another column keeps the order';
 SELECT position(explain, 'toString(') > 0 AND position(explain, 'toString(') < position(explain, 'equals(__table1.s,')
 FROM (
-    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_patch_part WHERE s = concat('k7', repeat('x', 96)) AND toString(u) = '7'
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_patch_part WHERE toString(u) = '7' AND s = concat('k7', repeat('x', 96))
     SETTINGS min_marks_per_part_to_load_statistics = 0
 ) WHERE explain LIKE '%Prewhere filter column%';
 
