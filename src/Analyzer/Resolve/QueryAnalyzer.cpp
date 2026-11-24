@@ -87,6 +87,7 @@
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
@@ -908,6 +909,7 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
   * Example: SELECT id, value FROM test_table ORDER BY 1, 2;
   * Example: SELECT id, value FROM test_table LIMIT 5 BY 1, 2;
   */
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
@@ -1178,7 +1180,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
 
     // We don't need to have GROUPING under GROUP BY ALL, so we treat GROUPING
     // as an aggregate function for GROUP BY ALL expansion
-    if (function->isAggregateFunction() || function->isWindowFunction() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
+    if (function->isAggregationCall() || function->isWindowCall() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
         return {true, 0};
 
     UInt64 pushed_children = 0;
@@ -3037,7 +3039,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ///
     /// We traverse the APPLY expression tree because the aggregate function may be nested
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
-    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
+    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregationCall`) because
     /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
     auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
     {
@@ -7342,10 +7344,10 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
 
         if (auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isWindowFunction())
+            if (function_node->isWindowCall())
                 return HavingConjunctMoveAction::AbortRewrite;
 
-            if (function_node->isOrdinaryFunction())
+            if (function_node->isOrdinaryCall())
             {
                 if (auto function_base = function_node->getFunction())
                 {
@@ -7357,7 +7359,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
                 }
             }
 
-            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+            if (function_node->isAggregationCall() && verdict == HavingConjunctMoveAction::Move)
                 verdict = HavingConjunctMoveAction::KeepInHaving;
 
             if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)
