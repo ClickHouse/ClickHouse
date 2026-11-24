@@ -246,7 +246,10 @@ public:
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
-    void cleanupPersistentProcessingNodes(const std::string & cleanup_lock_path);
+    /// `cleanup_zk_client` is the keeper session which holds the cleanup lock.
+    void cleanupPersistentProcessingNodes(
+        const std::string & cleanup_lock_path,
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & cleanup_zk_client);
     /// Remove owners which did not update their node for longer than their timeout.
     /// Returns the ids of the owners which are alive.
     NameSet cleanupLockOwners(Int64 keeper_time_ms);

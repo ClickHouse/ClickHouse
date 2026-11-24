@@ -1557,7 +1557,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     }
 
     if (cleanup_processing_files)
-        cleanupPersistentProcessingNodes(zookeeper_cleanup_lock_path);
+        cleanupPersistentProcessingNodes(zookeeper_cleanup_lock_path, zk_client);
 
     if (table_metadata.hasTrackedFilesLimit())
     {
@@ -1881,7 +1881,9 @@ NameSet ObjectStorageQueueMetadata::cleanupLockOwners(Int64 keeper_time_ms)
     return alive_owners;
 }
 
-void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::string & cleanup_lock_path)
+void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(
+    const std::string & cleanup_lock_path,
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & cleanup_zk_client)
 {
     auto zk_retries = getKeeperRetriesControl(log);
     const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
@@ -1941,8 +1943,6 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
         int32_t version;
         /// Set if the node is removed because its owner is dead.
         String dead_lock_owner_id;
-        /// The lock data, it is unique for every lock which was taken.
-        String data;
     };
     std::vector<NodeToRemove> nodes_to_remove;
     Strings get_batch;
@@ -1967,7 +1967,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
             const auto owner_id_of_lock = getLockOwnerIDFromLock(response[i].data);
             if (!owner_id_of_lock.empty() && alive_lock_owners && !alive_lock_owners->contains(owner_id_of_lock))
             {
-                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, owner_id_of_lock, response[i].data});
+                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, owner_id_of_lock});
                 continue;
             }
 
@@ -1979,7 +1979,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
                 get_batch[i], response[i].stat.mtime, ttl_seconds, current_time);
 
             if (ttl_seconds && response[i].stat.mtime / 1000 + ttl_seconds < current_time)
-                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, {}, response[i].data});
+                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, {}});
         }
         get_batch.clear();
     };
@@ -2015,42 +2015,24 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
         const bool has_dead_owner = !node_to_remove.dead_lock_owner_id.empty();
 
         LOG_TRACE(log, "Removing stale processing node: {}", node);
-        zk_retries.resetFailures();
-        zk_retries.retryLoop([&]
+
+        /// Locks are removed only by the keeper session which holds the cleanup lock, and without
+        /// retries. If the session is lost, another server can run cleanup and the lock can be
+        /// taken again with the same version, so a new session must not remove it.
+        if (!has_dead_owner)
         {
-            auto zk_client = getZooKeeper();
-
-            /// The first attempt could have removed the node without a response, and another owner
-            /// could have taken the same lock since then, with the same version. Do not remove it.
-            if (zk_retries.isRetry())
-            {
-                std::string data;
-                if (!zk_client->tryGet(node, data))
-                {
-                    code = Coordination::Error::ZNONODE;
-                    return;
-                }
-                if (data != node_to_remove.data)
-                {
-                    code = Coordination::Error::ZBADVERSION;
-                    return;
-                }
-            }
-
-            if (!has_dead_owner)
-            {
-                code = zk_client->tryRemove(node, node_to_remove.version);
-                return;
-            }
-
+            code = cleanup_zk_client->tryRemove(node, node_to_remove.version);
+        }
+        else
+        {
             /// The owner could register after the owners were listed and before
             /// the lock was read, so make sure that it does not exist.
             Coordination::Requests requests;
-            zkutil::addCheckNotExistsRequest(requests, *zk_client, getLockOwnerPath(node_to_remove.dead_lock_owner_id));
+            zkutil::addCheckNotExistsRequest(requests, *cleanup_zk_client, getLockOwnerPath(node_to_remove.dead_lock_owner_id));
             requests.push_back(zkutil::makeRemoveRequest(node, node_to_remove.version));
             Coordination::Responses responses;
-            code = zk_client->tryMulti(requests, responses);
-        });
+            code = cleanup_zk_client->tryMulti(requests, responses);
+        }
 
         if (code == Coordination::Error::ZOK)
         {
