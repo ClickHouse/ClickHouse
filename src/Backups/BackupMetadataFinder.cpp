@@ -297,6 +297,13 @@ void BackupMetadataFinder::findTableInBackupImpl(
             tableNameWithTypeToString(table_name_in_backup.database, table_name_in_backup.table, false),
             backQuoteIfNeed(create.as_table));
 
+    /// `BACKUP` never writes `ATTACH ... FROM` either. It would take a directory in `user_files` as the data of the table.
+    if (create_table_query->as<const ASTCreateQuery &>().has_attach_from_path)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "The definition of {} in the backup uses ATTACH ... FROM, which BACKUP never writes",
+            tableNameWithTypeToString(table_name_in_backup.database, table_name_in_backup.table, false));
+
     /// The rights of a restore are checked for the table of the backup entry, so its definition must be of that table.
     if (const auto & create = create_table_query->as<const ASTCreateQuery &>();
         create.getTable() != table_name_in_backup.table || create.isTemporary() != is_temporary_table
