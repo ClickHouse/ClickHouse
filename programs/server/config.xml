@@ -281,9 +281,22 @@
          This is required when interserver_https_port is accessible from untrusted networks,
          and also recommended to avoid SSRF attacks from possibly compromised services in your network.
       -->
+    <!-- For interserver HTTPS, ssl_certificates lists the certificate subjects accepted from peers.
+         openSSL.client selects the certificate and key sent by this server on interserver requests.
+         Other client TLS options inherit from the top-level openSSL.client section unless overridden here.
+         With only ssl_certificates configured, a matching certificate is required. -->
     <!--<interserver_http_credentials>
         <user>interserver</user>
         <password></password>
+        <openSSL>
+            <client>
+                <certificateFile>/path/to/interserver-client-cert.pem</certificateFile>
+                <privateKeyFile>/path/to/interserver-client-key.pem</privateKeyFile>
+            </client>
+        </openSSL>
+        <ssl_certificates>
+            <subject_alt_name>URI:spiffe://example.org/clickhouse/replica</subject_alt_name>
+        </ssl_certificates>
     </interserver_http_credentials>-->
 
     <!-- Multi-stage distributed query execution (experimental, enabled per query with the

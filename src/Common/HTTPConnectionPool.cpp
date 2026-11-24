@@ -34,6 +34,8 @@
 #include <arpa/inet.h>
 
 #include <queue>
+#include <cstdint>
+#include <type_traits>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -128,6 +130,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
     extern const int HTTP_CONNECTION_LIMIT_REACHED;
@@ -1015,13 +1018,20 @@ private:
         String host_,
         UInt16 port_,
         bool https_,
-        ProxyConfiguration proxy_configuration_)
+        ProxyConfiguration proxy_configuration_
+#if USE_SSL
+        , Poco::Net::Context::Ptr client_tls_context_
+#endif
+    )
         : host(std::move(host_))
         , port(port_)
         , https(https_)
         , proxy_configuration(std::move(proxy_configuration_))
         , group(group_)
         , transport(transport_)
+#if USE_SSL
+        , client_tls_context(std::move(client_tls_context_))
+#endif
     {
     }
 
@@ -1035,7 +1045,8 @@ private:
             Poco::Net::StreamSocket socket;
             if (https)
 #if USE_SSL
-                socket = Poco::Net::StreamSocket(new Silk::SecureFiberStreamSocketImpl(Poco::Net::SSLManager::instance().defaultClientContext()));
+                socket = Poco::Net::StreamSocket(new Silk::SecureFiberStreamSocketImpl(
+                    client_tls_context ? client_tls_context : Poco::Net::SSLManager::instance().defaultClientContext()));
 #else
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "HTTPS protocol is disabled because poco library was built without NetSSL support.");
@@ -1046,6 +1057,13 @@ private:
             connection->setHost(host);
             connection->setPort(port);
             return connection;
+        }
+#endif
+#if USE_SSL
+        if constexpr (std::is_same_v<Session, Poco::Net::HTTPSClientSession>)
+        {
+            if (client_tls_context)
+                return PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port, client_tls_context);
         }
 #endif
         return PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
@@ -1391,6 +1409,9 @@ private:
     const ProxyConfiguration proxy_configuration;
     const ConnectionGroup::Ptr group;
     const HTTPConnectionTransport transport;
+#if USE_SSL
+    const Poco::Net::Context::Ptr client_tls_context;
+#endif
 
     std::mutex mutex;
     ConnectionsMinHeap stored_connections TSA_GUARDED_BY(mutex);
@@ -1404,6 +1425,9 @@ struct EndpointPoolKey
     UInt16 target_port;
     bool is_target_https;
     ProxyConfiguration proxy_config;
+#if USE_SSL
+    const Poco::Net::Context * client_tls_context = nullptr;
+#endif
 
     bool operator==(const EndpointPoolKey & rhs) const
     {
@@ -1420,7 +1444,11 @@ struct EndpointPoolKey
                    proxy_config.original_request_protocol,
                    proxy_config.no_proxy_hosts,
                    proxy_config.username,
-                   proxy_config.password)
+                   proxy_config.password
+#if USE_SSL
+                   , client_tls_context
+#endif
+                   )
             == std::tie(
                    rhs.connection_group,
                    rhs.transport,
@@ -1434,7 +1462,11 @@ struct EndpointPoolKey
                    rhs.proxy_config.original_request_protocol,
                    rhs.proxy_config.no_proxy_hosts,
                    rhs.proxy_config.username,
-                   rhs.proxy_config.password);
+                   rhs.proxy_config.password
+#if USE_SSL
+                   , rhs.client_tls_context
+#endif
+                   );
     }
 };
 
@@ -1455,6 +1487,9 @@ struct Hasher
         s.update(k.proxy_config.original_request_protocol);
         s.update(k.proxy_config.username);
         s.update(k.proxy_config.password);
+#if USE_SSL
+        s.update(reinterpret_cast<uintptr_t>(k.client_tls_context));
+#endif
         return s.get64();
     }
 };
@@ -1465,13 +1500,17 @@ static IExtendedPool::Ptr createConnectionPool(
     std::string host,
     UInt16 port,
     bool secure,
-    ProxyConfiguration proxy_configuration)
+    ProxyConfiguration proxy_configuration
+#if USE_SSL
+    , Poco::Net::Context::Ptr client_tls_context
+#endif
+    )
 {
     if (secure)
     {
 #if USE_SSL
         return EndpointConnectionPool<Poco::Net::HTTPSClientSession>::create(
-            group, transport, std::move(host), port, secure, std::move(proxy_configuration));
+            group, transport, std::move(host), port, secure, std::move(proxy_configuration), std::move(client_tls_context));
 #else
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS support is disabled, because ClickHouse was built without SSL library");
@@ -1480,7 +1519,11 @@ static IExtendedPool::Ptr createConnectionPool(
     else
     {
         return EndpointConnectionPool<Poco::Net::HTTPClientSession>::create(
-            group, transport, std::move(host), port, secure, std::move(proxy_configuration));
+            group, transport, std::move(host), port, secure, std::move(proxy_configuration)
+#if USE_SSL
+            , nullptr
+#endif
+        );
     }
 }
 
@@ -1505,7 +1548,11 @@ private:
 
 public:
     IHTTPConnectionPoolForEndpoint::Ptr getPool(
-        HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport)
+        HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport
+#if USE_SSL
+        , Poco::Net::Context::Ptr client_tls_context
+#endif
+    )
     {
         Poco::Timestamp now;
 
@@ -1526,7 +1573,11 @@ public:
             last_wipe_time = now;
         }
 
-        return getPoolImpl(type, uri, proxy_configuration, transport);
+        return getPoolImpl(type, uri, proxy_configuration, transport
+#if USE_SSL
+            , client_tls_context
+#endif
+        );
     }
 
     void setLimits(HTTPConnectionPools::Limits disk, HTTPConnectionPools::Limits storage, HTTPConnectionPools::Limits http, HTTPConnectionPools::Limits amber)
@@ -1623,18 +1674,32 @@ protected:
     }
 
     IExtendedPool::Ptr getPoolImpl(
-        HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport)
+        HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport
+#if USE_SSL
+        , Poco::Net::Context::Ptr client_tls_context
+#endif
+    )
         TSA_REQUIRES(mutex)
     {
         auto [host, port, secure] = getHostPortSecure(uri, proxy_configuration);
+#if USE_SSL
+        if (client_tls_context && !secure)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A custom client TLS context requires HTTPS");
+        auto key = EndpointPoolKey{type, transport, host, port, secure, proxy_configuration, client_tls_context.get()};
+#else
         auto key = EndpointPoolKey{type, transport, host, port, secure, proxy_configuration};
+#endif
 
         auto it = endpoints_pool.find(key);
         if (it != endpoints_pool.end())
             return it->second;
 
         /// Pools of both transports share the group, so the group limits cover all its connections.
-        it = endpoints_pool.emplace(key, createConnectionPool(getGroup(type), transport, std::move(host), port, secure, proxy_configuration)).first;
+        it = endpoints_pool.emplace(key, createConnectionPool(getGroup(type), transport, std::move(host), port, secure, proxy_configuration
+#if USE_SSL
+            , client_tls_context
+#endif
+        )).first;
 
         return it->second;
     }
@@ -1730,9 +1795,17 @@ void HTTPConnectionPools::dropCache()
 }
 
 IHTTPConnectionPoolForEndpoint::Ptr HTTPConnectionPools::getPool(
-    HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport)
+    HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, HTTPConnectionTransport transport
+#if USE_SSL
+    , Poco::Net::Context::Ptr client_tls_context
+#endif
+    )
 {
-    return impl->getPool(type, uri, proxy_configuration, transport);
+    return impl->getPool(type, uri, proxy_configuration, transport
+#if USE_SSL
+        , client_tls_context
+#endif
+    );
 }
 
 HTTPConnectionPools::PoolSocketInodes HTTPConnectionPools::getSocketInodes()

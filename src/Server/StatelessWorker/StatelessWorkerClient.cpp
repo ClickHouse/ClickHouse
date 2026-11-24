@@ -24,6 +24,17 @@ namespace ErrorCodes
 namespace
 {
 
+BuilderRWBufferFromHTTP makeInterserverBuffer(const Poco::URI & uri, const InterserverCredentialsPtr & credentials)
+{
+    BuilderRWBufferFromHTTP builder(uri);
+#if USE_SSL
+    builder.withClientTLSContext(credentials->getClientTLSContext());
+#else
+    (void)credentials;
+#endif
+    return builder;
+}
+
 /// W3C `traceparent`/`tracestate` headers carrying the current trace context to the worker. Sent with the start request only
 HTTPHeaderEntries getTraceContextHeaders()
 {
@@ -72,7 +83,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
         task_serializer(out);
     };
 
-    auto in = BuilderRWBufferFromHTTP(uri)
+    auto in = makeInterserverBuffer(uri, credentials)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)
@@ -159,7 +170,7 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("wait_for_ms", std::to_string(wait_for_ms));
 
-    auto in = BuilderRWBufferFromHTTP(uri)
+    auto in = makeInterserverBuffer(uri, credentials)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
         .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
         .withTimeouts(timeouts)
@@ -204,7 +215,7 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
 
-    auto in = BuilderRWBufferFromHTTP(uri)
+    auto in = makeInterserverBuffer(uri, credentials)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)
@@ -241,7 +252,7 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
 
-    auto in = BuilderRWBufferFromHTTP(uri)
+    auto in = makeInterserverBuffer(uri, credentials)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)

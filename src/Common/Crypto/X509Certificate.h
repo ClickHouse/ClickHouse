@@ -78,7 +78,7 @@ public:
 
     public:
         [[nodiscard]] const container & at(Type type_) const;
-        bool empty();
+        bool empty() const;
 
         void insert(const String & subject_type_, String && subject);
         void insert(Type type_, String && subject);

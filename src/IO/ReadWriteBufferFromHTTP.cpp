@@ -241,7 +241,11 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     RedirectCallback redirect_callback_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_,
-    String expected_etag_)
+    String expected_etag_
+#if USE_SSL
+    , Poco::Net::Context::Ptr client_tls_context_
+#endif
+    )
     : SeekableReadBuffer(nullptr, 0)
     , connection_group(connection_group_)
     , initial_uri(uri_)
@@ -249,6 +253,9 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , proxy_config(std::move(proxy_config_))
     , read_settings(std::move(read_settings_))
     , timeouts(std::move(timeouts_))
+#if USE_SSL
+    , client_tls_context(std::move(client_tls_context_))
+#endif
     , credentials(credentials_)
     , remote_host_filter(remote_host_filter_)
     , buffer_size(buffer_size_)
@@ -317,7 +324,12 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     Poco::Net::HTTPRequest request(method_, current_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     prepareRequest(request, range, with_request_body);
 
-    auto session = makeHTTPSession(connection_group, current_uri, timeouts, proxy_config);
+    auto session = makeHTTPSession(connection_group, current_uri, timeouts, proxy_config,
+        /*connect_time=*/ nullptr, HTTPConnectionTransport::FiberUnaware
+#if USE_SSL
+        , client_tls_context
+#endif
+    );
 
     ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
@@ -1182,7 +1194,11 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         redirect_callback,
         delay_initialization,
         /*file_info_=*/ std::nullopt,
-        expected_etag));
+        expected_etag
+#if USE_SSL
+        , client_tls_context
+#endif
+    ));
     return ptr;
 }
 

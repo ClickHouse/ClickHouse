@@ -1,0 +1,14 @@
+<clickhouse>
+    <interserver_http_credentials>
+        <allow_empty>true</allow_empty>
+        <openSSL>
+            <client>
+                <certificateFile>/etc/clickhouse-server/config.d/valid-a-cert.pem</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/config.d/valid-a-key.pem</privateKeyFile>
+            </client>
+        </openSSL>
+        <ssl_certificates>
+            <subject_alt_name>URI:spiffe://example.org/clickhouse/replica-a</subject_alt_name>
+        </ssl_certificates>
+    </interserver_http_credentials>
+</clickhouse>

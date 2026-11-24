@@ -3544,7 +3544,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             auto [fetched_part, temporary_part_lock] = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
-                address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
+                address.host, address.replication_port, timeouts, credentials,
                 interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX_REPLACE_PARTITION_FROM + "fetch_");
             part_desc->res_part = fetched_part;
             part_desc->temporary_part_lock = std::move(temporary_part_lock);
@@ -3675,7 +3675,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
             auto [fetched_part, lock]  = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), entry.new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
                 address.host, address.replication_port,
-                timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
+                timeouts, credentials, interserver_scheme,
                 replicated_fetches_throttler, true);
             part_temp_directory_lock = std::move(lock);
             return fetched_part;
@@ -5806,8 +5806,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 address.host,
                 address.replication_port,
                 timeouts,
-                credentials->getUser(),
-                credentials->getPassword(),
+                credentials,
                 interserver_scheme,
                 replicated_fetches_throttler,
                 to_detached,
@@ -5992,7 +5991,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
         auto [fetched_part, lock] = fetcher.fetchSelectedPart(
             metadata_snapshot, getContext(), part_name, zookeeper_info.zookeeper_name, source_replica_path,
             address.host, address.replication_port,
-            timeouts, credentials->getUser(), credentials->getPassword(),
+            timeouts, credentials,
             interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true,
             replaced_disk);
         part_temp_directory_lock = std::move(lock);

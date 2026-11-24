@@ -157,6 +157,9 @@ private:
     const ProxyConfiguration proxy_config;
     const ReadSettings read_settings;
     const ConnectionTimeouts timeouts;
+#if USE_SSL
+    const Poco::Net::Context::Ptr client_tls_context;
+#endif
 
     const Poco::Net::HTTPBasicCredentials & credentials;
     const RemoteHostFilter * remote_host_filter;
@@ -284,7 +287,11 @@ private:
         RedirectCallback redirect_callback_,
         bool delay_initialization,
         std::optional<HTTPFileInfo> file_info_,
-        String expected_etag_);
+        String expected_etag_
+#if USE_SSL
+        , Poco::Net::Context::Ptr client_tls_context_ = nullptr
+#endif
+    );
 
 public:
     bool nextImpl() override;
@@ -349,6 +356,9 @@ class BuilderRWBufferFromHTTP
     ReadWriteBufferFromHTTP::CancellationPtr cancellation;
     bool delay_initialization = true;
     String expected_etag;
+#if USE_SSL
+    Poco::Net::Context::Ptr client_tls_context;
+#endif
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -381,6 +391,9 @@ public:
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
     setterMember(withExpectedETag, expected_etag)
+#if USE_SSL
+    setterMember(withClientTLSContext, client_tls_context)
+#endif
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 

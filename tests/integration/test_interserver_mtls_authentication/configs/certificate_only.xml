@@ -1,0 +1,23 @@
+<clickhouse>
+    <interserver_http_credentials>
+        <openSSL>
+            <client>
+                <certificateFile>/etc/clickhouse-server/config.d/valid-a-cert.pem</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/config.d/valid-a-key.pem</privateKeyFile>
+                <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
+            </client>
+        </openSSL>
+        <ssl_certificates>
+            <subject_alt_name>URI:spiffe://example.org/clickhouse/replica-a</subject_alt_name>
+            <subject_alt_name>URI:spiffe://example.org/clickhouse/replica-b</subject_alt_name>
+            <common_name>legacy-replica</common_name>
+        </ssl_certificates>
+    </interserver_http_credentials>
+    <openSSL>
+        <client>
+            <certificateFile>/etc/clickhouse-server/config.d/wrong-san-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/wrong-san-key.pem</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/untrusted-cert.pem</caConfig>
+        </client>
+    </openSSL>
+</clickhouse>

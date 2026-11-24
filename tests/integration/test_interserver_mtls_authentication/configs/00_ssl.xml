@@ -1,0 +1,22 @@
+<clickhouse>
+    <interserver_https_port>9010</interserver_https_port>
+    <interserver_http_port remove="1"/>
+    <openSSL replace="replace">
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server-key.pem</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
+            <verificationMode>relaxed</verificationMode>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </server>
+        <client>
+            <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
+            <verificationMode>strict</verificationMode>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
