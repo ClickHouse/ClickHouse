@@ -1813,24 +1813,6 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
     return createCopy(ptr);
 }
 
-ContextPtr Context::createCopyForStoredDefinition(const ContextPtr & other)
-{
-    if (!other->isCompoundTableIdentifierQualificationAllowed())
-        return other;
-
-    auto copy = createCopy(other);
-    copy->setAllowCompoundTableIdentifierQualification(false);
-    if (other->hasQueryContext())
-        other->getQueryContext()->holdStoredDefinitionContext(copy);
-    return copy;
-}
-
-void Context::holdStoredDefinitionContext(ContextPtr context)
-{
-    std::lock_guard lock(mutex);
-    stored_definition_contexts.push_back(std::move(context));
-}
-
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));

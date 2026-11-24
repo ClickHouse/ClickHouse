@@ -870,9 +870,6 @@ private:
     mutable StatelessWorkerAllocationPtr stateless_worker_allocation;
     mutable StatelessWorkersProviderPtr stateless_worker_provider;
 
-    /// Copies made by `createCopyForStoredDefinition`; not copied with the context.
-    std::vector<ContextPtr> stored_definition_contexts;
-
     Context();
     Context(const Context &);
 
@@ -880,17 +877,12 @@ private:
     void setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const;
 #endif
 
-    void holdStoredDefinitionContext(ContextPtr context);
-
 public:
     /// Create initial Context with ContextShared and etc.
     static ContextMutablePtr createGlobal(ContextSharedPart * shared_part);
     static ContextMutablePtr createCopy(const ContextWeakPtr & other);
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
-    /// A copy with `allow_compound_table_identifier_qualification` off, for analyzing SQL stored in an object
-    /// definition; `other` itself if it is already off there. The query context, if any, keeps the copy alive.
-    static ContextPtr createCopyForStoredDefinition(const ContextPtr & other);
     static SharedContextHolder createShared();
 
 
