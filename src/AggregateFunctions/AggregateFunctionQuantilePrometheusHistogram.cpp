@@ -76,7 +76,7 @@ struct QuantilePrometheusHistogram
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    Value get(Float64 level) const
+    [[nodiscard]] Value get(Float64 level) const
     {
         size_t size = map.size();
         if (0 == size)
@@ -101,7 +101,7 @@ struct QuantilePrometheusHistogram
     }
 
 private:
-    Value getInterpolatedImpl(Float64 level) const
+    [[nodiscard]] Value getInterpolatedImpl(Float64 level) const
     {
         size_t size = map.size();
 

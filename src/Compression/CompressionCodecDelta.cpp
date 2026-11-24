@@ -4,6 +4,7 @@
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -19,8 +20,8 @@ class CompressionCodecDelta : public ICompressionCodec
 public:
     explicit CompressionCodecDelta(UInt8 delta_bytes_size_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -28,13 +29,13 @@ protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    bool isDeltaCompression() const override { return true; }
+    [[nodiscard]] bool isCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isDeltaCompression() const override { return true; }
 
-    String getDescription() const override
+    [[nodiscard]] String getDescription() const override
     {
         return "Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing or decreasing data.";
     }
@@ -78,8 +79,10 @@ void CompressionCodecDelta::updateHash(SipHash & hash) const
 namespace
 {
 
+/// Delta coding is modular arithmetic by definition: the difference of two values wraps around,
+/// and the decoder recovers the original value by wrapping back.
 template <typename T>
-void compressDataForType(const char * source, UInt32 source_size, char * dest)
+void NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with Delta codec, data size {} is not aligned to {}", source_size, sizeof(T));
@@ -160,6 +163,7 @@ T decompressBlocks(const char * source, char * dest, size_t blocks)
 #endif
 
 template <typename T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     if (source_size % sizeof(T) != 0)

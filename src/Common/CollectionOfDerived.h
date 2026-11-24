@@ -66,17 +66,17 @@ public:
         records.clear();
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return records.empty();
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return records.size();
     }
 
-    Self clone() const
+    [[nodiscard]] Self clone() const
     {
         Self result;
         result.records.reserve(records.size());
@@ -131,7 +131,7 @@ public:
     }
 
     template <class T>
-    bool has() const
+    [[nodiscard]] bool has() const
     {
         static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
         auto it = getImpl(std::type_index(typeid(T)));
@@ -139,7 +139,7 @@ public:
     }
 
     template <class T>
-    std::shared_ptr<T> get() const
+    [[nodiscard]] std::shared_ptr<T> get() const
     {
         static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
         auto it = getImpl(std::type_index(typeid(T)));
@@ -151,7 +151,7 @@ public:
     }
 
     template <class T>
-    std::shared_ptr<T> getSafe() const
+    [[nodiscard]] std::shared_ptr<T> getSafe() const
     {
         static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
         auto it = getImpl(std::type_index(typeid(T)));
@@ -176,7 +176,7 @@ public:
         return cast;
     }
 
-    std::string debug() const
+    [[nodiscard]] std::string debug() const
     {
         std::string result;
 
@@ -190,7 +190,7 @@ public:
     }
 
 private:
-    bool isUniqTypes() const
+    [[nodiscard]] bool isUniqTypes() const
     {
         auto uniq_it = std::adjacent_find(records.begin(), records.end());
         return uniq_it == records.end();
@@ -213,7 +213,7 @@ private:
         records.emplace(it, type_idx, item);
     }
 
-    typename Records::const_iterator getImpl(std::type_index type_idx) const
+    [[nodiscard]] typename Records::const_iterator getImpl(std::type_index type_idx) const
     {
         auto it = std::lower_bound(records.cbegin(), records.cend(), type_idx);
 

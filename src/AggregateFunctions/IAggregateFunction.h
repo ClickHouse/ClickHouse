@@ -329,6 +329,7 @@ public:
 
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
+    /// If it throws, every source state of the batch has been destroyed.
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
     /// Same as `mergeAndDestroyBatch`, but pairs of states that are too large to merge serially on this
@@ -443,7 +444,7 @@ public:
     virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
 
     /** The inner loop that uses the function pointer is better than using the virtual function.
-      * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
+      * The reason is that in the case of virtual functions the compiler can generate code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
       * This gives a performance drop on simple queries around 12%.
       * After the appearance of better compilers, the code can be removed.
@@ -528,7 +529,7 @@ public:
         ssize_t if_argument_pos = -1) const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
-      *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
+      *  as long as they are between offsets[static_cast<ssize_t>(i) - 1] and offsets[i]. This is used for arrayReduce and
       *  -Array combinator. It might also be used generally to break data dependency when array
       *  "places" contains a large number of same values consecutively.
       */
@@ -638,23 +639,6 @@ public:
     /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
 
-    // Any aggregate function can be calculated over a window, but there are some
-    // window functions such as rank() that require a different interface, e.g.
-    // because they don't respect the window frame, or need to be notified when
-    // a new peer group starts. They pretend to be normal aggregate functions,
-    // but will fail if you actually try to use them in Aggregator. The
-    // WindowTransform recognizes these functions and handles them differently.
-    // We could have a separate factory for window functions, and make all
-    // aggregate functions implement IWindowFunction interface and so on. This
-    // would be more logically correct, but more complex. We only have a handful
-    // of true window functions, so this hack-ish interface suffices.
-    virtual bool isOnlyWindowFunction() const
-    {
-        if (auto nested = getNestedFunction())
-            return nested->isOnlyWindowFunction();
-        return false;
-    }
-
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
@@ -676,7 +660,10 @@ public:
 
 protected:
     /// Distinct zero-size states can share an address: a zero-byte arena allocation does not advance the arena.
-    bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
+    [[nodiscard]] bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
+
+    /// Throws if the failpoint `aggregator_merge_batch_throw` is enabled.
+    static void injectMergeBatchFault();
 
     DataTypes argument_types;
     Array parameters;
@@ -901,16 +888,29 @@ public:
 
     void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
-        for (size_t i = 0; i < size; ++i)
+        size_t i = 0;
+        try
         {
-            chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
-                     "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
-            if constexpr (Derived::parallelizeMergeWithKey())
-                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
-            else
-                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            for (; i < size; ++i)
+            {
+                if (unlikely(i == 1))
+                    injectMergeBatchFault();
 
-            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+                chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
+                         "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
+                if constexpr (Derived::parallelizeMergeWithKey())
+                    static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
+                else
+                    static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+
+                static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            }
+        }
+        catch (...)
+        {
+            /// `destroy` does not throw, so the sources from `i` on are not destroyed yet.
+            destroyBatch(i, size, rhs_places, offset);
+            throw;
         }
     }
 
@@ -1127,17 +1127,17 @@ public:
         data(place).~Data();
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data>;
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(Data);
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return alignof(Data);
     }
