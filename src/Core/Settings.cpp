@@ -2408,12 +2408,12 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
-        {"26.11", false, true, "New setting to use the dictionaries of LowCardinality columns for part pruning."}) \
+        {"26.12", false, true, "New setting to use the dictionaries of LowCardinality columns for part pruning."}) \
     DECLARE(UInt64, max_low_cardinality_dictionaries_bytes_for_part_pruning, 1_MiB, R"(
 The maximum compressed size of the dictionaries of a `LowCardinality` column in a part to read them
 for `use_low_cardinality_dictionaries_for_part_pruning`. The parts with larger dictionaries are not filtered by them.
 )", 0, \
-        {"26.11", 0, 1_MiB, "New setting to use the dictionaries of LowCardinality columns for part pruning."}) \
+        {"26.12", 0, 1_MiB, "New setting to use the dictionaries of LowCardinality columns for part pruning."}) \
     DECLARE(UInt64, min_marks_per_part_to_load_statistics, 64, R"(
 The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be loaded for pruning parts and for ordering the conditions of `PREWHERE`.
 

@@ -321,7 +321,7 @@ an overflow of a dictionary, see `low_cardinality_max_dictionary_size`). The mar
 parts by the dictionaries of `LowCardinality` columns, see `use_low_cardinality_dictionaries_for_part_pruning`.
 Older versions ignore the marker.
 )", 0, \
-        {"26.11", false, true, "New setting"}) \
+        {"26.12", false, true, "New setting"}) \
     DECLARE(Bool, use_compact_variant_discriminators_serialization, true, R"(
 Enables compact mode for binary serialization of discriminators in Variant
 data type.
