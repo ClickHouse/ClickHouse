@@ -191,9 +191,10 @@ namespace
         return false;
     }
 
-    /// Throws if `key` replaces a stored key that is `NOT OVERRIDABLE`, unless a replayed definition replaces a stored `'auto'`.
+    /// If `check_lock`, throws if `key` replaces a stored key that is `NOT OVERRIDABLE`, unless a replayed definition replaces a stored `'auto'`.
     /// Returns whether `key` replaces a stored key that requires the privilege `SHOW NAMED COLLECTIONS SECRETS`.
-    bool checkOverrideLockAndFindStoredKey(const NamedCollection & collection, const std::string & key, bool is_replayed_definition)
+    bool checkOverrideLockAndFindStoredKey(
+        const NamedCollection & collection, const std::string & key, bool is_replayed_definition, bool check_lock = true)
     {
         bool overrides_stored_key = false;
         const auto normalized_key = normalizeKey(key);
@@ -207,7 +208,7 @@ namespace
             const bool replaces_auto = (stored_key == "format" || stored_key == "structure")
                 && collection.getOrDefault<String>(stored_key, "") == "auto";
 
-            if (!collection.isOverridable(stored_key, /* default_value= */ true) && !(replaces_auto && is_replayed_definition))
+            if (check_lock && !collection.isOverridable(stored_key, /* default_value= */ true) && !(replaces_auto && is_replayed_definition))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", stored_key);
 
             if (replaces_auto)
@@ -222,6 +223,11 @@ namespace
 void checkNamedCollectionOverrideLock(const NamedCollection & collection, const std::string & key)
 {
     checkOverrideLockAndFindStoredKey(collection, key, /* is_replayed_definition= */ false);
+}
+
+bool namedCollectionOverrideRequiresSecrets(const NamedCollection & collection, const std::string & key)
+{
+    return checkOverrideLockAndFindStoredKey(collection, key, /* is_replayed_definition= */ false, /* check_lock= */ false);
 }
 
 void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context, bool is_replayed_definition)

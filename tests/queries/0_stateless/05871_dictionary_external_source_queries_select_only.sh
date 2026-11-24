@@ -191,6 +191,29 @@ echo 'With the grant: created'
 create_as_user "" "$nc"
 echo 'With the grant, RESTORE ON CLUSTER: restored'
 restore_as_user "$user" "MYSQL(NAME $nc TABLE 't')" "ON CLUSTER test_shard_localhost" "NAMED COLLECTION ON \`?${nc}\`?\."
+
+echo '--- Replacing a stored key of the collection requires the privilege SHOW NAMED COLLECTIONS SECRETS'
+# The dictionary checks it where it is created, which is with full access for `ON CLUSTER` and on the hosts of `RESTORE ON CLUSTER`,
+# so it is required before. `$nc` stores `db`.
+# The message can list the two privileges on the collection together.
+SECRETS="SHOW NAMED COLLECTIONS SECRETS(, NAMED COLLECTION)? ON \`?${nc}\`?\."
+function create_override_as_user()
+{
+    $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
+        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ON CLUSTER test_shard_localhost (id UInt64, value String) PRIMARY KEY id
+            SOURCE(MYSQL(NAME $nc DB 'other' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
+        | grep -qE "necessary to have the grant ${SECRETS}" && echo 1 || echo 0
+    dictionary_exists
+    $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
+}
+echo 'Without the grant, ON CLUSTER: denied, not created'
+create_override_as_user
+echo 'Without the grant, RESTORE ON CLUSTER: denied, not restored'
+restore_as_user "$user" "MYSQL(NAME $nc DB 'other' TABLE 't')" "ON CLUSTER test_shard_localhost" "$SECRETS"
+$CLICKHOUSE_CLIENT --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON $nc TO $user"
+echo 'With the grant, ON CLUSTER: created'
+create_override_as_user
+$CLICKHOUSE_CLIENT --query "REVOKE SHOW NAMED COLLECTIONS SECRETS ON $nc FROM $user"
 echo 'With the grant, the name is an expression: created'
 create_as_user "" "concat('$nc', '')"
 

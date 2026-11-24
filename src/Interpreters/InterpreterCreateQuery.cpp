@@ -120,6 +120,7 @@
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -4222,7 +4223,26 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccessForDictionarySourc
     /// Required here, not where the dictionary is built: a `Replicated` database builds it with full access,
     /// and the dictionary is loaded with the global context.
     if (auto collection_name = getNamedCollectionOfDictionarySource(create))
+    {
         required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
+
+        /// Replacing a stored key of the collection requires `SHOW NAMED COLLECTIONS SECRETS`. `StorageDictionary` checks it too,
+        /// but where the dictionary is created, which is with full access for `ON CLUSTER`, a `Replicated` database
+        /// and the hosts of `RESTORE ON CLUSTER`. A missing collection is reported when the dictionary is created.
+        NamedCollectionFactory::instance().loadIfNot();
+        if (auto collection = NamedCollectionFactory::instance().tryGet(*collection_name))
+        {
+            for (const auto & child : create.dictionary->source->elements->children)
+            {
+                const auto * pair = child->as<ASTPair>();
+                if (pair && pair->first != "name" && namedCollectionOverrideRequiresSecrets(*collection, pair->first))
+                {
+                    required_access.emplace_back(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, *collection_name);
+                    break;
+                }
+            }
+        }
+    }
 
     /// The `odbc` source can use the credentials of a DSN configured on the server, as the `odbc` table function,
     /// which requires the same privilege. Its queries are checked to be `SELECT`, but the dialect of the database is unknown.

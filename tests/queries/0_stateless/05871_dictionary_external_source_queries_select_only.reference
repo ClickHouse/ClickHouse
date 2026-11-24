@@ -46,6 +46,16 @@ With the grant: created
 With the grant, RESTORE ON CLUSTER: restored
 0
 1
+--- Replacing a stored key of the collection requires the privilege SHOW NAMED COLLECTIONS SECRETS
+Without the grant, ON CLUSTER: denied, not created
+1
+0
+Without the grant, RESTORE ON CLUSTER: denied, not restored
+1
+0
+With the grant, ON CLUSTER: created
+0
+1
 With the grant, the name is an expression: created
 0
 1
