@@ -103,7 +103,8 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
 
-    if (hasInterpolate())
+    /// A bare `INTERPOLATE` has an empty list and interpolates every column that is not a sort key, so there is nothing to remove from it.
+    if (hasInterpolate() && !getInterpolate()->as<ListNode &>().getNodes().empty())
     {
         std::unordered_set<String> used_projection_columns;
         for (const auto & projection : projection_columns)
