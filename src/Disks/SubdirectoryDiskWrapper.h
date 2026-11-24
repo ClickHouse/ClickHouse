@@ -101,8 +101,6 @@ public:
 
     bool supportsStat() const override { return delegate->supportsStat(); }
     struct stat stat(const String & file_path) const override { return delegate->stat(wrap(file_path)); }
-    bool supportsChmod() const override { return delegate->supportsChmod(); }
-    void chmod(const String & file_path, mode_t mode) override { delegate->chmod(wrap(file_path), mode); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & dir_path) const override { return delegate->getDirectorySyncGuard(wrap(dir_path)); }
 
