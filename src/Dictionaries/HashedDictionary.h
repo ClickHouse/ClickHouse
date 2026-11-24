@@ -707,7 +707,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
             /// +16% on AArch64). Hoist them by hand and read the keys through one pointer.
             UInt8 * __restrict out_data = out.data();
             const auto * __restrict containers_data = containers.data();
-            const bool nullable = is_attribute_nullable;
+            const auto * __restrict nullable_sets_data = is_attribute_nullable ? attribute.is_nullable_sets->data() : nullptr;
             size_t found = 0;
 
             extractor.forEachKey([&](size_t requested_key_index, auto key)
@@ -716,8 +716,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
                 const auto & container = containers_data[shard];
 
                 UInt8 has = container.find(key) != container.end();
-                if (nullable && !has)
-                    has = (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
+                if (nullable_sets_data && !has)
+                    has = nullable_sets_data[shard].find(key) != nullptr;
 
                 out_data[requested_key_index] = has;
                 found += has;
@@ -1274,7 +1274,9 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    const auto & attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers);
+    /// `getShard` returns an index below the number of shards, which is the size of both vectors.
+    const auto * attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers).data();
+    [[maybe_unused]] const auto * nullable_sets = is_nullable ? attribute.is_nullable_sets->data() : nullptr;
     const size_t keys_size = keys_extractor.getKeysSize();
 
     size_t keys_found = 0;
@@ -1296,7 +1298,7 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
         {
             if constexpr (is_nullable)
             {
-                bool is_value_nullable = ((*attribute.is_nullable_sets)[shard].find(key) != nullptr) || default_value_extractor.isNullAt(key_index);
+                bool is_value_nullable = (nullable_sets[shard].find(key) != nullptr) || default_value_extractor.isNullAt(key_index);
                 set_value(key_index, default_value_extractor[key_index], is_value_nullable);
             }
             else
@@ -1338,7 +1340,9 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsShortCircuitImpl(
     NullAndDefaultSetter && set_null_and_default,
     IColumn::Filter & default_mask) const
 {
-    const auto & attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers);
+    /// `getShard` returns an index below the number of shards, which is the size of both vectors.
+    const auto * attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers).data();
+    const auto * nullable_sets = is_nullable ? attribute.is_nullable_sets->data() : nullptr;
     const size_t keys_size = keys_extractor.getKeysSize();
     default_mask.resize(keys_size);
     size_t keys_found = 0;
@@ -1359,7 +1363,7 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsShortCircuitImpl(
             ++keys_found;
         }
         // Need to consider items in is_nullable_sets as well, see blockToAttributes()
-        else if (is_nullable && (*attribute.is_nullable_sets)[shard].find(key) != nullptr)
+        else if (is_nullable && nullable_sets[shard].find(key) != nullptr)
         {
             set_null_and_default(key_index);
             default_mask[key_index] = 0;
