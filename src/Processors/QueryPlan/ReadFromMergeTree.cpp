@@ -707,6 +707,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     parallel_replicas_step->query_task_size_limit = query_task_size_limit;
     parallel_replicas_step->enable_vertical_final = enable_vertical_final;
     parallel_replicas_step->virtual_row_conversion = virtual_row_conversion;
+    parallel_replicas_step->virtual_row_key_prefix_size = virtual_row_key_prefix_size;
     parallel_replicas_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
     parallel_replicas_step->index_read_tasks = index_read_tasks;
 
@@ -5453,6 +5454,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->query_task_size_limit = query_task_size_limit;
     cloned_step->enable_vertical_final = enable_vertical_final;
     cloned_step->virtual_row_conversion = virtual_row_conversion;
+    cloned_step->virtual_row_key_prefix_size = virtual_row_key_prefix_size;
     cloned_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
