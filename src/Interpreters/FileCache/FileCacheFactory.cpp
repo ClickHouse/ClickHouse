@@ -282,7 +282,12 @@ void FileCacheFactory::RemovedCaches::destroy()
 
     std::lock_guard lock(factory.mutex);
     for (const auto & path : paths)
-        factory.paths_of_caches_being_destroyed.erase(factory.paths_of_caches_being_destroyed.find(path));
+    {
+        auto it = factory.paths_of_caches_being_destroyed.find(path);
+        chassert(it != factory.paths_of_caches_being_destroyed.end());
+        if (it != factory.paths_of_caches_being_destroyed.end())
+            factory.paths_of_caches_being_destroyed.erase(it);
+    }
     paths.clear();
     factory.cache_destroyed_cv.notify_all();
 }
@@ -311,6 +316,12 @@ void FileCacheFactory::waitForCacheDestroyed(std::unique_lock<std::mutex> & lock
 
 void FileCacheFactory::removeUnusedNamesOfReleasedDisks(RemovedCaches & removed)
 {
+    /// Every name moves at most one cache and one path to `removed`. The space is reserved in advance, so that nothing
+    /// throws between marking a path as being destroyed and remembering it in `removed`, which is what removes the mark:
+    /// a mark left behind would make `waitForCacheDestroyed` wait forever.
+    removed.caches.reserve(removed.caches.size() + names_of_released_disks.size());
+    removed.paths.reserve(removed.paths.size() + names_of_released_disks.size());
+
     for (auto name_it = names_of_released_disks.begin(); name_it != names_of_released_disks.end();)
     {
         const auto & cache_name = *name_it;
@@ -348,6 +359,7 @@ void FileCacheFactory::removeUnusedNamesOfReleasedDisks(RemovedCaches & removed)
         {
             auto path = it->second->getSettings()[FileCacheSetting::path].value;
             paths_of_caches_being_destroyed.insert(path);
+            /// Does not allocate, see above.
             removed.paths.push_back(std::move(path));
         }
         removed.caches.push_back(std::move(it->second));
