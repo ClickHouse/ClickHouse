@@ -41,6 +41,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <algorithm>
+#include <ranges>
 #include <stack>
 #include <string>
 #include <unordered_map>
@@ -4696,6 +4697,10 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
 
     /// The predicate DAG can share nodes (`p1 AND p1` where `p1 = p0 AND p0`), so visit each node once:
     /// walking every path would yield exponentially many copies of the same atoms.
+    /// The nodes are visited in the evaluation order of `and`, left to right, so a shared atom keeps its
+    /// first occurrence: a later one must not move a conjunct before its guard
+    /// (`notEmpty(s) AND toInt32(s) > 0 AND notEmpty(s)`). The result is reversed at the end, because the
+    /// atoms are returned right to left.
     std::unordered_set<const ActionsDAG::Node *> visited;
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(predicate);
@@ -4711,7 +4716,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
             const auto & name = node->function_base->getName();
             if (name == "and")
             {
-                for (const auto * arg : node->children)
+                for (const auto * arg : node->children | std::views::reverse)
                     stack.push(arg);
 
                 continue;
@@ -4721,6 +4726,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
         atoms.push_back(node);
     }
 
+    std::ranges::reverse(atoms);
     return atoms;
 }
 

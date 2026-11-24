@@ -722,6 +722,9 @@ static void mergeStepIntoQueryGraph(QueryGraphBuilder & child_graph, IQueryPlanS
     /// until all its relations are joined before applying any part of it.
     /// The condition DAG can share nodes (`p1 = p0 AND p0`), so visit each atom once: walking every path
     /// would produce exponentially many identical edges.
+    /// The atoms are visited in the written order, left to right, and a shared atom keeps its first
+    /// occurrence: the edges applied at one join step are evaluated in this order, and a conjunct can
+    /// guard the ones written after it (`notEmpty(s) AND toInt32(s) > 0`).
     std::vector<JoinActionRef> pending{JoinActionRef(condition_node, child_graph.expression_actions)};
     std::unordered_set<const ActionsDAG::Node *> visited;
     while (!pending.empty())
@@ -732,7 +735,8 @@ static void mergeStepIntoQueryGraph(QueryGraphBuilder & child_graph, IQueryPlanS
             continue;
         if (condition.isFunction(JoinConditionOperator::And))
         {
-            pending.append_range(condition.getArguments());
+            /// `pending` is a stack, so push the arguments in reverse to pop them left to right.
+            pending.append_range(condition.getArguments() | std::views::reverse);
         }
         else
         {

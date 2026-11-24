@@ -1,0 +1,11 @@
+Repeated guard, filter push down
+2
+2
+Two conjuncts merged into the join graph
+2
+Repeated guard merged into the join graph
+2
+Join order algorithms
+2
+2
+2
