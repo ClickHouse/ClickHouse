@@ -45,6 +45,7 @@ Format `CSV` is disabled by the server configuration (`factory_restrictions.form
 (INVALID_CONFIG_PARAMETER): SELECT 1
 (INVALID_CONFIG_PARAMETER): SELECT 1
 (INVALID_CONFIG_PARAMETER): SELECT 1
+(INVALID_CONFIG_PARAMETER): SELECT 1
 -- empty allow list
 (SUPPORT_IS_DISABLED): SELECT * FROM numbers(1)
 ok: SELECT * FROM system.one

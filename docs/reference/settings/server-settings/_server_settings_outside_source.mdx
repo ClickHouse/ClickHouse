@@ -1749,7 +1749,7 @@ A subsection contains exactly one of the following:
 - `<allow>`: only the listed objects are allowed. An empty `<allow/>` disables every object of the kind.
 - `<deny>`: the listed objects are disallowed, and the rest are allowed.
 
-Each object is an empty element named after it, for example `<URL/>`. Names are case-insensitive. An object matches a list if either the name used in the query or the name it is an alias of is listed. For example, denying `lower` also denies its alias `lcase`. An aggregate function with combinators is checked by its parts: `sumIf` is allowed if both the `sum` function and the `If` combinator are allowed.
+Each object is an empty element named after it, for example `<URL/>`. Names are case-insensitive. An object matches a list if either the name used in the query or the name it is an alias of is listed. For example, denying `lower` also denies its alias `lcase`. An aggregate function with combinators is checked by its parts: `sumIf` is allowed if both the `sum` function and the `If` combinator are allowed. Every listed name must be a known object of its kind, otherwise the configuration is rejected, so a typo cannot make a list silently ineffective.
 
 Supported subsections:
 
@@ -1776,6 +1776,8 @@ Creating a disallowed object fails with the `SUPPORT_IS_DISABLED` error. This in
 Keep in mind that the server itself also creates some of these objects. For example, it uses the `Native` and `TabSeparated` formats and many functions and data types internally, and `MergeTree` tables use the `ZSTD` codec internally, so denying `ZSTD` breaks all `MergeTree` tables. Therefore, prefer `deny` lists for `formats`, `functions`, `aggregate_functions` and `data_types`.
 
 The section is reloaded without a restart. The new lists apply to the objects created after the reload. If the section is invalid, the server refuses to reload the configuration and keeps the previous lists.
+
+The `formats` list applies to the formats that the server uses. With the native protocol, the client formats the result of a query itself, so the `FORMAT` clause of a query sent by `clickhouse-client` is not restricted.
 
 Note that table engines and table functions are restricted separately: to disable both the `URL` engine and the `url` table function, list each of them in its subsection.
 

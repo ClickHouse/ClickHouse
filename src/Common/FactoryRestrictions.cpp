@@ -51,7 +51,7 @@ FactoryRestrictions & FactoryRestrictions::instance()
     return instance;
 }
 
-FactoryRestrictions::RulesPtr FactoryRestrictions::parse(const Poco::Util::AbstractConfiguration & config)
+FactoryRestrictions::RulesPtr FactoryRestrictions::parse(const Poco::Util::AbstractConfiguration & config, const IsRegisteredFn & is_registered)
 {
     if (!config.has(String(config_root)))
         return nullptr;
@@ -87,7 +87,11 @@ FactoryRestrictions::RulesPtr FactoryRestrictions::parse(const Poco::Util::Abstr
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}` must be an empty element, like `<Name/>`", key_path);
 
             /// A repeated element is reported by Poco as `Name[1]`.
-            rule.names.insert(Poco::toLower(key.substr(0, key.find('['))));
+            String name = key.substr(0, key.find('['));
+            /// An unknown name, e.g. a typo, would make a deny list silently ineffective.
+            if (!is_registered(static_cast<Kind>(info - kind_infos.begin()), name))
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "`{}`: `{}` is not a known name", key_path, name);
+            rule.names.insert(Poco::toLower(name));
         }
 
         result->rules[info - kind_infos.begin()] = std::move(rule);
@@ -106,6 +110,15 @@ void FactoryRestrictions::set(RulesPtr new_rules)
     rules.set(std::move(new_rules));
     if (!any)
         has_rules.store(false, std::memory_order_relaxed);
+}
+
+bool FactoryRestrictions::hasRule(Kind kind) const
+{
+    if (!has_rules.load(std::memory_order_relaxed))
+        return false;
+
+    auto current = rules.get();
+    return current && current->rules[static_cast<size_t>(kind)].has_value();
 }
 
 void FactoryRestrictions::check(Kind kind, std::string_view name, std::string_view canonical_name) const

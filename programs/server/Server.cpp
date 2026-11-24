@@ -69,6 +69,7 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FactoryRestrictions.h>
+#include <Interpreters/isRegisteredInFactory.h>
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
@@ -2781,7 +2782,7 @@ try
             }
 
             /// Parse before `config().replace` so that an invalid section rejects the reload.
-            auto factory_restrictions = FactoryRestrictions::parse(*reload_config);
+            auto factory_restrictions = FactoryRestrictions::parse(*reload_config, isRegisteredInFactory);
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 

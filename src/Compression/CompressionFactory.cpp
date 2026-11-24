@@ -52,24 +52,34 @@ const CompressionCodecFamilyProperties & CompressionCodecFactory::getFamilyPrope
 }
 
 /// Checks a codec that was created earlier, like the default one, against the current restrictions.
-static void checkCodecAllowed(const ICompressionCodec & codec, const UnorderedMapWithMemoryTracking<uint8_t, String> & family_code_to_name)
+/// Its description is used rather than its method byte: some codecs share a byte (`LZ4HC` writes the byte of `LZ4`).
+/// `FirstApplicable` is a combinator rather than a codec, so only its alternatives are checked.
+static void checkCodecDescriptionAllowed(const IAST & ast)
 {
-    if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(&codec))
+    auto check = [](const String & name)
     {
-        for (const auto & nested : multiple->getCodecs())
-            checkCodecAllowed(*nested, family_code_to_name);
-        return;
-    }
+        if (!equalsCaseInsensitive(name, FIRST_APPLICABLE_CODEC_NAME))
+            FactoryRestrictions::instance().check(FactoryRestrictions::Kind::CompressionCodecs, name);
+    };
 
-    const auto it = family_code_to_name.find(codec.getMethodByte());
-    if (it == family_code_to_name.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown codec family code: {}", toString(codec.getMethodByte()));
-    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::CompressionCodecs, it->second);
+    if (const auto * function = ast.as<ASTFunction>())
+        check(function->name);
+    else if (const auto * identifier = ast.as<ASTIdentifier>())
+        check(identifier->name());
+
+    for (const auto & child : ast.children)
+        checkCodecDescriptionAllowed(*child);
+}
+
+static void checkCodecAllowed(const ICompressionCodec & codec)
+{
+    if (FactoryRestrictions::instance().hasRule(FactoryRestrictions::Kind::CompressionCodecs))
+        checkCodecDescriptionAllowed(*codec.getCodecDescription());
 }
 
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 {
-    checkCodecAllowed(*default_codec, family_code_to_name);
+    checkCodecAllowed(*default_codec);
     return default_codec;
 }
 
@@ -132,7 +142,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
             CompressionCodecPtr codec;
             if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
             {
-                checkCodecAllowed(*current_default, family_code_to_name);
+                checkCodecAllowed(*current_default);
                 codec = current_default;
                 /// E.g. `default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))'`: select for the data type.
                 if (column_type && codec->dependsOnDataType())

@@ -295,6 +295,8 @@ public:
     /// types one at a time (and to silently skip types the current build doesn't know about).
     [[nodiscard]] StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
 
+    [[nodiscard]] Strings getAllRegisteredNames() const;
+
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);
 

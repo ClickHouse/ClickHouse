@@ -96,6 +96,11 @@ cat > "$config" <<CONFIG
 CONFIG
 run "SELECT 1"
 
+cat > "$config" <<CONFIG
+<clickhouse><factory_restrictions><functions><deny><lowre/></deny></functions></factory_restrictions></clickhouse>
+CONFIG
+run "SELECT 1"
+
 echo "-- empty allow list"
 cat > "$config" <<CONFIG
 <clickhouse><factory_restrictions><table_functions><allow/></table_functions></factory_restrictions></clickhouse>

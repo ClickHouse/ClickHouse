@@ -1136,6 +1136,15 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
     return result;
 }
 
+Strings MergeTreeStatisticsFactory::getAllRegisteredNames() const
+{
+    Strings result;
+    result.reserve(creators.size());
+    for (const auto & [type, _] : creators)
+        result.push_back(statisticsTypeToString(type));
+    return result;
+}
+
 StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const
 {
     auto vit = validators.find(type);

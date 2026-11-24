@@ -115,6 +115,15 @@ void BackupFactory::registerBackupEngine(
     engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, source_access_fn, std::move(secret_arguments)});
 }
 
+Strings BackupFactory::getAllRegisteredNames() const
+{
+    Strings result;
+    result.reserve(engines.size());
+    for (const auto & [name, _] : engines)
+        result.push_back(name);
+    return result;
+}
+
 const SecretArgumentsSpec * BackupFactory::tryGetSecretArgumentsSpec(const String & engine_name) const
 {
     auto it = engines.find(engine_name);

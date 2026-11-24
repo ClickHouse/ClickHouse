@@ -7,6 +7,7 @@
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/FactoryRestrictions.h>
+#include <Interpreters/isRegisteredInFactory.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
@@ -433,7 +434,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
     auto loaded_config = config_processor.loadConfig();
     getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     loaded_config_path = config_path;
-    FactoryRestrictions::instance().set(FactoryRestrictions::parse(getClientConfiguration()));
 
     /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
     /// corresponding dashed CLI option is specified. Shared with `clickhouse-client`.
@@ -1451,6 +1451,9 @@ try
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
     QueryPlanStepRegistry::registerPlanSteps();
+
+    /// After the registration of all factories, because the names in the lists are checked against them.
+    FactoryRestrictions::instance().set(FactoryRestrictions::parse(getClientConfiguration(), isRegisteredInFactory));
 
     /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
     /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps
