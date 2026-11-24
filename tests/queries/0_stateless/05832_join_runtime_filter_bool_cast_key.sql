@@ -7,6 +7,9 @@ SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = '
 SET enable_parallel_replicas = 0, join_algorithm = 'hash';
 SET date_time_overflow_behavior = 'ignore';
 SET allow_suspicious_variant_types = 1;
+-- The index analysis needs the exact values of the runtime filter, whose set is bounded by both settings below
+-- (a local set also by the bloom filter size), so pin them against the settings randomization.
+SET join_runtime_filter_exact_values_limit = 10000, join_runtime_bloom_filter_bytes = 524288;
 
 DROP TABLE IF EXISTS probe_u8;
 DROP TABLE IF EXISTS probe_u8_si;
@@ -197,10 +200,9 @@ SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, u
     enable_join_seal_gated_reading = 0, log_comment = '05832_date32_overflow';
 
 -- Casts that keep the values still prune: a time zone change, with a `bloom_filter` index, and a `Decimal` precision change.
--- The `bloom_filter` index is probed only with the exact values of the runtime filter, so their limit is pinned.
 SELECT 'datetime_time_zone', count() FROM probe_time AS p JOIN build_tokyo AS b ON CAST(p.t AS DateTime('Asia/Tokyo')) = b.t
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
-    enable_join_seal_gated_reading = 0, join_runtime_filter_exact_values_limit = 10000, log_comment = '05832_datetime_time_zone';
+    enable_join_seal_gated_reading = 0, log_comment = '05832_datetime_time_zone';
 SELECT 'decimal_precision', count() FROM probe_dec AS p JOIN build_dec AS b ON CAST(p.d AS Decimal(18, 2)) = b.d
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, enable_join_seal_gated_reading = 0,
     log_comment = '05832_decimal_precision';
