@@ -6,8 +6,6 @@ tags: ['Conceitos Fundamentais de Dados']
 keywords: ['Banco de Dados Colunar']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="introduction">
   ## Introdução
 </div>
@@ -32,10 +30,26 @@ Veja abaixo uma ilustração da diferença entre sistemas tradicionais orientado
 
 **Tradicional orientado a linhas**
 
-<Image img="/images/row-oriented.webp" alt="Ilustração do armazenamento tradicional de banco de dados orientado a linhas" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Ilustração do armazenamento tradicional de banco de dados orientado a linhas](/images/row-oriented.webp)
+
+</Frame>
+
+</div>
 
 **Colunar**
 
-<Image img="/images/column-oriented.webp" alt="Ilustração do armazenamento de banco de dados colunar" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Ilustração do armazenamento de banco de dados colunar](/images/column-oriented.webp)
+
+</Frame>
+
+</div>
 
 Um banco de dados colunar é a escolha preferida para aplicações analíticas porque permite ter muitas colunas em uma tabela por precaução, sem pagar o custo pelas colunas não utilizadas no tempo de execução das consultas de leitura (um banco de dados OLTP tradicional lê todos os dados durante as consultas, pois os dados são armazenados em linhas, e não em colunas). Bancos de dados orientados a colunas são projetados para processamento de big data e armazenamento de dados. Muitas vezes, eles escalam nativamente usando clusters distribuídos de hardware de baixo custo para aumentar a vazão. O ClickHouse faz isso com uma combinação de tabelas [distributed](/pt-BR/reference/engines/table-engines/special/distributed) e [replicated](/pt-BR/reference/engines/table-engines/mergetree-family/replication).

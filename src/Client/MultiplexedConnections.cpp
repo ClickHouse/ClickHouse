@@ -10,13 +10,12 @@
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/getThreadId.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsUInt64 interactive_delay;
@@ -169,6 +168,7 @@ void MultiplexedConnections::sendQuery(
     /// Demote the `compatibility`-derived values and force ClickHouse SQL. Runs before the overrides
     /// below, so all of them are marked changed afterwards and are serialized.
     prepareSecondaryQuerySettings(modified_settings);
+    markAggregationMethodSettingsChanged(modified_settings);
 
     modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
         modified_settings[Setting::interactive_delay],
@@ -200,12 +200,11 @@ void MultiplexedConnections::sendQuery(
     /// the same inter-server protocol.
     modified_settings.set("allow_experimental_analyzer", true);
 
-    /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
-    /// servers of a distributed query must agree on it even when it comes only from server/profile
-    /// defaults. Force it into the changed set, so it is always sent to the remote servers.
-    modified_settings.set(
-        "enable_packed_string_keys_in_aggregation",
-        static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
+    /// The quotas over profile events charge the initiating user with what the remote servers report
+    /// in their `ProfileEvents` packets, so the reports must not depend on `send_profile_events` of the
+    /// query or of the user's profile on the remote server. Force it into the changed set, so it is
+    /// always sent. The initiator does not pass the reports on to its client unless the client asked.
+    modified_settings.set("send_profile_events", true);
 
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 

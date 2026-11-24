@@ -2,6 +2,9 @@
 -- ^ failpoint
 
 SET explain_query_plan_default = 'legacy';
+-- The test describes the query-based parallel replicas: plan-based ships the filter inside the plan
+-- and does not reject the combination.
+SET parallel_replicas_plan_based = 0;
 
 DROP TABLE IF EXISTS atf_p;
 -- Pin index_granularity so EXPLAIN ... distributed=1 reports a stable granule count;
@@ -20,7 +23,6 @@ INSERT INTO atf_p SELECT number FROM numbers(10);
 -- silently dropping the filter.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
-    enable_analyzer = 1,
     enable_parallel_replicas = 2,
     automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,
@@ -33,7 +35,6 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
 -- disabled and the query runs locally with the filter applied.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
-    enable_analyzer = 1,
     enable_parallel_replicas = 1,
     automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,
@@ -47,7 +48,6 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
 -- re-resolves the setting and the combination works.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
-    enable_analyzer = 1,
     enable_parallel_replicas = 2,
     automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,
@@ -63,7 +63,6 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 EXPLAIN PLAN actions = 1, distributed = 1
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
-    enable_analyzer = 1,
     enable_parallel_replicas = 2,
     automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,

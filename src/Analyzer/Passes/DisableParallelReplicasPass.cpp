@@ -2,12 +2,15 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageView.h>
 
@@ -72,13 +75,29 @@ class DisableParallelReplicasVisitor : public InDepthQueryTreeVisitorWithContext
 public:
     using Base = InDepthQueryTreeVisitorWithContext<DisableParallelReplicasVisitor>;
 
-    DisableParallelReplicasVisitor(ContextPtr context, bool disable_)
+    /// With `dry_run`, only records whether some query or union keeps parallel replicas, see `disablesParallelReplicasInWholeTree`.
+    DisableParallelReplicasVisitor(ContextPtr context, bool dry_run_, bool disable_)
         : Base(std::move(context))
+        , dry_run(dry_run_)
         , disable(disable_)
-    {}
+    {
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (dry_run)
+        {
+            /// The tree shows how a `MergeTree` table is read: with the context of the query around it. Any other
+            /// storage is opaque to it, so whether that read uses parallel replicas cannot be told from here.
+            StoragePtr storage;
+            if (const auto * table_node = node->as<TableNode>())
+                storage = table_node->getStorage();
+            else if (const auto * table_function_node = node->as<TableFunctionNode>())
+                storage = table_function_node->getStorage();
+            if (storage && !storage->isMergeTree())
+                reads_opaque_storage = true;
+        }
+
         if (disable)
             return;
 
@@ -91,9 +110,18 @@ public:
                 disable = true;
     }
 
-    void leaveImpl(QueryTreeNodePtr & node) const
+    void leaveImpl(QueryTreeNodePtr & node)
     {
         if (!disable)
+        {
+            /// Left before `disable` latched, so it keeps parallel replicas. The flag is never reset, so
+            /// every query and union left after that, the root and siblings walked later included, loses them.
+            if (node->as<QueryNode>() || node->as<UnionNode>())
+                kept_in_some_query = true;
+            return;
+        }
+
+        if (dry_run)
             return;
 
         if (auto * query_node = node->as<QueryNode>())
@@ -102,8 +130,15 @@ public:
             union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
     }
 
+    /// Latched with no query or union left before it, so the pass turns parallel replicas off in every one of them,
+    /// and no opaque storage, which might still use them, was read.
+    [[nodiscard]] bool disablesEverywhere() const { return disable && !kept_in_some_query && !reads_opaque_storage; }
+
 private:
-    bool disable = false;
+    const bool dry_run;
+    bool disable;
+    bool kept_in_some_query = false;
+    bool reads_opaque_storage = false;
 };
 
 
@@ -116,8 +151,18 @@ void DisableParallelReplicasPass::run(QueryTreeNodePtr & query_tree_node, Contex
     if (!context->canUseParallelReplicasOnInitiator() && !reads_temporary_table_not_sent)
         return;
 
-    DisableParallelReplicasVisitor visitor(context, reads_temporary_table_not_sent);
+    DisableParallelReplicasVisitor visitor(context, /*dry_run=*/false, /*disable_=*/reads_temporary_table_not_sent);
     visitor.visit(query_tree_node);
+}
+
+bool disablesParallelReplicasInWholeTree(const QueryTreeNodePtr & query_tree_node)
+{
+    /// The same visitor walks the tree in the same order as the pass, so the answer cannot drift from what it does.
+    auto node = query_tree_node;
+    const auto & context = node->as<QueryNode>() ? node->as<QueryNode &>().getContext() : node->as<UnionNode &>().getContext();
+    DisableParallelReplicasVisitor visitor(context, /*dry_run=*/true, /*disable_=*/false);
+    visitor.visit(node);
+    return visitor.disablesEverywhere();
 }
 
 }

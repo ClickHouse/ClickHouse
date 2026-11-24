@@ -4,6 +4,7 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/extractKeyValuePairs.h>
@@ -11,6 +12,7 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -25,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace HivePartitioningUtils
@@ -62,6 +65,41 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     return key_values;
 }
 
+std::string_view getPartitionValueFromPath(
+    const HivePartitioningKeysAndValues & keys_and_values, const std::string & column_name, const std::string & path)
+{
+    const auto it = keys_and_values.find(column_name);
+    if (it == keys_and_values.end())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Expected to find hive partitioning column {} in the path {}. "
+            "Try it with hive partitioning disabled (partition_strategy = 'wildcard' and/or use_hive_partitioning = 0",
+            column_name,
+            path);
+    }
+    return it->second;
+}
+
+Field convertPartitionValueToType(
+    std::string_view value,
+    const IDataType & type,
+    const std::string & column_name,
+    const std::string & path,
+    const FormatSettings & hive_format_settings)
+{
+    Field field = convertFieldToType(Field(String(value)), type, nullptr, hive_format_settings);
+    if (field.isNull() && !canContainNull(type))
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Cannot convert '{}' from the path {} to type {} for the Hive partition column `{}`",
+            value,
+            path,
+            type.getName(),
+            column_name);
+    return field;
+}
+
 FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
 {
     FormatSettings hive_format_settings = format_settings.value_or(getFormatSettings(context));
@@ -93,21 +131,19 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         else
         {
             const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
-            if (const auto type = tryInferDataTypeByEscapingRule(
-                    value, hive_format_settings, FormatSettings::EscapingRule::Raw))
+            auto type = tryInferDataTypeByEscapingRule(value, hive_format_settings, FormatSettings::EscapingRule::Raw);
+            /// An empty value, `NULL`, `[]` or `{}` alone do not determine a type, and a type with `Nothing` anywhere in it
+            /// (a `Variant` alternative included) cannot hold the other paths' values.
+            if (!type || anyInTypeTree(*type, [](const IDataType & node) { return isNothing(node); }))
+                type = std::make_shared<DataTypeString>();
+
+            if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
             {
-                if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
-                {
-                    hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
-                }
-                else
-                {
-                    hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
-                }
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
             }
             else
             {
-                hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeString>());
+                hive_partition_columns_to_read_from_file_path.emplace_back(key, type);
             }
         }
     }
@@ -128,20 +164,9 @@ void addPartitionColumnsToChunk(
 
     for (const auto & column : hive_partition_columns_to_read_from_file_path)
     {
-        const std::string column_name = column.getNameInStorage();
-        const auto it = hive_map.find(column_name);
+        const auto value = getPartitionValueFromPath(hive_map, column.getNameInStorage(), path);
 
-        if (it == hive_map.end())
-        {
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Expected to find hive partitioning column {} in the path {}. "
-                "Try it with hive partitioning disabled (partition_strategy = 'wildcard' and/or use_hive_partitioning = 0",
-                column_name,
-                path);
-        }
-
-        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(String(it->second)), *column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst();
+        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertPartitionValueToType(value, *column.type, column.getNameInStorage(), path, hive_format_settings))->convertToFullColumnIfConst();
         chunk.addColumn(std::move(chunk_column));
     }
 }

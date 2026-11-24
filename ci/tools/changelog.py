@@ -17,7 +17,7 @@ from rapidfuzz.distance import Levenshtein  # type: ignore
 
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
-from version_helper import (
+from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
     get_version_from_repo,
@@ -273,6 +273,12 @@ def parse_args() -> argparse.Namespace:
         "--with-testing-tags",
         action="store_true",
         help="by default '*-testing' tags are ignored, this argument enables them too",
+    )
+    parser.add_argument(
+        "--no-fetch",
+        action="store_true",
+        help="do not unshallow the repository and do not fetch tags; the caller "
+        "has already fetched the history and the tags needed for the interval",
     )
     parser.add_argument(
         "--from",
@@ -555,12 +561,19 @@ def main():
         logging.getLogger("github_helper").setLevel(logging.DEBUG)
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
 
-    # Get the full repo
-    if is_shallow():
-        logging.info("Unshallow repository")
-        runner.run("git fetch --unshallow", stderr=DEVNULL)
-    logging.info("Fetching all tags")
-    runner.run("git fetch --tags", stderr=DEVNULL)
+    if args.no_fetch:
+        if is_shallow():
+            raise RuntimeError(
+                "--no-fetch is given, but the repository is shallow: "
+                "fetch the history and tags before running the script"
+            )
+    else:
+        # Get the full repo
+        if is_shallow():
+            logging.info("Unshallow repository")
+            runner.run("git fetch --unshallow", stderr=DEVNULL)
+        logging.info("Fetching all tags")
+        runner.run("git fetch --tags", stderr=DEVNULL)
 
     check_refs(args.from_ref, args.to_ref, args.with_testing_tags)
     set_sha_in_changelog()

@@ -1,4 +1,5 @@
 import contextlib
+import itertools
 import time
 from string import Template
 import uuid
@@ -175,6 +176,16 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
         is_perm_ordinary = clickhouse_node.query("SELECT is_permanently FROM system.detached_tables WHERE database = 'test_database' AND table = 'test_table'").strip()
         assert is_perm_ordinary == "0", f"Expected is_permanently=0 for ordinary detach, got {is_perm_ordinary}"
         clickhouse_node.query("ATTACH TABLE test_database.test_table")
+
+        # A short ATTACH in a session whose `mysql_datatypes_support_level` differs from the default keeps the stored
+        # definition: the session value is not added to its SETTINGS, which DatabaseMySQL would reject.
+        for settings in ({"mysql_datatypes_support_level": "decimal"}, {"compatibility": "26.6"}):
+            clickhouse_node.query("DETACH TABLE test_database.test_table")
+            clickhouse_node.query("ATTACH TABLE test_database.test_table", settings=settings)
+            assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_database")
+            clickhouse_node.query("DETACH DATABASE test_database")
+            clickhouse_node.query("ATTACH DATABASE test_database", settings=settings)
+            assert "mysql_datatypes_support_level" not in clickhouse_node.query("SHOW CREATE DATABASE test_database")
 
         clickhouse_node.query("DROP DATABASE test_database")
         assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
@@ -1159,6 +1170,18 @@ def test_backup_database(started_cluster):
             == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"
         )
 
+        # A RESTORE in a session whose `mysql_datatypes_support_level` differs from the default keeps the definition
+        # from the backup: the session value is not added to its SETTINGS, which RESTORE would reject.
+        clickhouse_node.query("DROP DATABASE backup_database SYNC")
+        clickhouse_node.query(
+            f"RESTORE DATABASE backup_database FROM {backup_name}",
+            settings={"mysql_datatypes_support_level": "decimal"},
+        )
+        assert (
+            clickhouse_node.query("SHOW CREATE DATABASE backup_database")
+            == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"
+        )
+
         clickhouse_node.query("DROP DATABASE backup_database")
         mysql_node.query("DROP DATABASE backup_database")
 
@@ -1453,3 +1476,61 @@ def test_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
         # Cleanup
         clickhouse_node.query("DROP DATABASE test_perm_marker")
         mysql_node.query("DROP DATABASE test_perm_marker")
+
+
+def test_mysql_database_tables_use_connection_auto_close(started_cluster):
+    queries = 5
+    users = ["auto_close_reuse", "auto_close_default"]
+    ids = itertools.count(2)
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_auto_close")
+        mysql_node.query("CREATE DATABASE test_auto_close")
+        mysql_node.query("CREATE TABLE test_auto_close.t (id INT NOT NULL PRIMARY KEY)")
+        mysql_node.query("INSERT INTO test_auto_close.t VALUES (1)")
+        for user in users:
+            mysql_node.query(f"DROP USER IF EXISTS '{user}'@'%'")
+            mysql_node.query(f"CREATE USER '{user}'@'%' IDENTIFIED BY '{mysql_pass}'")
+            mysql_node.query(f"GRANT ALL PRIVILEGES ON test_auto_close.* TO '{user}'@'%'")
+
+        def select(database):
+            assert clickhouse_node.query(f"SELECT id FROM {database}.t WHERE id = 1") == "1\n"
+
+        def insert(database):
+            clickhouse_node.query(f"INSERT INTO {database}.t VALUES ({next(ids)})")
+
+        def opened_connections(database, user, run=select):
+            # The first query fills the table's pool; count the connections the next queries open.
+            run(database)
+            accounts = f"SELECT SUM(TOTAL_CONNECTIONS) FROM performance_schema.accounts WHERE USER = '{user}'"
+            before = int(mysql_node.query(accounts))
+            for _ in range(queries):
+                run(database)
+            return int(mysql_node.query(accounts)) - before
+
+        try:
+            clickhouse_node.query(
+                f"CREATE DATABASE test_auto_close_reuse ENGINE = MySQL('mysql80:3306', 'test_auto_close', 'auto_close_reuse', '{mysql_pass}') SETTINGS connection_auto_close = 0"
+            )
+            clickhouse_node.query(
+                f"CREATE DATABASE test_auto_close_default ENGINE = MySQL('mysql80:3306', 'test_auto_close', 'auto_close_default', '{mysql_pass}')"
+            )
+
+            for run in (select, insert):
+                assert opened_connections("test_auto_close_default", "auto_close_default", run) == queries
+                assert opened_connections("test_auto_close_reuse", "auto_close_reuse", run) == 0
+
+            clickhouse_node.query("DROP TABLE test_auto_close_reuse.t")
+            clickhouse_node.query("ATTACH TABLE test_auto_close_reuse.t")
+            assert opened_connections("test_auto_close_reuse", "auto_close_reuse") == 0
+        finally:
+            clickhouse_node.query("DROP DATABASE IF EXISTS test_auto_close_reuse")
+            clickhouse_node.query("DROP DATABASE IF EXISTS test_auto_close_default")
+            for user in users:
+                mysql_node.query(f"DROP USER IF EXISTS '{user}'@'%'")
+            mysql_node.query("DROP DATABASE IF EXISTS test_auto_close")

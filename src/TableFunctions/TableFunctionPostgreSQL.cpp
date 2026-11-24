@@ -119,7 +119,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     }
 
     configuration.emplace(StoragePostgreSQL::getConfiguration(
-        args, context, &postgresql_settings, /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
+        args, context, &postgresql_settings, globCaller(fmt::format("Table function '{}'", name)),
+        /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
 
     /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
     /// stored in a named collection. `getConfiguration` checks these overrides of the collection.
@@ -192,7 +193,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
-All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+All joins, aggregations, sorting, and `IN [ array ]` conditions are executed in ClickHouse after the query to PostgreSQL finishes. The `LIMIT` sampling constraint is pushed to PostgreSQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## Passing a query instead of a table name {#passing-a-query}
 
