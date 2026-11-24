@@ -927,8 +927,13 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
 
 /// A row whose plan could not be written says why, in place of the plan.
-static void writeQueryPlanError(String & query_plan, const String & reason)
+static void writeQueryPlanError(String & query_plan, String reason)
 {
+    /// The reason can be the message of any exception thrown while rendering the plan, which may
+    /// quote what it was rendering.
+    if (auto masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(reason);
+
     query_plan.clear();
     try
     {
@@ -3710,7 +3715,7 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
                     context->enablePlanLogCapture();
 
                 if (out_ast)
@@ -4927,7 +4932,9 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
+        /// One byte more than the limit detects a too long query; the limit may be the maximum of `size_t` already.
+        const size_t read_no_more = max_query_size == std::numeric_limits<size_t>::max() ? max_query_size : max_query_size + 1;
+        LimitReadBuffer limit(*istr, {.read_no_more = read_no_more});
         copyData(limit, out);
         out.finalize();
 

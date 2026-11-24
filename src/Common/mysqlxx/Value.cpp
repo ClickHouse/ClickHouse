@@ -3,6 +3,7 @@
 #include <mysqlxx/Query.h>
 #include <mysqlxx/Exception.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/preciseExp10.h>
 
 #include <Common/DateLUTImpl.h>
@@ -130,7 +131,7 @@ Int64 Value::readIntText(const char * buf, size_t length) const
         ++buf;
     }
 
-    return negative ? -x : x;
+    return negative ? common::negateIgnoreOverflow(x) : x;
 }
 
 
