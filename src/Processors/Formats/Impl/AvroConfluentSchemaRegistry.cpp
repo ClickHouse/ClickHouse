@@ -6,6 +6,7 @@
 
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -20,6 +21,7 @@
 #include <IO/HTTPCommon.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 
@@ -99,6 +101,27 @@ bool isRetryableException(const Exception & e)
     return false;
 }
 
+/// Sleeps in short steps, so that `KILL QUERY` and an expired `max_execution_time` interrupt the backoff.
+void sleepBeforeRetry(UInt64 milliseconds)
+{
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
+    static constexpr UInt64 check_interval_ms = 100;
+    while (true)
+    {
+        /// Throws on `KILL QUERY` and in the `throw` overflow mode; the `break` mode keeps waiting.
+        if (query_status)
+            std::ignore = query_status->checkTimeLimit();
+        if (milliseconds == 0)
+            return;
+        const UInt64 step = std::min(milliseconds, check_interval_ms);
+        sleepForMilliseconds(step);
+        milliseconds -= step;
+    }
+}
+
 /// Run `op` once, then retry on transient transport failures. Backoff doubles
 /// each attempt up to a 10-second cap.
 template <typename Op>
@@ -126,7 +149,7 @@ auto runWithRetry(
                 "Retry {}/{} for {} after transient error: {}",
                 attempt + 1, retry.max_retries, operation_for_log, e.displayText());
         }
-        sleepForMilliseconds(backoff_ms);
+        sleepBeforeRetry(backoff_ms);
         backoff_ms = std::min(backoff_ms * 2, max_backoff_ms);
         ++attempt;
     }
