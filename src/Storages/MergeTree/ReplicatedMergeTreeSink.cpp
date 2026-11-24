@@ -32,6 +32,7 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <algorithm>
+#include <iterator>
 #include <vector>
 
 namespace ProfileEvents
@@ -39,6 +40,7 @@ namespace ProfileEvents
     extern const Event DuplicatedInsertedBlocks;
     extern const Event SelfDuplicatedAsyncInserts;
     extern const Event DuplicatedAsyncInserts;
+    extern const Event AsyncInsertCacheStaleHits;
     extern const Event DuplicationElapsedMicroseconds;
 
     extern const Event QuorumParts;
@@ -770,16 +772,12 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
         log,
         retries_info);
 
-    auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
+    auto resolve_conflict_part_names = [&] (std::vector<DeduplicationHash> & hashes)
     {
-        chassert(!retry_context.conflict_deduplication_hashes.empty());
-
-        /// This block was already written to some replica. Get the part name for it.
-        /// Note: race condition with DROP PARTITION operation is possible. User will get "No node" exception and it is Ok.
-        auto response = zookeeper->tryGet(getDeduplicationPaths(storage.zookeeper_path, retry_context.conflict_deduplication_hashes));
-        for (size_t i = 0; i < retry_context.conflict_deduplication_hashes.size(); ++i)
+        auto response = zookeeper->tryGet(getDeduplicationPaths(storage.zookeeper_path, hashes));
+        for (size_t i = 0; i < hashes.size(); ++i)
         {
-            auto & deduplication_hash = retry_context.conflict_deduplication_hashes[i];
+            auto & deduplication_hash = hashes[i];
             const auto & resp = response[i];
 
             bool simulate_missing_node = false;
@@ -792,6 +790,14 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
             const String & part_name = resp.data;
             deduplication_hash.setConflictPartName(part_name);
         }
+    };
+
+    auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
+    {
+        chassert(!retry_context.conflict_deduplication_hashes.empty());
+
+        /// This block was already written to some replica. Get the part name for it.
+        resolve_conflict_part_names(retry_context.conflict_deduplication_hashes);
 
         return CommitRetryContext::FILTER_CONFLICTS_AND_RETRY;
     };
@@ -926,11 +932,29 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
             /// prefilter by cache
             auto cache_conflicts = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_min_version);
             checked_cache_version = cache_conflicts.version;
-            std::move(cache_conflicts.hashes.begin(), cache_conflicts.hashes.end(), std::back_inserter(retry_context.conflict_deduplication_hashes));
 
-            if (!retry_context.conflict_deduplication_hashes.empty())
+            if (!cache_conflicts.hashes.empty())
             {
-                return CommitRetryContext::RESOLVE_CONFLICTS;
+                /// Mark the cache entries that are not found in keeper
+                resolve_conflict_part_names(cache_conflicts.hashes);
+
+                size_t cache_conflicts_count = cache_conflicts.hashes.size();
+                size_t stale_conflicts = std::erase_if(cache_conflicts.hashes, [](const DeduplicationHash & hash) { return !hash.hasConflictPartName(); });
+
+                /// Schedule a cache update if cache is outdated
+                if (stale_conflicts)
+                {
+                    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheStaleHits, stale_conflicts);
+                    LOG_DEBUG(log, "{} of {} conflicts from the deduplication cache are not found in Keeper, the cache is outdated",
+                        stale_conflicts, cache_conflicts_count);
+                    storage.deduplication_hashes_cache.triggerCacheUpdate();
+                }
+
+                if (!cache_conflicts.hashes.empty())
+                {
+                    std::move(cache_conflicts.hashes.begin(), cache_conflicts.hashes.end(), std::back_inserter(retry_context.conflict_deduplication_hashes));
+                    return CommitRetryContext::FILTER_CONFLICTS_AND_RETRY;
+                }
             }
         }
 
