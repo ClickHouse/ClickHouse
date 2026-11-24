@@ -359,7 +359,7 @@ private:
     bool assertValid() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     /// Throws if the iterator is invalid.
-    EntryPtr getEntryOrThrow() const;
+    [[nodiscard]] EntryPtr getEntryOrThrow() const;
 
     void invalidateImpl() noexcept;
 

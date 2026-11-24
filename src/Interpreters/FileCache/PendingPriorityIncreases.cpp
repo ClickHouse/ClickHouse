@@ -122,7 +122,7 @@ private:
         {
             static_assert(std::is_nothrow_move_constructible_v<PendingPriorityIncrease>);
 
-            const size_t max_count = std::min({max_increases, slots.size(), increases.capacity() - increases.size()});
+            const size_t max_count = std::min({max_increases, slots.size(), PriorityIncreases::capacity() - increases.size()});
             size_t position = read_position.load(std::memory_order_relaxed);
             size_t count = 0;
             for (; count < max_count; ++count, ++position)

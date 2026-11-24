@@ -5116,7 +5116,7 @@ TEST_F(FileCacheTest, PendingPriorityIncreasesConcurrent)
     {
         const bool all_finished = finished_writers == writers_count;
         PriorityIncreases increases;
-        pending.pop(increases, increases.capacity());
+        pending.pop(increases, PriorityIncreases::capacity());
         for (const auto & increase : increases)
         {
             const size_t index = index_of_node.at(&*increase.iterator);
