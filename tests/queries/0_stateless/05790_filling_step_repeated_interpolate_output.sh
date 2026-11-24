@@ -18,7 +18,7 @@ USER, PASSWORD = E("CLICKHOUSE_USER", "default"), E("CLICKHOUSE_PASSWORD", "")
 DATABASE = E("CLICKHOUSE_DATABASE", "default")
 CLIENT = "filling step duplicate interpolate outputs"
 REVISION = 54482   # pinned, so the revision-gated fields of the handshake are fixed
-VERSION = 21       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte layout is fixed too
+VERSION = 19       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte layout is fixed too
 U8 = b"\x01"   # BinaryTypeIndex
 NUL, INPUT, ALIAS = b"\x00", 0, 2   # a Null Field or a zero flags byte, ActionsDAG::ActionType
 

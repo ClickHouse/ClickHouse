@@ -14,15 +14,20 @@ $STREAMING_CLIENT -q "INSERT INTO t_streaming_test VALUES ('0', 0), ('1', 1), ('
 
 echo "=== Test Streaming cancel after output finished from storage ==="
 
-$STREAMING_CLIENT -q "SELECT * FROM t_streaming_test STREAM LIMIT 3" | wc -l
+$STREAMING_CLIENT -q "SELECT count() FROM (SELECT * FROM t_streaming_test STREAM LIMIT 3)"
 
 echo "=== Test Streaming cancel after output finished from subscription ==="
 
 # start stream
-$STREAMING_CLIENT -q "SELECT * FROM t_streaming_test STREAM LIMIT 10" | wc -l &
+# shellcheck disable=2034
+read -r fifo_1 pid_1 < <(spawn $STREAMING_CLIENT -q "SELECT count() FROM (SELECT * FROM t_streaming_test STREAM LIMIT 10)")
+
+# open fifo for reading to extend its lifetime
+# shellcheck disable=2034
+exec {fd}<>$fifo_1
 
 # insert new data so total reaches 10
 $STREAMING_CLIENT -q "INSERT INTO t_streaming_test SELECT number, number from numbers(10)"
-wait
+read_until "$fifo_1" "10"
 
 $STREAMING_CLIENT -q "DROP TABLE t_streaming_test"

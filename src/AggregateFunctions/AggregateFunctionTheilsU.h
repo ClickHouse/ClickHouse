@@ -28,7 +28,7 @@ struct TheilsUData : CrossTabAggregateData
     void merge(const TheilsUWindowData & other);
 
     /// Based on https://en.wikipedia.org/wiki/Uncertainty_coefficient.
-    [[nodiscard]] Float64 getResult() const
+    Float64 getResult() const
     {
         return computeExact(*this);
     }
@@ -171,7 +171,7 @@ struct TheilsUWindowData : CrossTabCountsState
         sum_ab_nlogn = recomputeNLogNSum(count_ab);
     }
 
-    [[nodiscard]] Float64 getResult() const
+    Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -251,7 +251,7 @@ private:
             sum = t;
         }
 
-        [[nodiscard]] Float64 get() const
+        Float64 get() const
         {
             return sum + compensation;
         }

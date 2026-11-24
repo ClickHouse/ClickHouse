@@ -16,7 +16,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
@@ -94,7 +96,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ("decompress,d", "decompress")
             ("offset-in-compressed-file", po::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
             ("offset-in-decompressed-block", po::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
-            ("block-size,b", po::value<size_t>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size, at most 256 MiB (larger values are reduced to it)")
+            ("block-size,b", po::value<size_t>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
             ("hc", "use LZ4HC instead of LZ4")
             ("zstd", "use ZSTD instead of LZ4")
             ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
@@ -161,7 +163,13 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
         CompressionCodecPtr codec;
         if (!codecs.empty())
-            codec = CompressionCodecFactory::instance().get(boost::algorithm::join(codecs, ","));
+        {
+            ParserCodec codec_parser;
+
+            std::string codecs_line = boost::algorithm::join(codecs, ",");
+            auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            codec = CompressionCodecFactory::instance().get(ast, nullptr);
+        }
         else
             codec = CompressionCodecFactory::instance().get(method_family, level);
 

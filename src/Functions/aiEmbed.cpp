@@ -62,29 +62,29 @@ public:
         return std::make_shared<FunctionAiEmbed>(context);
     }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfNotAllowed(context); }
+    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfBackgroundExpression(context); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     /// func has side effects, f.e. each call updates quota, makes potentially expensive outside call, etc.
-    [[nodiscard]] bool isStateful() const override { return true; }
+    bool isStateful() const override { return true; }
 
     /// Unlike the other AI funcs, it's ok and actually preferable for
     /// optimizer to fold calls with same args together
-    [[nodiscard]] bool isDeterministic() const override { return true; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    [[nodiscard]] bool isExpensive() const override { return true; }
+    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isExpensive() const override { return true; }
 
     /// Handle Nullable cols explicitly, since setting this to true may call func with arbitrary input values
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
@@ -98,7 +98,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Before resolving the credentials: their validation errors must not reveal a named collection.
         FunctionBaseAI::checkHasUser(getContext());
@@ -206,7 +206,7 @@ private:
     static constexpr size_t model_arg_index = 1;
 
     ContextPtr context;
-    [[nodiscard]] ContextPtr getContext() const { return context; }
+    ContextPtr getContext() const { return context; }
 };
 
 }

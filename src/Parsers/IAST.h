@@ -461,8 +461,7 @@ public:
       */
     String formatForLogging(size_t max_length = 0) const;
     String formatForErrorMessage() const;
-    template <typename StringType = String>
-    StringType formatWithSecretsOneLine() const;
+    String formatWithSecretsOneLine() const;
     String formatWithSecretsMultiLine() const;
 
     /** Same as `formatWithSecretsOneLine`, but the redundant parentheses that the user has written

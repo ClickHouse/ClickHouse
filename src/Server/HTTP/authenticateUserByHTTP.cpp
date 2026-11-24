@@ -2,7 +2,6 @@
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Common/Base64.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Server/HTTPHandler.h>
 #include <Server/HTTP/HTTPServerRequest.h>

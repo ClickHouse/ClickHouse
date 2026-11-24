@@ -6,6 +6,8 @@ keywords: ['aws', 'azure', 'gcp', 'google cloud', 'marketplace', 'billing']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 You can subscribe to ClickHouse Cloud through the AWS, GCP, and Azure marketplaces. This allows you to pay for ClickHouse Cloud through your existing cloud provider billing.
 
 You can either use pay-as-you-go (PAYG) or commit to a contract with ClickHouse Cloud through the marketplace. The billing will be handled by the cloud provider, and you will receive a single invoice for all your cloud services.
@@ -37,15 +39,7 @@ You can switch between organizations from the bottom left menu of the ClickHouse
 
 You will need to subscribe to ClickHouse Cloud via the cloud provider marketplace. Once you finish subscribing on the marketplace, and redirect to ClickHouse Cloud you will have the option of linking an existing ClickHouse Cloud organization to marketplace billing. From that point on, your existing resources will now get billed via the marketplace. 
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Marketplace signup and org linking](/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp" size='md' alt='Marketplace signup and org linking' border/>
 
 You can confirm from the organization's billing page that billing is indeed now linked to the marketplace. Please contact [ClickHouse Cloud support](https://clickhouse.com/support/program) if you run into any issues.
 
@@ -77,7 +71,7 @@ If you have any trouble with reactivating your marketplace org, please contact [
 
 Marketplace billing follows the calendar month cycle. For example, for usage between December 1st and January 1st, an invoice will be generated between January 3rd and January 5th.
 
-For some existing organizations, ClickHouse Cloud usage statements follow a billing cycle that starts on a day other than the first of the month. New organizations follow a monthly billing cycle starting on the first day of the month.
+ClickHouse Cloud usage statements follow a different billing cycle where usage is metered and reported over 30 days starting from the day of sign up.
 
 The usage and invoice dates will differ if these dates aren't the same. Since usage statements track usage by day for a given service, you can rely on statements to see the breakdown of costs.
 

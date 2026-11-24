@@ -32,8 +32,8 @@
 namespace Poco {
 
 
-[[clang::no_destroy]] EnvironmentImpl::StringMap EnvironmentImpl::_map;
-[[clang::no_destroy]] FastMutex EnvironmentImpl::_mutex;
+EnvironmentImpl::StringMap EnvironmentImpl::_map;
+FastMutex EnvironmentImpl::_mutex;
 
 
 std::string EnvironmentImpl::getImpl(const std::string& name)
