@@ -3397,35 +3397,65 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     min-height: auto !important;
     margin: 0;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(-n + 4) {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(-n + 3) {
     grid-column: 1 !important;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(n + 5):nth-child(-n + 9) {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(n + 4):nth-child(-n + 8) {
     grid-column: 2 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(4),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9) {
+    grid-row: 1 !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5),
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(10) {
-    grid-row: 1 !important;
+    grid-row: 2 !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6),
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
-    grid-row: 2 !important;
+    grid-row: 3 !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7),
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
-    grid-row: 3 !important;
+    grid-row: 4 !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8),
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(13) {
+    grid-row: 5 !important;
+}
+
+/* Only English adds Private, so shift its three product groups without
+   disturbing the localized menus that retain the 13-item arrangement. */
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(4) {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(9) {
+    grid-column: 2 !important;
+    grid-row: 5 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(5),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(10) {
+    grid-row: 1 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(6),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(11) {
+    grid-row: 2 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(7),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(12) {
+    grid-row: 3 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(8),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(13) {
     grid-row: 4 !important;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9),
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(14) {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]):has(.nav-dropdown-item[href$="/deployment-options/clickhouse-private"]) > .nav-dropdown-item:nth-child(14) {
     grid-row: 5 !important;
 }
 /* Partner wordmarks have a separate line beneath their product names. Pull the
    final Open source item back into the compact row that follows them. */
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(14) {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="https://www.librechat.ai/docs"] {
     transform: translateY(-16px);
     display: grid !important;
     grid-template-columns: max-content 14px;
@@ -3434,25 +3464,23 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     justify-self: start;
     width: fit-content !important;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(14) > svg {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="https://www.librechat.ai/docs"] > svg {
     grid-column: 2;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
     align-items: flex-start;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])):not(:nth-child(8)):not(:nth-child(9)) img {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])):not([href="https://langfuse.com/docs"]):not([href="https://docs.runreveal.com/"]) img {
     display: none !important;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8) img,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9) img {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:is([href="https://langfuse.com/docs"], [href="https://docs.runreveal.com/"]) img {
     display: block !important;
     width: 14px;
     height: 14px;
     margin-top: 0;
     object-fit: contain;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8),
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9) {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:is([href="https://langfuse.com/docs"], [href="https://docs.runreveal.com/"]) {
     display: grid !important;
     grid-template-columns: 14px max-content 14px;
     grid-template-rows: 20px 14px;
@@ -3461,13 +3489,11 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     align-items: center;
     min-width: 0;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > div,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9) > div {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:is([href="https://langfuse.com/docs"], [href="https://docs.runreveal.com/"]) > div {
     grid-column: 1 / 3;
     grid-row: 1;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8)::before,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9)::before {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:is([href="https://langfuse.com/docs"], [href="https://docs.runreveal.com/"])::before {
     grid-column: 2;
     grid-row: 2;
     color: inherit;
@@ -3475,19 +3501,17 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     font-weight: 600;
     line-height: 14px;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8)::before {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="https://langfuse.com/docs"]::before {
     content: "langfuse";
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9)::before {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="https://docs.runreveal.com/"]::before {
     content: "runreveal";
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > svg,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9) > svg {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:is([href="https://langfuse.com/docs"], [href="https://docs.runreveal.com/"]) > svg {
     grid-column: 3;
     grid-row: 1;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > img,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9) > img {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:is([href="https://langfuse.com/docs"], [href="https://docs.runreveal.com/"]) > img {
     grid-column: 1;
     grid-row: 2;
 }
@@ -4190,13 +4214,13 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
 }
 
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span,
-[role="menu"]:has(.nav-dropdown-item[href$="/clickstack/observability"]) > .nav-dropdown-item:nth-child(6) > div > span {
+[role="menu"]:has(.nav-dropdown-item[href$="/clickstack/observability"]) > .nav-dropdown-item[href$="/clickstack/observability"] > div > span {
     font-size: 0 !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span::before {
     content: "Cloud";
 }
-[role="menu"]:has(.nav-dropdown-item[href$="/clickstack/observability"]) > .nav-dropdown-item:nth-child(6) > div > span::before {
+[role="menu"]:has(.nav-dropdown-item[href$="/clickstack/observability"]) > .nav-dropdown-item[href$="/clickstack/observability"] > div > span::before {
     content: "Observability";
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="/products/agentic-data-stack/overview"] {
