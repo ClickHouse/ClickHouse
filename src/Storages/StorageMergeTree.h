@@ -220,7 +220,7 @@ private:
             bool optimize_skip_merged_partitions = false);
 
     /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
-    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool remove_covered_parts_immediately);
 
     /// Must be called from a `catch` block after renaming the empty parts of `transaction` failed or committing them failed.
     /// Without a `MergeTreeTransaction`, removes the rolled back empty parts from disk right away. Rethrows the current exception.
@@ -260,9 +260,10 @@ private:
     /// `currently_processing_in_background_mutex`.
     void addPreparedMutationEntry(PreparedMutationEntry prepared);
 
-    /// Register a mutation written by `prepareMutationEntry` in the in-memory structures
+    /// Register a mutation prepared by `prepareMutationEntry` in the in-memory structures
     /// and wake up the merge-mutation task. Takes `currently_processing_in_background_mutex` itself.
-    Int64 registerMutation(PreparedMutationEntry prepared, ContextPtr query_context);
+    /// Returns the mutation version.
+    Int64 startMutation(PreparedMutationEntry prepared, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;

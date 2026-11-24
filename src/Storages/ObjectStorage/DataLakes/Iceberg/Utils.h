@@ -32,6 +32,7 @@ class GenericDatum;
 namespace DB
 {
 struct StorageID;
+struct FormatSettings;
 }
 
 namespace DataLake
@@ -41,6 +42,10 @@ class ICatalog;
 
 namespace DB::Iceberg
 {
+
+/// The Iceberg timestamps are UTC instants: the reference implementation reads and writes ORC with `useUTCTimestamp`,
+/// so the ORC time zones of the query do not apply.
+void useUTCForORCTimestamps(FormatSettings & settings);
 
 void writeMessageToFile(
     const String & data,
@@ -217,8 +222,8 @@ Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr &
 /// If `sort_description` is set, it receives the order over the key columns `sortBlockByKeyDescription` appends, NULLs placed per `null-order`.
 KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description = nullptr);
-/// Appends the evaluated columns of the key `sort_description` and sorts the block by `result_sort_description`.
-void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, const SortDescription & result_sort_description, ContextPtr context);
+/// Sorts the block by the key `sort_description`, appending computed key columns under names no block column has; `result_sort_description` is pointed at the sort columns.
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context);
 
 void forEachAvroEntry(
     const String & filename,
