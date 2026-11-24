@@ -11427,7 +11427,7 @@ Enable PRQL - an alternative to SQL.
     DECLARE(Bool, enable_mongo_dialect, false, R"(
 Enable the MongoDB query dialect - MongoDB shell syntax over any ClickHouse interface.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable the `mongo` value of the `dialect` setting, which interprets queries as MongoDB shell syntax."}) \
+        {"26.12", false, false, "New setting to enable the `mongo` value of the `dialect` setting, which interprets queries as MongoDB shell syntax."}) \
     DECLARE_WITH_ALIAS(Bool, enable_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
 )", EXPERIMENTAL, allow_experimental_polyglot_dialect, \
