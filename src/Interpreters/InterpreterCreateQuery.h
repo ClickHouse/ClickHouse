@@ -132,6 +132,8 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    /// Analyzes the query of a materialized view as the user. Throws without the rights for a table that it reads.
+    SharedHeader getMaterializedViewSampleBlock(const ASTCreateQuery & create) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
     [[nodiscard]] AccessRightsElements getRequiredAccess() const;

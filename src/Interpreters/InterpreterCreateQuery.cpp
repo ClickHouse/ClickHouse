@@ -1438,6 +1438,22 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
+SharedHeader InterpreterCreateQuery::getMaterializedViewSampleBlock(const ASTCreateQuery & create) const
+{
+    /// We should treat SELECT as an initial query in order to properly analyze it.
+    auto context = Context::createCopy(getContext());
+    context->setQueryKindInitial();
+
+    /// For refreshable materialized views, use the MV's database as context.
+    /// This ensures unqualified references resolve in the MV's database, not session's database.
+    if (create.refresh_strategy)
+        context->setCurrentDatabaseUnchecked(create.getDatabase());
+
+    return InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+        context,
+        SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
+}
+
 void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
@@ -1479,20 +1495,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     {
         try
         {
-            {
-                /// We should treat SELECT as an initial query in order to properly analyze it.
-                auto context = Context::createCopy(getContext());
-                context->setQueryKindInitial();
-
-                /// For refreshable materialized views, use the MV's database as context.
-                /// This ensures unqualified references resolve in the MV's database, not session's database.
-                if (create.refresh_strategy)
-                    context->setCurrentDatabaseUnchecked(create.getDatabase());
-
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                    context,
-                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
-            }
+            input_block = getMaterializedViewSampleBlock(create);
         }
         catch (Exception & e)
         {
@@ -2443,19 +2446,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// A restore does not validate the view, but checks the rights for the tables that its query reads, as `CREATE` does.
         try
         {
-            auto select_context = Context::createCopy(getContext());
-            select_context->setQueryKindInitial();
-            if (create.refresh_strategy)
-                select_context->setCurrentDatabaseUnchecked(create.getDatabase());
-
-            InterpreterSelectQueryAnalyzer::getSampleBlock(
-                create.select->clone(), select_context, SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
+            getMaterializedViewSampleBlock(create);
         }
         catch (Exception & e)
         {
-            /// A table of the query can be missing, as with `allow_materialized_view_with_bad_select`.
             if (e.code() == ErrorCodes::ACCESS_DENIED)
                 throw;
+
+            /// The query cannot be analyzed, for example a table is missing. Then the rights are checked for every table that it names.
+            const auto dependencies = getDependenciesFromCreateQuery(
+                getContext()->getGlobalContext(), {create.getDatabase(), create.getTable()}, query_ptr, getContext()->getCurrentDatabase());
+            for (const auto & table : dependencies.dependencies)
+                getContext()->checkAccess(AccessType::SELECT, table.database, table.table);
+            if (dependencies.mv_from_dependency)
+                getContext()->checkAccess(AccessType::SELECT, *dependencies.mv_from_dependency);
         }
     }
 

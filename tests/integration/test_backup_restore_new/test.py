@@ -1499,6 +1499,24 @@ def test_restore_materialized_view_checks_source_rights():
     assert expected_error in instance.query_and_get_error(f"RESTORE TABLE test.mv FROM {backup_name}", user="u1")
     assert instance.query("EXISTS test.mv") == "0\n"
 
+    # A table that the query of the view names but that does not exist does not hide another table.
+    instance.query("CREATE TABLE test.other (x UInt32) ENGINE = MergeTree ORDER BY x")
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.mv2 TO test.sink AS "
+        "SELECT t.x AS x, t.y AS y FROM test.table AS t INNER JOIN test.other AS o ON t.x = o.x"
+    )
+    instance.query("GRANT SELECT, BACKUP ON test.other TO u1")
+    instance.query("GRANT SELECT, INSERT, CREATE VIEW, BACKUP ON test.mv2 TO u1")
+    instance.query("GRANT SELECT ON test.missing TO u1")
+    backup_name2 = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE test.mv2, TABLE test.table AS test.missing, TABLE test.other AS test.secret TO {backup_name2}",
+        user="u1",
+    )
+    instance.query("DROP TABLE test.mv2")
+    assert expected_error in instance.query_and_get_error(f"RESTORE TABLE test.mv2 FROM {backup_name2}", user="u1")
+    assert instance.query("EXISTS test.mv2") == "0\n"
+
     instance.query("GRANT SELECT ON test.secret TO u1")
     instance.query(f"RESTORE TABLE test.mv FROM {backup_name}", user="u1")
     assert instance.query("EXISTS test.mv") == "1\n"
