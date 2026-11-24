@@ -6,6 +6,7 @@
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLFuncs.h>
+#include <Common/isValidUTF8.h>
 
 namespace BuzzHouse
 {
@@ -1076,8 +1077,15 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.isDeterministic(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
-    const std::function<bool(const SQLTable &)> attached_tables_for_external_call
-        = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
+    /// The names are sent in a JSON body to the harness, which only accepts valid UTF-8. A table can get
+    /// a nasty identifier with invalid UTF-8 after a `RENAME`, so skip it instead of failing the external call.
+    const std::function<bool(const SQLTable &)> attached_tables_for_external_call = [](const SQLTable & t)
+    {
+        const auto is_valid_utf8
+            = [](const String & s) { return DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size()) != 0; };
+        return t.isAttached() && t.integration == IntegrationCall::Dolor && is_valid_utf8(t.getBaseName(false))
+            && is_valid_utf8(t.getDatabaseName());
+    };
     const std::function<bool(const SQLDictionary &)> attached_dictionaries_to_compare_content
         = [](const SQLDictionary & d) { return d.isAttached() && d.isDeterministic(); };
     const std::function<bool(const SQLView &)> attached_views_to_compare_content
