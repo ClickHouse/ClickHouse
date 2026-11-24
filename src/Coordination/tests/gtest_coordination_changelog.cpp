@@ -2799,6 +2799,58 @@ TYPED_TEST(CoordinationChangelogTest, CompressedEntriesStayCachedAcrossRestart)
     check_readable(changelog, 45);
 }
 
+// Turning compress_logs on for a node with uncompressed logs must keep them readable with read-ahead.
+TYPED_TEST(CoordinationChangelogTest, UncompressedThenCompressedEntriesStayReadable)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Mixes compressed and uncompressed files itself";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    {
+        DB::KeeperLogStore writer(
+            DB::LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 3},
+            DB::FlushSettings(),
+            DB::ReadAheadSettings{},
+            this->keeper_context);
+        writer.init(0, 0);
+        appendAndWaitDurable(writer, 1, 3);
+    }
+
+    const DB::LogFileSettings compressed_settings{
+        .force_sync = false, .compress_logs = true, .rotate_interval = 3, .latest_logs_cache_entry_count_threshold = 2};
+
+    {
+        DB::KeeperLogStore writer(compressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.init(0, 0);
+        DB::KeeperLogInfo log_info;
+        writer.getKeeperLogInfo(log_info);
+        EXPECT_EQ(log_info.latest_logs_cache_entries, 3u);
+        appendAndWaitDurable(writer, 4, 6);
+    }
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_3.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_4_6.bin.zstd"));
+
+    DB::KeeperLogStore changelog(
+        compressed_settings,
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    auto entry = changelog.entry_at_ext(2, /*for_commit=*/true);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->get_term(), 2u);
+
+    auto peer_entries = changelog.log_entries_ext(2, 7, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/2);
+    ASSERT_NE(peer_entries, nullptr);
+    ASSERT_EQ(peer_entries->size(), 5u);
+    for (uint64_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*peer_entries)[i]->get_term(), i + 2);
+}
+
 // Tests: per-peer read-ahead
 
 namespace DB
