@@ -146,8 +146,8 @@ static const ActionsDAG::Node & createRuntimeFilterCondition(
 
 struct BuildSideDistinctKeys
 {
-    std::optional<UInt64> max;
-    std::optional<UInt64> last_run;
+    std::optional<UInt64> max_over_recent_runs;
+    std::optional<UInt64> in_last_run;
 };
 
 static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
@@ -162,7 +162,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     const QueryPlanOptimizationSettings & optimization_settings,
     const RuntimeFilterGeometry & filter_geometry,
     bool check_left_does_not_contain,
-    const BuildSideDistinctKeys & distinct_keys,
+    const BuildSideDistinctKeys & build_side_distinct_keys,
     bool distinct_keys_hint_matches_filter_key)
 {
     LOG_TRACE(
@@ -187,9 +187,9 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
             .geometry = filter_geometry,
             .polarity = check_left_does_not_contain ? RuntimeFilterPolarity::NotContains : RuntimeFilterPolarity::Contains,
             .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
-            .distinct_keys_hint = distinct_keys.max,
+            .distinct_keys_hint = build_side_distinct_keys.max_over_recent_runs,
             .distinct_keys_hint_matches_filter_key = distinct_keys_hint_matches_filter_key,
-            .distinct_keys_in_last_run = distinct_keys.last_run});
+            .distinct_keys_in_last_run = build_side_distinct_keys.in_last_run});
     new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
     new_build_filter_node->children = {build_filter_node};
     build_filter_node = new_build_filter_node;
@@ -274,9 +274,9 @@ static BuildSideDistinctKeys getBuildSideDistinctKeys(const JoinStepLogical & jo
 
     BuildSideDistinctKeys result;
     if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params); hint && hint->ht_size != 0)
-        result.max = hint->ht_size;
-    if (auto last_run = getHashTablesStatistics<HashJoinLastRunEntry>().getSizeHint(params))
-        result.last_run = last_run->ht_size;
+        result.max_over_recent_runs = hint->ht_size;
+    if (auto last_run = getHashTablesStatistics<HashJoinLastRunSizeEntry>().getSizeHint(params))
+        result.in_last_run = last_run->ht_size;
     return result;
 }
 
@@ -568,7 +568,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(std::move(common_type), join_key_build_side.type, join_key_probe_side.type));
     }
 
-    const auto distinct_keys = getBuildSideDistinctKeys(*join_step, optimization_settings);
+    const auto build_side_distinct_keys = getBuildSideDistinctKeys(*join_step, optimization_settings);
     const size_t hash_table_keys_count = countHashTableKeys(*join_step);
 
     /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
@@ -614,9 +614,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     .geometry = filter_geometry,
                     .polarity = RuntimeFilterPolarity::NotContains,
                     .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
-                    .distinct_keys_hint = distinct_keys.max,
+                    .distinct_keys_hint = build_side_distinct_keys.max_over_recent_runs,
                     .distinct_keys_hint_matches_filter_key = join_keys_build_side.size() == hash_table_keys_count,
-                    .distinct_keys_in_last_run = distinct_keys.last_run});
+                    .distinct_keys_in_last_run = build_side_distinct_keys.in_last_run});
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -667,7 +667,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings,
                 filter_geometry,
                 check_left_does_not_contain,
-                distinct_keys,
+                build_side_distinct_keys,
                 /*distinct_keys_hint_matches_filter_key=*/hash_table_keys_count == 1);
             all_filter_conditions.push_back(
                 check_left_does_not_contain ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})

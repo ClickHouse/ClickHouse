@@ -103,9 +103,9 @@ struct HashJoinEntry
 };
 
 /// The size of the shared hash table in the latest run of a join. `HashJoinEntry::ht_size` keeps the maximum instead.
-struct HashJoinLastRunEntry
+struct HashJoinLastRunSizeEntry
 {
-    [[nodiscard]] bool shouldBeUpdated(const HashJoinLastRunEntry & new_entry) const { return new_entry.ht_size != ht_size; }
+    [[nodiscard]] bool shouldBeUpdated(const HashJoinLastRunSizeEntry & new_entry) const { return new_entry.ht_size != ht_size; }
 
     [[nodiscard]] std::string dump() const { return fmt::format("ht_size={}", ht_size); }
 
@@ -166,7 +166,7 @@ public:
     /// Collection and use of the statistics should be enabled.
     void update(const Entry & new_entry, const Params & params);
 
-    /// Collection and use of the statistics should be enabled.
+    /// Drops the entry of `params.key`, if there is one (collection and use of the statistics should be enabled).
     void remove(const Params & params);
 
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const;
@@ -191,5 +191,6 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 
 std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t tables_cnt);
 std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params);
+void updateHashJoinSizeStatistics(size_t ht_size, size_t source_rows, const DB::StatsCollectingParams & stats_collecting_params);
 std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params);
 }

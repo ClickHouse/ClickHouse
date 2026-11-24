@@ -1412,7 +1412,8 @@ Chunk makePartialChunk(size_t keys)
         std::make_shared<DataTypeUInt64>(),
         partialGeometry(),
         /*distinct_keys_hint_=*/ std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/ false);
+        /*distinct_keys_hint_matches_filter_key_=*/ false,
+        /*distinct_keys_in_last_run_=*/ std::nullopt);
     filter.boundExactSetByKeyBytes();
     filter.insert(makeChunk(0, keys).getColumns().front());
     WriteBufferFromOwnString out;

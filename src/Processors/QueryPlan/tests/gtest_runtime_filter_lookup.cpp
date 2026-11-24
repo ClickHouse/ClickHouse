@@ -174,7 +174,8 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
             type,
             makeGeometry(1_MiB, 1, 3, 1.0),
             /*distinct_keys_hint=*/std::nullopt,
-            /*distinct_keys_hint_matches_filter_key_=*/false));
+            /*distinct_keys_hint_matches_filter_key_=*/false,
+            /*distinct_keys_in_last_run_=*/std::nullopt));
 
     EXPECT_EQ(filter.getFilterColumnTargetType(), type);
     filter.enableIndexAnalysis();
@@ -203,7 +204,8 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
             type,
             makeGeometry(1_KiB, 1, 3, 0.05),
             /*distinct_keys_hint_=*/2'000'000,
-            /*distinct_keys_hint_matches_filter_key_=*/true));
+            /*distinct_keys_hint_matches_filter_key_=*/true,
+            /*distinct_keys_in_last_run_=*/std::nullopt));
     destination.enableIndexAnalysis();
     destination.insert(makeUInt64Column({1}));
 
@@ -214,7 +216,8 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
             type,
             makeGeometry(1_KiB, 1, 3, 0.05),
             /*distinct_keys_hint_=*/2'000'000,
-            /*distinct_keys_hint_matches_filter_key_=*/true));
+            /*distinct_keys_hint_matches_filter_key_=*/true,
+            /*distinct_keys_in_last_run_=*/std::nullopt));
     source.enableIndexAnalysis();
     source.insert(makeUInt64Column({3, 5}));
     source.finishInsert();
@@ -241,7 +244,7 @@ void checkDenseBitsetFindsExactlyTheKeys()
         return std::make_unique<RuntimeFilter>(
             filters_to_merge,
             makeRuntimeFilterConfig(),
-            RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+            RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false, std::nullopt));
     };
     auto make_keys = [](std::initializer_list<T> keys)
     {
@@ -312,7 +315,7 @@ TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesAtTheFirstNewKeyPastTheLimit)
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false, std::nullopt));
     const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
 
     filter.insert(make_keys({0}));
@@ -337,7 +340,7 @@ TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItTh
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false, std::nullopt));
     filter.insert(makeUInt64Column({0, 5}));
 
     ColumnPtr block = makeUInt64Column({7});
@@ -360,7 +363,7 @@ TEST(RuntimeFilterLookup, AdaptiveFilterKeepsTheRowsUpToTheFirstNewKeyWhenItsSwi
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false, std::nullopt));
     filter.enableIndexAnalysis();
     filter.insert(makeUInt64Column({0}));
 
@@ -382,7 +385,7 @@ TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesToABloomFilterAtTheFirstNewKeyPa
     RuntimeFilter filter(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false, std::nullopt));
     filter.insert(makeUInt64Column({0}));
     filter.insert(makeUInt64Column({0, 5, 0, 7, 8, 5}));
     filter.finishInsert();
@@ -444,7 +447,7 @@ TEST(RuntimeFilterLookup, AdaptiveFilterKeepsItsExactSetWhenMergingABloomFilterT
         return std::make_unique<RuntimeFilter>(
             filters_to_merge,
             makeRuntimeFilterConfig(),
-            RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+            RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false, std::nullopt));
     };
     auto destination = make_filter(1);
     destination->insert(makeUInt64Column({0, 5}));
@@ -751,14 +754,14 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
     RuntimeFilter destination(
         /*filters_to_merge_=*/1,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false, std::nullopt));
     destination.enableIndexAnalysis();
     destination.insert(makeUInt64Column({3, 7}));
 
     RuntimeFilter source(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false, std::nullopt));
     source.enableIndexAnalysis();
     source.insert(makeUInt64Column({1, 9}));
     source.finishInsert();
@@ -920,7 +923,8 @@ TEST(RuntimeFilterLookup, DescribeKeepsThePredictedBloomSaturationAcrossMerges)
                 type,
                 makeGeometry(1_KiB, 1, 3, 0.05),
                 /*distinct_keys_hint_=*/2'000'000,
-                /*distinct_keys_hint_matches_filter_key_=*/true));
+                /*distinct_keys_hint_matches_filter_key_=*/true,
+                /*distinct_keys_in_last_run_=*/std::nullopt));
     };
 
     /// Only the source overflows its exact set; the destination learns of the dropped key set by the merge.

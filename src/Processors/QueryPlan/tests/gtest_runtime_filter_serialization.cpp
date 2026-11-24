@@ -72,7 +72,8 @@ std::unique_ptr<AdaptiveSetRuntimeFilter> makeFilter()
         std::make_shared<DataTypeUInt64>(),
         makeGeometry(),
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     filter->boundExactSetByKeyBytes();
     return filter;
 }
@@ -308,7 +309,8 @@ TEST(RuntimeFilterSerialization, LongTypeNameFitsTheExactStateBound)
     AdaptiveSetRuntimeFilter filter(
         enum_type, makeGeometry(bytes_limit),
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     filter.boundExactSetByKeyBytes();
     auto column = enum_type->createColumn();
     for (Int16 i = 0; i < 10; ++i)
@@ -333,7 +335,8 @@ TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
     AdaptiveSetRuntimeFilter big(
         stringType(), relaxed_geometry,
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     big.insert(makeStringColumn(10, 20 * 1024));
     const String state = serializeToString(big);
     EXPECT_FALSE(isBloomState(state));
@@ -364,7 +367,11 @@ TEST(RuntimeFilterSerialization, TransportedPartialOfUInt16KeysSwitchesToBloomFi
 {
     /// A local filter would switch to a dense bitset, which the serialized state cannot carry.
     const auto type = std::make_shared<DataTypeUInt16>();
-    AdaptiveSetRuntimeFilter filter(type, makeGeometry(), /*distinct_keys_hint_=*/std::nullopt, /*distinct_keys_hint_matches_filter_key_=*/false);
+    AdaptiveSetRuntimeFilter filter(
+        type, makeGeometry(),
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     filter.boundExactSetByKeyBytes();
     auto keys = ColumnUInt16::create();
     for (UInt16 key = 0; key < 2 * EXACT_VALUES_LIMIT; ++key)
@@ -393,7 +400,8 @@ TEST(RuntimeFilterSerialization, OnlyATransportedPartialBoundsTheKeyBytes)
         AdaptiveSetRuntimeFilter filter(
             std::make_shared<DataTypeUInt64>(), geometry,
             /*distinct_keys_hint_=*/std::nullopt,
-            /*distinct_keys_hint_matches_filter_key_=*/false);
+            /*distinct_keys_hint_matches_filter_key_=*/false,
+            /*distinct_keys_in_last_run_=*/std::nullopt);
         if (transported)
             filter.boundExactSetByKeyBytes();
         filter.insert(makeColumn(0, 2000));
@@ -422,13 +430,15 @@ TEST(RuntimeFilterSerialization, ShortStringKeysStayExactUpToTheRaisedRowBound)
     AdaptiveSetRuntimeFilter part1(
         stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     part1.boundExactSetByKeyBytes();
     part1.insert(makeShortStringColumn(0, 10000));
     AdaptiveSetRuntimeFilter part2(
         stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     part2.boundExactSetByKeyBytes();
     part2.insert(makeShortStringColumn(10000, 20000));
 
@@ -461,7 +471,8 @@ TEST(RuntimeFilterSerialization, LongStringKeysStillDegradeAtTheByteCap)
     AdaptiveSetRuntimeFilter filter(
         stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     filter.boundExactSetByKeyBytes();
     filter.insert(makeStringColumn(20000, 200));
 
@@ -485,7 +496,8 @@ TEST(RuntimeFilterSerialization, DegradedBloomIsSizedByGeometryNotTheExactByteBo
     AdaptiveSetRuntimeFilter filter(
         type, geometry,
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     filter.boundExactSetByKeyBytes();
     /// Overflows the row bound while the raised byte budget is nowhere near exhausted.
     filter.insert(makeColumn(0, 100));
@@ -529,7 +541,8 @@ makeBuildStep(bool with_topology, const String & filter_key = "rendezvous-key", 
             .polarity = RuntimeFilterPolarity::Contains,
             .track_key_range = false,
             .distinct_keys_hint = std::nullopt,
-            .distinct_keys_hint_matches_filter_key = false});
+            .distinct_keys_hint_matches_filter_key = false,
+            .distinct_keys_in_last_run = std::nullopt});
     if (with_topology)
         step.setTreeExchange("exchange_7", {"0", "1", "2", "3"}, /*fan_in_=*/2);
     return step;

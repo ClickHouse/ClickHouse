@@ -51,7 +51,8 @@ makePartial(UInt64 from, UInt64 to, bool track_key_range = false, const RuntimeF
     AdaptiveSetRuntimeFilter filter(
         std::make_shared<DataTypeUInt64>(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     filter.boundExactSetByKeyBytes();
     if (track_key_range)
         filter.enableKeyRangeTracking();

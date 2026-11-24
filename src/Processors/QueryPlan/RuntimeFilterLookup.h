@@ -322,7 +322,7 @@ public:
         const RuntimeFilterGeometry & geometry_,
         std::optional<UInt64> distinct_keys_hint_,
         bool distinct_keys_hint_matches_filter_key_,
-        std::optional<UInt64> distinct_keys_in_last_run_ = std::nullopt);
+        std::optional<UInt64> distinct_keys_in_last_run_);
 
     void insert(ColumnPtr values);
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);

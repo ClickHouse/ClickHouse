@@ -1152,7 +1152,8 @@ AdaptiveSetRuntimeFilter AdaptiveSetRuntimeFilter::deserialize(
         filter_column_target_type_,
         geometry_,
         /*distinct_keys_hint_=*/std::nullopt,
-        /*distinct_keys_hint_matches_filter_key_=*/false);
+        /*distinct_keys_hint_matches_filter_key_=*/false,
+        /*distinct_keys_in_last_run_=*/std::nullopt);
     filter.boundExactSetByKeyBytes();
     if (key_range_state != 0)
         filter.key_range.enable();

@@ -168,7 +168,8 @@ TEST(MergedPlanDAG, LooksThroughARuntimeFilter)
                 .polarity = RuntimeFilterPolarity::Contains,
                 .track_key_range = false,
                 .distinct_keys_hint = std::nullopt,
-                .distinct_keys_hint_matches_filter_key = false}),
+                .distinct_keys_hint_matches_filter_key = false,
+                .distinct_keys_in_last_run = std::nullopt}),
         source);
 
     const auto merged = buildMergedPlanDAG(runtime_filter);

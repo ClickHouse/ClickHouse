@@ -16,7 +16,7 @@ struct RuntimeFilterBuildOptions
     bool track_key_range;
     std::optional<UInt64> distinct_keys_hint;
     bool distinct_keys_hint_matches_filter_key;
-    std::optional<UInt64> distinct_keys_in_last_run = std::nullopt;
+    std::optional<UInt64> distinct_keys_in_last_run;
 };
 
 }

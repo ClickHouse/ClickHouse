@@ -108,11 +108,11 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.hits += hash_join_stats->hits;
         res.misses += hash_join_stats->misses;
     }
-    if (auto hash_join_last_run_stats = getHashTablesStatistics<HashJoinLastRunEntry>().getCacheStats())
+    if (auto hash_join_last_run_size_stats = getHashTablesStatistics<HashJoinLastRunSizeEntry>().getCacheStats())
     {
-        res.entries += hash_join_last_run_stats->entries;
-        res.hits += hash_join_last_run_stats->hits;
-        res.misses += hash_join_last_run_stats->misses;
+        res.entries += hash_join_last_run_size_stats->entries;
+        res.hits += hash_join_last_run_size_stats->hits;
+        res.misses += hash_join_last_run_size_stats->misses;
     }
     if (auto hash_join_match_stats = getHashTablesStatistics<HashJoinMatchEntry>().getCacheStats())
     {
@@ -184,6 +184,12 @@ std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats
     return std::nullopt;
 }
 
+void updateHashJoinSizeStatistics(size_t ht_size, size_t source_rows, const DB::StatsCollectingParams & stats_collecting_params)
+{
+    DB::getHashTablesStatistics<HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, stats_collecting_params);
+    DB::getHashTablesStatistics<HashJoinLastRunSizeEntry>().update({.ht_size = ht_size}, stats_collecting_params);
+}
+
 std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params)
 {
     if (stats_collecting_params.isCollectionAndUseEnabled())
@@ -193,7 +199,7 @@ std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollecting
 
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
-template class HashTablesStatistics<HashJoinLastRunEntry>;
+template class HashTablesStatistics<HashJoinLastRunSizeEntry>;
 template class HashTablesStatistics<HashJoinMatchEntry>;
 template class HashTablesStatistics<RadixUniqExactEntry>;
 }

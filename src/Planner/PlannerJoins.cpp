@@ -1387,7 +1387,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
     /// Whichever algorithm runs, only a `HashJoin` that finishes its build records the size of this run.
     if (params.collect_hash_table_stats_during_joins && params.hash_table_key_hash)
-        getHashTablesStatistics<HashJoinLastRunEntry>().remove(
+        getHashTablesStatistics<HashJoinLastRunSizeEntry>().remove(
             {params.hash_table_key_hash,
              /*enable_=*/true,
              params.max_entries_for_hash_table_stats,
