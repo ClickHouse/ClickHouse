@@ -135,3 +135,12 @@ DETACH TABLE test_string_slice_view;
 ATTACH TABLE test_string_slice_view;
 SELECT * FROM test_string_slice_view;
 DROP VIEW test_string_slice_view;
+
+SELECT 'Nullable slice tuples';
+SELECT 'abc'[CAST((1, 2) AS Nullable(Tuple(Int64, Int64)))], toTypeName('abc'[CAST((1, 2) AS Nullable(Tuple(Int64, Int64)))]);
+SELECT 'abc'[CAST(NULL AS Nullable(Tuple(Int64, Int64)))], arrayElementOrNull('abc', CAST(NULL AS Nullable(Tuple(Int64, Int64))));
+SELECT arrayElementOrNull('abc', CAST((2, 3) AS Nullable(Tuple(Int64, Int64)))), arrayElementOrNull('abc', CAST((3, 1) AS Nullable(Tuple(Int64, Int64))));
+SELECT materialize('abc')[materialize(CAST((2, 3) AS Nullable(Tuple(Int64, Int64))))];
+SELECT s, t, s[t], arrayElementOrNull(s, t), toTypeName(s[t]) FROM VALUES('s String, t Nullable(Tuple(Int64, Int64))', ('abc', (1, 2)), ('', NULL), ('xyz', (-2, -1))) ORDER BY s;
+SELECT s, t, arrayElementOrNull(s, t) FROM VALUES('s String, t Nullable(Tuple(Int64, Int64))', ('abc', (2, 9)), ('abd', (0, 1)), ('abe', NULL)) ORDER BY s;
+SELECT 'abc'[CAST((2, 9) AS Nullable(Tuple(Int64, Int64)))]; -- { serverError ARGUMENT_OUT_OF_BOUND }

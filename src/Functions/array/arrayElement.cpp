@@ -2436,22 +2436,26 @@ ColumnPtr FunctionArrayElement<mode>::executeStringSubscript(
         [[nodiscard]] StringBytePosition read(size_t row) const { return StringBytePosition::read(*values, is_unsigned, row); }
     };
 
+    /// A NULL slice tuple is a NULL position too, so it is unwrapped before choosing between a position and a slice.
+    const ColumnPtr index = removeNullableAndMergeNullMap(arguments[1].column, null_map);
+    const DataTypePtr index_type = removeNullable(arguments[1].type);
+
     PositionColumn start_column;
     std::optional<PositionColumn> end_column;
-    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get()))
+    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(index_type.get()))
     {
         Columns bounds;
-        if (const auto * tuple_const = checkAndGetColumnConst<ColumnTuple>(arguments[1].column.get()))
+        if (const auto * tuple_const = checkAndGetColumnConst<ColumnTuple>(index.get()))
             bounds = convertConstTupleToConstantElements(*tuple_const);
         else
-            bounds = assert_cast<const ColumnTuple &>(*arguments[1].column).getColumnsCopy();
+            bounds = assert_cast<const ColumnTuple &>(*index).getColumnsCopy();
 
         start_column = {removeNullableAndMergeNullMap(bounds[0], null_map), isNativeUInt(removeNullable(tuple_type->getElement(0)))};
         end_column = PositionColumn{removeNullableAndMergeNullMap(bounds[1], null_map), isNativeUInt(removeNullable(tuple_type->getElement(1)))};
     }
     else
     {
-        start_column = {removeNullableAndMergeNullMap(arguments[1].column, null_map), isNativeUInt(removeNullable(arguments[1].type))};
+        start_column = {index, isNativeUInt(index_type)};
     }
 
     const bool is_slice = end_column.has_value();
@@ -3266,9 +3270,10 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
     if (isString(removeNullable(arguments[0])))
     {
         bool result_is_nullable = is_null_mode || arguments[0]->isNullable() || arguments[1]->isNullable();
-        bool is_valid_index = isNativeInteger(removeNullable(arguments[1]));
+        const DataTypePtr index_type = removeNullable(arguments[1]);
+        bool is_valid_index = isNativeInteger(index_type);
 
-        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[1].get()))
+        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(index_type.get()))
         {
             /// A NULL bound gives NULL, the same as a NULL position, so `s[NULL:2]` is accepted.
             const auto & bounds = tuple_type->getElements();
