@@ -5,7 +5,8 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <base/defines.h>
-#include <Common/MapWithMemoryTracking.h>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <absl/container/btree_map.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <mutex>
@@ -40,8 +41,9 @@ public:
         size_t add(CompressedBlockRanges & ranges) TSA_REQUIRES(mutex);
 
         std::mutex mutex;
-        /// Merged, by their begin.
-        MapWithMemoryTracking<size_t, size_t> united_ranges TSA_GUARDED_BY(mutex);
+        /// Merged, by their begin. A B-tree keeps a range in about 20 bytes, a `std::map` in 48.
+        absl::btree_map<size_t, size_t, std::less<>, AllocatorWithMemoryTracking<std::pair<const size_t, size_t>>> united_ranges
+            TSA_GUARDED_BY(mutex);
     };
 
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.

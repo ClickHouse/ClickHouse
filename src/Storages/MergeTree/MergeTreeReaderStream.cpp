@@ -357,6 +357,18 @@ size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
     for (const auto & [begin, end] : ranges)
     {
         chassert(begin <= end);
+        /// Reading mostly goes on from where the last range ended.
+        if (!united_ranges.empty())
+        {
+            auto & [last_begin, last_end] = *united_ranges.rbegin();
+            if (last_begin <= begin && begin <= last_end)
+            {
+                bytes += end > last_end ? end - last_end : 0;
+                last_end = std::max(last_end, end);
+                continue;
+            }
+        }
+
         /// The first counted range that overlaps or touches the range.
         auto it = united_ranges.upper_bound(begin);
         if (it != united_ranges.begin() && std::prev(it)->second >= begin)
@@ -368,26 +380,27 @@ size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
             continue;
         }
 
-        /// Merge the range and the counted ranges it overlaps or touches into the first of them, which is extended in place,
-        /// as reading goes on from where the previous block ended.
+        /// Merge the range and the counted ranges it overlaps or touches into one.
         const auto first = it;
+        const size_t first_begin = first->first;
         size_t covered = 0;
         size_t merged_end = end;
-        for (; it != united_ranges.end() && it->first <= end; ++it)
+        size_t merged = 0;
+        for (; it != united_ranges.end() && it->first <= end; ++it, ++merged)
         {
             if (it->second > begin && it->first < end)
                 covered += std::min(end, it->second) - std::max(begin, it->first);
             merged_end = std::max(merged_end, it->second);
         }
         bytes += end - begin - covered;
-        first->second = merged_end;
-        united_ranges.erase(std::next(first), it);
-        if (begin < first->first)
+        if (merged == 1 && first_begin <= begin)
         {
-            auto node = united_ranges.extract(first);
-            node.key() = begin;
-            united_ranges.insert(std::move(node));
+            first->second = merged_end;
+            continue;
         }
+        /// An erase or an insert invalidates the iterators of a B-tree.
+        const auto next = united_ranges.erase(first, it);
+        united_ranges.emplace_hint(next, std::min(begin, first_begin), merged_end);
     }
     ranges.clear();
     return bytes;
@@ -398,7 +411,7 @@ void ReadRangesRegistry::registerRanges(Batch & batch, ReadRanges & file_ranges,
     if (ranges.empty())
         return;
 
-    /// Reserved before the map grows, by what it can grow at most: every range in a node of its own.
+    /// Reserved before the map grows, by what it can grow at most: every range an entry of its own.
     if (ranges.size() > batch.reserved && !reserve(ranges.size() - batch.reserved))
     {
         ranges.clear();
