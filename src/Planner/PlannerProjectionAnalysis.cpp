@@ -249,6 +249,20 @@ void replaceIfChainsWithMultiIf(QueryTreeNodePtr & node)
     }
 }
 
+/// the constant that a key is for the analyzer; an `ALIAS` column is the expression that it has
+QueryTreeNodePtr getConstantOfKey(QueryTreeNodePtr key)
+{
+    while (const auto * column_node = key->as<ColumnNode>())
+    {
+        if (!column_node->hasExpression())
+            return nullptr;
+
+        key = column_node->getExpression();
+    }
+
+    return key->as<ConstantNode>() ? key : nullptr;
+}
+
 /// constant keys are dropped; one key stays if there are no aggregate functions
 void removeConstantGroupByKeys(QueryNode & query_node, bool has_aggregate_functions)
 {
@@ -258,11 +272,17 @@ void removeConstantGroupByKeys(QueryNode & query_node, bool has_aggregate_functi
     auto & keys = query_node.getGroupBy().getNodes();
     for (size_t i = 0; i < keys.size();)
     {
-        if (!keys[i]->as<ConstantNode>() || (!has_aggregate_functions && keys.size() == 1))
+        auto constant = getConstantOfKey(keys[i]);
+        if (!constant || (!has_aggregate_functions && keys.size() == 1))
         {
             ++i;
             continue;
         }
+
+        /// the query still writes the key, so the columns that it reads stay columns of the query
+        const auto & constant_node = constant->as<ConstantNode &>();
+        if (constant_node.hasSourceExpression() && !isQueryOrUnionNode(constant_node.getSourceExpression()))
+            query_node.getProjection().getNodes().push_back(keys[i]);
 
         /// the last key takes its place: existing parts are sorted in this order
         if (i + 1 < keys.size())
@@ -370,20 +390,8 @@ ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, cons
     return query_context;
 }
 
-}
-
-void storeSettingsOfProjectionQuery(const ASTPtr & query_ast, const ContextPtr & context)
-{
-    const auto & settings = context->getSettingsRef();
-    auto & stored_settings = query_ast->as<ASTSelectQuery &>().settings()->as<ASTSetQuery &>().changes;
-    if (settings[Setting::enable_positional_arguments_for_projections])
-        stored_settings.setSetting("enable_positional_arguments", true);
-    for (const auto * setting : kept_settings)
-        if (settings.isChanged(setting))
-            stored_settings.setSetting(setting, settings.get(setting));
-}
-
-QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze)
+/// the query as the analyzer resolves it, before the changes that give the stored columns
+QueryTreeNodePtr resolveProjectionQuery(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze)
 {
     auto query_context = createProjectionAnalysisContext(query_ast, context);
     auto query_tree = buildQueryTree(query_ast, query_context);
@@ -416,7 +424,31 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     /// resolve only: an optimization pass can change a stored expression (`GROUP BY -c0` into `GROUP BY c0`)
     query_tree_pass_manager.runOnlyResolve(query_tree);
 
-    /// before the passes: they must not remove an expression that reads a column (`count(b IS NOT NULL)`)
+    return query_tree;
+}
+
+}
+
+void storeSettingsOfProjectionQuery(const ASTPtr & query_ast, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    auto & stored_settings = query_ast->as<ASTSelectQuery &>().settings()->as<ASTSetQuery &>().changes;
+    if (settings[Setting::enable_positional_arguments_for_projections])
+        stored_settings.setSetting("enable_positional_arguments", true);
+    for (const auto * setting : kept_settings)
+        if (settings.isChanged(setting))
+            stored_settings.setSetting(setting, settings.get(setting));
+}
+
+QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze)
+{
+    auto query_tree = resolveProjectionQuery(query_ast, source, context, only_analyze);
+    auto & query_node = query_tree->as<QueryNode &>();
+
+    /// first, while the analyzer's constants are constants: the old analysis did not keep such a key
+    removeConstantGroupByKeys(query_node, hasAggregateFunctionNodes(query_tree));
+
+    /// before the pass: it must not remove an expression that reads a column (`count(b IS NOT NULL)`)
     auto table_node = query_node.getJoinTreeNode();
     for (auto & child : query_node.getChildren())
         if (child)
@@ -430,9 +462,7 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
                 argument = constant_node->getSourceExpression();
 
     /// `count(1)` and `sum(1)` are stored as `count()`
-    NormalizeCountVariantsPass().run(query_tree, query_context);
-
-    removeConstantGroupByKeys(query_node, hasAggregateFunctionNodes(query_tree));
+    NormalizeCountVariantsPass().run(query_tree, query_node.getContext());
 
     return query_tree;
 }
