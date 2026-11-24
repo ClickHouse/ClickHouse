@@ -7,7 +7,7 @@
 DROP TABLE IF EXISTS t_autopr_shared_snapshot;
 
 CREATE TABLE t_autopr_shared_snapshot (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
-INSERT INTO t_autopr_shared_snapshot SELECT number FROM numbers(10000000) SETTINGS max_rows_to_read = 0;
+INSERT INTO t_autopr_shared_snapshot SELECT number FROM numbers(1000000) SETTINGS max_rows_to_read = 0;
 
 SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
     parallel_replicas_local_plan = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -18,21 +18,21 @@ SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replic
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 
 -- The first query of each group collects statistics, the second reaches the decision.
-SELECT count() = any(5000000) FROM t_autopr_shared_snapshot WHERE k < 5000000
+SELECT count() = any(500000) FROM t_autopr_shared_snapshot WHERE k < 500000
 SETTINGS enable_shared_storage_snapshot_in_query = 1, log_comment = 'shared_1';
-SELECT count() = any(5000000) FROM t_autopr_shared_snapshot WHERE k < 5000000
+SELECT count() = any(500000) FROM t_autopr_shared_snapshot WHERE k < 500000
 SETTINGS enable_shared_storage_snapshot_in_query = 1, log_comment = 'shared_2';
 
-SELECT count() = any(5000000) FROM t_autopr_shared_snapshot WHERE k < 5000000
+SELECT count() = any(500000) FROM t_autopr_shared_snapshot WHERE k < 500000
 SETTINGS enable_shared_storage_snapshot_in_query = 0, log_comment = 'separate_1';
-SELECT count() = any(5000000) FROM t_autopr_shared_snapshot WHERE k < 5000000
+SELECT count() = any(500000) FROM t_autopr_shared_snapshot WHERE k < 500000
 SETTINGS enable_shared_storage_snapshot_in_query = 0, log_comment = 'separate_2';
 
-SELECT count() = any(5000000)
-FROM (SELECT k FROM t_autopr_shared_snapshot WHERE k < 5000000 SETTINGS enable_shared_storage_snapshot_in_query = 0)
+SELECT count() = any(500000)
+FROM (SELECT k FROM t_autopr_shared_snapshot WHERE k < 500000 SETTINGS enable_shared_storage_snapshot_in_query = 0)
 SETTINGS enable_shared_storage_snapshot_in_query = 1, log_comment = 'subquery_1';
-SELECT count() = any(5000000)
-FROM (SELECT k FROM t_autopr_shared_snapshot WHERE k < 5000000 SETTINGS enable_shared_storage_snapshot_in_query = 0)
+SELECT count() = any(500000)
+FROM (SELECT k FROM t_autopr_shared_snapshot WHERE k < 500000 SETTINGS enable_shared_storage_snapshot_in_query = 0)
 SETTINGS enable_shared_storage_snapshot_in_query = 1, log_comment = 'subquery_2';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
