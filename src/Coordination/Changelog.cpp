@@ -14,6 +14,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -715,6 +716,25 @@ struct ChangelogReadResult
     bool error;
 };
 
+/// Number of bytes left in the file after the current position, if it can be determined.
+/// Unknown for compressed logs, where positions in the decompressed stream don't map to the file.
+std::optional<size_t> tryGetRemainingBytesInFile(ReadBuffer & read_buf)
+{
+    auto * file_buf = dynamic_cast<ReadBufferFromFileBase *>(&read_buf);
+    if (!file_buf)
+        return std::nullopt;
+
+    auto file_size = file_buf->tryGetFileSize();
+    if (!file_size)
+        return std::nullopt;
+
+    const auto position = file_buf->getPosition();
+    if (position < 0)
+        return std::nullopt;
+
+    return *file_size > static_cast<size_t>(position) ? *file_size - static_cast<size_t>(position) : 0;
+}
+
 ChangelogRecord readChangelogRecord(ReadBuffer & read_buf, const std::string & filepath)
 {
     /// Read checksum
@@ -729,9 +749,17 @@ ChangelogRecord readChangelogRecord(ReadBuffer & read_buf, const std::string & f
     readIntBinary(record.header.value_type, read_buf);
     readIntBinary(record.header.blob_size, read_buf);
 
-    if (record.header.version > CURRENT_CHANGELOG_VERSION)
+    /// The header is not validated yet: a torn or garbage tail (e.g. zero-filled blocks decrypted by
+    /// `DiskEncrypted`) yields an arbitrary `blob_size`, so don't allocate more than the file can hold.
+    if (auto remaining_bytes = tryGetRemainingBytesInFile(read_buf); remaining_bytes && record.header.blob_size > *remaining_bytes)
         throw Exception(
-            ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported changelog version {} on path {}", static_cast<uint8_t>(record.header.version), filepath);
+            ErrorCodes::CORRUPTED_DATA,
+            "Record in log {} (version {}), index {} has blob_size {} which exceeds the remaining {} bytes in the file",
+            filepath,
+            static_cast<uint8_t>(record.header.version),
+            record.header.index,
+            record.header.blob_size,
+            *remaining_bytes);
 
     /// Read data
     if (record.header.blob_size != 0)
@@ -756,6 +784,15 @@ ChangelogRecord readChangelogRecord(ReadBuffer & read_buf, const std::string & f
             record.header.index,
             record.header.blob_size);
     }
+
+    /// Checked only after the checksum, so that a corrupted record (whose version byte is random)
+    /// is treated as a broken log tail rather than as a log written by a newer version.
+    if (record.header.version > CURRENT_CHANGELOG_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Unsupported changelog version {} on path {}",
+            static_cast<uint8_t>(record.header.version),
+            filepath);
 
     return record;
 }

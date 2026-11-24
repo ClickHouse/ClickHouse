@@ -4,6 +4,8 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
 #include <base/defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
@@ -4594,6 +4596,87 @@ TYPED_TEST(CoordinationChangelogTest, StartupReadOutOfScopeCompressionDoesNotFor
     ASSERT_EQ(reference.getNextEntryIndex(), parallel_reader.getNextEntryIndex());
     for (uint64_t i = reference.getStartIndex(); i < reference.getNextEntryIndex(); ++i)
         EXPECT_EQ(reference.termAt(i), parallel_reader.termAt(i)) << "index " << i;
+}
+
+
+// A torn or garbage trailing record (e.g. zero-filled blocks decrypted by `DiskEncrypted`) has an arbitrary
+// version byte and `blob_size`. It must be treated as a broken log tail and truncated on every startup
+// dispatch path, not reported as an unsupported changelog version or trigger a huge allocation.
+TYPED_TEST(CoordinationChangelogTest, StartupReadGarbageTailIsTruncated)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "garbage is appended to a raw changelog file";
+
+    struct GarbageTail
+    {
+        std::string name;
+        uint8_t version;
+        uint64_t blob_size;
+        size_t payload_size;
+    };
+
+    const std::vector<GarbageTail> tails{
+        {"unknown_version", 200, 16, 16},
+        {"unknown_version_huge_blob", 255, 1ULL << 62, 64},
+        {"current_version_huge_blob", static_cast<uint8_t>(DB::CURRENT_CHANGELOG_VERSION), 1ULL << 62, 64},
+        {"current_version_bad_checksum", static_cast<uint8_t>(DB::CURRENT_CHANGELOG_VERSION), 16, 16},
+    };
+
+    for (const auto & tail : tails)
+    {
+        for (bool force_serial : {true, false})
+        {
+            SCOPED_TRACE(tail.name + (force_serial ? " serial" : " parallel"));
+
+            ChangelogDirTest test("./logs");
+            this->setLogDirectory("./logs");
+
+            const DB::LogFileSettings settings{.force_sync = false, .compress_logs = false, .rotate_interval = 10};
+
+            {
+                DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+                writer.readChangelogAndInitWriter(0, 0);
+                for (uint64_t i = 1; i <= 25; ++i)
+                    writer.appendEntry(i, getLogEntry("entry_" + std::to_string(i), i));
+                writer.flush();
+            }
+
+            ASSERT_TRUE(fs::exists("./logs/changelog_21_30.bin"));
+
+            {
+                DB::WriteBufferFromFile plain_buf("./logs/changelog_21_30.bin", DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_WRONLY);
+                const uint64_t checksum = 0xDEADBEEFCAFEBABEULL;
+                const uint64_t index = 26;
+                const uint64_t term = 0x1234567890ABCDEFULL;
+                const int32_t value_type = 1;
+                DB::writeIntBinary(checksum, plain_buf);
+                DB::writeIntBinary(tail.version, plain_buf);
+                DB::writeIntBinary(index, plain_buf);
+                DB::writeIntBinary(term, plain_buf);
+                DB::writeIntBinary(value_type, plain_buf);
+                DB::writeIntBinary(tail.blob_size, plain_buf);
+                for (size_t i = 0; i < tail.payload_size; ++i)
+                    DB::writeIntBinary(static_cast<uint8_t>(i * 37 + 11), plain_buf);
+                plain_buf.finalize();
+            }
+
+            DB::Changelog reader(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            reader.setForceSerialStartupReadForTesting(force_serial);
+            ASSERT_NO_THROW(reader.readChangelogAndInitWriter(0, 0));
+
+            EXPECT_EQ(reader.size(), 25);
+            EXPECT_EQ(reader.getNextEntryIndex(), 26);
+            EXPECT_EQ(reader.termAt(25), 25);
+
+            reader.appendEntry(26, getLogEntry("entry_26", 26));
+            reader.flush();
+
+            DB::Changelog reader2(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            reader2.readChangelogAndInitWriter(0, 0);
+            EXPECT_EQ(reader2.size(), 26);
+            EXPECT_EQ(reader2.termAt(26), 26);
+        }
+    }
 }
 
 
