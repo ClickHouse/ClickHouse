@@ -2073,7 +2073,7 @@ def test_clickhouse_insert(started_cluster):
 def test_clickhouse_create_table(started_cluster):
     ns = f"chcreate_{uuid.uuid4().hex[:8]}"
     ns_location = f"s3://{BUCKET}/{ns}"
-    # The ClickHouse client takes the table location from the namespace.
+    # The ClickHouse client sends no location. The catalog builds it from the namespace location.
     create_namespace([ns], properties={"location": ns_location})
     table = f"rest_tables_db.`{ns}.events`"
 
@@ -2083,10 +2083,11 @@ def test_clickhouse_create_table(started_cluster):
             f"CREATE TABLE {table} (id Int64, name String) ENGINE = Iceberg",
             settings={"allow_experimental_database_iceberg": 1},
         )
-        result = catalog_request("GET", tables_url(ns, "events")).json()
-        assert result["metadata"]["location"] == f"{ns_location}/events"
+        metadata = catalog_request("GET", tables_url(ns, "events")).json()["metadata"]
+        location = metadata["location"]
+        assert location == f"{ns_location}/events-{metadata['table-uuid']}"
         zk = get_keeper()
-        assert zk.exists(location_node(f"{ns_location}/events"))
+        assert zk.exists(location_node(location))
 
         node.query(f"INSERT INTO {table} SETTINGS allow_insert_into_iceberg = 1 VALUES (1, 'a'), (2, 'b')")
         assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
@@ -2095,7 +2096,7 @@ def test_clickhouse_create_table(started_cluster):
 
         node.query(f"DROP TABLE {table}")
         assert not table_exists(ns, "events")
-        assert not zk.exists(location_node(f"{ns_location}/events"))
+        assert not zk.exists(location_node(location))
     finally:
         node.query("DROP DATABASE IF EXISTS rest_tables_db")
 
