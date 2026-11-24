@@ -25,7 +25,7 @@ class JSONAsStringConverter
 public:
     explicit JSONAsStringConverter(const ContextPtr & context);
 
-    ColumnPtr convert(const ColumnWithTypeAndName & json) const;
+    [[nodiscard]] ColumnPtr convert(const ColumnWithTypeAndName & json) const;
     void updateHash(SipHash & hash) const;
 
 private:
