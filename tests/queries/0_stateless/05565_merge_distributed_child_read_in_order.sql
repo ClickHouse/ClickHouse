@@ -17,7 +17,7 @@ SELECT groupArray(x) FROM (SELECT x FROM merge(currentDatabase(), '^t_merge_dp_o
     SETTINGS log_comment = '05565_order_by';
 SELECT groupArray(x) FROM (SELECT x FROM merge(currentDatabase(), '^t_merge_dp_order$') ORDER BY x DESC LIMIT 5);
 SELECT count() FROM t_merge_dp_order AS t1 INNER JOIN merge(currentDatabase(), '^t_merge_dp_order$') AS t2
-    ON t1.x < t2.x AND t1.x > t2.x - 3 SETTINGS join_algorithm = 'ie_join', query_plan_join_swap_table = 0;
+    ON t1.x < t2.x AND t1.x > t2.x - 3 SETTINGS join_algorithm = 'inequality', query_plan_join_swap_table = 0;
 SELECT count() FROM t_merge_dp_order AS t1 INNER JOIN merge(currentDatabase(), '^t_merge_dp_order$') AS t2
     ON t1.x = t2.x SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0;
 SELECT count(), uniqExact(x) FROM (SELECT x, count() FROM merge(currentDatabase(), '^t_merge_dp_order$') GROUP BY x)
