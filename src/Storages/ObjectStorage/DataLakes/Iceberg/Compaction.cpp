@@ -73,25 +73,26 @@ using namespace DB;
 
 struct ManifestFilePlan
 {
-    explicit ManifestFilePlan(Poco::JSON::Array::Ptr schema_)
-        : statistics(schema_)
-    {
-    }
-
     Iceberg::IcebergPathFromMetadata path;
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_lists_path;
-    DataFileStatistics statistics;
 
     Iceberg::IcebergPathFromMetadata patched_path;
+};
+
+struct DataFileManifestMembership
+{
+    std::shared_ptr<ManifestFilePlan> manifest;
+    Int64 added_snapshot_id = 0;
 };
 
 struct DataFilePlan
 {
     IcebergDataObjectInfoPtr data_object_info;
-    std::vector<std::shared_ptr<ManifestFilePlan>> manifests;
+    std::vector<DataFileManifestMembership> manifests;
     std::shared_ptr<const Iceberg::PartitionSpecification> partition_specification;
 
     Iceberg::IcebergPathFromMetadata patched_path;
+    DataFileStatistics statistics;
     UInt64 new_records_count = 0;
     UInt64 new_bytes_count = 0;
 };
@@ -264,7 +265,7 @@ static Plan getPlan(
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
-                manifest_files[manifest_file.manifest_file_path] = std::make_shared<ManifestFilePlan>(current_schema);
+                manifest_files[manifest_file.manifest_file_path] = std::make_shared<ManifestFilePlan>();
                 manifest_files[manifest_file.manifest_file_path]->path = manifest_file.manifest_file_path;
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
@@ -290,23 +291,27 @@ static Plan getPlan(
                 /// from the compacted table. The map still deduplicates the same data file
                 /// referenced from multiple snapshots' manifest lists.
                 const auto & data_file_path = data_file->parsed_entry->file_path_key;
-                const auto & manifest_plan = manifest_files[manifest_file.manifest_file_path];
+                DataFileManifestMembership membership{
+                    .manifest = manifest_files[manifest_file.manifest_file_path],
+                    .added_snapshot_id = data_file->parsed_entry->parsed_snapshot_id.value_or(manifest_file.added_snapshot_id)};
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(data_file_path))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
-                        .manifests = {manifest_plan},
+                        .manifests = {std::move(membership)},
                         .partition_specification = data_file->common_partition_specification,
-                        .patched_path = plan.generator.generateDataFileName()});
+                        .patched_path = plan.generator.generateDataFileName(),
+                        .statistics = DataFileStatistics(current_schema)});
                     plan.path_to_data_file[data_file_path] = data_file_ptr;
                     plan.partitions[partition_index].push_back(data_file_ptr);
                 }
                 else
                 {
                     data_file_ptr = plan.path_to_data_file[data_file_path];
-                    if (std::ranges::find(data_file_ptr->manifests, manifest_plan) == data_file_ptr->manifests.end())
-                        data_file_ptr->manifests.push_back(manifest_plan);
+                    if (std::ranges::none_of(
+                            data_file_ptr->manifests, [&](const auto & existing) { return existing.manifest == membership.manifest; }))
+                        data_file_ptr->manifests.push_back(std::move(membership));
                 }
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(data_file_ptr);
             }
@@ -459,10 +464,9 @@ static void writeDataFiles(
             /// The bounds must describe the stored values.
             if (write_orc)
                 ORC::replaceTimestampsStoredAsEpoch(chunk);
-            for (const auto & manifest : data_file->manifests)
-                manifest->statistics.update(chunk);
             if (delete_file_transform)
                 delete_file_transform->transform(chunk);
+            data_file->statistics.update(chunk);
             if (column_sketches)
                 column_sketches->update(chunk.getColumns());
             data_file->new_records_count += chunk.getNumRows();
@@ -477,8 +481,7 @@ static void writeDataFiles(
         }
         output_format->flush();
         output_format->finalize();
-        for (const auto & manifest : data_file->manifests)
-            manifest->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
+        data_file->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
         write_buffer->finalize();
         auto file_bytes = write_buffer->count();
         if (file_bytes == 0 && !data_file->patched_path.empty())
@@ -1200,19 +1203,20 @@ static bool writeMetadataFiles(
 
     {
         /// Per source manifest: its rewritten data files with the partition index of each, since one manifest may hold several partitions.
-        std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::vector<std::pair<Iceberg::IcebergPathFromMetadata, size_t>>>
-            grouped_by_manifest_files_result;
-
-        std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> patched_path_to_data_file;
-        for (const auto & [_, data_file] : plan.path_to_data_file)
-            patched_path_to_data_file[data_file->patched_path] = data_file;
+        struct ManifestMember
+        {
+            const DataFilePlan * data_file;
+            Int64 added_snapshot_id;
+            size_t partition_index;
+        };
+        std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::vector<ManifestMember>> grouped_by_manifest_files_result;
 
         for (size_t i = 0; i < plan.partitions.size(); ++i)
         {
             const auto & partition = plan.partitions[i];
             for (const auto & data_file : partition)
-                for (const auto & manifest : data_file->manifests)
-                    grouped_by_manifest_files_result[manifest].emplace_back(data_file->patched_path, i);
+                for (const auto & membership : data_file->manifests)
+                    grouped_by_manifest_files_result[membership.manifest].push_back({data_file.get(), membership.added_snapshot_id, i});
         }
 
         auto partition_spec_id = initial_metadata_object->getValue<Int32>(f_default_spec_id);
@@ -1270,33 +1274,23 @@ static bool writeMetadataFiles(
 
             std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec;
             std::vector<Row> file_partition_values;
+            std::vector<UInt64> file_row_counts;
+            std::vector<UInt64> file_byte_counts;
+            std::vector<const DataFileStatistics *> file_statistics;
             ManifestPartitionSummary partition_summary(partition_types);
-            for (const auto & [path, partition_index] : data_files_with_partitions)
+            for (const auto & member : data_files_with_partitions)
             {
-                data_files_vec.push_back(path);
-                const auto & partition_value = plan.partition_encoder.getPartitionValue(partition_index);
+                data_files_vec.push_back(member.data_file->patched_path);
+                file_row_counts.push_back(member.data_file->new_records_count);
+                file_byte_counts.push_back(member.data_file->new_bytes_count);
+                file_statistics.push_back(&member.data_file->statistics);
+                const auto & partition_value = plan.partition_encoder.getPartitionValue(member.partition_index);
                 file_partition_values.push_back(partition_value);
                 if (!partition_types.empty())
                     partition_summary.add(partition_value);
             }
             if (!partition_types.empty())
                 manifest_file_partition_summaries.emplace(manifest_entry->patched_path, std::move(partition_summary));
-
-            std::vector<UInt64> file_row_counts;
-            std::vector<UInt64> file_byte_counts;
-            for (const auto & path : data_files_vec)
-            {
-                if (auto it = patched_path_to_data_file.find(path); it != patched_path_to_data_file.end())
-                {
-                    file_row_counts.push_back(it->second->new_records_count);
-                    file_byte_counts.push_back(it->second->new_bytes_count);
-                }
-                else
-                {
-                    file_row_counts.push_back(0);
-                    file_byte_counts.push_back(0);
-                }
-            }
 
             /// The manifest's original lineage, taken from the source manifest-list entry: the
             /// snapshot that actually added the manifest may already be expired from table
@@ -1313,33 +1307,46 @@ static bool writeMetadataFiles(
             /// snapshot is retained; when it has been expired, fall back to the first
             /// retained snapshot referencing the manifest -- the earliest point in the
             /// rewritten history where the manifest exists.
-            Int64 remapped_sequence_number = 0;
+            auto remap_sequence_number = [&](Int64 added_snapshot_id)
             {
                 Poco::JSON::Object::Ptr sequence_source = snapshot;
-                if (auto it = snapshot_id_to_snapshot.find(manifest_lineage.added_snapshot_id);
-                    it != snapshot_id_to_snapshot.end() && it->second)
+                if (auto it = snapshot_id_to_snapshot.find(added_snapshot_id); it != snapshot_id_to_snapshot.end() && it->second)
                     sequence_source = it->second;
                 if (sequence_source->has(Iceberg::f_metadata_sequence_number))
-                    remapped_sequence_number = sequence_source->getValue<Int64>(Iceberg::f_metadata_sequence_number);
-            }
+                    return sequence_source->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+                return Int64{0};
+            };
+            const Int64 remapped_sequence_number = remap_sequence_number(manifest_lineage.added_snapshot_id);
 
-            /// Record the manifest's actual content counts and lineage for its manifest-list
-            /// entries. added_snapshot_id preserves which snapshot added the manifest, so
-            /// manifest lists of later snapshots that carry it forward do not claim they added
-            /// it; the sequence numbers use the remapped value, consistent with the entries
-            /// written into the regenerated manifest below.
+            /// An entry that an `INSERT` merged into this manifest was added by an earlier snapshot, so it stays `EXISTING` with that snapshot's lineage.
+            std::vector<DataFileEntryLineage> file_lineage;
+            ManifestListEntryCounts counts;
+            counts.min_sequence_number = remapped_sequence_number;
+            counts.added_snapshot_id = manifest_lineage.added_snapshot_id;
+            counts.added_sequence_number = remapped_sequence_number;
+            for (const auto & member : data_files_with_partitions)
             {
-                Int64 manifest_rows = 0;
-                for (const auto rows : file_row_counts)
-                    manifest_rows += static_cast<Int64>(rows);
-                ManifestListEntryCounts counts;
-                counts.files_count = static_cast<Int64>(data_files_vec.size());
-                counts.rows_count = manifest_rows;
-                counts.min_sequence_number = remapped_sequence_number;
-                counts.added_snapshot_id = manifest_lineage.added_snapshot_id;
-                counts.added_sequence_number = remapped_sequence_number;
-                manifest_file_counts[manifest_entry->patched_path] = counts;
+                const auto rows = static_cast<Int64>(member.data_file->new_records_count);
+                DataFileEntryLineage lineage;
+                lineage.added_snapshot_id = member.added_snapshot_id;
+                if (member.added_snapshot_id == manifest_lineage.added_snapshot_id)
+                {
+                    lineage.added_by_new_snapshot = true;
+                    counts.files_count += 1;
+                    counts.rows_count += rows;
+                }
+                else
+                {
+                    lineage.sequence_number = remap_sequence_number(member.added_snapshot_id);
+                    lineage.file_sequence_number = lineage.sequence_number;
+                    counts.min_sequence_number = std::min(counts.min_sequence_number, *lineage.sequence_number);
+                    counts.existing_files_count += 1;
+                    counts.existing_rows_count += rows;
+                }
+                file_lineage.push_back(std::move(lineage));
             }
+            manifest_file_counts[manifest_entry->patched_path] = counts;
+
             generateManifestFile(
                 metadata_object,
                 partition_columns,
@@ -1348,7 +1355,7 @@ static bool writeMetadataFiles(
                 data_files_vec,
                 file_row_counts,
                 file_byte_counts,
-                manifest_entry->statistics,
+                /* data_file_statistics */ std::nullopt,
                 sample_block_,
                 snapshot,
                 write_format,
@@ -1360,7 +1367,13 @@ static bool writeMetadataFiles(
                 /// the remapped sequence number, keeping the manifest file consistent with the
                 /// manifest-list entries written above and with the renumbered history.
                 /* user_defined_sequence_number */ remapped_sequence_number,
-                /* user_defined_snapshot_id */ manifest_lineage.added_snapshot_id);
+                /* user_defined_snapshot_id */ manifest_lineage.added_snapshot_id,
+                /* data_file_formats */ {},
+                /* per_file_statistics */ {},
+                /* data_file_sort_order_ids */ {},
+                file_lineage,
+                /* schema_to_serialize */ nullptr,
+                &file_statistics);
 
             buffer_manifest_entry->finalize();
             auto manifest_bytes = buffer_manifest_entry->count();
