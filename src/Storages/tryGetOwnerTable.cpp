@@ -32,6 +32,11 @@ bool ownsInnerTable(const IStorage & owner, const StorageID & table_id, const Co
 
 String tryGetOwnerTable(const DatabasePtr & database, const String & table_name, const ContextPtr & context)
 {
+    /// An external database (e.g. `Remote`, `MySQL`) cannot own inner tables, and resolving a candidate in it
+    /// could fetch a remote schema the user is not allowed to see.
+    if (database->isExternal())
+        return {};
+
     std::string_view name = table_name;
     StoragePtr candidates[2];
     if (name.starts_with(".inner_id."))

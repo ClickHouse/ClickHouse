@@ -4,6 +4,7 @@
 
 # The `owner_table` column of `system.tables` is shown only to users who can see the owner, and an inner table
 # moved to another database has no owner there (the owner could be hidden from users who can see that database).
+# A `Remote` database owns no inner tables, so the lookup does not resolve candidates the user cannot describe there.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,6 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 db="${CLICKHOUSE_DATABASE}"
 private_db="${CLICKHOUSE_DATABASE_1}"
+remote_db="${CLICKHOUSE_DATABASE}_remote"
 user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 --multiquery --query "
@@ -58,7 +60,21 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SHOW TABLES ON ${db}.metrics TO ${user}"
 echo "--- grant on metrics ---"
 list_inner_tables --user="${user}"
 
+# `.inner.t` is named like the inner table of `t`; the user has no `SHOW COLUMNS` on `t`, so resolving `t`
+# through the `Remote` database would throw ACCESS_DENIED.
+${CLICKHOUSE_CLIENT} --multiquery --query "
+    CREATE TABLE ${db}.t (x UInt64) ENGINE = Memory;
+    CREATE TABLE ${db}.\`.inner.t\` (x UInt64) ENGINE = Memory;
+    DROP DATABASE IF EXISTS ${remote_db};
+    CREATE DATABASE ${remote_db} ENGINE = Remote('127.0.0.1', '${db}');
+    GRANT SHOW TABLES ON ${remote_db}.* TO ${user};
+"
+echo "--- Remote database: no owner ---"
+${CLICKHOUSE_CLIENT} --user="${user}" --query "
+    SELECT name, owner_table FROM system.tables WHERE database = '${remote_db}' AND name = '.inner.t'"
+
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP USER ${user};
     DROP DATABASE ${private_db};
+    DROP DATABASE ${remote_db};
 "
