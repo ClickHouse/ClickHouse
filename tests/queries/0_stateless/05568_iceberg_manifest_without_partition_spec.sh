@@ -41,9 +41,19 @@ q "SELECT * FROM icebergLocal('$DATA/impala/hadoop_catalog/ice/iceberg_v2_delete
 # One of the manifests has only `dir0` in its partition tuple; the spec field `dir1` is NULL there.
 q "CREATE TABLE t ENGINE = IcebergLocal('$DATA/dremio/internal_metadata_inconsistent_partitions'); SELECT partition FROM system.iceberg_files WHERE table = 't' ORDER BY partition"
 
-# Row lineage of a format version 3 table.
-q "SELECT count(), min(_row_id), max(_row_id), uniqExact(_row_id), min(_last_updated_sequence_number), max(_last_updated_sequence_number) FROM icebergLocal('$DATA/impala/iceberg_v3/trino_variant')"
-q "SELECT _row_id FROM icebergLocal('$DATA/impala/iceberg_v3/trino_variant') WHERE id = 62"
+# The metadata.json of this table has rounded snapshot ids (6097489456815673000 for 6097489456815673056), so the snapshot
+# that added its manifest is unknown, and so is the schema of its data files.
+q "SELECT sum(id) FROM icebergLocal('$DATA/impala/iceberg_v3/trino_variant')" 2>&1 | grep -o -m1 -e 'the schema of its data files is unknown' -e 'ICEBERG_SPECIFICATION_VIOLATION'
+
+# Row lineage of a format version 3 table: the same table with its snapshot ids restored.
+work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_trino_variant"
+rm -rf "./${work_dir}"
+mkdir -p "./${work_dir}"
+cp -r "$DATA/impala/iceberg_v3/trino_variant" "./${work_dir}/"
+sed -i -e 's/6097489456815673000/6097489456815673056/g' -e 's/8332248857076198000/8332248857076198293/g' "./${work_dir}"/trino_variant/metadata/*.metadata.json
+q "SELECT count(), min(_row_id), max(_row_id), uniqExact(_row_id), min(_last_updated_sequence_number), max(_last_updated_sequence_number) FROM icebergLocal('$PWD/${work_dir}/trino_variant')"
+q "SELECT _row_id FROM icebergLocal('$PWD/${work_dir}/trino_variant') WHERE id = 62"
+rm -rf "./${work_dir}"
 
 # The spec named by the manifest list is not in the table metadata. `IcebergLocal` accepts only paths inside the working directory.
 work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_unknown_spec"
@@ -125,6 +135,13 @@ patch_manifests()
         python3 -c "import sys; p = sys.argv[1]; d = open(p, 'rb').read(); $1; open(p, 'wb').write(d)" "$manifest"
     done
 }
+# Edits the latest metadata.json of a table: python3 -c '<statement on m>' <table path>.
+patch_metadata()
+{
+    python3 -c "import glob, json, os, re, sys
+p = max(glob.glob(sys.argv[1] + '/metadata/v*.metadata.json'), key=lambda f: int(re.match(r'v(\d+)', os.path.basename(f)).group(1)))
+m = json.load(open(p)); $1; json.dump(m, open(p, 'w'))" "$2"
+}
 hide_schema='d = d.replace(b"\x0cschema", b"\x0cschemX", 1)'
 hide_schema_id='d = d.replace(b"\x12schema-id", b"\x12schemX-id", 1)'
 patch_manifests "$hide_schema" "$table"
@@ -132,12 +149,22 @@ q "SELECT b FROM icebergLocal('$table') ORDER BY b"
 $ch --query "CREATE TABLE t ENGINE = IcebergLocal('$table', 'ORC'); ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" > /dev/null
 q "SELECT b FROM icebergLocal('$table') ORDER BY b"
 patch_manifests "$hide_schema_id" "$table"
-q "SELECT b FROM icebergLocal('$table') ORDER BY b" 2>&1 | grep -o -m1 -e 'other than its initial schema 0' -e 'ICEBERG_SPECIFICATION_VIOLATION'
+q "SELECT b FROM icebergLocal('$table') ORDER BY b" 2>&1 | grep -o -m1 -e 'the schema of its data files is unknown' -e 'ICEBERG_SPECIFICATION_VIOLATION'
 # Java's expiry with `clean_expired_metadata` also drops the schemas no retained snapshot uses, leaving only schema 1.
-python3 -c 'import glob, json, os, re, sys
-p = max(glob.glob(sys.argv[1] + "/metadata/v*.metadata.json"), key=lambda f: int(re.match(r"v(\d+)", os.path.basename(f)).group(1)))
-m = json.load(open(p)); m["schemas"] = [s for s in m["schemas"] if s["schema-id"] == m["current-schema-id"]]; json.dump(m, open(p, "w"))' "$table"
-q "SELECT b FROM icebergLocal('$table') ORDER BY b" 2>&1 | grep -o -m1 -e 'other than its initial schema 0' -e 'ICEBERG_SPECIFICATION_VIOLATION'
+patch_metadata 'm["schemas"] = [s for s in m["schemas"] if s["schema-id"] == m["current-schema-id"]]' "$table"
+q "SELECT b FROM icebergLocal('$table') ORDER BY b" 2>&1 | grep -o -m1 -e 'the schema of its data files is unknown' -e 'ICEBERG_SPECIFICATION_VIOLATION'
+# Java reuses schema id 0 when a rename is undone, so the cleanup can leave only schema 0 while a retained manifest still
+# lists a file written with schema 1.
+$ch --query "CREATE TABLE t (a Int32) ENGINE = IcebergLocal('${table}_reused', 'ORC'); INSERT INTO t VALUES (7);"
+$ch --query "CREATE TABLE t ENGINE = IcebergLocal('${table}_reused', 'ORC'); ALTER TABLE t RENAME COLUMN a TO b;"
+$ch --query "CREATE TABLE t ENGINE = IcebergLocal('${table}_reused', 'ORC'); INSERT INTO t VALUES (9);"
+patch_metadata 'm["current-schema-id"] = 0' "${table}_reused"
+$ch --query "CREATE TABLE t ENGINE = IcebergLocal('${table}_reused', 'ORC'); INSERT INTO t VALUES (8);"
+$ch --query "CREATE TABLE t ENGINE = IcebergLocal('${table}_reused', 'ORC'); ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" > /dev/null
+patch_metadata 'm["schemas"] = [s for s in m["schemas"] if s["schema-id"] == 0]' "${table}_reused"
+q "SELECT a FROM icebergLocal('${table}_reused') ORDER BY a"
+patch_manifests "$hide_schema; $hide_schema_id" "${table}_reused"
+q "SELECT a FROM icebergLocal('${table}_reused') ORDER BY a" 2>&1 | grep -o -m1 -e 'the schema of its data files is unknown' -e 'ICEBERG_SPECIFICATION_VIOLATION'
 # A rewritten manifest lists as EXISTING the files of other snapshots. Java writes it with the current `schema-id` (1 here),
 # and neither that nor the snapshot that added it gives their schema, so once their own snapshots are expired the reader
 # refuses them.

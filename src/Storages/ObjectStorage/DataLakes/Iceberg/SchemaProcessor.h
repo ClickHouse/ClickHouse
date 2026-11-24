@@ -129,8 +129,6 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickHouseTableSchemaById(Int32 id) const;
     bool isSchemaRegisteredFromMetadata(Int32 id) const;
-    /// Whether schema 0, the id writers give the first schema of a table, is the only schema registered from metadata.json.
-    bool hasOnlyInitialSchemaFromMetadata() const;
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true, const String & timezone_for_timestamptz = "UTC");
 

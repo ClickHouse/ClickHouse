@@ -564,8 +564,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
     /// `schema-id` and the snapshot that added the manifest name the schema it was written with: that of its ADDED entries,
     /// not of the EXISTING entries a manifest rewrite carries over from older snapshots.
-    const bool manifest_schema_covers_all_entries
-        = schema_json_string.has_value() || schema_processor.hasOnlyInitialSchemaFromMetadata();
+    const bool manifest_schema_covers_all_entries = schema_json_string.has_value();
 
     Int32 manifest_schema_id = 0;
     if (header_schema_id.has_value() && tolerate_conflicting_manifest_schemas
@@ -579,15 +578,14 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             manifest_schema_id = *header_schema_id;
         else if (auto snapshot_schema_id = schema_processor.tryGetSchemaIdForSnapshot(inherited_snapshot_id_))
             manifest_schema_id = *snapshot_schema_id;
-        else if (manifest_schema_covers_all_entries)
-            manifest_schema_id = 0;
         else
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Manifest file '{}' has no '{}' in its Avro metadata, the snapshot {} that added it is not in the table metadata, "
-                "and the table has a schema other than its initial schema 0, so the schema of its data files is unknown",
+                "Manifest file '{}' has no '{}' or '{}' in its Avro metadata and the snapshot {} that added it is not in the "
+                "table metadata, so the schema of its data files is unknown",
                 path_to_manifest_file_,
                 f_schema,
+                f_schema_id,
                 inherited_snapshot_id_);
         if (!schema_processor.isSchemaRegisteredFromMetadata(manifest_schema_id))
             throw Exception(

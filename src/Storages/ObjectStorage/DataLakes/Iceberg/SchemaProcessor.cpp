@@ -1768,16 +1768,6 @@ bool IcebergSchemaProcessor::isSchemaRegisteredFromMetadata(Int32 id) const
     return iceberg_table_schemas_by_ids.contains(id) && !manifest_sourced_schema_ids.contains(id);
 }
 
-bool IcebergSchemaProcessor::hasOnlyInitialSchemaFromMetadata() const
-{
-    SharedLockGuard lock(mutex);
-
-    for (const auto & [id, _] : iceberg_table_schemas_by_ids)
-        if (id != 0 && !manifest_sourced_schema_ids.contains(id))
-            return false;
-    return iceberg_table_schemas_by_ids.contains(0) && !manifest_sourced_schema_ids.contains(0);
-}
-
 ColumnNameToFieldId IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema, std::unordered_map<String, String> * struct_paths)
 {
     ColumnNameToFieldId result;
