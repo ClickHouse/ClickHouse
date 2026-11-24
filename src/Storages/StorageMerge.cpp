@@ -67,6 +67,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
@@ -1034,6 +1035,47 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+/// Mirrors the `passed_residual_cpu_step` check that `optimizeReadInOrder` does for a direct
+/// `ReadFromMergeTree`, but for the child plans of a `Merge` table. The residual filter of the outer
+/// query is pushed *into* the child plan, above the child read, where `PrefetchingConcatProcessor`
+/// would collapse the streams and serialize it. The outer pass cannot see those steps - it only sees
+/// `ReadFromMerge` - so the check has to happen here.
+static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool passed_residual_cpu_step)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    {
+        if (passed_residual_cpu_step)
+            read_from_merge_tree->setPreferMultipleStreams();
+        return;
+    }
+
+    /// Unlike `findReadingStep`, a non-trivial `ExpressionStep` is NOT counted here: only filters
+    /// of the outer query are pushed into the child plans, while its expressions (e.g. a monotonic
+    /// `ORDER BY` key) stay above `ReadFromMerge`, where `findReadingStep` sees them and forwards
+    /// the opt-out via `ReadFromMerge::setPreferMultipleStreams`. The child plans do contain
+    /// `ExpressionStep`s, but those are `ReadFromMerge`'s own plumbing added by
+    /// `convertAndFilterSourceStream` (header conversion with `materialize` / casts, alias
+    /// materialization, missing defaults) - counting them would disable
+    /// `PrefetchingConcatProcessor` for every `Merge` table read.
+    passed_residual_cpu_step = passed_residual_cpu_step
+        || typeid_cast<FilterStep *>(node->step.get()) != nullptr
+        || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
+
+    /// Follow only the ordered pipeline that reaches the sort. The children of a `UnionStep` all
+    /// belong to it, but for any other step with several children (a set-creating step, a join) only
+    /// the first one does: the others build sets or the right side of a join from unrelated reads,
+    /// which the residual work of the main pipeline does not run on.
+    if (typeid_cast<UnionStep *>(node->step.get()))
+    {
+        for (auto * child : node->children)
+            preferMultipleStreamsForResidualCPUWork(child, passed_residual_cpu_step);
+    }
+    else if (!node->children.empty())
+    {
+        preferMultipleStreamsForResidualCPUWork(node->children.front(), passed_residual_cpu_step);
+    }
+}
+
 namespace
 {
 
@@ -1117,6 +1159,15 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
         return;
     }
+
+    /// Residual per-row work of the outer query is pushed *into* the child plans, above the child
+    /// reads, where `PrefetchingConcatProcessor` would collapse the streams and serialize it. Only
+    /// here are the child plans final (filter push-down runs after `requestReadingInOrder`), so this
+    /// is the earliest point at which the check can see those steps.
+    if (order_info)
+        for (const auto & child_plan : *child_plans)
+            if (child_plan.plan.isInitialized())
+                preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ false);
 
     QueryPlanResourceHolder resources;
     VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
@@ -2494,8 +2545,21 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     StorageListWithLocks res;
     DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
 
+    /// Before `applyFilters`, the filters already pushed down to this step exclude tables too: every child applies them.
+    std::optional<ActionsDAG> pushed_down_filters_dag;
+    const ActionsDAG * filter_dag = filter_actions_dag.get();
+    if (!filter_dag && !pushed_down_filters.empty())
+    {
+        ActionsDAG::NodeRawConstPtrs filter_nodes;
+        for (const auto & filter_info : pushed_down_filters)
+            filter_nodes.push_back(&filter_info.actions.findInOutputs(filter_info.column_name));
+        pushed_down_filters_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
+        if (pushed_down_filters_dag)
+            filter_dag = &*pushed_down_filters_dag;
+    }
+
     std::function<bool(const String&,const String&)> table_filter;
-    if (filter_actions_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
+    if (filter_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
     {
         auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
         Block sample_block = {
@@ -2503,7 +2567,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(lc_string_type, "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
-        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample_block, query_context);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
@@ -3025,8 +3089,10 @@ void ReadFromMerge::convertAndFilterSourceStream(
             auto extract_subcolumns_dag = createSubcolumnsExtractionActions(
                 Block(adding_missing_defaults_dag.getResultColumns()), header.getNames(), local_context);
             adding_missing_defaults_dag = ActionsDAG::merge(std::move(adding_missing_defaults_dag), std::move(extract_subcolumns_dag));
-            adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
         }
+
+        /// `columns_to_fill` has each name once, but the header repeats a column the query selects twice.
+        adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));
@@ -3106,6 +3172,21 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     order_info = order_info_;
     query_info.input_order_info = order_info;
     return true;
+}
+
+void ReadFromMerge::setPreferMultipleStreams()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    /// The opt-out has to reach the child `ReadFromMergeTree` steps: it is their
+    /// `PrefetchingConcatProcessor` that would otherwise collapse a single-part filtered read into
+    /// a single stream and serialize the per-stream work above the `Merge` table. Only the reads of
+    /// the ordered pipeline are affected: `preferMultipleStreamsForResidualCPUWork` follows all
+    /// branches of a `UnionStep` but only the first child of a join or a set-creating step, so the
+    /// build side of a join or the source of a set keeps `PrefetchingConcatProcessor`.
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ true);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)

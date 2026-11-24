@@ -4,14 +4,13 @@ macro(set_rust_target)
     if(DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED Rust_CARGO_TARGET)
         if(CMAKE_TOOLCHAIN_FILE MATCHES "ppc64le")
             set(Rust_CARGO_TARGET "powerpc64le-unknown-linux-gnu" CACHE INTERNAL "Rust config")
-        elseif((CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64") AND (CMAKE_TOOLCHAIN_FILE MATCHES "musl"))
-            set(Rust_CARGO_TARGET "x86_64-unknown-linux-musl" CACHE INTERNAL "Rust config")
-        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64")
-            set(Rust_CARGO_TARGET "x86_64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
-        elseif((CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-aarch64") AND (CMAKE_TOOLCHAIN_FILE MATCHES "musl"))
-            set(Rust_CARGO_TARGET "aarch64-unknown-linux-musl" CACHE INTERNAL "Rust config")
-        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-aarch64")
-            set(Rust_CARGO_TARGET "aarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-(x86_64|aarch64)")
+            # These toolchain files serve both libcs (see USE_MUSL there), and Rust has to follow.
+            if (USE_MUSL)
+                set(Rust_CARGO_TARGET "${CMAKE_MATCH_1}-unknown-linux-musl" CACHE INTERNAL "Rust config")
+            else()
+                set(Rust_CARGO_TARGET "${CMAKE_MATCH_1}-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+            endif()
         elseif((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "x86_64"))
             set(Rust_CARGO_TARGET "x86_64-apple-darwin" CACHE INTERNAL "Rust config")
         elseif((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "aarch64"))
@@ -29,6 +28,16 @@ macro(set_rust_target)
         endif()
         message(STATUS "Set Rust target to ${Rust_CARGO_TARGET}")
     endif ()
+
+    # Rust's libc crate hardcodes the ABI of its target's libc, and the layouts differ between musl
+    # and glibc (on aarch64, pthread_attr_t is 56 bytes in musl and 64 in glibc, so a Rust thread
+    # would hand a short buffer to the linked pthread_attr_init). The Rust target has to use the same
+    # libc as the C toolchain, also when Rust_CARGO_TARGET is given on the command line.
+    if (CMAKE_C_COMPILER_TARGET MATCHES "linux-musl$" AND NOT Rust_CARGO_TARGET MATCHES "linux-musl$")
+        message(FATAL_ERROR "Rust target ${Rust_CARGO_TARGET} does not match the musl C toolchain target ${CMAKE_C_COMPILER_TARGET}")
+    elseif (CMAKE_C_COMPILER_TARGET MATCHES "linux-gnu$" AND NOT Rust_CARGO_TARGET MATCHES "linux-gnu$")
+        message(FATAL_ERROR "Rust target ${Rust_CARGO_TARGET} does not match the glibc C toolchain target ${CMAKE_C_COMPILER_TARGET}")
+    endif()
 
     # FindRust.cmake
     set(RUST_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
@@ -92,8 +101,8 @@ if (USE_MUSL)
     set(MUSL_KERNEL_HEADERS_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/kernel-headers")
 
     # The regex above strips every "-isystem ...musl..." entry, so we must reconstruct the full
-    # musl header surface that cmake/linux/toolchain-*-musl.cmake puts into CMAKE_*_FLAGS via
-    # MUSL_INCLUDE_FLAGS. Keep this in sync with that toolchain: the stub headers (e.g.
+    # musl header surface that cmake/linux/toolchain-{x86_64,aarch64}.cmake put into CMAKE_*_FLAGS
+    # via MUSL_INCLUDE_FLAGS. Keep this in sync with those toolchain files: the stub headers (e.g.
     # execinfo.h) and the kernel-headers directory are part of the set and must not be dropped,
     # otherwise Cargo cc/cxx builds compile against a narrower header surface than the rest of
     # the tree. The order matches the toolchain's -isystem order.
@@ -146,6 +155,13 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
     set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
+    # The C and C++ code built by the crates (e.g. a copy of `zstd` in `zstd-sys`) is third-party,
+    # like the code in `contrib`, which is not checked for unsigned integer overflows either.
+    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -fno-sanitize=unsigned-integer-overflow")
+    set(RUST_CFLAGS "${RUST_CFLAGS} -fno-sanitize=unsigned-integer-overflow")
+endif()
+
 get_target_property(CXX_PUBLIC_DEFS cxx INTERFACE_COMPILE_DEFINITIONS)
 if (CXX_PUBLIC_DEFS)
     list(TRANSFORM CXX_PUBLIC_DEFS PREPEND "-D")
@@ -194,11 +210,30 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
-# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# Clang CFI is whole-program: the Rust code, its standard library included, is emitted as LLVM bitcode with CFI type
+# metadata and checked in the final link with the C and C++ code (which uses the same normalized integer encoding).
+if (ENABLE_CFI)
+    # The final link reads the bitcode of rustc, and LLVM does not read bitcode of a newer version than its own.
+    if (NOT Rust_LLVM_VERSION_MAJOR OR COMPILER_VERSION_MAJOR VERSION_LESS Rust_LLVM_VERSION_MAJOR)
+        message(FATAL_ERROR "ENABLE_CFI requires Clang ${Rust_LLVM_VERSION_MAJOR} or newer, the LLVM version of rustc "
+            "${Rust_VERSION} (${Rust_TOOLCHAIN}); found Clang ${CMAKE_CXX_COMPILER_VERSION}.")
+    endif()
+    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    list(APPEND RUSTFLAGS "-Clinker-plugin-lto" "-Zsanitizer=cfi" "-Zsanitizer-cfi-normalize-integers")
+    # The next trait solver fails to normalize the projections that the CFI type ids of some trait methods build (an
+    # internal compiler error in Cranelift since nightly-2026-08-22, https://github.com/rust-lang/rust/issues/166055),
+    # so CFI builds use the previous one.
+    list(APPEND RUSTFLAGS "-Znext-solver=no")
+    if (ENABLE_CFI_DIAGNOSTICS)
+        list(APPEND RUSTFLAGS "-Zsanitizer-cfi-diag" "-Zsanitizer-cfi-recover")
+    endif()
+endif()
+
+# rustc refuses to combine a sanitizer, CFI included, with a statically linked libc (the musl Rust target
 # defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
 # general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
 # libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
-if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+if (USE_MUSL AND (NOT SANITIZE STREQUAL "" OR ENABLE_CFI))
     list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
 endif()
 
