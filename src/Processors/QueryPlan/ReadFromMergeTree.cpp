@@ -3611,7 +3611,8 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
     [[maybe_unused]] const std::optional<TopKFilterInfo> & top_k_filter_info,
     const ContextPtr & query_context,
-    bool is_final)
+    bool is_final,
+    bool final_builds_values_from_several_rows)
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const auto & settings = query_context->getSettingsRef();
@@ -3656,6 +3657,16 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
         /// cannot answer queries. Skip them so a filtered query does not throw building the condition.
         if (index_helper->isInert())
             continue;
+
+        /// `FINAL` of `SummingMergeTree`, `AggregatingMergeTree` and `CoalescingMergeTree` builds non-key values from several rows,
+        /// so an index over such a value can reject every input row of a key whose merged row matches.
+        if (is_final && final_builds_values_from_several_rows)
+        {
+            const auto key_columns = sortingKeyNamesSafeBeforeFinal(primary_key);
+            const auto & index_columns = index.column_names;
+            if (!std::all_of(index_columns.begin(), index_columns.end(), [&](const auto & c) { return key_columns.contains(c); }))
+                continue;
+        }
 
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
@@ -3769,7 +3780,10 @@ void ReadFromMergeTree::buildIndexes(
 
     buildOffsetAndSkipIndexConditions(
         *indexes, filter, metadata_snapshot, *data.getSettings(), vector_search_parameters, top_k_filter_info, query_context,
-        query_info_.isFinal());
+        query_info_.isFinal(),
+        data.merging_params.mode == MergeTreeData::MergingParams::Summing
+            || data.merging_params.mode == MergeTreeData::MergingParams::Aggregating
+            || data.merging_params.mode == MergeTreeData::MergingParams::Coalescing);
 }
 
 String SkipIndexOrderCache::makeKey(const IMergeTreeDataPart & part)
