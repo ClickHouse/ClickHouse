@@ -127,7 +127,7 @@ private:
     static constexpr uint32_t THREAD_WAITERS = 1 << 1;
     static constexpr uint32_t FIBER_WAITERS = 1 << 2;
 
-    void lockSlow()
+    __attribute__((noinline)) void lockSlow()
     {
         bool acquired = false;
         silk::spinWait([&]
@@ -432,6 +432,7 @@ private:
             return silk::FiberFuture::waitWithTimeout(&waiter.future, timeout);
         }
 
+        silk::spinWait([&] { return std::atomic_ref(waiter.notified).load(std::memory_order_acquire) != 0; });
         while (!std::atomic_ref(waiter.notified).load(std::memory_order_acquire))
             if (futexWait(waiter.notified, 0, deadline) == ETIMEDOUT)
                 return ETIMEDOUT;
