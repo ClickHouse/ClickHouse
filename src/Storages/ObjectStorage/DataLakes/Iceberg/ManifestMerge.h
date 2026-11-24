@@ -4,13 +4,13 @@
 
 #include <limits>
 #include <memory>
-#include <unordered_set>
 
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
@@ -72,41 +72,32 @@ private:
     const std::optional<Int32> sort_order_id;
 };
 
-std::vector<const ManifestFileCacheKey *> selectManifestsToMerge(
+struct ManifestToMerge
+{
+    const ManifestFileCacheKey * manifest;
+    ManifestFileIterator::ManifestFileEntriesHandle files;
+};
+
+std::vector<ManifestToMerge> selectManifestsToMerge(
     const ManifestMergeSettings & merge_settings,
     const ManifestFileCacheKeys & parent_manifests,
     const Row & partition_value,
     const DataTypes & partition_types,
-    Int32 partition_spec_id);
+    Int32 partition_spec_id,
+    Int32 schema_id,
+    const String & write_format,
+    const PersistentTableComponents & persistent_table_components,
+    ObjectStoragePtr object_storage,
+    ContextPtr context);
 
 class MergeWindowDataFiles final : public IManifestEntriesSource
 {
 public:
-    MergeWindowDataFiles(
-        Row partition_value_,
-        Int32 schema_id_,
-        String write_format_,
-        const PersistentTableComponents & persistent_table_components_,
-        ObjectStoragePtr object_storage_,
-        ContextPtr context_);
-
-    void addManifest(const ManifestFileCacheKey & manifest);
-
-    bool empty() const { return replaced_manifest_paths.empty(); }
+    MergeWindowDataFiles(const Row & partition_value, const std::vector<ManifestToMerge> & manifests);
 
     void appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
 
-    const std::unordered_set<String> & getReplacedManifestPaths() const { return replaced_manifest_paths; }
-
 private:
-    const Row partition_value;
-    const Int32 schema_id;
-    const String write_format;
-    const PersistentTableComponents & persistent_table_components;
-    const ObjectStoragePtr object_storage;
-    const ContextPtr context;
-
-    std::unordered_set<String> replaced_manifest_paths;
     ManifestEntries window;
     Int64 rows_count = 0;
     Int64 min_sequence_number = std::numeric_limits<Int64>::max();
