@@ -67,7 +67,8 @@ public:
     /// again before the exception leaves, so the assignee is exactly as it was before the call.
     bool start();
     void trigger();
-    void postpone();
+    /// `refused_by_executor`: the executor had no free slot, so retry after the first backoff step, not the idle backoff.
+    void postpone(bool refused_by_executor = false);
     void finish();
 
     /// Update the cached storage ID after a table rename,

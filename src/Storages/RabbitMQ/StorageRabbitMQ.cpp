@@ -54,12 +54,13 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
 }
 
 namespace RabbitMQSetting
 {
-    extern const RabbitMQSettingsString rabbitmq_address;
+    extern const RabbitMQSettingsSecretString rabbitmq_address;
     extern const RabbitMQSettingsBool rabbitmq_commit_on_select;
     extern const RabbitMQSettingsUInt64 rabbitmq_empty_queue_backoff_end_ms;
     extern const RabbitMQSettingsUInt64 rabbitmq_empty_queue_backoff_start_ms;
@@ -71,10 +72,11 @@ namespace RabbitMQSetting
     extern const RabbitMQSettingsStreamingHandleErrorMode rabbitmq_handle_error_mode;
     extern const RabbitMQSettingsString rabbitmq_host_port;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_block_size;
+    extern const RabbitMQSettingsUInt64 rabbitmq_max_idle_producer_connections;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_rows_per_message;
-    extern const RabbitMQSettingsUInt64 rabbitmq_num_consumers;
+    extern const RabbitMQSettingsNonZeroUInt64 rabbitmq_num_consumers;
     extern const RabbitMQSettingsUInt64 rabbitmq_num_queues;
-    extern const RabbitMQSettingsString rabbitmq_password;
+    extern const RabbitMQSettingsSecretString rabbitmq_password;
     extern const RabbitMQSettingsBool rabbitmq_persistent;
     extern const RabbitMQSettingsString rabbitmq_queue_base;
     extern const RabbitMQSettingsBool rabbitmq_queue_consume;
@@ -89,9 +91,9 @@ namespace RabbitMQSetting
 }
 
 static const uint32_t QUEUE_SIZE = 100000;
-static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+static const auto PUBLISHER_CLEANUP_INTERVAL_MS = 5000;
 
 namespace ErrorCodes
 {
@@ -176,13 +178,13 @@ StorageRabbitMQ::StorageRabbitMQ(
     auto setting_rabbitmq_username = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value;
     auto setting_rabbitmq_password = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value;
     String username;
-    String password;
+    SecretString password;
 
     /// The connection is TLS when either the `rabbitmq_secure` setting is on or the
     /// `rabbitmq_address` URI uses the `amqps` scheme; OpenSSL must be initialized in both cases.
     bool secure_connection = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value;
 
-    const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
+    const auto address_string = getContext()->getMacros()->expand(String((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].value));
 
     if (!address_string.empty())
     {
@@ -214,7 +216,10 @@ StorageRabbitMQ::StorageRabbitMQ(
     else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
         username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
-        password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
+        if (setting_rabbitmq_password.empty())
+            password = config.getString("rabbitmq.password", "");
+        else
+            password = setting_rabbitmq_password;
         if (username.empty() || password.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -239,11 +244,15 @@ StorageRabbitMQ::StorageRabbitMQ(
         .password = password,
         .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
         .secure = secure_connection,
-        .connection_string = address_string
+        .connection_string = SecretString(address_string)
     };
 
     if (secure_connection)
         SSL_library_init();
+
+    publisher_pool = std::make_shared<RabbitMQPublisherPool>(
+        configuration, routing_keys, exchange_name, exchange_type, persistent,
+        (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_max_idle_producer_connections].value, log);
 
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
     {
@@ -312,6 +321,10 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     init_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQConnectionTask", [this]{ connectionFunc(); });
     init_task->deactivate();
+
+    publisher_cleanup_task = getContext()->getMessageBrokerSchedulePool()->createTask(
+        getStorageID(), "RabbitMQPublisherCleanupTask", [this]{ publisherCleanupFunc(); });
+    publisher_cleanup_task->deactivate();
 }
 
 StorageRabbitMQ::~StorageRabbitMQ() = default;
@@ -990,8 +1003,7 @@ void StorageRabbitMQ::read(
 
 SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    auto producer = std::make_unique<RabbitMQProducer>(
-        configuration, routing_keys, exchange_name, exchange_type, producer_id.fetch_add(1), persistent, shutdown_called, log);
+    auto producer = std::make_unique<RabbitMQProducer>(publisher_pool, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
@@ -1009,6 +1021,10 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
 
 void StorageRabbitMQ::startup()
 {
+    /// Inserts are possible even if streaming to views is disabled.
+    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_max_idle_producer_connections] > 0)
+        publisher_cleanup_task->activateAndSchedule();
+
     if (getContext()->getMessageQueueDisableInsertion())
     {
         StreamingStorageRegistry::instance().registerTable(getStorageID());
@@ -1028,9 +1044,25 @@ void StorageRabbitMQ::startup()
     StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
+void StorageRabbitMQ::publisherCleanupFunc()
+{
+    try
+    {
+        publisher_pool->cleanupIdlePublishers();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+
+    publisher_cleanup_task->scheduleAfter(PUBLISHER_CLEANUP_INTERVAL_MS);
+}
+
 void StorageRabbitMQ::scheduleStreamingTasksImpl()
 {
-    streaming_task->schedule();
+    /// Until the setup is done `connectionFunc` keeps retrying it and schedules the streaming task once it succeeds.
+    if (initialized)
+        streaming_task->schedule();
 }
 
 
@@ -1063,6 +1095,10 @@ void StorageRabbitMQ::shutdown(bool is_drop)
     deactivateTask(streaming_task, true, false);
     LOG_TRACE(log, "Deactivating looping task");
     deactivateTask(looping_task, true, true);
+
+    /// Inserts are possible even if streaming to views is disabled, so close their idle connections in any case.
+    publisher_cleanup_task->deactivate();
+    publisher_pool->shutdown();
 
     if (getContext()->getMessageQueueDisableInsertion())
     {
@@ -1328,10 +1364,11 @@ void StorageRabbitMQ::threadFunc()
 
                     /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
                     /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
-                    /// iteration is an ordinary cycle (the loop below breaks while blocked) and keeps the
-                    /// fast empty return, letting the looping task deliver.
+                    /// iteration is an ordinary cycle (the loop below breaks while blocked).
                     const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
                     bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
+                    /// A cycle ran, so the next round starts soon; the backoff grows only while cycles fail.
+                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                     if (!continue_reading)
                         break;
 
@@ -1345,8 +1382,6 @@ void StorageRabbitMQ::threadFunc()
                         LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
                         break;
                     }
-
-                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                 }
             }
             else if (num_views == 0)
@@ -1425,7 +1460,8 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
-            /* drive_loop_on_worker */drive_loop_on_worker);
+            /* drive_loop_on_worker */drive_loop_on_worker,
+            /* first_poll_timeout_ms */static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()));
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1461,7 +1497,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-    /// Pump deliveries via the background looping task. On the self-driving path the source also
+    /// Pump deliveries via the background looping task. While waiting for a first message the source also
     /// drives the loop itself as a fallback for when a message-broker worker is starved; startup_mutex
     /// serializes the two, so uv_run is never driven concurrently and the loop always makes progress.
     if (!connection->getHandler().loopRunning())
@@ -1574,10 +1610,10 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         return false;
     }
 
-    if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
+    /// The source already waited up to the poll timeout for a message, so end the round, as Kafka does.
+    if (rows == 0 && queue_empty == num_created_consumers)
     {
         connection->heartbeat();
-        read_attempts = 0;
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return false;
     }
@@ -1626,6 +1662,17 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
+        /// The consumer semaphore takes an `int`. A bigger value can wrap to a valid one, so it is rejected only for a new definition,
+        /// to keep existing tables loadable.
+        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+        const UInt64 num_consumers = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_num_consumers].value;
+        if (is_fresh_definition && num_consumers > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `rabbitmq_num_consumers` can not be bigger than {}, got {}",
+                std::numeric_limits<int>::max(),
+                num_consumers);
+
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };
 
@@ -1634,7 +1681,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         creator_fn,
         SecretArgumentsSpec{
             /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
-            .secret_settings = RabbitMQ::SETTINGS_TO_HIDE,
+            .secret_settings = RabbitMQ::settingsToHide(),
             .settings_as_arguments = true,
             .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
         },
@@ -1683,6 +1730,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
     [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_max_idle_producer_connections = 0,]
     [rabbitmq_handle_error_mode = 'default']
 ```
 
@@ -1713,6 +1761,7 @@ Optional parameters:
 - `reject_unhandled_messages` - Reject messages (send RabbitMQ negative acknowledgement) in case of errors. This setting is automatically enabled if there is a `x-dead-letter-exchange` defined in `rabbitmq_queue_settings_list`.
 - `rabbitmq_commit_on_select` - Commit messages when select query is made. Default: `false`.
 - `rabbitmq_max_rows_per_message` — The maximum number of rows written in one RabbitMQ message for row-based formats. Default : `1`.
+- `rabbitmq_max_idle_producer_connections` - The maximum number of idle connections, each with an open channel, that the table keeps for subsequent `INSERT` queries. Reusing them avoids the cost of connecting to RabbitMQ (and of the TLS handshake) for every `INSERT`, for example when a materialized view writes to the table on each insert into its source. Idle connections are checked every few seconds: a connection that stayed idle for half of the heartbeat timeout negotiated with the server is closed, because the server closes it once the timeout passes, and so is a connection that was lost. `0` disables the reuse: every `INSERT` opens and closes its own connection. Default: `0`.
 - `rabbitmq_empty_queue_backoff_start_ms` — A start backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_end_ms` — An end backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_step_ms` — A backoff step to reschedule read if the rabbitmq queue is empty.
@@ -1787,7 +1836,7 @@ Setting `rabbitmq_queue_base` may be used for the following cases:
 - to be able to restore reading from certain durable queues when not all messages were successfully consumed. To resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
 - to reuse queues as they are declared durable and not auto-deleted. (Can be deleted via any of RabbitMQ CLI tools.)
 
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block. While its queues are empty, background streaming waits up to [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms) for a message before it reschedules, as the Kafka engine does.
 
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings are specified along with `rabbitmq_exchange_type`, then:
 

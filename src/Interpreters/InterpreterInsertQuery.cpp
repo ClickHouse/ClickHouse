@@ -6,6 +6,7 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
@@ -16,6 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -112,16 +114,20 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
-    extern const SettingsBool implicit_transaction;
-    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsUInt64 readonly;
 }
 
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
+}
+
+namespace FailPoints
+{
+    extern const char insert_pause_before_reading_serialization_hints[];
 }
 
 namespace ServerSetting
@@ -140,6 +146,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int READONLY;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -176,6 +183,19 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 
     if (query.table_function)
     {
+        /// An insert into a table function writes to its source, not to a temporary table,
+        /// so unlike temporary tables it is not allowed at `readonly = 2` either.
+        if (current_context->getSettingsRef()[Setting::readonly])
+        {
+            const auto & client_info = current_context->getClientInfo();
+            if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
+                throw Exception(ErrorCodes::READONLY,
+                    "{}: Cannot execute query in readonly mode. "
+                    "For queries over HTTP, method GET implies readonly. "
+                    "You should use method POST for modifying queries", current_context->getUserName());
+            throw Exception(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode", current_context->getUserName());
+        }
+
         const auto & factory = TableFunctionFactory::instance();
         TableFunctionPtr table_function_ptr = factory.get(query.table_function, current_context);
 
@@ -549,7 +569,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context);
+        context, /*preserve_input_order=*/ pipeline.getNumStreams() == 1);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     const auto & settings = context->getSettingsRef();
@@ -1135,7 +1155,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
+        {
+            /// The format parses the columns with the types from `metadata_snapshot`; a concurrent `ALTER` may have changed them since.
+            FailPointInjection::pauseFailPoint(FailPoints::insert_pause_before_reading_serialization_hints);
+            format->setSerializationHints(table->getSerializationHints(*metadata_snapshot));
+        }
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
@@ -1641,16 +1665,8 @@ BlockIO InterpreterInsertQuery::execute()
             /// downgrade the query, and with the same contract as the inlined-data path in
             /// `executeQuery`, so `INSERT ... VALUES` and `INSERT ... SELECT` react to the same
             /// settings alike: throw, unless the user opted out of the exception.
-            else if (context->getCurrentTransaction() || settings[Setting::implicit_transaction])
-            {
-                if (settings[Setting::throw_on_unsupported_query_inside_transaction])
-                {
-                    if (settings[Setting::implicit_transaction])
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
-                }
+            else if (AsynchronousInsertQueue::checkInsideTransaction(context))
                 reason = "query runs inside a transaction";
-            }
             /// `StorageAlias::isMergeTree` delegates to its target, so the alias needs no unwrapping.
             else if (!table->isMergeTree())
                 reason = "destination table is not a MergeTree-family table";

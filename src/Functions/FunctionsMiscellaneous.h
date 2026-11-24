@@ -29,9 +29,32 @@ struct LambdaCapture
     String return_name;
     DataTypePtr return_type;
     bool allow_constant_folding = false;
+    /// JIT replaces function nodes in the executing DAG; this keeps the body as built for readers.
+    std::shared_ptr<const ActionsDAG> uncompiled_actions_dag = nullptr;
 };
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;
+
+inline ExpressionActionsPtr createLambdaExpressionActions(
+    ActionsDAG actions_dag, const ExpressionActionsSettings & actions_settings, LambdaCapture & capture)
+{
+    std::shared_ptr<const ActionsDAG> uncompiled_actions_dag;
+    auto actions = std::make_shared<ExpressionActions>(
+        std::move(actions_dag), actions_settings, /*project_inputs=*/false, &uncompiled_actions_dag);
+
+    if (uncompiled_actions_dag)
+    {
+        for (const auto & node : actions->getActionsDAG().getNodes())
+        {
+            if (node.is_function_compiled)
+            {
+                capture.uncompiled_actions_dag = std::move(uncompiled_actions_dag);
+                break;
+            }
+        }
+    }
+    return actions;
+}
 
 class ExecutableFunctionExpression final : public IExecutableFunction
 {
@@ -289,6 +312,10 @@ public:
 
     const LambdaCapture & getCapture() const { return *capture; }
     const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
+    const ActionsDAG & getActionsDAGForSemanticAnalysis() const
+    {
+        return capture->uncompiled_actions_dag ? *capture->uncompiled_actions_dag : getAcionsDAG();
+    }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
@@ -391,13 +418,27 @@ public:
     FunctionCapture(
         ExpressionActionsPtr expression_actions_,
         LambdaCapturePtr capture_,
-        DataTypePtr return_type_,
-        String name_)
+        DataTypePtr return_type_)
         : expression_actions(std::move(expression_actions_))
         , capture(std::move(capture_))
         , return_type(std::move(return_type_))
-        , name(std::move(name_))
+        , name(composeName(*capture))
     {
+    }
+
+    /// The name of a lambda is composed of its signature: the types of the captured columns, of the lambda arguments
+    /// and of the result. A lambda is never given a name from outside (`ActionsDAG::deserialize` does not take it from
+    /// the serialized data either), because functions are told apart by name: for example, a function with the name
+    /// `indexHint` is cast to `FunctionIndexHint`. So a lambda must not have the name of another function.
+    static String composeName(const LambdaCapture & capture)
+    {
+        DataTypes argument_types;
+        argument_types.reserve(capture.lambda_arguments.size());
+        for (const auto & lambda_argument : capture.lambda_arguments)
+            argument_types.push_back(lambda_argument.type);
+
+        return "Capture[" + toString(capture.captured_types) + "](" + toString(argument_types) + ") -> "
+            + capture.return_type->getName();
     }
 
     String getName() const override { return name; }
@@ -427,12 +468,35 @@ public:
 
     const LambdaCapture & getCapture() const { return *capture; }
     const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
+    const ActionsDAG & getActionsDAGForSemanticAnalysis() const
+    {
+        return capture->uncompiled_actions_dag ? *capture->uncompiled_actions_dag : getAcionsDAG();
+    }
 
 private:
     ExpressionActionsPtr expression_actions;
     LambdaCapturePtr capture;
     DataTypePtr return_type;
     String name;
+
+    static String toString(const DataTypes & data_types)
+    {
+        std::string result;
+        {
+            WriteBufferFromString buffer(result);
+            bool first = true;
+            for (const auto & type : data_types)
+            {
+                if (!first)
+                    buffer << ", ";
+
+                first = false;
+                buffer << type->getName();
+            }
+        }
+
+        return result;
+    }
 };
 
 class FunctionCaptureOverloadResolver final : public IFunctionOverloadResolver
@@ -476,9 +540,6 @@ public:
 
         return_type = std::make_shared<DataTypeFunction>(argument_types, function_return_type);
 
-        name = "Capture[" + toString(captured_types) + "](" + toString(argument_types) + ") -> "
-               + function_return_type->getName();
-
         capture = std::make_shared<LambdaCapture>(LambdaCapture{
             .captured_names = captured_names,
             .captured_types = std::move(captured_types),
@@ -488,7 +549,9 @@ public:
             .allow_constant_folding = allow_constant_folding,
         });
 
-        expression_actions = std::make_shared<ExpressionActions>(std::move(actions_dag), actions_settings);
+        name = FunctionCapture::composeName(*capture);
+
+        expression_actions = createLambdaExpressionActions(std::move(actions_dag), actions_settings, *capture);
     }
 
     String getName() const override { return name; }
@@ -501,7 +564,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionCapture>(expression_actions, capture, return_type, name);
+        return std::make_unique<FunctionCapture>(expression_actions, capture, return_type);
     }
 
 private:
@@ -509,25 +572,6 @@ private:
     LambdaCapturePtr capture;
     DataTypePtr return_type;
     String name;
-
-    static String toString(const DataTypes & data_types)
-    {
-        std::string result;
-        {
-            WriteBufferFromString buffer(result);
-            bool first = true;
-            for (const auto & type : data_types)
-            {
-                if (!first)
-                    buffer << ", ";
-
-                first = false;
-                buffer << type->getName();
-            }
-        }
-
-        return result;
-    }
 };
 
 }
