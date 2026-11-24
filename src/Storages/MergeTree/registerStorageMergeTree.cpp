@@ -43,6 +43,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+#include <Databases/IDatabase.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -67,6 +68,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
+    extern const MergeTreeSettingsBool allow_suspicious_indices;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
@@ -949,10 +951,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         else if (local_settings[Setting::allow_suspicious_ttl_expressions])
             ttl_validation_mode = TTLValidationMode::SkipValidation;
 
+        /// Analyzed with the query context, as `ALTER TABLE ... MODIFY TTL` does, so that the settings of the query and the
+        /// session gate the codec of `RECOMPRESS` (`allow_suspicious_codecs`, `enable_*_codec`) like a column `CODEC`.
+        /// `getTTLForTableFromAST` checks itself that the TTL can also be analyzed in the global context, where it is loaded.
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode);
+                args.storage_def->ttl_table->ptr(), metadata.columns, args.getLocalContext(), metadata.primary_key, ttl_validation_mode);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -992,7 +997,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-            metadata.settings_changes = args.storage_def->settings->ptr();
+            metadata.setSettingsChanges(args.storage_def->settings->ptr());
 
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
@@ -1213,6 +1218,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
+    /// Not for a full-definition `ATTACH` either, so an existing table with such an expression stays loadable.
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty()
+        && !(*storage_settings)[MergeTreeSetting::allow_suspicious_indices])
+        MergeTreeData::checkKeyExpressionNamesForCollision(metadata, nullptr);
+
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
         MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
 
@@ -1327,9 +1337,6 @@ void registerStorageMergeTree(StorageFactory & factory)
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = String(R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MergeTree table engine
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree`) are the most commonly used and most robust table engines in ClickHouse.
@@ -2044,7 +2051,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](/reference/operators#operators-for-working-with-dates-and-times) operators, for example:
+To define `interval`, use [time interval](/reference/operators/index#operators-for-working-with-dates-and-times) operators, for example:
 
 ```sql
 TTL date_time + INTERVAL 1 MONTH
@@ -2396,7 +2403,7 @@ The number of threads performing background moves of data parts can be changed b
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 - As a result of an insert (`INSERT` query).
-- During background merges and [mutations](/reference/statements/alter#mutations).
+- During background merges and [mutations](/reference/statements/alter/index#mutations).
 - When downloading from another replica.
 - As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/reference/statements/alter/partition#freeze-partition).
 
@@ -2702,8 +2709,10 @@ pruning are not driven by it.
 
 Certain MergeTree settings can be overridden at column level:
 
-- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. Data written in larger blocks by older versions cannot be read.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+
+For a column with a `Quantized` codec, both settings apply only to its vectors (the array elements); its array sizes and quantized codes use the table-level values. Array sizes shared by several columns of a `Nested` structure are written once, with the settings of the column that writes them first.
 
 Example:
 
@@ -3500,7 +3509,9 @@ You can use `AggregatingMergeTree` tables for incremental data aggregation, incl
 
 You can see an example of how to use the AggregatingMergeTree and Aggregate functions in the below video:
 <div class='vimeo-container'>
-<iframe width="1030" height="579" src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+<Frame>
+<iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
 </div>
 
 The engine processes all columns with the following types:

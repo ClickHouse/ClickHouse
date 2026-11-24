@@ -1,4 +1,5 @@
 #include <Access/ContextAccess.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -644,7 +645,7 @@ private:
             std::tuple<bool, bool, bool> rank;
         };
 
-        std::map<String, Candidate> candidates;
+        MapWithMemoryTracking<String, Candidate> candidates;
         for (const auto & [index_name, info] : text_index_read_infos)
         {
             const auto & condition = typeid_cast<const MergeTreeIndexConditionText &>(*info.condition);
