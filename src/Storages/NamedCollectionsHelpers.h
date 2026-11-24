@@ -35,10 +35,6 @@ SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot);
 /// for example when a dictionary source is loaded in the background.
 void checkNamedCollectionOverrideLock(const NamedCollection & collection, const std::string & key);
 
-/// Whether replacing `key` requires `SHOW NAMED COLLECTIONS SECRETS`, as in `checkNamedCollectionOverride`. Does not check the lock.
-/// For the privileges that a query requires, computed before it is authorized and sent to other hosts.
-bool namedCollectionOverrideRequiresSecrets(const NamedCollection & collection, const std::string & key);
-
 /// Checks the lock as `checkNamedCollectionOverrideLock` does.
 /// Then, replacing a stored key (including an alias) requires `SHOW NAMED COLLECTIONS SECRETS` in `context`.
 /// Replacing a stored `'auto'` value of `format` or `structure` is exempt, because ClickHouse appends the inferred values itself.

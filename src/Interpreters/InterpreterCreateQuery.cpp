@@ -120,7 +120,6 @@
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Storages/NamedCollectionsHelpers.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -4223,35 +4222,14 @@ BlockIO InterpreterCreateQuery::execute()
 }
 
 
-AccessRightsElements InterpreterCreateQuery::getRequiredAccessForDictionarySource(const ASTCreateQuery & create, bool sent_to_other_hosts)
+AccessRightsElements InterpreterCreateQuery::getRequiredAccessForDictionarySource(const ASTCreateQuery & create)
 {
     AccessRightsElements required_access;
 
     /// Required here, not where the dictionary is built: a `Replicated` database builds it with full access,
     /// and the dictionary is loaded with the global context.
     if (auto collection_name = getNamedCollectionOfDictionarySource(create))
-    {
         required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
-
-        /// Replacing a stored key of the collection requires `SHOW NAMED COLLECTIONS SECRETS`. `StorageDictionary` checks it too,
-        /// but where the dictionary is created, which is with full access for `ON CLUSTER`, a `Replicated` database
-        /// and the hosts of `RESTORE ON CLUSTER`. If the query is sent to other hosts and the collection does not exist on this host,
-        /// the keys it stores on the hosts that create the dictionary are unknown, so every key is taken as replacing a stored one.
-        /// Otherwise a missing collection is reported when the dictionary is created.
-        NamedCollectionFactory::instance().loadIfNot();
-        const auto collection = NamedCollectionFactory::instance().tryGet(*collection_name);
-        for (const auto & child : create.dictionary->source->elements->children)
-        {
-            const auto * pair = child->as<ASTPair>();
-            if (!pair || Poco::toLower(pair->first) == "name")
-                continue;
-            if (collection ? namedCollectionOverrideRequiresSecrets(*collection, pair->first) : sent_to_other_hosts)
-            {
-                required_access.emplace_back(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, *collection_name);
-                break;
-            }
-        }
-    }
 
     /// The `odbc` source can use the credentials of a DSN configured on the server, as the `odbc` table function,
     /// which requires the same privilege. Its queries are checked to be `SELECT`, but the dialect of the database is unknown.
@@ -4277,10 +4255,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     else if (create.is_dictionary)
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.getDatabase(), create.getTable());
-        /// `ON CLUSTER` and a `Replicated` database send the query to other hosts.
-        const auto database = DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
-        const bool sent_to_other_hosts = !create.cluster.empty() || (database && database->getEngineName() == "Replicated");
-        required_access.append_range(getRequiredAccessForDictionarySource(create, sent_to_other_hosts));
+        required_access.append_range(getRequiredAccessForDictionarySource(create));
     }
     else if (create.isView())
     {

@@ -493,15 +493,14 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     /// A source replaced by `Null` sends nothing. Under `CHECK_ACCESS_ONLY` the dictionary is created on other hosts,
                     /// and only a value in the query reaches every host. A `clickhouse` source is replaced only if it is not local,
                     /// so it is authorized anyway.
-                    const bool sent_to_other_hosts = (mode == Mode::CHECK_ACCESS_ONLY);
                     const bool replace_dictionary_source_to_null
                         = context->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null]
-                        && (!sent_to_other_hosts
+                        && (mode != Mode::CHECK_ACCESS_ONLY
                             || restore_settings.core_settings.tryGet("restore_replace_external_dictionary_source_to_null") != nullptr);
                     const bool source_replaced_to_null = replace_dictionary_source_to_null && create.dictionary
                         && create.dictionary->source && Poco::toLower(create.dictionary->source->name) != "clickhouse";
                     if (!source_replaced_to_null)
-                        required_access.append_range(InterpreterCreateQuery::getRequiredAccessForDictionarySource(create, sent_to_other_hosts));
+                        required_access.append_range(InterpreterCreateQuery::getRequiredAccessForDictionarySource(create));
                 }
                 else if (create.is_ordinary_view || create.is_materialized_view)
                     flags |= AccessType::CREATE_VIEW;

