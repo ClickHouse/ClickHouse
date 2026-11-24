@@ -27,4 +27,7 @@ struct RelationStatsOptions
 /// rooted at `node`, keyed by the subtree's output column names.
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions options = {});
 
+/// Rows available to a single local probe, through projections and full sorts of a known read.
+std::optional<UInt64> getFingerprintProbeRows(QueryPlan::Node & probe);
+
 }

@@ -2754,15 +2754,12 @@ void JoinStepLogical::buildPhysicalJoin(
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
 
+#if defined(__aarch64__)
+        /// Index preparation needs enough physical probes to repay its cost. Join-order estimates can include
+        /// assumed array lengths or an upper bound on the number of groups.
         if (!join_step->auto_fingerprint_probe_estimate_disabled && join_settings.experimental_join_fingerprint_mode == 4)
-        {
-            /// Estimate the probe relation rather than join output fanout.
-            /// The optimizer separately invalidates this hint for plans with filters or early termination.
-            auto probe_rows = join_step->left_relation.estimated_rows;
-            if (!probe_rows)
-                probe_rows = QueryPlanOptimizations::estimateReadRowsCount(*node.children[0]).estimated_rows;
-            join_step->join_algorithm_params->probe_rows_estimation = probe_rows;
-        }
+            join_step->join_algorithm_params->probe_rows_estimation = QueryPlanOptimizations::getFingerprintProbeRows(*node.children[0]);
+#endif
 
         join_step->join_algorithm_params->sender_estimated_small_right_side = join_step->sender_estimated_small_right_side;
         join_step->join_algorithm_params->runtime_filter_keeps_matching_rows = join_step->runtime_filter_keeps_matching_rows;

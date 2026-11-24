@@ -767,5 +767,48 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions
 {
     return estimateRelationStatsUnderFilter(node, /*filter=*/nullptr, options);
 }
+
+std::optional<UInt64> getFingerprintProbeRows(QueryPlan::Node & probe)
+{
+    auto * node = &probe;
+    while (node->children.size() == 1)
+    {
+        const auto * step = node->step.get();
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+        {
+            if (expression->getExpression().hasArrayJoin())
+                return std::nullopt;
+        }
+        else if (const auto * sort = typeid_cast<const SortingStep *>(step))
+        {
+            const auto & limits = sort->getSettings().size_limits;
+            if (sort->getLimit() || sort->hasLimitByHint() || (limits.hasLimits() && limits.overflow_mode == OverflowMode::BREAK))
+                return std::nullopt;
+        }
+        else
+            return std::nullopt;
+
+        node = node->children.front();
+    }
+
+    if (const auto * memory = typeid_cast<const ReadFromMemoryStorageStep *>(node->step.get()))
+        return memory->getExactReadRows();
+
+    const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+    if (!reading || reading->isParallelReadingFromReplicas() || reading->getDistributedReadBucketCount()
+        || (reading->getInputOrder() && reading->getInputOrder()->limit))
+        return std::nullopt;
+
+    /// The range analysis counts rows directly. A local full read can use that count without deriving
+    /// column statistics or consulting cardinality hints used by the join-order optimizer.
+    auto analysis = reading->getAnalyzedResult();
+    if (!analysis && !reading->hasThrowingReadRowLimit())
+        analysis = reading->selectRangesToRead();
+    if (!analysis || analysis->exact_ranges_excluded || analysis->index_analysis_was_already_done_on_initiator)
+        return std::nullopt;
+    if (analyzeReadCoverage(*reading, analysis->parts_with_ranges, /*has_plan_time_filter=*/false).mayDropRows(analysis->selected_rows))
+        return std::nullopt;
+    return analysis->selected_rows;
+}
 }
 }

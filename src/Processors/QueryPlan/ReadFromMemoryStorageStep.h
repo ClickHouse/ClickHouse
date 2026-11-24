@@ -67,6 +67,9 @@ public:
 
     [[nodiscard]] const StoragePtr & getStorage() const { return storage; }
 
+    /// Rows delivered by an unrestricted read of the pinned block snapshot.
+    [[nodiscard]] std::optional<UInt64> getExactReadRows() const;
+
     /// The key of the query condition cache for the filter of the query pushed down to this step,
     /// or std::nullopt if the cache cannot be used for it. See `updateQueryConditionCache`.
     [[nodiscard]] std::optional<UInt64> getFilterConditionHashForQueryConditionCache() const;

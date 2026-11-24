@@ -1056,6 +1056,15 @@ void ReadFromMemoryStorageStep::describeActions(JSONBuilder::JSONMap & map) cons
         map.add("TopN Filter Column", top_k_filter->column_name);
 }
 
+std::optional<UInt64> ReadFromMemoryStorageStep::getExactReadRows() const
+{
+    if (delay_read_for_global_sub_queries || top_k_filter || filter_actions_dag || getPrewhereInfo() || getRowLevelFilter()
+        || limit || query_info.trivial_limit || query_info.mayStopReadingEarly())
+        return std::nullopt;
+
+    return assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data).rows;
+}
+
 std::optional<UInt64> ReadFromMemoryStorageStep::getFilterConditionHashForQueryConditionCache() const
 {
     if (!filter_actions_dag || !context->getSettingsRef()[Setting::use_query_condition_cache])
