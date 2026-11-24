@@ -33,10 +33,16 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
 namespace FailPoints
 {
     extern const char distributed_plan_delay_root_cause_report[];
     extern const char distributed_plan_delay_failed_task_release[];
+    extern const char stateless_worker_fail_after_registering_task[];
 }
 
 namespace Setting
@@ -206,13 +212,26 @@ void StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
                 std::lock_guard lock(tasks_mutex);
                 if (!tryRegisterTaskLocked(unique_task_id, task_state))
                     continue;
-                auto & controller = query_controllers[unique_query_id];
-                if (!controller)
+                try
                 {
-                    controller = std::make_shared<WorkerQueryController>(unique_query_id);
-                    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Created the query controller of {}", unique_query_id);
+                    auto controller = query_controllers.find(unique_query_id);
+                    if (controller == query_controllers.end())
+                    {
+                        controller = query_controllers.emplace(unique_query_id, std::make_shared<WorkerQueryController>(unique_query_id)).first;
+                        LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Created the query controller of {}", unique_query_id);
+                    }
+                    controller->second->addTask(unique_task_id);
+                    fiu_do_on(FailPoints::stateless_worker_fail_after_registering_task,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after registering task {}", unique_task_id);
+                    });
                 }
-                controller->addTask(unique_task_id);
+                catch (...)
+                {
+                    /// Otherwise the task stays registered with a broken promise, which its status polls rethrow.
+                    eraseTaskLocked(unique_task_id);
+                    throw;
+                }
             }
 
             scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, trace_context);
