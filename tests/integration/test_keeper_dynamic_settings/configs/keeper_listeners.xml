@@ -1,0 +1,9 @@
+<clickhouse>
+    <keeper_server>
+        <tcp_port_secure>9281</tcp_port_secure>
+        <http_control>
+            <port>9182</port>
+            <secure_port>9282</secure_port>
+        </http_control>
+    </keeper_server>
+</clickhouse>
