@@ -342,6 +342,36 @@ SELECT 'cast drops nullable', arraySort(groupArray(id)) FROM tab WHERE countSubs
 
 DROP TABLE tab;
 
+SELECT '-- FixedString column';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message FixedString(8),
+    lc_message LowCardinality(FixedString(8)),
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX lc_idx(lc_message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'alpha', 'alpha'), (2, 'beta', 'beta');
+
+-- These functions reject a FixedString haystack: the query must throw even where the index could answer it as LIKE.
+SELECT count() FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE countSubstrings(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE countSubstrings(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'LPHA') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'LPHA') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE position(lc_message, 'lpha') > 0 SETTINGS use_skip_indexes = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE position(lc_message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM tab WHERE position(lc_message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1; -- { serverError ILLEGAL_COLUMN }
+
+DROP TABLE tab;
+
 SELECT '-- Array tokenizer: the needle is matched literally inside the whole value';
 
 CREATE TABLE tab

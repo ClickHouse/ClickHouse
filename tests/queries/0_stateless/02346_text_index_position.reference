@@ -157,6 +157,7 @@ or not	[1,3,4,5]
 select	[(1,1),(2,NULL),(5,1)]
 select	[(1,1),(2,NULL),(5,1)]
 select	[(1,1),(2,NULL),(5,1)]
+-- FixedString column
 -- Array tokenizer: the needle is matched literally inside the whole value
 needle with % and _	[1]
 needle with % and _	[1]
