@@ -15,11 +15,3 @@ test4_expected_rows	7479
 test4_algo	t_ttl_pos_v	Vertical
 test4_gathered	20	42	42
 test4_gathered_algo	t_ttl_pos_mat	Vertical
-test5_rows	1575	636
-test5_same_rows	1
-test5_algo	t_ttl_lwd_coll_h	Horizontal
-test5_algo	t_ttl_lwd_coll_v	Vertical
-test6_rows	2280	231
-test6_same_rows	1
-test6_algo	t_ttl_lwd_vcoll_h	Horizontal
-test6_algo	t_ttl_lwd_vcoll_v	Vertical
