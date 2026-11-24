@@ -37,7 +37,7 @@ bool aggregationCanUseFixedAndPackedStringKeys(
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
 
 /// Whether the top-K heap can rank `key_type` as `description` sorts it (not a `COLLATE` the sort rejects with `BAD_COLLATION`).
-/// A `COLLATE` needs a heap that ranks all `GROUP BY` keys: a prefix heap cannot tell when its skipped groups repeat.
+/// A `COLLATE` key is ranked only by a heap over all `GROUP BY` keys.
 bool canTopKRankSortKey(const SortColumnDescription & description, const IDataType & key_type, bool ranks_all_keys);
 
 class AggregatingProjectionStep;

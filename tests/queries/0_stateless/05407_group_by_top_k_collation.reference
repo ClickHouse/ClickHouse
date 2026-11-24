@@ -358,67 +358,6 @@ l20001	0	2
 l20002	1	2
 l20003	0	2
 l20004	1	2
-repeated skipped keys
-n0	100
-n1	100
-n10	100
-n100	100
-n101	100
-n0	100
-n1	100
-n10	100
-n100	100
-n101	100
-n0	100
-n1	100
-n10	100
-n100	100
-n101	100
-n0	100
-n1	100
-n10	100
-n100	100
-n101	100
-n0	1
-n1	1
-n10	1
-n100	1
-n1000	1
-n0	1
-n1	1
-n10	1
-n100	1
-n1000	1
-n0	1
-n1	1
-n10	1
-n100	1
-n1000	1
-n0	1
-n1	1
-n10	1
-n100	1
-n1000	1
-n0	1
-n1	1
-n10	1
-n100	1
-n1000	1
-n0	1
-n1	1
-n10	1
-n100	1
-n1000	1
-n0	1
-n1	1
-n2	1
-n3	1
-n4	1
-n0	1
-n1	1
-n2	1
-n3	1
-n4	1
 engaged
 05407_adaptive_repeats	1	1	1
 05407_composite_later	1	1	1
@@ -448,10 +387,3 @@ engaged
 05407_threads_adaptive	1	1	1
 05407_ties_asc	1	1	1
 05407_ties_desc	1	1	1
-frozen
-05407_skip_repeats	1
-05407_skip_repeats_large_block	1
-05407_skip_repeats_lc	1
-05407_skip_unique	0
-05407_skip_unique_lc	0
-05407_skip_unique_then_repeats	1

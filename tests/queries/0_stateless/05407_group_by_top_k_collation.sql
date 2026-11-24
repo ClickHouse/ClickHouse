@@ -7,9 +7,8 @@
 -- both the query text and a serialized plan), and a collated key gets no dynamic filter.
 -- Every query runs with the optimization off and then on, so the reference holds identical pairs. The off run reads
 -- in large blocks and does not spill, which does not change its result and keeps it cheap.
--- A collated heap looks a row's key up in the hash table before it compares the key with its boundary, so most cases
--- mix keys that repeat with keys that the heap skips. Many tables begin with distinct filler keys m0, m1, ..., which
--- under 'en' sort after a... and before Z..., so they are outside every tested result.
+-- Most cases mix keys that repeat with keys that the heap skips. Many tables begin with distinct filler keys m0, m1, ...,
+-- which under 'en' sort after a... and before Z..., so they are outside every tested result.
 
 SET max_rows_to_group_by = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
@@ -73,8 +72,8 @@ SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimiza
 SELECT b, s, count() FROM t_05407 GROUP BY b, s ORDER BY b ASC, s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_composite_later';
 
--- ORDER BY shorter than GROUP BY: a heap of `s` alone cannot tell whether the groups it skips repeat, so a `COLLATE`
--- there is not ranked, locally or on the shards. LIMIT 4 takes both `b` of the two best `s`, so the selected set has no ties.
+-- ORDER BY shorter than GROUP BY: a `COLLATE` there is not ranked, locally or on the shards. LIMIT 4 takes both `b`
+-- of the two best `s`, so the selected set has no ties.
 SELECT 'key prefix';
 SELECT * FROM (SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4) ORDER BY s, b
 SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
@@ -232,7 +231,7 @@ SELECT s, count() FROM (SELECT multiIf(number < 131072 AND number % 1000 = 7, ['
     ['a1', 'á0', 'a4', 'zz'][number % 4 + 1]) AS s FROM numbers(165840))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_repeats_then_unique';
--- The serialized method of a composite key compares each row with the boundary before the lookup.
+-- A composite key aggregated with the serialized method.
 SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en', s ASC LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
 SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en', s ASC LIMIT 5
@@ -396,48 +395,6 @@ SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 
     group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 1,
     group_by_top_k_optimization_observation_rows = 0, log_comment = '05407_forced_repeats';
 
--- 1000 keys in cycles, plain and LowCardinality: the rows the heap skips repeat a few keys, so it freezes. Unique keys:
--- the skipped keys keep coming, so it does not.
-SELECT 'repeated skipped keys';
-SELECT s, count() FROM (SELECT concat('n', toString(number % 1000)) AS s FROM numbers(100000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
-SELECT s, count() FROM (SELECT concat('n', toString(number % 1000)) AS s FROM numbers(100000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_repeats';
-SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number % 1000))) AS s FROM numbers(100000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
-SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number % 1000))) AS s FROM numbers(100000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_repeats_lc';
-SELECT s, count() FROM (SELECT concat('n', toString(number)) AS s FROM numbers(100000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
-SELECT s, count() FROM (SELECT concat('n', toString(number)) AS s FROM numbers(100000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_unique';
-SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number))) AS s FROM numbers(100000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
-SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number))) AS s FROM numbers(100000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_unique_lc';
--- Enough distinct keys to fill the sample, then one key: a later sample sees the repeats, so it freezes.
-SELECT s, count() FROM (SELECT if(number < 300000, concat('n', toString(number)), 'z') AS s FROM numbers(10000000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
-SELECT s, count() FROM (SELECT if(number < 300000, concat('n', toString(number)), 'z') AS s FROM numbers(10000000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_unique_then_repeats';
--- A block larger than the sample: the repeats it shows still freeze the heap at the check after the block.
-SELECT s, count() FROM (SELECT if(number < 5, concat('n', toString(number)), 'z') AS s FROM numbers(10000000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
-SELECT s, count() FROM (SELECT if(number < 5, concat('n', toString(number)), 'z') AS s FROM numbers(10000000))
-GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 5000000, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_repeats_large_block';
-
 SYSTEM FLUSH LOGS query_log;
 
 -- Whether the heap pruned (on the shards for the remote queries; never for the key prefixes), the aggregation spilled,
@@ -465,13 +422,6 @@ INNER JOIN
 WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
 GROUP BY i.log_comment
 ORDER BY i.log_comment;
-
-SELECT 'frozen';
-SELECT log_comment, ProfileEvents['AggregationTopKHeapsFrozen'] FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
-    AND log_comment IN ('05407_skip_repeats', '05407_skip_repeats_lc', '05407_skip_unique', '05407_skip_unique_lc',
-        '05407_skip_unique_then_repeats', '05407_skip_repeats_large_block')
-ORDER BY log_comment;
 
 DROP TABLE t_05407;
 DROP TABLE t_05407_spill;

@@ -7,10 +7,10 @@
     <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC COLLATE 'en' LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0 FORMAT Null</query>
     <query>SELECT s, count() FROM (SELECT toString(number) AS s FROM numbers_mt(20000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 FORMAT Null</query>
     <query>SELECT s, count() FROM (SELECT toString(number) AS s FROM numbers_mt(20000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0 FORMAT Null</query>
-    <!-- 1M keys in descending cycles: a repeated key is found in the hash table before any comparison under the collation. -->
+    <!-- 1M keys in descending cycles. -->
     <query>SELECT s, count() FROM (SELECT concat('k', toString(999999 - number % 1000000)) AS s FROM numbers_mt(20000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 FORMAT Null</query>
     <query>SELECT s, count() FROM (SELECT concat('k', toString(999999 - number % 1000000)) AS s FROM numbers_mt(20000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0 FORMAT Null</query>
-    <!-- Keys in cycles that the heap skips or prunes and that then repeat: the heap freezes, as the optimization off would aggregate them. -->
+    <!-- Keys in cycles that the heap skips or prunes and that then repeat. -->
     <query>SELECT s, count() FROM (SELECT concat('k', toString(number % 1000)) AS s FROM numbers_mt(50000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 FORMAT Null</query>
     <query>SELECT s, count() FROM (SELECT concat('k', toString(number % 1000)) AS s FROM numbers_mt(50000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0 FORMAT Null</query>
     <query>SELECT s, count() FROM (SELECT concat('k', toString(number % 100000)) AS s FROM numbers(20000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 SETTINGS max_threads = 1 FORMAT Null</query>

@@ -570,7 +570,7 @@ protected:
                 return getCachedFindResult();
         }
 
-        auto it = data.find(key); /// NOLINT(readability-qualified-auto) a pointer or a class, depending on `Data`
+        auto it = data.find(key);
 
         if constexpr (consecutive_keys_optimization)
         {

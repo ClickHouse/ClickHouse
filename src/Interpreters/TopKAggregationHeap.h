@@ -87,11 +87,6 @@ struct TopKAggregationHeapBase
         skipped_rows += skipped;
         if (boundary_changed)
             publishBoundary();
-        if (collated_skip_sample_full && skipped_rows >= collated_skip_sample_resume_rows)
-        {
-            collated_skip_sample_full = false;
-            collated_skip_sample_now = true;
-        }
     }
 
     [[nodiscard]] bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
@@ -99,11 +94,6 @@ struct TopKAggregationHeapBase
     [[nodiscard]] bool needsTrim() const { return heap_indices.size() > next_trim_size; }
 
     [[nodiscard]] bool shouldFreeze() const;
-
-    /// Whether some ranked key has a `COLLATE`. The aggregation loops then look a row's key up in the hash table before
-    /// they call `shouldSkip`: a key already in the table is aggregated without the locale comparison, so the comparison
-    /// runs once per row with a new key instead of once per row.
-    [[nodiscard]] bool ranksUnderCollation() const { return has_collators; }
 
     /// Whether the next block certainly runs with the heap frozen. Unlike `shouldFreeze`, this
     /// accounts for the `exchangeSharedBoundary` call that precedes the freeze check, which may
@@ -135,7 +125,8 @@ struct TopKAggregationHeapBase
         chassert(!frozen);
         chassert(hasBoundary());
         if (has_collators) [[unlikely]]
-            return shouldSkipCollated(source_columns, source_row);
+            return is_composite ? sourceAboveBoundaryComposite<true>(source_columns, source_row)
+                                : sourceAboveBoundary<true>(*source_columns[0], source_row);
         if (is_composite)
             return sourceAboveBoundaryComposite<false>(source_columns, source_row);
         return sourceAboveBoundary<false>(*source_columns[0], source_row);
@@ -204,18 +195,6 @@ protected:
     UInt64 window_start_observed_rows = 0;  /// `observed_rows` and `skipped_rows` when the freeze window last (re)started
     UInt64 window_start_skipped_rows = 0;
     bool window_restarted_for_shared = false; /// the window restarted once when the shared boundary first took effect
-
-    /// A 1/64 hash sample of the distinct keys a collated heap skipped (open addressing, 0 = empty slot), the number of
-    /// sampled keys, and whether the sample reached a cap and was dropped; see `shouldFreeze`. Filled by the `const`
-    /// skip check.
-    mutable std::vector<UInt64> collated_skip_sample;
-    mutable size_t collated_skip_sample_keys = 0;
-    mutable bool collated_skip_sample_full = false;
-    mutable bool collated_skip_sample_now = false;  /// sampling, i.e. a collated heap that ranks all keys and has no full sample
-    mutable UInt64 collated_skip_sample_rows = 0;   /// skipped rows seen while sampling
-    mutable UInt64 collated_skip_sample_resume_rows = 0; /// `skipped_rows` at which a new sample starts; 0 before the first is dropped
-    bool collated_skip_sample_by_bytes = false; /// every ranked column hashes by `getDataAt`, which is cheaper than `SipHash`
-    bool collated_skip_sample_string = false;   /// the only ranked column is a plain `ColumnString`
 
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path
@@ -420,11 +399,6 @@ private:
     /// them is a valid bound on its own, since the stream has already seen `k` keys not worse
     /// than it.
     void publishBoundary();
-
-    [[nodiscard]] bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
-    void sampleCollatedSkip(const ColumnRawPtrs & source_columns, size_t source_row) const;
-    void dropCollatedSkipSample() const;
-    [[nodiscard]] bool collatedSkipsRepeat() const;
 
     template <bool with_collation>
     [[nodiscard]] bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const

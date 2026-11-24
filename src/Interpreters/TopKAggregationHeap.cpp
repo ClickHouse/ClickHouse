@@ -3,14 +3,8 @@
 #include <algorithm>
 #include <utility>
 
-#include <base/StringViewHash.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <Processors/TopKThresholdTracker.h>
@@ -50,35 +44,13 @@ size_t TopKAggregationHeapBase::initBase(
     /// to establish its boundary.
     profitability_window = observation_rows == 0 ? 0 : std::max<UInt64>(observation_rows, 2 * next_trim_size);
 
-    collated_skip_sample = {};
-    collated_skip_sample_keys = 0;
-    collated_skip_sample_full = false;
-    collated_skip_sample_rows = 0;
-    collated_skip_sample_resume_rows = 0;
-    collated_skip_sample_string = heap_key_count == 1 && typeid_cast<const ColumnString *>(key_columns[0]);
-    collated_skip_sample_now = has_collators && !is_prefix_mode && profitability_window != 0;
-    collated_skip_sample_by_bytes = true;
-    for (size_t i = 0; i < heap_key_count; ++i)
-    {
-        const IColumn * column = key_columns[i];
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
-            column = &nullable->getNestedColumn();
-        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column))
-            column = low_cardinality->getDictionary().getNestedNotNullableColumn().get();
-        collated_skip_sample_by_bytes &= column->isFixedAndContiguous() || typeid_cast<const ColumnString *>(column)
-            || typeid_cast<const ColumnFixedString *>(column);
-    }
-
     return next_trim_size + 1;
 }
-
-/// A trim compares the kept keys under the locale, so a heap with a `COLLATE` key trims less often.
-static constexpr size_t collated_min_trim_slack = 256;
 
 void TopKAggregationHeapBase::setK(size_t query_k)
 {
     k = query_k;
-    trim_slack = std::max<size_t>(has_collators ? collated_min_trim_slack : 1, k / 2);
+    trim_slack = std::max<size_t>(1, k / 2);
     next_trim_size = k + trim_slack;
     tie_overflow_limit = k + max_tie_rows;
 }
@@ -119,6 +91,7 @@ void TopKAggregationHeapBase::init(
 {
     const size_t n = source_columns.size();
     is_composite = true;
+    setK(query_k);
 
     directions.assign(n, 1);
     for (size_t i = 0; i < dirs.size() && i < n; ++i)
@@ -132,7 +105,6 @@ void TopKAggregationHeapBase::init(
     for (size_t i = 0; i < cols.size() && i < n; ++i)
         collators[i] = cols[i];
     has_collators = std::ranges::any_of(collators, [](const auto & collator) { return collator != nullptr; });
-    setK(query_k);
 
     MutableColumns sub_columns;
     sub_columns.reserve(n);
@@ -151,21 +123,6 @@ void TopKAggregationHeapBase::init(
     typed_key_type = TypeIndex::Nothing;
 }
 
-/// A skipped row costs a collated heap a locale comparison, while without the heap a repeated key costs a lookup in a
-/// table of the distinct keys. So a collated heap freezes once its skipped rows repeat few keys: at least
-/// `collated_skip_repeats` skipped rows per distinct skipped key, estimated from a 1/64 hash sample of those keys. A sample
-/// that holds `collated_skip_sample_cap` keys (about 262K distinct) or `collated_skip_sample_max_rows` rows is dropped, and
-/// a new one, which needs `collated_skip_later_repeats`, starts `collated_skip_sample_pause` skipped rows later.
-/// Release build, 20M rows: 1K keys in cycles go from 3-6x slower than off to 1.0-1.3x, 10K keys to 1.1-1.8x; `hits`
-/// `URL` streams repeat a key 8-48 times in a first sample and up to 128-256 in later ones, so 32 and 256 keep their
-/// heaps, and a 2M-row pause cost them 3-4% of hashing.
-static constexpr size_t collated_skip_sample_shift = 6;
-static constexpr size_t collated_skip_sample_cap = 4096;
-static constexpr UInt64 collated_skip_sample_max_rows = 1ULL << 22;
-static constexpr UInt64 collated_skip_sample_pause = 1ULL << 23;
-static constexpr UInt64 collated_skip_repeats = 32;
-static constexpr UInt64 collated_skip_later_repeats = 256;
-
 bool TopKAggregationHeapBase::shouldFreeze() const
 {
     if (frozen || !heap_column)
@@ -174,21 +131,11 @@ bool TopKAggregationHeapBase::shouldFreeze() const
     const UInt64 window_observed = observed_rows - window_start_observed_rows;
     const UInt64 window_skipped = skipped_rows - window_start_skipped_rows;
     if (profitability_window && window_observed >= profitability_window
-        && static_cast<Float64>(window_skipped) / static_cast<Float64>(window_observed) < 0.1
-        && evicted_keys < k && heap_indices.size() >= k)
-        return true;
-
-    if (has_collators && !is_prefix_mode && !collated_skip_sample_full && profitability_window
-        && window_observed >= profitability_window && collatedSkipsRepeat())
+        && static_cast<Float64>(window_skipped) / static_cast<Float64>(window_observed) < 0.1 && evicted_keys < k
+        && heap_indices.size() >= k)
         return true;
 
     return tie_overflow;
-}
-
-bool TopKAggregationHeapBase::collatedSkipsRepeat() const
-{
-    const UInt64 repeats = collated_skip_sample_resume_rows ? collated_skip_later_repeats : collated_skip_repeats;
-    return collated_skip_sample_rows >= repeats * ((collated_skip_sample_keys + 1) << collated_skip_sample_shift);
 }
 
 void TopKAggregationHeapBase::freezeBase()
@@ -205,7 +152,6 @@ void TopKAggregationHeapBase::freezeBase()
     evicted_rows = {};
     trim_filter = {};
     trim_old_to_new = {};
-    collated_skip_sample = {};
 }
 
 const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)
@@ -440,85 +386,6 @@ void TopKAggregationHeapBase::findLowCardinalityColumns()
     }
     else if (typeid_cast<const ColumnLowCardinality *>(heap_column.get()))
         low_cardinality_columns.push_back(0);
-}
-
-bool TopKAggregationHeapBase::shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const
-{
-    const bool skip = is_composite ? sourceAboveBoundaryComposite<true>(source_columns, source_row)
-                                   : sourceAboveBoundary<true>(*source_columns[0], source_row);
-    if (skip && collated_skip_sample_now)
-        sampleCollatedSkip(source_columns, source_row);
-    return skip;
-}
-
-void NO_INLINE TopKAggregationHeapBase::sampleCollatedSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
-{
-    /// A sample that already shows the repeats is kept for the freeze check, which runs between blocks.
-    if (++collated_skip_sample_rows >= collated_skip_sample_max_rows && !collatedSkipsRepeat())
-    {
-        dropCollatedSkipSample();
-        return;
-    }
-
-    UInt64 key_hash = 0;
-    if (collated_skip_sample_string)
-    {
-        const std::string_view value = assert_cast<const ColumnString &>(*source_columns[0]).getDataAt(source_row);
-        key_hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
-    }
-    else if (collated_skip_sample_by_bytes)
-    {
-        for (size_t i = 0; i < directions.size(); ++i)
-        {
-            const IColumn & column = *source_columns[i];
-            UInt64 column_hash = 0;
-            if (!column.isNullAt(source_row))
-            {
-                const auto * nullable = typeid_cast<const ColumnNullable *>(&column);
-                column_hash = StringViewHash64()((nullable ? nullable->getNestedColumn() : column).getDataAt(source_row)) + 1;
-            }
-            key_hash = intHash64(key_hash ^ column_hash);
-        }
-    }
-    else
-    {
-        SipHash hash;
-        for (size_t i = 0; i < directions.size(); ++i)
-            source_columns[i]->updateHashWithValue(source_row, hash);
-        key_hash = hash.get64();
-    }
-    /// Mixed, so that the sampled keys are not a range of `cityHash64` that a table sharded by it could lack.
-    key_hash = intHash64(key_hash);
-    if (key_hash >> (64 - collated_skip_sample_shift))
-        return;
-
-    if (collated_skip_sample.empty())
-        collated_skip_sample.resize(2 * collated_skip_sample_cap);
-    const size_t mask = collated_skip_sample.size() - 1;
-    const UInt64 stored = key_hash + 1;
-    for (size_t pos = key_hash & mask;; pos = (pos + 1) & mask)
-    {
-        if (collated_skip_sample[pos] == stored)
-            return;
-        if (collated_skip_sample[pos] == 0)
-        {
-            collated_skip_sample[pos] = stored;
-            break;
-        }
-    }
-
-    if (++collated_skip_sample_keys >= collated_skip_sample_cap)
-        dropCollatedSkipSample();
-}
-
-void TopKAggregationHeapBase::dropCollatedSkipSample() const
-{
-    collated_skip_sample_full = true;
-    collated_skip_sample_now = false;
-    collated_skip_sample = {};
-    collated_skip_sample_keys = 0;
-    collated_skip_sample_rows = 0;
-    collated_skip_sample_resume_rows = skipped_rows + collated_skip_sample_pause;
 }
 
 int TopKAggregationHeapBase::compareHeapRowsComposite(size_t a, size_t b) const

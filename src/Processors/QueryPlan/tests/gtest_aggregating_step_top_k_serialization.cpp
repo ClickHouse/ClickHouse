@@ -63,11 +63,10 @@ SharedHeader makeHeader()
         ColumnWithTypeAndName(type->createColumn(), type, "b")}));
 }
 
-std::unique_ptr<AggregatingStep> makeStep(
-    std::optional<Aggregator::Params::TopKParams> top_k, bool in_order = false, GroupingSetsParamsList grouping_sets_params = {})
+std::unique_ptr<AggregatingStep> makeStep(std::optional<Aggregator::Params::TopKParams> top_k, bool in_order = false)
 {
     /// Merge-only constructor.
-    Aggregator::Params merge_only_params(
+    Aggregator::Params params(
         Names{"a", "b"},
         AggregateDescriptions{},
         /*overflow_row=*/false,
@@ -77,10 +76,6 @@ std::unique_ptr<AggregatingStep> makeStep(
         /*serialize_string_with_zero_byte=*/false,
         /*enable_packed_string_keys=*/true,
         /*enable_fixed_and_packed_string_keys=*/true);
-    /// A merge-only step with grouping sets is rejected on read before its top-K is looked at.
-    Aggregator::Params params = grouping_sets_params.empty()
-        ? std::move(merge_only_params)
-        : merge_only_params.cloneWithKeys(merge_only_params.keys, /*only_merge_=*/false);
     params.top_k = std::move(top_k);
 
     /// Input sorted by `a`, aggregated in order over `GROUP BY a, b`.
@@ -96,7 +91,7 @@ std::unique_ptr<AggregatingStep> makeStep(
     return std::make_unique<AggregatingStep>(
         makeHeader(),
         std::move(params),
-        std::move(grouping_sets_params),
+        GroupingSetsParamsList{},
         /*final=*/false,
         /*max_block_size=*/65536,
         /*aggregation_in_order_max_block_bytes=*/0,
@@ -270,27 +265,6 @@ TEST(AggregatingStepTopKSerialization, TopKOnInOrderAggregationIsRejected)
 
     const UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
     const String bytes = serializeStep(*makeStep(makeTopK(1, {1}, {1}), /*in_order=*/true), version);
-
-    try
-    {
-        deserializeStep(bytes, version);
-        FAIL() << "expected INCORRECT_DATA";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
-    }
-}
-
-/// The aggregation of each grouping set has only that set's keys, fewer than the heap would rank.
-TEST(AggregatingStepTopKSerialization, TopKOnGroupingSetsIsRejected)
-{
-    tryRegisterFunctions();
-    tryRegisterAggregateFunctions();
-
-    const UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
-    GroupingSetsParamsList grouping_sets{GroupingSetsParams({"a"}, {"b"}), GroupingSetsParams({"a", "b"}, {})};
-    const String bytes = serializeStep(*makeStep(makeTopK(2, {1, 1}, {1, 1}), /*in_order=*/false, std::move(grouping_sets)), version);
 
     try
     {
