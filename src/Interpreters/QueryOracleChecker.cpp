@@ -540,9 +540,13 @@ bool hasArrayJoin(const ASTSelectQuery & select)
 /// correctly detects this divergence but the divergence is allowed, so we
 /// must skip these queries (issue #105743).
 /// Scan every slot of an ASTSelectQuery that can host a window function:
-/// SELECT list, QUALIFY clause, and named WINDOW definitions. The bare
-/// `hasWindowFunctionWithoutOrderBy(select.select())` we used previously
-/// missed `QUALIFY row_number() OVER () = 1` and `WINDOW w AS (...)` cases.
+/// SELECT list, QUALIFY clause, named WINDOW definitions, and the FROM clause.
+/// The bare `hasWindowFunctionWithoutOrderBy(select.select())` we used previously
+/// missed `QUALIFY row_number() OVER () = 1` and `WINDOW w AS (...)` cases, and
+/// scanning only the top-level SELECT list missed a window hidden in a FROM
+/// subquery or CTE such as `SELECT rn FROM (SELECT row_number() OVER () AS rn FROM t)`,
+/// which re-executes to a different row numbering just the same (`hasWindowFunctionWithoutOrderBy`
+/// recurses into children, so passing the FROM AST reaches nested SELECTs).
 bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast);
 bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
 {
@@ -551,6 +555,8 @@ bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
     if (select.qualify() && hasWindowFunctionWithoutOrderBy(select.qualify()))
         return true;
     if (select.window() && hasWindowFunctionWithoutOrderBy(select.window()))
+        return true;
+    if (select.tables() && hasWindowFunctionWithoutOrderBy(select.tables()))
         return true;
     return false;
 }
