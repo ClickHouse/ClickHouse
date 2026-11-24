@@ -732,7 +732,9 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         const StorageID database_id = StorageID::createDatabaseOnly(args.database_name);
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context, true, nullptr, &database_id))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(
+                *named_collection, &postgresql_settings, args.context,
+                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
@@ -755,7 +757,8 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             const auto & host_port = safeGetLiteralValue<String>(positional_arguments[0], engine_name);
             size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
-            configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+            configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+                host_port, max_addresses, 5432, globCaller(fmt::format("Database engine '{}'", engine_name)));
             configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);

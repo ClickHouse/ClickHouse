@@ -2986,7 +2986,12 @@ void registerStorageRemote(StorageFactory & factory)
             /* is_cluster_function = */ false,
             secure,
             help_message,
-            /* dependent_table_id = */ &args.table_id);
+            /* dependent_table_id = */ &args.table_id,
+            RemoteDescriptionCaller{
+                fmt::format("Table engine '{}'", secure ? "RemoteSecure" : "Remote"),
+                TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING,
+                /*listing_alternative=*/ {}},
+            /* limit_total_addresses = */ !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
 
         /// The table function target, e.g. `Remote('addr', url(nc, ...))`, is persisted in the metadata and
         /// resolved only when the local shard is read, so the collections it references are held as well.
