@@ -3,8 +3,11 @@
 -- A cast to JSON must keep the instant of a typed DateTime path when the path changes its type and time zone.
 SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('UTC')), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
 SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d Nullable(DateTime64(3, 'UTC'))), 'JSON(d Nullable(DateTime(''Asia/Tokyo'')))').d);
+-- Also through accurateCastOrNull and without the optimized conversion, which both write the JSON as text and parse it back.
+SELECT toUnixTimestamp(accurateCastOrNull('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('UTC')), 'JSON(d DateTime64(3, ''Asia/Tokyo''))').d);
+SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('UTC')), 'JSON(d DateTime64(3, ''Asia/Tokyo''))').d) SETTINGS json_use_optimized_type_conversion = 0;
 -- The second 01:30 of the DST fall-back hour.
-SELECT toUnixTimestamp(CAST('{"d":1793514600}'::JSON(d DateTime('America/New_York')), 'JSON(d DateTime64(0, ''America/New_York''))').d);
+SELECT toUnixTimestamp(CAST('{"d":1793514600}'::JSON(d DateTime('America/New_York')), 'JSON(d DateTime64(0, ''America/New_York''))').d) SETTINGS json_use_optimized_type_conversion = 0;
 -- Also inside Array, Tuple, Map, Nested and JSON typed paths.
 SELECT toUnixTimestamp(j.a[1]), toUnixTimestamp(tupleElement(j.t, 'd')), toUnixTimestamp(j.m['k']), toUnixTimestamp(j.n[1].d), toUnixTimestamp(j.o[1].d)
 FROM (SELECT CAST('{"a":["2026-01-01 00:00:00"],"t":{"d":"2026-01-01 00:00:00"},"m":{"k":"2026-01-01 00:00:00"},"n":[{"d":"2026-01-01 00:00:00"}],"o":[{"d":"2026-01-01 00:00:00"}]}'::JSON(a Array(DateTime('UTC')), t Tuple(d DateTime('UTC')), m Map(String, DateTime('UTC')), n Nested(d DateTime('UTC')), o Array(JSON(d DateTime('UTC')))),
