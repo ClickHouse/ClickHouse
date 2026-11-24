@@ -70,10 +70,10 @@
 -- shared rf key8 serial
 rf0	2500
 rf1	2500
--- per query: map types built, type converted to, runtime filter published
-04891_key16_compare	['key16','two_level_key16']	[]	1
-04891_key16_serial	['key16']	[]	1
-04891_key8_compare	['key8','two_level_key8']	[]	1
-04891_key8_serial	['key8']	[]	1
-04891_rf_serial_off	['key8']	[]	0
-04891_rf_serial_on	['key8']	[]	1
+-- per query: map types built, type converted to, runtime filter published, serial and parallel layouts built
+04891_key16_compare	['key16']	['key16']	1	1	1
+04891_key16_serial	['key16']	[]	1	1	0
+04891_key8_compare	['key8']	['key8']	1	1	1
+04891_key8_serial	['key8']	[]	1	1	0
+04891_rf_serial_off	['key8']	[]	0	1	0
+04891_rf_serial_on	['key8']	[]	1	1	0

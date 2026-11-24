@@ -3,6 +3,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/ProfileEvents.h>
 
+#include <algorithm>
+
 namespace ProfileEvents
 {
 extern const Event JoinNonJoinedHashTableScans;
@@ -15,36 +17,40 @@ namespace DB
 namespace detail
 {
 
-/// Whether every key in the buckets `b` with `b % num_shares == share` has its used flag set.
-/// A two-level map numbers the cells of bucket `b` from `bucket_cells_prefix[b] + 1`, and its zero key has offset 0.
-/// A one-bucket map is checked as a whole, and so is a `PartitionedFixedHashTable`, which keeps no count per bucket.
+/// Whether every key of `map` has its used flag set. The flags of the cells of `map` start at `first_flag`, and the zero key's
+/// flag is 0.
 template <typename Map>
-bool allKeysUsed(const Map & map, const JoinStuff::JoinUsedFlags & used_flags, size_t share, size_t num_shares)
+bool allKeysUsed(const Map & map, const JoinStuff::JoinUsedFlags & used_flags, size_t first_flag)
+{
+    const size_t cells = map.getBufferSizeInCells();
+    if (used_flags.per_offset_flags.size() < first_flag + cells)
+        return false;
+    size_t zero = 0;
+    if constexpr (requires { map.hasZero(); })
+    {
+        zero = map.hasZero();
+        if (zero && !used_flags.getUsedSafe(0))
+            return false;
+    }
+    return countBytesInFilter(used_flags.per_offset_flags.data(), first_flag, first_flag + cells) == map.size() - zero;
+}
+
+/// Whether every key of `map` has its used flag set, when the flags number its cells from 1 and give the zero key 0.
+template <typename Map>
+bool allKeysUsedInTable(const Map & map, const JoinStuff::JoinUsedFlags & used_flags)
 {
     if (used_flags.per_offset_flags.size() < map.getBufferSizeInCells() + 1)
         return false;
-
-    if constexpr (requires { map.bucket_cells_prefix; })
-    {
-        if constexpr (Map::NUM_BUCKETS > 1)
-        {
-            if (map.bucket_cells_prefix.size() != Map::NUM_BUCKETS)
-                return false;
-            for (size_t bucket = share; bucket < Map::NUM_BUCKETS; bucket += num_shares)
-            {
-                const auto & impl = map.impls[bucket];
-                const size_t begin = map.bucket_cells_prefix[bucket] + 1;
-                if (countBytesInFilter(used_flags.per_offset_flags.data(), begin, begin + impl.getBufferSizeInCells())
-                    != impl.size() - impl.hasZero())
-                    return false;
-                if (impl.hasZero() && !used_flags.getUsedSafe(0))
-                    return false;
-            }
-            return true;
-        }
-    }
     return countBytesInFilter(used_flags.per_offset_flags.data(), 0, map.getBufferSizeInCells() + 1) == map.size();
 }
+
+/// Where a scan by cell range resumes: the next cell over all partitions, and whether the zero key was looked at.
+struct CellRangeCursor
+{
+    size_t next_cell = 0;
+    size_t end_cell = 0;
+    bool zero_key_done = false;
+};
 
 /// Appends one hash map cell's not-joined rows as a flat run of encoded ref words. Returns the rows appended.
 template <typename Mapped>
@@ -66,6 +72,66 @@ size_t collectNonJoinedRefWords([[maybe_unused]] const Mapped & mapped, [[maybe_
             words.push_back(*it);
         return rows;
     }
+}
+
+
+/// The scan of a partitioned view with fewer partitions than shares: share `share` walks a contiguous range of the cells over
+/// all partitions, in the order of their used flags. Every share skips when every key of the table is used, and share 0 emits
+/// the zero key.
+template <typename View>
+size_t scanCellRange(
+    const View & view,
+    size_t share,
+    size_t num_shares,
+    const JoinStuff::JoinUsedFlags & used_flags,
+    size_t max_rows,
+    PaddedPODArray<UInt64> & words,
+    std::any & cursor)
+{
+    using Mapped = typename View::mapped_type;
+    constexpr HashTableNoState no_state{};
+
+    if (!cursor.has_value())
+    {
+        const size_t cells = view.getBufferSizeInCells();
+        const bool all_keys_used = allKeysUsedInTable(view, used_flags);
+        ProfileEvents::increment(
+            all_keys_used ? ProfileEvents::JoinNonJoinedHashTableScansSkipped : ProfileEvents::JoinNonJoinedHashTableScans);
+        CellRangeCursor range;
+        if (all_keys_used)
+            range.zero_key_done = true;
+        else
+        {
+            range.next_cell = share * cells / num_shares;
+            range.end_cell = (share + 1) * cells / num_shares;
+            range.zero_key_done = share != 0;
+        }
+        cursor = range;
+    }
+    auto & range = std::any_cast<CellRangeCursor &>(cursor);
+
+    size_t rows_added = 0;
+    if (!range.zero_key_done)
+    {
+        range.zero_key_done = true;
+        if (!used_flags.getUsedSafe(0))
+            for (size_t p = 0; p < view.numPartitions(); ++p)
+                if (view.partition(p).hasZero())
+                    rows_added += collectNonJoinedRefWords<Mapped>(view.partition(p).zeroValue()->getMapped(), words);
+    }
+
+    while (range.next_cell < range.end_cell && rows_added < max_rows)
+    {
+        const size_t p = range.next_cell >> view.cellBits();
+        const auto desc = view.desc(p);
+        const auto & cell = desc.cells[range.next_cell & desc.mask];
+        const size_t offset = range.next_cell + 1;
+        ++range.next_cell;
+        if (cell.isZero(no_state) || used_flags.getUsedSafe(offset))
+            continue;
+        rows_added += collectNonJoinedRefWords<Mapped>(cell.getMapped(), words);
+    }
+    return rows_added;
 }
 
 }
@@ -92,82 +158,85 @@ size_t HashJoinTable::scanNotJoinedTyped(
     size_t max_rows,
     PaddedPODArray<UInt64> & words) const
 {
-    using Map = JoinMapOf<TYPE, Maps>;
-    using Mapped = typename Map::mapped_type;
-    using Iterator = typename Map::const_iterator;
-
-    const Map & map = typedMap<TYPE, Maps>(*this);
-    auto is_bucket_in_share = [&](size_t bucket) { return num_shares <= 1 || (bucket % num_shares) == share; };
-
-    if (!cursor.has_value())
+    return visitForm<TYPE, Maps>([&]<typename Form>(const Form & form) -> size_t
     {
-        const bool all_keys_used = detail::allKeysUsed(map, used_flags, share, num_shares);
-        ProfileEvents::increment(
-            all_keys_used ? ProfileEvents::JoinNonJoinedHashTableScansSkipped : ProfileEvents::JoinNonJoinedHashTableScans);
-        cursor = std::make_any<Iterator>(all_keys_used ? map.end() : map.begin());
-    }
+        using Mapped = typename Form::mapped_type;
+        size_t rows_added = 0;
 
-    Iterator & it = std::any_cast<Iterator &>(cursor);
-    auto end = map.end();
-    size_t rows_added = 0;
-
-    /// case: two-level hash tables with parallel iteration
-    if constexpr (requires { map.iteratorAt(0); })
-    {
-        auto skip_to_next_owned_bucket = [&]() -> bool
+        if constexpr (is_join_partitioned_view<Form>)
         {
-            while (it != end && !is_bucket_in_share(it.getBucket()))
+            using Iterator = typename Form::map_type::const_iterator;
+            const size_t parts = form.numPartitions();
+            /// With fewer partitions than shares, the shares split the cells instead.
+            if (num_shares > 1 && parts < num_shares)
+                return detail::scanCellRange(form, share, num_shares, used_flags, max_rows, words, cursor);
+
+            /// Share `share` walks the partitions [`first`, `last`).
+            const size_t first = share * parts / num_shares;
+            const size_t last = (share + 1) * parts / num_shares;
+
+            if (!cursor.has_value())
+                cursor = std::make_any<PartitionCursor<Iterator>>(PartitionCursor<Iterator>{.partition = first, .it = Iterator()});
+            auto & pc = std::any_cast<PartitionCursor<Iterator> &>(cursor);
+
+            for (; pc.partition < last; ++pc.partition)
             {
-                /// smallest bucket > current that satisfies: bucket ≡ share (mod num_shares)
-                size_t cur = it.getBucket();
-                size_t next = cur - (cur % num_shares) + share;
-                if (next <= cur)
-                    next += num_shares;
-                it = map.iteratorAt(next);
+                const auto & map = form.partition(pc.partition);
+                if (pc.it == Iterator())
+                {
+                    const bool all_keys_used = detail::allKeysUsed(map, used_flags, form.prefixOf(pc.partition) + 1);
+                    ProfileEvents::increment(
+                        all_keys_used ? ProfileEvents::JoinNonJoinedHashTableScansSkipped : ProfileEvents::JoinNonJoinedHashTableScans);
+                    if (all_keys_used)
+                        continue;
+                    pc.it = map.begin();
+                }
+                for (auto end = map.end(); pc.it != end;)
+                {
+                    /// The zero key's cell gets offset 0, so the share of its partition emits it.
+                    const size_t offset = pc.it.getPtr()->isZero(HashTableNoState{}) ? 0 : form.offsetOf(pc.it.getPtr(), pc.partition);
+                    if (!used_flags.getUsedSafe(offset))
+                        rows_added += detail::collectNonJoinedRefWords<Mapped>(pc.it->getMapped(), words);
+                    ++pc.it;
+                    if (rows_added >= max_rows)
+                        return rows_added;
+                }
+                pc.it = Iterator();
             }
-            return it != end;
-        };
-
-        /// position at the first bucket owned by this stream
-        if (!skip_to_next_owned_bucket())
-            return 0;
-
-        while (it != end && rows_added < max_rows)
+            return rows_added;
+        }
+        else
         {
-            size_t offset = map.offsetInternal(it.getPtr());
-            if (!used_flags.getUsedSafe(offset))
+            using Iterator = typename Form::const_iterator;
+            /// A table without partitions is scanned by share 0.
+            if (!cursor.has_value())
+            {
+                /// Every share counts its verdict on the whole table, as each share of the one-bucket map did.
+                const bool all_keys_used = detail::allKeysUsedInTable(form, used_flags);
+                ProfileEvents::increment(
+                    all_keys_used ? ProfileEvents::JoinNonJoinedHashTableScansSkipped : ProfileEvents::JoinNonJoinedHashTableScans);
+                const bool in_share = num_shares <= 1 || share == 0;
+                cursor = std::make_any<Iterator>(all_keys_used || !in_share ? form.end() : form.begin());
+            }
+
+            Iterator & it = std::any_cast<Iterator &>(cursor);
+            for (auto end = form.end(); it != end; ++it)
+            {
+                const size_t offset = form.offsetInternal(it.getPtr());
+                if (used_flags.getUsedSafe(offset))
+                    continue;
+
                 rows_added += detail::collectNonJoinedRefWords<Mapped>(it->getMapped(), words);
 
-            ++it;
-
-            /// if we crossed into a bucket not owned by this stream, skip ahead
-            if (it != end && !is_bucket_in_share(it.getBucket()) && !skip_to_next_owned_bucket())
-                break;
-        }
-    }
-    else
-    {
-        /// A `PartitionedFixedHashTable` has no `iteratorAt`, so the walk tests the bucket of every cell.
-        for (; it != end; ++it)
-        {
-            if (!is_bucket_in_share(it.getBucket()))
-                continue;
-
-            size_t offset = map.offsetInternal(it.getPtr());
-            if (used_flags.getUsedSafe(offset))
-                continue;
-
-            rows_added += detail::collectNonJoinedRefWords<Mapped>(it->getMapped(), words);
-
-            if (rows_added >= max_rows)
-            {
-                ++it;
-                break;
+                if (rows_added >= max_rows)
+                {
+                    ++it;
+                    break;
+                }
             }
+            return rows_added;
         }
-    }
-
-    return rows_added;
+    });
 }
 
 template size_t HashJoinTable::scanNotJoined<HashJoin::MapsOne>(

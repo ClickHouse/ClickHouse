@@ -17,6 +17,8 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/HashJoin/HashJoinBuild.h>
+#include <Interpreters/HashJoin/JoinPartitionView.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -27,7 +29,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableTraits.h>
-#include <Common/HashTable/PartitionedFixedHashTable.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <base/sanitizer_defs.h>
 
@@ -40,6 +41,7 @@ using Sizes = std::vector<size_t>;
 
 class MatchedRowsStats;
 class HashJoinTable;
+struct HashJoinBuildState;
 
 namespace JoinStuff
 {
@@ -71,28 +73,26 @@ enum class JoinMapsKind : uint8_t
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods;
 
-/// Zero bits is one bucket, where routing folds away and the map behaves as single-level.
-constexpr size_t BITS_FOR_BUCKET_SERIAL = 0;
-
-constexpr size_t NUM_HASH_TABLE_BUCKETS = 1ull << DEFAULT_BITS_FOR_BUCKET;
-
-/// How a `HashJoin` is built: with two-level maps (the parallel layout) or one-bucket maps (the serial layout),
-/// how many build streams may fill it, and how many slots split the buckets of its maps.
+/// How a `HashJoin` is built.
 struct HashJoinBuildLayout
 {
-    bool two_level;
-    size_t num_build_streams;
-    size_t num_slots;
+    /// The planned layout: `false` is the serial layout (one partition), `true` the parallel layout (several partitions,
+    /// chosen when the build runs).
+    bool parallel = false;
+    /// The build streams that may fill the join.
+    size_t num_build_streams = 1;
+    /// A `Join` engine table: every block goes into the map when it arrives, and the table is never frozen.
+    bool insert_on_arrival = false;
 
-    /// One-bucket maps behind one slot, whatever the number of build streams.
-    static HashJoinBuildLayout oneBucket(size_t num_build_streams) { return {false, std::max<size_t>(1, num_build_streams), 1}; }
-
-    /// Two-level maps with one slot per build stream, rounded up to a power of two and capped at the bucket count.
-    static HashJoinBuildLayout twoLevel(size_t num_build_streams)
+    static HashJoinBuildLayout serialLayout(size_t num_build_streams)
     {
-        const size_t streams = std::max<size_t>(1, num_build_streams);
-        return {true, streams, std::min<size_t>(std::bit_ceil(streams), NUM_HASH_TABLE_BUCKETS)};
+        return {.parallel = false, .num_build_streams = std::max<size_t>(1, num_build_streams), .insert_on_arrival = false};
     }
+    static HashJoinBuildLayout parallelLayout(size_t num_build_streams)
+    {
+        return {.parallel = true, .num_build_streams = std::max<size_t>(1, num_build_streams), .insert_on_arrival = false};
+    }
+    static HashJoinBuildLayout joinEngine() { return {.parallel = false, .num_build_streams = 1, .insert_on_arrival = true}; }
 };
 
 struct BuildResult
@@ -139,11 +139,9 @@ struct BuildResult
   * This hash table is in form of keys -> row in case of ANY or keys -> [rows...] in case of ALL.
   * This is done in insertFromBlock method.
   *
-  * With the parallel layout, several threads can build the hash table at once. A bucket is a part of the key space
-  * that is always filled under the same lock. It is a sub-table of a `TwoLevelHashTable`, or a set of cache lines
-  * of the flat `PartitionedFixedHashTable`. The parallel layout has `NUM_HASH_TABLE_BUCKETS` buckets, and the
-  * serial layout has one. A slot is a group of buckets with one lock (see `BuildSlots`). The serial
-  * layout has one slot, and the parallel layout one per build stream, rounded up to a power of two and capped at the bucket count.
+  * With the parallel layout, the hash table of a disjunct is split into partitions by the hash of the key, and each
+  * partition is an ordinary hash table that one thread fills (see `JoinPartitionedView`). The serial layout has one
+  * partition.
   *
   * 2. Process "left" table and join corresponding rows from "right" table by lookups in the map.
   * This is done in joinBlock methods.
@@ -235,7 +233,7 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        return cloneWith(table_join_, right_sample_block_, HashJoinBuildLayout::oneBucket(1));
+        return cloneWith(table_join_, right_sample_block_, HashJoinBuildLayout::serialLayout(1));
     }
 
     /** Add block of data from right hand of JOIN to the map.
@@ -260,9 +258,9 @@ public:
 
     bool isFilled() const override { return from_storage_join; }
 
-    /// A concurrent fill needs several slots. The planner fills a join with one slot, in either layout, from one
-    /// stream, so its output row order stays reproducible.
-    bool supportParallelJoin() const override { return build_layout.num_slots > 1; }
+    /// The parallel layout with more than one build stream. Otherwise the planner fills the join from one stream, so its
+    /// output row order stays reproducible.
+    bool supportParallelJoin() const override { return build_layout.parallel && build_layout.num_build_streams > 1; }
     size_t getMaxBuildThreads() const override { return build_layout.num_build_streams; }
 
     bool supportParallelNonJoinedBlocksProcessing() const override;
@@ -298,8 +296,49 @@ public:
         probe_phase_finished = true;
     }
 
+    /// True until `finishBuild` has run, for every join that is not a `Join` engine table.
     bool hasPostBuildPhase() const override;
+    /// `finishBuild`, then `runPostBuildOptimizations`.
     void runPostBuildPhase() override;
+
+    /// Builds what still waits, freezes the tables for probing, sizes the used flags, promotes `ALL` to `RightAny`, splices
+    /// the lists of the build streams and runs a drop of the kept blocks that a wrapper asked for. Every driver calls it once;
+    /// a second call throws `LOGICAL_ERROR`. A `Join` engine table never calls it.
+    void finishBuild();
+    /// Rerange, the conversion to a fixed table, the shared runtime filter. After `finishBuild`.
+    void runPostBuildOptimizations();
+    bool isBuildFinished() const { return build_phase_finished; }
+
+    /// The allocated bytes, plus the tables and arenas that do not exist yet. The spill check while the join
+    /// waits, grace's overflow check and the byte bound of the wait read it. Equal to `getTotalByteCount` once built.
+    size_t getProjectedByteCount() const;
+    /// The scatter copy that the build of the waiting rows takes at its peak: the copy of one round, at most `roundCopyCap`.
+    /// 0 for a join without partitions, and once built. The memory scheduler adds it to `getProjectedByteCount`.
+    size_t getProjectedCopyBytes() const;
+
+    /// The limits that end the wait in time, from a wrapper that checks the limits itself (`JoinSwitcher`, grace). The join
+    /// then runs no limit check of its own. Before the first block.
+    void setWaitLimits(const SizeLimits & limits);
+    /// From a wrapper that a memory spill scheduler can make spill: a join of one build stream ends its wait when an upper
+    /// bound of its bytes reaches `bytes`, so that the scheduler sees its table grow block by block, as without the wait.
+    /// After the early end, the table of one stream takes each block as it comes, so the early end costs it nothing. 0 = no
+    /// bound. Before the first block.
+    void setWaitMemoryBound(size_t bytes);
+
+    /// At build finish, before any table exists: whether the build fits `budget` at once, in rounds, or must spill.
+    enum class BuildFit : uint8_t
+    {
+        Fits,
+        Grouped,
+        MustSpill,
+    };
+    /// A Grouped verdict is remembered: `finishBuild` then builds in rounds within `budget`.
+    BuildFit evaluateBuildFit(size_t budget);
+    /// Whether the join still waits (no table built yet, or a batch waiting).
+    bool isWaiting() const;
+    /// Whether a table was built before build finish (several streams, an early end). Such a table grows as blocks arrive, so
+    /// a wrapper checks the allocated bytes, not the projection.
+    bool builtEarly() const;
 
     /// Number of unique keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -338,17 +377,6 @@ public:
         M(hashed)                      \
         M(low_cardinality_key_string)       \
         M(low_cardinality_key_fixed_string) \
-        M(two_level_key8)              \
-        M(two_level_key16)             \
-        M(two_level_key32)             \
-        M(two_level_key64)             \
-        M(two_level_key_string)        \
-        M(two_level_key_fixed_string)  \
-        M(two_level_keys32)            \
-        M(two_level_keys64)            \
-        M(two_level_keys128)           \
-        M(two_level_keys256)           \
-        M(two_level_hashed)            \
         M(range8_key32)                \
         M(range16_key32)               \
         M(range17_key32)               \
@@ -357,7 +385,6 @@ public:
         M(range16_key64)               \
         M(range17_key64)               \
         M(range18_key64)               \
-        M(two_level_key_packed_string) \
         M(key_packed_string)
 
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
@@ -414,59 +441,74 @@ public:
       * Such a join instantiates the maps with `VoidMapped`, which selects the set counterpart of every
       * table below, so a cell holds the key alone.
       */
-    /// A one-bucket map keeps the single-level grower. At each rehash, `TwoLevelHashTableGrower` doubles a large bucket and the
-    /// single-level grower quadruples it. Doubling suits the small buckets of a two-level map, but one bucket would rehash more often.
+    /// The map of a table planned with one partition: the single-level grower, which quadruples a large table at each rehash.
     template <typename Key, typename Mapped, typename Hash>
     using JoinHashMap = std::conditional_t<
         std::is_same_v<Mapped, VoidMapped>,
-        TwoLevelHashSet<Key, Hash, HashTableGrowerWithPrecalculation<>, HashTableAllocator, BITS_FOR_BUCKET_SERIAL>,
-        TwoLevelHashMap<Key, Mapped, Hash, HashTableGrowerWithPrecalculation<>, HashTableAllocator, HashMapTable, BITS_FOR_BUCKET_SERIAL>>;
+        HashSetTable<Key, HashTableCell<Key, Hash>, Hash, HashTableGrowerWithPrecalculation<>, HashTableAllocator>,
+        HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, HashTableGrowerWithPrecalculation<>, HashTableAllocator>>;
 
     template <typename Key, typename Mapped, typename Hash = DefaultHash<Key>>
     using JoinHashMapWithSavedHash = std::conditional_t<
         std::is_same_v<Mapped, VoidMapped>,
-        TwoLevelHashSetWithSavedHash<Key, Hash, HashTableGrowerWithPrecalculation<>, HashTableAllocator, BITS_FOR_BUCKET_SERIAL>,
-        TwoLevelHashMapWithSavedHash<
-            Key,
-            Mapped,
-            Hash,
-            HashTableGrowerWithPrecalculation<>,
-            HashTableAllocator,
-            HashMapTable,
-            BITS_FOR_BUCKET_SERIAL>>;
+        HashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, HashTableGrowerWithPrecalculation<>, HashTableAllocator>,
+        HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, HashTableGrowerWithPrecalculation<>, HashTableAllocator>>;
 
-    /// A bucket starts with 2 cells and gets its initial size at the first insert of its slot, see `BuildSlots::reserveOnFirstInsert`.
-    using JoinTwoLevelHashTableGrower = TwoLevelHashTableGrower<1>;
+    /// The build sizes partitions together. `JoinPartitionedView` grows them before a new key would take the last empty cell.
+    struct JoinPartitionGrower : TwoLevelHashTableGrower<1>
+    {
+        using Base = TwoLevelHashTableGrower<1>;
+
+        void setExactCapacity(size_t cells, bool robin_hood)
+        {
+            setRobinHoodAllowed(robin_hood);
+            if (robin_hood)
+                Base::set(cells / 2 + 1);
+            else
+                Base::setBufSize(cells);
+            chassert(bufSize() == cells && isRobinHood() == robin_hood);
+        }
+
+        void setBufSize(size_t cells) { setExactCapacity(cells, isRobinHood()); }
+        void increaseSize() { setBufSize(bufSize() * 2); }
+        bool overflow(size_t keys) const { return keys > bufSize(); }
+    };
 
     template <typename Key, typename Mapped, typename Hash>
-    using JoinTwoLevelHashMap = std::conditional_t<
+    using JoinPartitionHashMap = std::conditional_t<
         std::is_same_v<Mapped, VoidMapped>,
-        TwoLevelHashSet<Key, Hash, JoinTwoLevelHashTableGrower>,
-        TwoLevelHashMap<Key, Mapped, Hash, JoinTwoLevelHashTableGrower>>;
+        HashSetTable<Key, HashTableCell<Key, Hash>, Hash, JoinPartitionGrower, HashTableAllocator>,
+        HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, JoinPartitionGrower, HashTableAllocator>>;
 
-    template <typename Key, typename Mapped>
-    using JoinTwoLevelHashMapWithSavedHash = std::conditional_t<
+    template <typename Key, typename Mapped, typename Hash = DefaultHash<Key>>
+    using JoinPartitionHashMapWithSavedHash = std::conditional_t<
         std::is_same_v<Mapped, VoidMapped>,
-        TwoLevelHashSetWithSavedHash<Key, DefaultHash<Key>, JoinTwoLevelHashTableGrower>,
-        TwoLevelHashMapWithSavedHash<Key, Mapped, DefaultHash<Key>, JoinTwoLevelHashTableGrower>>;
+        HashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, JoinPartitionGrower, HashTableAllocator>,
+        HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, JoinPartitionGrower, HashTableAllocator>>;
 
-    template <typename Key, typename Mapped>
-    using JoinFixedHashMap = std::conditional_t<
-        std::is_same_v<Mapped, VoidMapped>,
-        PartitionedFixedHashSet<Key, sizeof(Key) * 8, BITS_FOR_BUCKET_SERIAL>,
-        PartitionedFixedHashMap<Key, Mapped, sizeof(Key) * 8, BITS_FOR_BUCKET_SERIAL>>;
+    /// The two forms of a hash map: one map, or one map per partition.
+    template <typename Key, typename Mapped, typename Hash>
+    using JoinHashMapForms
+        = JoinMapForms<JoinSingleView<JoinHashMap<Key, Mapped, Hash>>, JoinPartitionedView<JoinPartitionHashMap<Key, Mapped, Hash>>>;
+
+    template <typename Key, typename Mapped, typename Hash = DefaultHash<Key>>
+    using JoinHashMapWithSavedHashForms = JoinMapForms<
+        JoinSingleView<JoinHashMapWithSavedHash<Key, Mapped, Hash>>,
+        JoinPartitionedView<JoinPartitionHashMapWithSavedHash<Key, Mapped, Hash>>>;
 
     template <typename Key, typename Mapped, size_t size_bits>
     using JoinFixedHashMapWithSizeBits = std::conditional_t<
         std::is_same_v<Mapped, VoidMapped>,
-        PartitionedFixedHashSet<Key, size_bits, BITS_FOR_BUCKET_SERIAL>,
-        PartitionedFixedHashMap<Key, Mapped, size_bits, BITS_FOR_BUCKET_SERIAL>>;
+        FixedHashSetWithSizeBitsAndCalculatedSize<Key, size_bits>,
+        FixedHashMapWithSizeBitsAndCalculatedSize<Key, Mapped, size_bits>>;
 
     template <typename Key, typename Mapped>
-    using JoinTwoLevelFixedHashMap = std::conditional_t<
-        std::is_same_v<Mapped, VoidMapped>,
-        PartitionedFixedHashSet<Key, sizeof(Key) * 8, DEFAULT_BITS_FOR_BUCKET>,
-        PartitionedFixedHashMap<Key, Mapped, sizeof(Key) * 8, DEFAULT_BITS_FOR_BUCKET>>;
+    using JoinFixedHashMap = JoinFixedHashMapWithSizeBits<Key, Mapped, sizeof(Key) * 8>;
+
+    /// The two forms of a `key8` or `key16` map: the direct-addressed map, or one hash map per partition, as for any key.
+    template <typename Key, typename Mapped>
+    using JoinFixedHashMapForms
+        = JoinMapForms<JoinFixedHashMap<Key, Mapped>, JoinPartitionedView<JoinPartitionHashMap<Key, Mapped, HashCRC32<Key>>>>;
 
     template <typename Mapped>
     struct MapsTemplate
@@ -474,30 +516,20 @@ public:
         /// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
         static constexpr bool has_mapped = !std::is_same_v<Mapped, VoidMapped>;
-        std::shared_ptr<JoinFixedHashMap<UInt8, Mapped>>                          key8;
-        std::shared_ptr<JoinFixedHashMap<UInt16, Mapped>>                         key16;
-        std::shared_ptr<JoinTwoLevelFixedHashMap<UInt8, Mapped>>                  two_level_key8;
-        std::shared_ptr<JoinTwoLevelFixedHashMap<UInt16, Mapped>>                 two_level_key16;
-        std::shared_ptr<JoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
-        std::shared_ptr<JoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
-        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>              key_string;
-        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
-        std::shared_ptr<JoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
-        std::shared_ptr<JoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
-        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
-        std::shared_ptr<JoinHashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
-        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
-        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_string;
-        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_fixed_string;
-        std::shared_ptr<JoinTwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
-        std::shared_ptr<JoinTwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
-        std::shared_ptr<JoinTwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
-        std::shared_ptr<JoinTwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
-        std::shared_ptr<JoinTwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_keys32;
-        std::shared_ptr<JoinTwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_keys64;
-        std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
-        std::shared_ptr<JoinTwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
-        std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
+        std::shared_ptr<JoinFixedHashMapForms<UInt8, Mapped>>                     key8;
+        std::shared_ptr<JoinFixedHashMapForms<UInt16, Mapped>>                    key16;
+        std::shared_ptr<JoinHashMapForms<UInt32, Mapped, HashCRC32<UInt32>>>      key32;
+        std::shared_ptr<JoinHashMapForms<UInt64, Mapped, HashCRC32<UInt64>>>      key64;
+        std::shared_ptr<JoinHashMapWithSavedHashForms<std::string_view, Mapped>>  key_string;
+        std::shared_ptr<JoinHashMapWithSavedHashForms<std::string_view, Mapped>>  key_fixed_string;
+        std::shared_ptr<JoinHashMapForms<UInt32, Mapped, HashCRC32<UInt32>>>      keys32;
+        std::shared_ptr<JoinHashMapForms<UInt64, Mapped, HashCRC32<UInt64>>>      keys64;
+        std::shared_ptr<JoinHashMapForms<UInt128, Mapped, UInt128HashCRC32>>      keys128;
+        std::shared_ptr<JoinHashMapForms<UInt256, Mapped, UInt256HashCRC32>>      keys256;
+        std::shared_ptr<JoinHashMapForms<UInt128, Mapped, UInt128TrivialHash>>    hashed;
+        /// LowCardinality maps exist only in the serial layout, so they have one form.
+        std::shared_ptr<JoinSingleView<JoinHashMapWithSavedHash<std::string_view, Mapped>>> low_cardinality_key_string;
+        std::shared_ptr<JoinSingleView<JoinHashMapWithSavedHash<std::string_view, Mapped>>> low_cardinality_key_fixed_string;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt32, Mapped, 8>>          range8_key32;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt32, Mapped, 16>>         range16_key32;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt32, Mapped, 17>>         range17_key32;
@@ -507,17 +539,12 @@ public:
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
         /// A single `String` key as a `PackedStringJoinKey`, see `enable_packed_string_keys_in_hash_join`.
-        std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_key_packed_string;
-        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           key_packed_string;
+        std::shared_ptr<JoinHashMapForms<UInt128, Mapped, UInt128HashCRC32>>      key_packed_string;
 
-        void create(Type which, bool robin_hood_allowed)
+        /// Creates the empty table of type `which` in the single form.
+        void create(Type which)
         {
-            visit(which, [robin_hood_allowed]<typename Table>(std::shared_ptr<Table> & map)
-            {
-                map = std::make_shared<Table>();
-                if constexpr (requires { map->setRobinHoodAllowed(robin_hood_allowed); })
-                    map->setRobinHoodAllowed(robin_hood_allowed);
-            });
+            visit(which, []<typename Table>(std::shared_ptr<Table> & map) { map = std::make_shared<Table>(); });
         }
 
         /// Calls `f` with the map of type `which`, a `std::shared_ptr` that is null until `create`.
@@ -617,6 +644,8 @@ public:
     struct RightTableData
     {
         explicit RightTableData(const HashJoinBuildLayout & layout);
+        /// The wait and the rounds of the build; null for a `Join` engine table.
+        std::unique_ptr<HashJoinBuildState> build_state;
 
         /// Frees a large table on a thread pool, see the definition.
         ~RightTableData();
@@ -646,6 +675,8 @@ public:
         /// A running total: summing the buckets would read what other build threads are mutating.
         /// `bucket_bytes` accumulates deltas, so a post-build step that swaps maps must recompute it.
         std::atomic<size_t> bucket_bytes = 0;
+        /// The records of the waiting blocks, see `WaitingBlockRecord`.
+        std::atomic<size_t> record_bytes = 0;
 
         /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build threads
         /// update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
@@ -826,7 +857,8 @@ private:
     bool shared_runtime_filters_publish_attempted = false;
 
     const HashJoinStatsCollectingParams stats_collecting_params;
-    bool build_phase_finished = false;
+    /// `SpillingHashJoin` reads it from the memory scheduler while `finishBuild` sets it.
+    std::atomic<bool> build_phase_finished = false;
     bool probe_phase_finished = false;
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
@@ -844,8 +876,6 @@ private:
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
-
-    void recomputeBucketBytes();
 
     void initRightBlockStructure(Block & saved_block_sample);
 
@@ -912,5 +942,88 @@ private:
     bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;
+
+    /// The build of a join that waits, see `HashJoinBuild.cpp`.
+
+    /// Called once, on the first block: one build stream or several, the bounds of the wait, the remembered verdict.
+    void decideBuildKind(const JoinBuildContext & context);
+    /// Rethrows the failure of a build that failed.
+    void throwIfBuildFailed() const;
+    /// Marks the build failed with the current exception. Call from a `catch` block.
+    void markBuildFailed() noexcept;
+    /// `KILL QUERY`, the time limit and the stop flags. Called between the blocks of a replay and inside rounds.
+    void checkBuildCancelled() const;
+    /// Inserts the rows of `record` into the table of every `ON` disjunct. Returns whether a table entry or a holder points
+    /// into the stored block.
+    bool insertRecord(WaitingBlockRecord & record, size_t stream);
+    /// Drops the stored block of `record`, which nothing points into, from the list of `stream`.
+    void dropStoredBlock(WaitingBlockRecord & record, size_t stream);
+    /// Frees the record of a block that was inserted or scattered.
+    void releaseRecord(WaitingBlockList & list, WaitingBlockList::iterator it);
+    /// Feeds the sketch of `stream` and refreshes the live estimate; then checks the bounds. Returns why the wait ends now.
+    JoinWaitEnd afterBlockWaits(size_t stream);
+    void maybeRefreshEstimate();
+    /// Merges the sketch of every stream into the estimate of each disjunct, whatever its change flag says. Only for a
+    /// partitioned build, whose streams all have their sketches. No other thread may merge meanwhile.
+    void mergeEverySketch();
+    void liveTest(size_t rows);
+    /// Starts the sketch of one stream of a table of one build stream: feeds the rows it already holds.
+    void startSketch(size_t stream);
+    /// The bounds of the wait that do not depend on the live test.
+    JoinWaitEnd checkWaitBounds() const;
+    /// The wait ended: builds every waiting block. One stream: the replay in arrival order. Several: a round of scatter and
+    /// owners. Returns false when a limit with `break` stopped the right side.
+    bool buildWaitingBlocks(JoinWaitEnd reason);
+    bool replayOneStream();
+    bool runPartitionedRound(JoinWaitEnd reason);
+    /// The exact check of the size limits after a round or a replayed block. `bytes` is what the check reads.
+    bool checkSizeLimitsAfterBuild(size_t bytes);
+    /// The keys that the waiting rows of disjunct `clause_idx` add to its table, estimated: the merged sketch or the cached
+    /// count, times `key_scale`, less the keys the table holds; or the rows themselves. `source` says which.
+    size_t estimatedKeysOfClause(size_t clause_idx, const char ** source = nullptr, double key_scale = 1.0) const;
+    /// The sum over the disjuncts.
+    size_t estimatedKeys() const;
+    /// The bytes that the tables and arenas will take for the waiting rows beyond what they hold now. `every_row_new` counts
+    /// every waiting row as a new key, an upper bound; otherwise each disjunct takes its estimate times `key_scale`. A table
+    /// that an early round built counts the growth that the new keys cause; with `include_built`, it counts as if built anew.
+    /// Reads atomics and fields fixed at construction or by the first round only.
+    size_t projectedTableBytes(bool every_row_new, bool include_built = false, double key_scale = 1.0, bool use_final_routes = false) const;
+    /// The upper bound of the bytes of the join when every waiting row is a new key: the byte bound of the wait.
+    size_t waitByteBound() const;
+    /// The most bytes that the scatter copy of one round takes: the largest of the tables, a quarter of the bytes the join
+    /// holds, and 256 MiB. A build of few keys and many rows then copies its rows in a few rounds, not all at once.
+    size_t roundCopyCap() const;
+    /// The bytes that the scatter of a round copies for `rows` rows whose `String` keys have `string_key_bytes` characters.
+    size_t scatterCopyBytes(size_t rows, size_t string_key_bytes) const;
+    /// Removes a waiting block that is never inserted (a limit with `break`), with its holders and its record.
+    void discardWaitingBlock(WaitingBlockList::iterator it, size_t stream);
+    void logBuild(JoinWaitEnd reason, const JoinPartitionPlan * plan, size_t rows) const;
+
+    /// Decided on the first block, see `decideBuildKind`.
+    std::once_flag build_kind_once;
+    /// The join checks `max_rows_in_join` and `max_bytes_in_join` itself (`JoinBuildContext::joinChecksLimits`).
+    bool join_checks_limits = true;
+    /// A wrapper passed its limits through `setWaitLimits`: the join runs no limit check and no shrink of its own.
+    bool wait_limits_from_wrapper = false;
+    /// A grace bucket: the sketch starts at the first block. See `estimateKeysFromFirstBlock`.
+    bool sketch_from_first_block = false;
+    /// The budget of a Grouped verdict of `evaluateBuildFit`: `finishBuild` builds in rounds over ranges of blocks. 0 = none.
+    size_t grouped_budget = 0;
+    /// The 256-partition reserve hint of the parallel layout fed by one stream, capped at the spill budget.
+    size_t one_stream_reserve_hint = 0;
+    /// The buffer bytes of each table when the constructor made it (after its reserve), so the projection counts only growth.
+    std::vector<size_t> initial_table_bytes;
+    /// The inserts running in a join of one build stream: more than one is a pipeline that feeds it from several streams.
+    std::atomic<size_t> one_stream_inserts = 0;
+    /// The cancel flag of the first processor that added a block. The pipeline cancels every processor that fills the join,
+    /// so this one flag stops the whole build, the one in `finishBuild` too. Null without a processor.
+    std::atomic<const std::atomic<bool> *> build_cancellation_flag = nullptr;
+    /// The right-side rows the build read, the dropped blocks included, for the statistics cache.
+    std::atomic<size_t> rows_read_by_build = 0;
+
+public:
+    /// For `GraceHashJoin` buckets: the join estimates its keys from the first block, because grace reads the key count to
+    /// decide whether a bucket can be split. Before the first block.
+    void estimateKeysFromFirstBlock() { sketch_from_first_block = true; }
 };
 }

@@ -1,9 +1,11 @@
--- Hash joins on 8-bit and 16-bit keys use a fixed-size map. With the serial layout it is one map
--- (`key8`, `key16`). With the parallel layout it is split into buckets (`two_level_key8`,
--- `two_level_key16`). Both layouts must return the same rows for INNER, RIGHT and FULL joins, so each
--- serial result is printed and the parallel result is compared with it. With the serial layout, the
--- fixed-size map serves as a runtime filter only when `join_runtime_filter_from_fixed_hash_table` is on.
+-- Hash joins on 8-bit and 16-bit keys use a fixed-size map (`key8`, `key16`) in the serial layout. With the
+-- parallel layout the keys go to hash partitions, as any other key, and after the build the partitions are
+-- converted to the fixed-size map. Both layouts must return the same rows for INNER, RIGHT and FULL joins, so
+-- each serial result is printed and the parallel result is compared with it.
+-- With the serial layout, the fixed-size map serves as a runtime filter only when
+-- `join_runtime_filter_from_fixed_hash_table` is on.
 -- With the default `hash_join_layout = 'auto'`, the tables are small enough to build the serial layout.
+-- The trace log names the same map type for both layouts, so the layout events show which layouts a query built.
 
 DROP TABLE IF EXISTS t_u8_l;
 DROP TABLE IF EXISTS t_u8_r;
@@ -132,21 +134,26 @@ SETTINGS hash_join_layout = 'serial', join_runtime_filter_from_fixed_hash_table 
 
 SYSTEM FLUSH LOGS query_log, text_log;
 
-SELECT '-- per query: map types built, type converted to, runtime filter published';
+SELECT '-- per query: map types built, type converted to, runtime filter published, serial and parallel layouts built';
 SELECT
     q.log_comment,
     arraySort(groupUniqArrayIf(extract(t.message, 'Join hash table type: (\\w+)'), t.message LIKE '%Join hash table type: %')) AS built,
     arraySort(groupUniqArrayIf(extract(t.message, 'type: (\\w+)\\)'), t.message LIKE '%Converted join hash map to fixed hash map%')) AS converted,
-    countIf(t.message LIKE '%Published shared fixed-hash-table runtime filter%') > 0 AS filter_published
+    countIf(t.message LIKE '%Published shared fixed-hash-table runtime filter%') > 0 AS filter_published,
+    q.serial_built,
+    q.parallel_built
 FROM system.text_log AS t
 INNER JOIN
 (
-    SELECT query_id, log_comment FROM system.query_log
+    SELECT query_id, log_comment,
+        ProfileEvents['HashJoinBuiltWithSerialLayout'] > 0 AS serial_built,
+        ProfileEvents['HashJoinBuiltWithParallelLayout'] > 0 AS parallel_built
+    FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
           AND match(log_comment, '^04891_(key|rf)')
 ) AS q ON t.query_id = q.query_id
 WHERE t.event_date >= yesterday() AND t.event_time >= now() - 600
-GROUP BY q.log_comment
+GROUP BY q.log_comment, q.serial_built, q.parallel_built
 ORDER BY q.log_comment;
 
 DROP TABLE t_u8_l;

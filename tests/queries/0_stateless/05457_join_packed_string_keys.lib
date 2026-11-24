@@ -125,7 +125,7 @@ function queries()
     local mode=$1
     for t in "${TABLES[@]}"
     do
-        # Joins whose keys are not a single `String`: the maps `two_level_hashed` and `two_level_keys256`.
+        # Joins whose keys are not a single `String`: the maps `hashed` and `keys256`.
         if [ "$t" = neg ]
         then
             local settings c="neg:parallel" all="SELECT cityHash64(p.k), p.w, cityHash64(b.k), b.v FROM p_s AS p INNER ALL JOIN b_s AS b"
@@ -247,10 +247,10 @@ rm -f "$OUT_OFF" "$OUT_ON"
 # With the setting on, every `parallel_hash` join on a single `String` key must use the packed keys, and no other join
 # may: not `full_sorting_merge`, and not the joins on `LowCardinality(Nullable(String))` keys or on the keys of `neg`.
 #
-# The spilling joins that keep every right row must switch to `grace_hash` after they have inserted rows with packed
-# keys. The others keep a smaller hash table, which may stay below the threshold. Fewer than all the rows of `b_big` go
-# in before the switch, and `grace_hash` inserts all of them again with packed keys. So a join that switched inserts
-# more packed keys than `b_big` has rows.
+# The spilling joins that keep every right row must switch to `grace_hash`. The others keep a smaller hash table, which
+# may stay below the threshold. Fewer than all the rows of `b_big` go in before the switch, possibly none, and
+# `grace_hash` inserts all of them again with packed keys. So a join that switched inserts at least as many packed keys
+# as `b_big` has rows.
 $CLICKHOUSE_CLIENT -q "
     SYSTEM FLUSH LOGS query_log;
 
@@ -274,6 +274,6 @@ $CLICKHOUSE_CLIENT -q "
     WHERE algorithm = 'spill' AND NOT spilled AND (config LIKE '%_ALL' OR config LIKE '%:RIGHT_%')
     ORDER BY ALL;
     SELECT 'grace after the switch kept exact keys', config FROM used
-    WHERE expected = 1 AND algorithm = 'spill' AND spilled AND inline_keys + hashed_keys <= (SELECT count() FROM b_big)
+    WHERE expected = 1 AND algorithm = 'spill' AND spilled AND inline_keys + hashed_keys < (SELECT count() FROM b_big)
     ORDER BY ALL;
 "

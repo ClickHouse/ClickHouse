@@ -15,16 +15,25 @@ struct PrefetchingLookup
     template <HashJoin::Type, typename>
     static constexpr bool supports = true;
 
+    /// The form of the table (single or partitioned) is chosen here, once per search.
     template <HashJoin::Type TYPE, typename Maps, bool fast_path, bool row_list, typename OnRow>
     ALWAYS_INLINE static size_t run(const FindKeysArgs & args, OnRow && on_row)
     {
-        using Map = const JoinMapOf<TYPE, Maps>;
-        using KeyGetter = typename KeyGetterForType<TYPE, Map>::Type;
+        return args.table.visitForm<TYPE, Maps>([&]<typename Form>(const Form & map) ALWAYS_INLINE -> size_t
+        {
+            return runOn<TYPE, Maps, fast_path, row_list>(args, map, on_row);
+        });
+    }
+
+    template <HashJoin::Type TYPE, typename Maps, bool fast_path, bool row_list, typename Form, typename OnRow>
+    ALWAYS_INLINE static size_t runOn(const FindKeysArgs & args, const Form & map, OnRow && on_row)
+    {
+        using Map = const Form;
+        using KeyGetter = typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type;
         using FindResult = typename KeyGetter::FindResult;
         constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
 
         chassert(row_list == (args.rows.rows != nullptr));
-        const Map & map = args.table.mapOf<TYPE, Maps>();
         decltype(auto) key_getter = keyGetterOf<KeyGetter, is_asof_join>(args);
 
         /// Locals, so that the stores in `on_row` do not make the loop reload them.

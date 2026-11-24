@@ -2,11 +2,13 @@
 
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinPartitionedBuild.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Common/FailPoint.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -56,6 +58,11 @@ SpillingHashJoin::SpillingHashJoin(
     hash_join = HashJoin::create(table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_);
     /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
     hash_join->keepRightBlocksForAnotherAlgorithm();
+    /// A memory spill scheduler that switches the join on memory pressure needs to see the table grow before the limit.
+    /// The wait of several build streams ends at build finish, where `getMemoryStats` reports the build to come.
+    if (!hash_join->supportParallelJoin())
+        if (const auto hard_limit = getCurrentQueryHardLimit())
+            hash_join->setWaitMemoryBound(*hard_limit / 2);
     supports_parallel_non_joined_blocks_processing = hash_join->supportParallelNonJoinedBlocksProcessing();
 }
 
@@ -142,14 +149,8 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
         return addBlockToExternalJoin(block, num_rows, context);
     }
 
-    /// The hash table buffer grows in power-of-two steps. Doubling from X to 2X allocates the new
-    /// buffer while the old one is still alive, transiently using 3X memory. We must trigger the
-    /// switch BEFORE the inner `addBlockToJoin` runs (and possibly doubles the buffer); a check
-    /// that runs after the call would race with the doubling and observe the OOM only as an
-    /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
-    /// the switch the live buffer (already at half) plus the conversion peak still fit under the
-    /// configured cap.
-    if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+    /// Before the inner `addBlockToJoin`: a check after it would race with a doubling of the table.
+    if (overBudgetBeforeBlock())
         switchToExternalJoin(context);
 
     /// Re-check: we may have just switched.
@@ -172,9 +173,35 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     return hash_join->addBlockToJoin(block, num_rows, context);
 }
 
+bool SpillingHashJoin::overBudgetBeforeBlock() const
+{
+    /// A table that exists grows in power-of-two steps. Doubling from X to 2X allocates the new
+    /// buffer while the old one is still alive, transiently using 3X memory. The threshold is half of
+    /// `max_bytes_before_external_join`, so that after the switch the live buffer (already at half)
+    /// plus the conversion peak still fit under the configured cap.
+    if (!hash_join->isWaiting() || hash_join->builtEarly())
+        return hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join;
+
+    /// While the join waits, its tables do not exist yet, and the projection counts them. It leaves out the copy that
+    /// scatters the keys to the partitions: a build in rounds keeps that copy small, and spilling such a build would be
+    /// far slower than building it in memory. The tables of several build streams are reserved once from the key
+    /// estimate and do not double. The table of one build stream grows as above.
+    const size_t projected_bytes = hash_join->getProjectedByteCount();
+    if (hash_join->supportParallelJoin())
+        return projected_bytes >= max_bytes_before_external_join;
+    return projected_bytes * 2 >= max_bytes_before_external_join;
+}
+
+bool SpillingHashJoin::isLastTurnBeforeBuild() const
+{
+    /// `onBuildPhaseFinish` runs in `prepare` of the last filling transform and the build in its `work`. The
+    /// executor gives the memory scheduler one turn in between, and never during the build.
+    return state.load(std::memory_order_acquire) == State::IN_MEMORY_JOIN && !hash_join->isBuildFinished();
+}
+
 ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
 {
-    if (state.load(std::memory_order_acquire) != State::COLLECTING)
+    if (state.load(std::memory_order_acquire) != State::COLLECTING && !isLastTurnBeforeBuild())
     {
         /// Nothing to report for the MergeJoin fallback either: it writes the right side through
         /// its disk writer as it arrives, so a pinned join holds no spillable memory.
@@ -192,10 +219,15 @@ ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
         return res;
     }
 
+    /// While collecting, and in the last turn before the build. A switch frees what the join holds. A join that waits
+    /// holds only its blocks, and its tables and the scatter copy of its rounds come with the build, where the scheduler
+    /// gets no turn. So its need is the growth still to come plus, as for a built join, its whole size once built, because
+    /// the released blocks stay alive while the grace join re-inserts them. Once built, the need is its bytes.
+    const size_t allocated_bytes = hash_join->getTotalByteCount();
+    const size_t projected_bytes = std::max(hash_join->getProjectedByteCount() + hash_join->getProjectedCopyBytes(), allocated_bytes);
     ProcessorMemoryStats res;
-    res.spillable_memory_bytes = hash_join->getTotalByteCount();
-    /// The released blocks stay alive while the grace join re-inserts them.
-    res.need_reserved_memory_bytes = res.spillable_memory_bytes;
+    res.spillable_memory_bytes = allocated_bytes;
+    res.need_reserved_memory_bytes = projected_bytes + (projected_bytes - allocated_bytes);
     return res;
 }
 
@@ -206,10 +238,14 @@ size_t SpillingHashJoin::spill(size_t at_least_bytes)
 
     throwIfSwitchFailed();
 
-    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    const bool last_turn = isLastTurnBeforeBuild();
+    if (last_turn || state.load(std::memory_order_acquire) == State::COLLECTING)
     {
         size_t before = getTotalByteCount();
         switchToExternalJoin(JoinBuildContext::serial(), /*spill_immediately=*/true);
+        /// The in-memory join already had its `onBuildPhaseFinish`; the external join that replaces it needs its own.
+        if (last_turn && state.load(std::memory_order_acquire) != State::IN_MEMORY_JOIN)
+            chosen_join->onBuildPhaseFinish();
         size_t after = getTotalByteCount();
         /// Check the new grace bucket's spillable estimate before requesting a repartition.
         return before > after ? before - after : 0;
@@ -220,7 +256,8 @@ size_t SpillingHashJoin::spill(size_t at_least_bytes)
     return grace_join ? grace_join->spill(at_least_bytes) : 0;
 }
 
-void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill_immediately)
+void SpillingHashJoin::switchToExternalJoin(
+    JoinBuildContext context, bool spill_immediately, size_t num_buckets_hint, size_t conversion_workers)
 {
     /// The target is pinned at plan time: MergeJoin when the plan requires the left stream's row
     /// order (the pipeline was then built without the delayed-block transforms GraceHashJoin
@@ -235,7 +272,9 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
     /// Meaningful only for GraceHashJoin: the MergeJoin fallback always spills immediately by
     /// construction - `spillRightBlocksToDisk` switches to the disk writer before the first
     /// drained block.
-    const size_t num_buckets = spill_immediately ? std::max<size_t>(initial_num_buckets, 2) : initial_num_buckets;
+    size_t num_buckets = std::max(initial_num_buckets, num_buckets_hint);
+    if (spill_immediately)
+        num_buckets = std::max<size_t>(num_buckets, 2);
 
     const auto make_external_join = [&]() -> JoinPtr
     {
@@ -267,7 +306,7 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
     {
         std::unique_lock lock(switch_mutex);
 
-        if (state.load(std::memory_order_relaxed) != State::COLLECTING)
+        if (state.load(std::memory_order_relaxed) != State::COLLECTING && !isLastTurnBeforeBuild())
             return;
 
         LOG_DEBUG(
@@ -317,7 +356,15 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
     /// Every insert into the in-memory join holds `switch_mutex` shared, so none runs any more, and threads
     /// queued on the lock need not wait for the free. Freeing before the conversion lowers its peak.
     hash_join->releaseJoinMaps();
-    tryConvertBuildStreams(context);
+    if (conversion_workers <= 1)
+    {
+        tryConvertBuildStreams(context);
+        return;
+    }
+    /// Each worker inserts with a stream id of its own, as the filling threads do.
+    std::atomic<bool> stop = false;
+    JoinPartitionedBuild::runWorkers(
+        conversion_workers, stop, [&](size_t worker) { tryConvertBuildStreams(JoinBuildContext::forStream(worker, conversion_workers)); });
 }
 
 void SpillingHashJoin::throwIfSwitchFailed() const
@@ -337,21 +384,40 @@ void SpillingHashJoin::onBuildPhaseFinish()
 
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
-        /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
-        /// fires only on subsequent calls. If the very last block pushed total bytes past
-        /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
-        /// promote it to `GraceHashJoin` here so the configured cap is honored.
-        const size_t total_bytes = hash_join->getTotalByteCount();
-        if (total_bytes >= max_bytes_before_external_join)
+        /// The pre-insert check in `addBlockToJoin` fires only on a following block, so the last block may have
+        /// pushed the join past `max_bytes_before_external_join`. A join that waits is judged by the build it would
+        /// run: at once, in rounds, or not at all.
+        const bool must_spill = hash_join->getTotalByteCount() >= max_bytes_before_external_join
+            || hash_join->evaluateBuildFit(max_bytes_before_external_join) == HashJoin::BuildFit::MustSpill;
+        if (must_spill)
         {
-            switchToExternalJoin(JoinBuildContext::serial());
+            /// `GraceHashJoin` splits a bucket at half the threshold (`hasMemoryOverflow`), so that is the capacity of
+            /// one bucket. Starting with enough buckets saves re-scattering the same rows once per doubling.
+            const size_t projected_bytes = hash_join->getProjectedByteCount();
+            const size_t bucket_capacity = max_bytes_before_external_join / 2;
+            const size_t num_buckets_hint = bucket_capacity ? (projected_bytes + bucket_capacity - 1) / bucket_capacity : 0;
+            LOG_DEBUG(
+                log,
+                "The build does not fit in memory ({} bytes now, {} bytes projected, {} rows), {} initial buckets",
+                hash_join->getTotalByteCount(),
+                projected_bytes,
+                hash_join->getTotalRowCount(),
+                num_buckets_hint);
+            /// Every filling thread but this one has finished, so the build streams convert on threads of their own. The
+            /// `MergeJoin` fallback takes one block at a time.
+            switchToExternalJoin(
+                JoinBuildContext::serial(),
+                /*spill_immediately=*/false,
+                num_buckets_hint,
+                keep_left_block_order ? 1 : getMaxBuildThreads());
         }
         else
         {
             LOG_DEBUG(
                 log,
-                "All blocks fit in memory ({} bytes, {} rows), promoting HashJoin",
-                total_bytes,
+                "All blocks fit in memory ({} bytes, {} bytes projected, {} rows), promoting HashJoin",
+                hash_join->getTotalByteCount(),
+                hash_join->getProjectedByteCount(),
                 hash_join->getTotalRowCount());
             chosen_join = hash_join;
             state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
@@ -360,9 +426,9 @@ void SpillingHashJoin::onBuildPhaseFinish()
 
     chosen_join->onBuildPhaseFinish();
 
-    /// The switch to `GraceHashJoin` can only happen while collecting, and that is over: whatever
-    /// right blocks were kept in case it did are now dead weight for the whole probe phase, so a
-    /// join that stores only the keys can drop them.
+    /// Once the build has run, no switch can happen, so whatever right blocks were kept in case it did are dead
+    /// weight for the whole probe phase, and a join that stores only the keys can drop them. `HashJoin` runs the drop
+    /// at the end of its build, which still reads the blocks of a key-only table.
     if (state.load(std::memory_order_acquire) == State::IN_MEMORY_JOIN)
         hash_join->dropRightBlocksKeptForAnotherAlgorithm();
 }

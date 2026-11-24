@@ -78,7 +78,8 @@ public:
     StepAnalysisReport getAnalysisReport() const override;
 
     ISpillable * getSpillable() override { return &spillable; }
-    /// While collecting: the whole right side, spilled by switching to the external join.
+    /// While collecting, and in the one turn between `onBuildPhaseFinish` and the build: the whole right side,
+    /// spilled by switching to the external join. In that last turn the need is the projected peak of the build.
     /// After the switch to GraceHashJoin: the grace join and the blocks of unconverted build streams.
     /// Nothing after the switch to MergeJoin, or once the build ended in memory.
     ProcessorMemoryStats getMemoryStats() const;
@@ -113,14 +114,15 @@ public:
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
-    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
-    /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
-    /// fixed hash map, publishing the shared runtime filter).
+    /// Forwarded to the join actually chosen in `onBuildPhaseFinish` (or replaced by a spill right
+    /// after it), so that an in-memory `HashJoin` runs its build and then its post-build
+    /// optimizations (right-table reranging, conversion to a fixed hash map, publishing the shared
+    /// runtime filter).
     /// After a spill to `MergeJoin`, forwarding runs its post-build phase, which merges the right
-    /// blocks. After a spill to `GraceHashJoin`, which does not override these methods,
-    /// `GraceHashJoin` itself runs the post-build phase only when the right table ended up in a
-    /// single bucket. Multi-bucket spills skip it, because a hash table holding one bucket cannot
-    /// produce a runtime filter valid for the whole right table.
+    /// blocks. `GraceHashJoin` does not override these methods: it builds its bucket in its own
+    /// `onBuildPhaseFinish`, and runs the post-build optimizations only when the right table ended up
+    /// in a single bucket, because a hash table holding one bucket of several cannot produce a
+    /// runtime filter valid for the whole right table.
     bool hasPostBuildPhase() const override;
     void runPostBuildPhase() override;
 
@@ -142,8 +144,14 @@ private:
     /// otherwise) and starts converting the HashJoin build streams into it. `spill_immediately` is for the
     /// memory-pressure path: a new GraceHashJoin then repartitions as it takes the data over,
     /// instead of holding all of it in bucket 0 until the next spill request (MergeJoin always
-    /// puts the drained blocks on disk right away).
-    void switchToExternalJoin(JoinBuildContext context, bool spill_immediately = false);
+    /// puts the drained blocks on disk right away). A new GraceHashJoin starts with at least
+    /// `num_buckets_hint` buckets. Without `spill_immediately`, `conversion_workers` threads convert the build streams.
+    void switchToExternalJoin(
+        JoinBuildContext context, bool spill_immediately = false, size_t num_buckets_hint = 0, size_t conversion_workers = 1);
+    /// The check before every block that the in-memory join takes while collecting.
+    bool overBudgetBeforeBlock() const;
+    /// `onBuildPhaseFinish` kept the in-memory join, and its build has not run yet.
+    bool isLastTurnBeforeBuild() const;
     /// Every insert into the external join funnels through here: MergeJoin inserts are
     /// serialized by `merge_join_insert_mutex` (single-threaded build), GraceHashJoin inserts
     /// stay concurrent.

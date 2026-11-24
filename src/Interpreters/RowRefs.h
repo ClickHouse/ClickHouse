@@ -631,6 +631,9 @@ struct SortedLookupVectorBase
 
     // This will be synchronized by the rwlock mutex in Join.h
     virtual void insert(const IColumn &, UInt32 block_no, size_t) = 0;
+    /// The same insert, for a value given as its bytes in the layout of the `ASOF` column. The partitioned build scatters
+    /// the values that way.
+    virtual void insertValue(const char * value, UInt32 block_no, size_t row_num) = 0;
 
     // This needs to be synchronized internally. Returns nullptr when there is no match.
     virtual const RowRef * findAsof(const IColumn &, size_t) = 0;

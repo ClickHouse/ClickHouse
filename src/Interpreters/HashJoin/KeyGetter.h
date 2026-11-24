@@ -196,8 +196,8 @@ struct LowCardinalityKeyGetterForJoin
 ///   key of row `i` for the rows [begin, end). `skip` is the skip bytes of the block: the keys of the rows `i` with
 ///   `skip[i] != 0` may be left unset.
 /// `getKeyHolder` builds the key of a row, or reads keys built ahead:
-/// - after `buildAllKeys` or `usePrebuiltKeys`, the keys of the rows that the slot scatter of a parallel build routed.
-///   The scatter calls `buildAllKeys`, and the slot inserts pass the keys it built to `usePrebuiltKeys`;
+/// - after `buildAllKeys`, the keys of the rows of a selector. The fill pass of a partitioned build calls it and keeps the
+///   keys in the record of the block;
 /// - after `prepareRange`, the keys of a continuous range of rows, built 256 rows at a time when a read goes past the
 ///   built ones. Each insert of the build and each key search of the probe prepares its rows before it creates its
 ///   prefetcher, so each key is built once for both the prefetch and the lookup: a range with `prepareRange`, a row list
@@ -278,16 +278,6 @@ struct PreparedJoinKeys
         ready_keys = {keys.data(), keys.size()};
     }
 
-    /// `keys[row]` is the key of each row that `buildAllKeys` listed. The key of `check_row`, a listed row, is built again
-    /// to check that they are the keys of this column.
-    void usePrebuiltKeys(std::span<const UInt128> keys, size_t check_row)
-    {
-        if (check_row >= keys.size() || keys[check_row] != derived().buildKey(check_row))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The join key built for row {} is not the key of that row", check_row);
-        ready_begin = 0;
-        ready_keys = keys;
-    }
-
     void prepareAscendingRows(std::span<const UInt64> rows, const UInt8 * skip)
     {
         if (rows.empty() || !std::is_sorted(rows.begin(), rows.end()))
@@ -364,7 +354,7 @@ private:
 template <typename KeyGetter>
 concept PreparedKeyGetter = std::derived_from<KeyGetter, PreparedJoinKeys<KeyGetter>>;
 
-/// The key of a row in the `hashed` and `two_level_hashed` maps: `ColumnsHashing::hash128` of its key columns. The build
+/// The key of a row in the `hashed` maps: `ColumnsHashing::hash128` of its key columns. The build
 /// and the probe of one map can see different column types for one key, for example `Tuple(LowCardinality(String))` and
 /// `Tuple(String)`, so every way of building a key must give exactly `hash128`.
 class HashedJoinKey
@@ -426,7 +416,7 @@ private:
     PaddedPODArray<UInt8> buffer;
 };
 
-/// Key getter of `hashed` and `two_level_hashed`. It builds the `HashedJoinKey` of a row, or reads keys built ahead, see
+/// Key getter of `hashed`. It builds the `HashedJoinKey` of a row, or reads keys built ahead, see
 /// `PreparedJoinKeys`.
 template <typename Value, typename Mapped>
 struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::HashMethodBase<
@@ -454,7 +444,7 @@ struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::Ha
     void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip) { key.buildRange(begin, end, keys, skip); }
 };
 
-/// The 16-byte key of a single `String` join key in the `key_packed_string` and `two_level_key_packed_string` maps.
+/// The 16-byte key of a single `String` join key in the `key_packed_string` maps.
 ///
 /// - Up to 15 bytes: the `UnhashedPackedStringRef` of the string. It is exact: byte 15 holds the length, and the bytes
 ///   past the end are zero. The empty string is the zero key.
@@ -488,7 +478,7 @@ struct PackedStringJoinKey
         const char * chars, const IColumn::Offset * offsets, size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip);
 };
 
-/// Key getter of `key_packed_string` and `two_level_key_packed_string`. It builds the `PackedStringJoinKey` of a row,
+/// Key getter of `key_packed_string`. It builds the `PackedStringJoinKey` of a row,
 /// or reads keys built ahead, see `PreparedJoinKeys`.
 template <typename Value, typename Mapped>
 struct HashMethodPackedStringJoinKey : public ColumnsHashing::columns_hashing_impl::HashMethodBase<
@@ -599,54 +589,6 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 {
     using Type = LowCardinalityKeyGetterForJoin<
         ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>, Mapped>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key32, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key64, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_string, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_fixed_string, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys32, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt32, Mapped, false, false, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys64, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt64, Mapped, false, false, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys128, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt128, Mapped, false, false, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys256, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt256, Mapped, false, false, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_hashed, Value, Mapped>
-{
-    using Type = HashMethodHashedJoinKey<Value, Mapped>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key8, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key16, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_packed_string, Value, Mapped>
-{
-    using Type = HashMethodPackedStringJoinKey<Value, Mapped>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_packed_string, Value, Mapped>
 {

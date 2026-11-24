@@ -1000,7 +1000,7 @@ Functions selectFunctions(HashJoin::Type key_type, Tables tables, bool fast_path
         const auto use_layout = [&]<MatchLayout layout>()
         {
             constexpr bool flags = Handling::used_flag_action != UsedFlagAction::None;
-            functions.add_matches = tables.front()->bucketsAreRobinHood()
+            functions.add_matches = tables.front()->partitionsAreRobinHood()
                 ? selectFindKeysAndAddMatches<Handling, layout, AmacLookup<true, flags>>(key_type, fast_path)
                 : selectFindKeysAndAddMatches<Handling, layout, AmacLookup<false, flags>>(key_type, fast_path);
             if constexpr (layout == MatchLayout::Indexed)

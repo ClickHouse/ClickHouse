@@ -14,7 +14,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event JoinBuildPostProcessingMicroseconds;
     extern const Event JoinBuildTableRowCount;
     extern const Event JoinProbeTableRowCount;
     extern const Event JoinResultRowCount;
@@ -343,7 +342,7 @@ FillingRightJoinSideTransform::FillingRightJoinSideTransform(
     : IProcessor({input_header}, {Block()})
     , join(std::move(join_))
     , finish_counter(std::move(finish_counter_))
-    , build_context(build_context_)
+    , build_context(build_context_.withCancellationFlag(getCancellationFlag()))
 {
 }
 
@@ -476,7 +475,8 @@ void FillingRightJoinSideTransform::work()
 {
     if (post_build_phase)
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
+        /// For a `HashJoin` this runs the build itself (`HashJoin::finishBuild`) before the post-build steps, which
+        /// `HashJoin::runPostBuildOptimizations` times as `JoinBuildPostProcessingMicroseconds`.
         join->runPostBuildPhase();
         return;
     }

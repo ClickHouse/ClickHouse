@@ -117,6 +117,8 @@ public:
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
 
+    /// Builds the table of the bucket in memory (`HashJoin::finishBuild`), and with one bucket runs its post-build
+    /// optimizations. A delayed bucket is built in `getDelayedBlocks`.
     void onBuildPhaseFinish() override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
@@ -196,14 +198,15 @@ private:
 
     mutable std::mutex current_bucket_mutex;
 
+    /// What the buckets built and already released held, for the `max_rows_in_join` /
+    /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.
+    /// Declared before `hash_join`, whose initializer reads them in `makeInMemoryJoin`.
+    std::atomic<size_t> accounted_right_rows = 0;
+    std::atomic<size_t> accounted_right_bytes = 0;
+
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
-
-    /// What the buckets built and already released held, for the `max_rows_in_join` /
-    /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.
-    std::atomic<size_t> accounted_right_rows = 0;
-    std::atomic<size_t> accounted_right_bytes = 0;
 
     GraceHashJoinStats stats;
 

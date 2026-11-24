@@ -114,13 +114,22 @@ struct HashJoinEntry
 
     [[nodiscard]] bool shouldBeUpdated(const HashJoinEntry & new_entry) const
     {
-        return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size;
+        return new_entry.ht_size < ht_size / MAX_OVERESTIMATION_FACTOR || ht_size < new_entry.ht_size
+            || new_entry.repeats_dominate != repeats_dominate;
     }
 
-    [[nodiscard]] std::string dump() const { return fmt::format("ht_size={}", ht_size); }
+    [[nodiscard]] std::string dump() const
+    {
+        return fmt::format("ht_size={}, rows_read={}, repeats_dominate={}", ht_size, rows_read, repeats_dominate);
+    }
 
-    size_t ht_size; // the size of the shared hash table
-    size_t source_rows; // the number of rows in the source table
+    size_t ht_size = 0; // the size of the shared hash table
+    size_t source_rows = 0; // the number of rows in the source table
+    /// The right-side rows the build read, the dropped blocks included. `source_rows` leaves those out, and the planner reads it
+    /// as the size of the right side.
+    size_t rows_read = 0;
+    /// The live test of the last run found that keys stop arriving early: the next run ends its wait at the first block.
+    bool repeats_dominate = false;
 };
 
 struct HashJoinMatchEntry

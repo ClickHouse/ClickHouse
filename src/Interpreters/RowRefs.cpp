@@ -121,6 +121,17 @@ public:
         row_refs.emplace_back(RowRef(block_no, row_num));
     }
 
+    void insertValue(const char * value, UInt32 block_no, size_t row_num) override
+    {
+        TKey key{};
+        memcpy(&key, value, sizeof(TKey));
+
+        chassert(!sorted.load(std::memory_order_acquire));
+
+        entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
+        row_refs.emplace_back(RowRef(block_no, row_num));
+    }
+
     /// Unrolled version of upper_bound and lower_bound
     /// Loosely based on https://web.archive.org/web/20190917063426/https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
     /// In the future it'd interesting to replace it with a B+Tree Layout as described

@@ -93,7 +93,6 @@ SETTINGS join_algorithm = 'hash';
 
 -- How many passes over the hash table were skipped and done: none done when every right key matched, one done (by
 -- the part that holds the unmatched key) otherwise, none of either with per-row flags.
--- A parallel fixed-key map (`u8`, `u16`) is one flat table, so when a key is unmatched each of the 4 streams walks it.
 SYSTEM FLUSH LOGS query_log;
 SELECT substring(log_comment, 8),
     ProfileEvents['JoinNonJoinedHashTableScansSkipped'] > 0,

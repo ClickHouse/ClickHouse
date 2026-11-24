@@ -1226,8 +1226,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     const auto build_layout
         = table_join->preferParallelHashLayout(params.hash_join_layout, params.rhs_size_estimation, params.parallel_hash_join_threshold)
-        ? HashJoinBuildLayout::twoLevel(params.max_threads)
-        : HashJoinBuildLayout::oneBucket(1);
+        ? HashJoinBuildLayout::parallelLayout(params.max_threads)
+        : HashJoinBuildLayout::serialLayout(1);
 
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);

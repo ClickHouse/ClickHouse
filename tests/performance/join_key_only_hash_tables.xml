@@ -19,7 +19,7 @@
 
     <!-- ANTI on a `UInt64` key: the `key64` set map, and the right blocks go away as they are built. -->
     <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial' FORMAT Null</query>
-    <!-- The same under `parallel_hash`: the `two_level_key64` set map. -->
+    <!-- The same under `parallel_hash`: the `key64` set map, built with the parallel layout. -->
     <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
     <!-- Spilling may reclaim the right blocks, so they are kept and only the smaller cell is left to win. -->
     <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial', max_bytes_before_external_join = 10000000000 FORMAT Null</query>

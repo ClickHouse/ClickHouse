@@ -525,6 +525,12 @@ struct ZeroValueStorage<false, Cell>
     [[nodiscard]] const Cell * zeroValue() const { return nullptr; }
 };
 
+namespace DB
+{
+template <typename>
+class JoinPartitionedView;
+}
+
 // The HashTable
 template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator>
 class HashTable : private boost::noncopyable,
@@ -551,6 +557,10 @@ protected:
 
     template <typename, typename, size_t>
     friend class TwoLevelStringHashTable;
+
+    /// The partition view of a hash join reads the cells of its maps.
+    template <typename>
+    friend class DB::JoinPartitionedView;
 
     template <typename SubMaps>
     friend class StringHashTable;

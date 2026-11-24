@@ -41,11 +41,11 @@ ProbeRows rowsToProbe(const JoinRightColumnsData & data, size_t k)
     return {.first = data.batch_first_row, .rows = nullptr, .size = data.batch_rows};
 }
 
-/// The key search of disjunct `k` by the AMAC ring, for the mode of the buckets of its table. Null where the ring has none.
+/// The key search of disjunct `k` by the AMAC ring, for the mode of the partitions of its table. Null where the ring has none.
 FindKeysFn ringFn(const JoinRightColumnsData & data, size_t k)
 {
     const auto & ring = k == 0 ? data.functions.find_keys_ring_first : data.functions.find_keys_ring_later;
-    return ring[data.tables[k]->bucketsAreRobinHood()];
+    return ring[data.tables[k]->partitionsAreRobinHood()];
 }
 
 size_t findKeysOfDisjunct(JoinRightColumnsData & data, size_t k)

@@ -181,6 +181,8 @@ private:
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
+    /// The build of a hash join reads it too: from this many waiting rows it estimates its keys and may end its wait early.
+    size_t hash_join_parallel_threshold = 0;
 
     /// Decision by the planner whether to enable row store tranformation or not.
     NameSet row_store_candidate_columns;
@@ -298,6 +300,7 @@ public:
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     size_t getMaxMemoryUsage() const;
+    size_t parallelHashJoinThreshold() const { return hash_join_parallel_threshold; }
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 

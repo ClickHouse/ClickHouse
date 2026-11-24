@@ -82,6 +82,9 @@ public:
 
     [[nodiscard]] Kind getKind() const { return kind; }
 
+    /// The mask column when the mask is a real column (kind `Unknown`), nullptr otherwise.
+    [[nodiscard]] const ColumnPtr & getColumn() const { return column; }
+
 private:
     ColumnPtr column;
     size_t size;

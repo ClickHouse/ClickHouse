@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/HashJoin/BuildSlots.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
@@ -121,8 +120,49 @@ KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & k
     return getter;
 }
 
+/// The table object of the key type `TYPE`: a `JoinMapForms`, or a map that has only the single form.
 template <HashJoin::Type TYPE, typename Maps>
-using JoinMapOf = typename std::remove_cvref_t<decltype(std::declval<Maps &>().template mapOf<TYPE>())>::element_type;
+using JoinTableOf = typename std::remove_cvref_t<decltype(std::declval<Maps &>().template mapOf<TYPE>())>::element_type;
+
+namespace detail
+{
+template <typename Table>
+struct JoinFormsOf
+{
+    using Single = Table;
+    using Partitioned = void;
+};
+template <typename Single_, typename Partitioned_>
+struct JoinFormsOf<JoinMapForms<Single_, Partitioned_>>
+{
+    using Single = Single_;
+    using Partitioned = Partitioned_;
+};
+template <typename Form>
+struct JoinPartMapOfForm
+{
+    using Type = Form;
+};
+template <typename Map>
+struct JoinPartMapOfForm<JoinPartitionedView<Map>>
+{
+    using Type = Map;
+};
+
+}
+
+/// The single form of the key type `TYPE`: a `JoinSingleView` of a hash map, or a direct-addressed map.
+template <HashJoin::Type TYPE, typename Maps>
+using JoinMapOf = typename detail::JoinFormsOf<JoinTableOf<TYPE, Maps>>::Single;
+
+/// The partitioned form of the key type `TYPE`: a `JoinPartitionedView`, or `void` for a key type that has no partitioned
+/// form.
+template <HashJoin::Type TYPE, typename Maps>
+using JoinPartitionedFormOf = typename detail::JoinFormsOf<JoinTableOf<TYPE, Maps>>::Partitioned;
+
+/// The map of one partition of the key type `TYPE`.
+template <HashJoin::Type TYPE, typename Maps>
+using JoinPartMapOf = typename detail::JoinPartMapOfForm<JoinPartitionedFormOf<TYPE, Maps>>::Type;
 
 namespace detail
 {
@@ -172,8 +212,23 @@ void insertKey(MutableColumns & columns, const KeyLayout & layout, std::string_v
 
 }
 
-/// The hash table of one `ON` disjunct of a `HashJoin`. All the tables of a join have one key type. `mapOf` takes that type
-/// as a template argument, so the probe switches on it once per block. The other methods switch on the stored type.
+namespace detail
+{
+
+/// A map whose grower can be stepped through the sizes the map takes as it grows.
+template <typename Map>
+concept GrowerCanBeStepped = requires(typename Map::grower_type grower)
+{
+    grower.overflow(size_t{});
+    grower.increaseSize();
+    typename Map::cell_type;
+};
+
+}
+
+/// The hash table of one `ON` disjunct of a `HashJoin`. All the tables of a join have one key type. `visitForm` takes that type
+/// as a template argument, so the probe switches on it and on the form (single or partitioned) once per block. The other
+/// methods switch on the stored type.
 class HashJoinTable
 {
 public:
@@ -181,9 +236,8 @@ public:
     /// Where a walk over the cells resumes.
     using Cursor = std::any;
 
-    /// `key_class` is the key type of a one-bucket map. A two-level `layout` turns it into the two-level type.
-    /// `robin_hood_allowed` is the setting `enable_robin_hood_hash_for_joins`: a two-level map may switch to the Robin Hood mode
-    /// when it grows large.
+    /// The table starts with one empty map in the single form. `robin_hood_allowed` is the setting
+    /// `enable_robin_hood_hash_for_joins`: the map of a partition may switch to the Robin Hood mode when it grows large.
     HashJoinTable(
         Type key_class,
         Sizes key_sizes_,
@@ -204,6 +258,68 @@ public:
 
     /// The number of keys inserted so far. Other threads may be inserting.
     size_t keys() const { return num_keys.load(std::memory_order_relaxed); }
+    /// Adds `n` to the key count, for a filler that inserts into the maps directly.
+    void addKeys(size_t n) { num_keys.fetch_add(n, std::memory_order_relaxed); }
+
+    /// Switches an empty table to the partitioned form with `2^partition_bits` partitions. The maps of the partitions are
+    /// created by their fillers, and the rest by `freezeForProbing`. A table of a LowCardinality key keeps the single form.
+    void usePartitions(size_t partition_bits);
+    bool isPartitioned() const { return num_partitions > 1; }
+    size_t numPartitions() const { return num_partitions; }
+    size_t publishedPartitionCapacity() const { return partition_capacity.load(std::memory_order_acquire); }
+    size_t publishedPartitionBytes() const { return partition_bytes.load(std::memory_order_relaxed); }
+    void publishPartitionCapacity(size_t cells, size_t bytes)
+    {
+        partition_bytes.store(bytes, std::memory_order_relaxed);
+        partition_capacity.store(cells, std::memory_order_release);
+    }
+    /// Called after all fill streams have stopped, while a spill is still possible.
+    void addPartitionNonzeroCounts(std::span<size_t> counts) const;
+
+    /// The partitioned form of the key type `TYPE`, a `JoinPartitionedView`. Only when `isPartitioned`.
+    template <Type TYPE, typename Maps>
+    auto & partitionedView()
+    {
+        chassert(key_type == TYPE && isPartitioned());
+        return *tableOf<TYPE, Maps>(*this).partitioned;
+    }
+    /// The single form of the key type `TYPE`. Only when not `isPartitioned`.
+    template <Type TYPE, typename Maps>
+    auto & singleView()
+    {
+        chassert(key_type == TYPE && !isPartitioned());
+        auto & table = tableOf<TYPE, Maps>(*this);
+        if constexpr (is_join_map_forms<std::remove_cvref_t<decltype(table)>>)
+            return *table.single;
+        else
+            return table;
+    }
+    /// Calls `f(form)` with the form of the key type `TYPE` that the table has, a const reference.
+    template <Type TYPE, typename Maps, typename F>
+    ALWAYS_INLINE decltype(auto) visitForm(F && f) const
+    {
+        chassert(key_type == TYPE);
+        const auto & table = tableOf<TYPE, Maps>(*this);
+        if constexpr (is_join_map_forms<std::remove_cvref_t<decltype(table)>>)
+            return table.visit(std::forward<F>(f));
+        else
+            return std::forward<F>(f)(table);
+    }
+
+    /// Calls `f.template operator()<TYPE>()` with the key type of the table.
+    template <typename F>
+    decltype(auto) dispatchType(F && f) const
+    {
+        switch (key_type)
+        {
+#define M(TYPE) \
+    case Type::TYPE: \
+        return f.template operator()<Type::TYPE>();
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+        }
+        UNREACHABLE();
+    }
 
     template <typename Maps>
     bool holds() const { return std::holds_alternative<Maps>(maps); }
@@ -211,6 +327,11 @@ public:
     /// The arena of build stream `stream`. No other call may use it at the same time.
     Arena & arena(size_t stream) { return *arenas[stream]; }
     size_t arenaBytes() const;
+    /// Notes the chunk that each arena that holds memory allocates next. Only while no stream uses an arena.
+    void noteNextArenaChunks();
+    /// The sum of the chunks that the arenas of build streams [0, `streams`) allocate next, as of the last
+    /// `noteNextArenaChunks`. Can be called while the arenas grow.
+    size_t nextArenaChunks(size_t streams) const;
     /// Moves out the arenas that hold memory. They are freed when the caller drops the result.
     std::vector<std::unique_ptr<Arena>> releaseArenas();
 
@@ -234,19 +355,110 @@ public:
         ASOFJoinInequality asof_inequality;
     };
 
-    /// Routes `rows` over the slots and inserts the rows of each slot under its lock. Keys and row lists go to the arena of
-    /// build stream `stream`, which no other call uses at the same time. Calls `add_bytes` under the lock with the growth of
-    /// the slot's buffers, and again after the insert with the growth of the arena. Defined in `InsertKeys.h` and instantiated in
-    /// `InsertKeysMaps*.cpp`, one file per map.
+    /// Inserts `rows` from one build stream. On the partitioned form, each row goes to the partition of its hash. Keys and row
+    /// lists go to the arena of build stream `stream`, which no other call uses at the same time. Calls `add_bytes` with the
+    /// growth of the maps and of the arena. Defined in `InsertKeys.h` and instantiated in `InsertKeysMaps*.cpp`, one file per map.
     template <typename Maps>
     BuildResult insert(const InsertSettings & settings, const InsertRows & rows, size_t stream, absl::FunctionRef<void(size_t)> add_bytes);
 
-    /// Each slot reserves its share of `keys_to_reserve` at its first insert.
-    void reserve(size_t keys_to_reserve) { slots.setReserve(keys_to_reserve); }
+    /// Reserves `keys_to_reserve` keys in the map of the single form.
+    void reserve(size_t keys_to_reserve);
 
-    /// Scans for the non-joined rows of a join with a used flag per cell. Walks the buckets `b` with `b % num_shares == share`
-    /// from `cursor`. Appends to `words` the refs of the cells whose flag is unset, and stops once `max_rows` rows are appended.
-    /// Skips the walk when every key of these buckets is used. Returns the rows appended.
+    /// The keys that the map of each partition reserves when it is created; 0 for none.
+    void setPartitionReserveOnFirstInsert(size_t keys_per_partition);
+
+    /// The bytes that the scatter of a partitioned build copies per row: the key of a partition map, or the saved hash and the
+    /// offset of a `String` key, whose characters come on top; a row locator or a retained set block number; and the
+    /// `ASOF` value. 0 for a key type without a partitioned view.
+    size_t scatterBytesPerRow(bool keep_right_blocks) const
+    {
+        return std::visit(
+            [&]<typename Maps>(const Maps &) -> size_t
+            {
+                return dispatchType(
+                    [&]<Type TYPE>() -> size_t
+                    {
+                        using Form = JoinPartitionedFormOf<TYPE, Maps>;
+                        if constexpr (!is_join_partitioned_view<Form>)
+                            return 0;
+                        else
+                        {
+                            constexpr bool string_key = TYPE == Type::key_string || TYPE == Type::key_fixed_string;
+                            size_t bytes = string_key ? 2 * sizeof(UInt64) : sizeof(typename Form::map_type::key_type);
+                            if constexpr (Maps::has_mapped)
+                                bytes += sizeof(UInt64);
+                            else if (keep_right_blocks)
+                                bytes += sizeof(UInt32);
+                            if constexpr (std::is_same_v<Maps, HashJoin::MapsAsof>)
+                                bytes += key_sizes.empty() ? sizeof(UInt64) : key_sizes.back();
+                            return bytes;
+                        }
+                    });
+            },
+            maps);
+    }
+
+    /// The buffer bytes that the map of one partition allocates when it reserves `keys` keys, with or without the Robin Hood
+    /// mode, for `choosePartitionPlan`. Null for a key type without a partitioned view (the range and LowCardinality maps).
+    using BufferBytesForReserve = size_t (*)(size_t keys, bool robin_hood);
+    BufferBytesForReserve partitionBufferBytesForReserve() const
+    {
+        return std::visit(
+            [&]<typename Maps>(const Maps &) -> BufferBytesForReserve
+            {
+                return dispatchType([]<Type TYPE>() -> BufferBytesForReserve
+                {
+                    using Form = JoinPartitionedFormOf<TYPE, Maps>;
+                    if constexpr (is_join_partitioned_view<Form>)
+                        return [](size_t keys, bool robin_hood) -> size_t
+                        {
+                            using Map = typename Form::map_type;
+                            typename Map::grower_type grower;
+                            /// The grower's own default allows the Robin Hood mode, which fits more keys in a buffer.
+                            if constexpr (GrowerWithRobinHood<typename Map::grower_type>)
+                                grower.setRobinHoodAllowed(robin_hood);
+                            grower.set(keys);
+                            return grower.bufSize() * sizeof(typename Map::cell_type);
+                        };
+                    else
+                        return nullptr;
+                });
+            },
+            maps);
+    }
+
+    /// Project the growth of a single hash map from its initial reserve. Direct-addressed maps allocate all cells at creation.
+    using BufferBytesForGrowth = size_t (*)(size_t keys, size_t reserved_keys);
+    BufferBytesForGrowth singleBufferBytesForGrowth() const
+    {
+        return std::visit(
+            [&]<typename Maps>(const Maps &) -> BufferBytesForGrowth
+            {
+                return dispatchType([]<Type TYPE>() -> BufferBytesForGrowth
+                {
+                    using Map = JoinMapOf<TYPE, Maps>;
+                    if constexpr (detail::GrowerCanBeStepped<Map>)
+                        return [](size_t keys, size_t reserved_keys)
+                        {
+                            typename Map::grower_type grower;
+                            if (reserved_keys)
+                                grower.set(reserved_keys);
+                            while (grower.overflow(keys))
+                                grower.increaseSize();
+                            return grower.bufSize() * sizeof(typename Map::cell_type);
+                        };
+                    else
+                        return nullptr;
+                });
+            },
+            maps);
+    }
+
+    /// Scans for the non-joined rows of a join with a used flag per cell, as share `share` of `num_shares`. With at least as
+    /// many partitions as shares, a share walks a contiguous group of partitions and skips a partition whose keys are all used;
+    /// otherwise it walks a contiguous range of cells, and the share skips when every key of the table is used. Appends to
+    /// `words` the refs of the cells whose flag is unset, from `cursor`, and stops once `max_rows` rows are appended. Returns
+    /// the rows appended.
     template <typename Maps>
     size_t scanNotJoined(
         Cursor & cursor,
@@ -287,10 +499,10 @@ public:
     template <typename Maps, typename F>
     void forEachMapped(F && f)
     {
-        dispatchType([&]<Type TYPE>() { typedMap<TYPE, Maps>(*this).forEachMapped(std::forward<F>(f)); });
+        dispatchType([&]<Type TYPE>() { tableOf<TYPE, Maps>(*this).forEachMapped(f); });
     }
 
-    /// Publish the bucket cell offsets and the min/max bounds of a direct-addressed map after the last insert.
+    /// Publish the cell pointers and shared mask of a partitioned map, or the bounds of a single map, after the last insert.
     void freezeForProbing();
 
     bool shouldUseAmacLookup(HashJoinAmacMode mode) const
@@ -302,64 +514,50 @@ public:
         return amac_support == AmacSupport::LargeTable;
     }
 
-    bool bucketsAreRobinHood() const { return buckets_are_robin_hood; }
+    bool partitionsAreRobinHood() const { return partitions_are_robin_hood; }
 
     size_t bufferBytes() const;
     size_t bufferSizeInCells() const;
     size_t cellSize() const;
 
-    /// Replaces the map of a `key32` or `key64` table with a direct-addressed one if its keys span a small enough range. That
-    /// map reads keys relative to the key range. Sets the key type and the key range of the table, and returns whether it did.
+    /// Replaces the map of a `key32` or `key64` table in the single form with a direct-addressed one if its keys span a small
+    /// enough range. That map reads keys relative to the key range. Sets the key type and the key range of the table, and returns
+    /// whether it did. A `key8` or `key16` table built in partitions moves its keys to its direct-addressed single form.
     bool tryConvertToFixedHashMap(bool is_signed);
 
     /// For a direct-addressed map, returns a function that tells which values of a column are keys of the map, for a
     /// `SharedFixedHashTableRuntimeFilter`. For any other map, returns an empty function.
     std::function<ColumnPtr(const ColumnWithTypeAndName &)> makeSharedRuntimeFilter(bool build_signed) const;
 
-    /// The buckets and keys that `clearInParallel` splits. An `ASOF` cell owns a heap lookup, so a large `ASOF` map is worth
-    /// clearing in parallel. Zero for any other map, and for a map whose buckets share one buffer.
+    /// The partitions and keys that `clearInParallel` splits. An `ASOF` cell owns a heap lookup, so a large `ASOF` map is worth
+    /// clearing in parallel. Zero for any other map, and for a table in the single form.
     struct ParallelClearWork
     {
-        size_t buckets = 0;
+        size_t partitions = 0;
         size_t keys = 0;
     };
     ParallelClearWork parallelClearWork() const;
 
-    /// Clears the buckets of an `ASOF` map in `num_jobs` jobs and passes them to `schedule`.
+    /// Clears the partitions of an `ASOF` map in `num_jobs` jobs and passes them to `schedule`.
     /// `schedule` must run them before the table is destroyed.
     void clearInParallel(size_t num_jobs, absl::FunctionRef<void(std::function<void()>)> schedule);
 
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();
 
-    /// The map of the key type `TYPE`, which must be `type()`.
+    /// The single form of the key type `TYPE`, which must be `type()`. Only when not `isPartitioned`.
     template <Type TYPE, typename Maps>
     const JoinMapOf<TYPE, Maps> & mapOf() const
     {
-        chassert(key_type == TYPE);
-        return typedMap<TYPE, Maps>(*this);
+        return const_cast<HashJoinTable &>(*this).singleView<TYPE, Maps>();
     }
 
 private:
+    /// The table object of the key type `TYPE`: a `JoinMapForms`, or a map with the single form only.
     template <Type TYPE, typename Maps, typename Self>
-    static auto & typedMap(Self & self)
+    static auto & tableOf(Self & self)
     {
         return *std::get<Maps>(self.maps).template mapOf<TYPE>();
-    }
-
-    /// Calls `f.template operator()<TYPE>()` with the key type of the table.
-    template <typename F>
-    decltype(auto) dispatchType(F && f) const
-    {
-        switch (key_type)
-        {
-#define M(TYPE) \
-    case Type::TYPE: \
-        return f.template operator()<Type::TYPE>();
-            APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
-        }
-        UNREACHABLE();
     }
 
     [[noreturn]] static void throwKeysNotRecoverable(Type type);
@@ -368,65 +566,10 @@ private:
     template <Type TYPE, typename Maps>
     BuildResult
     insertTyped(const InsertSettings & settings, const InsertRows & rows, Arena & arena, absl::FunctionRef<void(size_t)> add_bytes);
-
-    /// Routes each row the way `map` places its key: by `map.hash` and `getBucketOfKey`.
-    template <Type TYPE, bool is_asof_join, typename Map>
-    std::vector<ScatteredBlock::Selector> scatterBySlot(
-        const Map & map, const InsertRows & rows, [[maybe_unused]] PaddedPODArray<UInt128> & prebuilt_keys) const
-    {
-        using KeyGetter = KeyGetterForType<TYPE, Map>::Type;
-
-        if constexpr (requires { KeyGetter::has_pre_computed_hashes; })
-            static_assert(!KeyGetter::has_pre_computed_hashes, "Bucket routing assumes the map computes the hash it places by");
-
-        const auto & key_columns = rows.key_columns;
-        const auto & selector = rows.selector;
-
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
-
-        /// The rows are routed by these keys below, and the slot inserts read them too.
-        if constexpr (PreparedKeyGetter<KeyGetter>)
-            key_getter.buildAllKeys(selector, prebuilt_keys);
-
-        /// Nothing here outlives the call: the key holders are read for their hash, never persisted.
-        Arena scratch_pool;
-
-        const size_t num_rows = selector.size();
-        const size_t num_slots = slots.size();
-
-        PODArray<UInt32> row_to_slot(num_rows);
-        std::vector<size_t> counts(num_slots, 0);
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            auto key_holder = key_getter.getKeyHolder(selector[i], scratch_pool);
-            const auto & key = keyHolderGetKey(key_holder);
-
-            const size_t bucket = getBucketOfKey<Map>(key, map.hash(key));
-            /// The slot count is a power of two, so this is `bucket % num_slots`.
-            const auto slot = static_cast<UInt32>(bucket & (num_slots - 1));
-            row_to_slot[i] = slot;
-            ++counts[slot];
-        }
-
-        std::vector<ScatteredBlock::Selector::IndexesPtr> indexes;
-        indexes.reserve(num_slots);
-        for (size_t slot = 0; slot < num_slots; ++slot)
-        {
-            auto column = ScatteredBlock::Selector::Indexes::create();
-            column->getData().reserve(counts[slot]);
-            indexes.push_back(std::move(column));
-        }
-
-        for (size_t i = 0; i < num_rows; ++i)
-            indexes[row_to_slot[i]]->getData().push_back(selector[i]);
-
-        std::vector<ScatteredBlock::Selector> result;
-        result.reserve(num_slots);
-        for (auto & column : indexes)
-            result.emplace_back(std::move(column));
-
-        return result;
-    }
+    /// Inserts into `map`, the single or the partitioned form of the table. Defined in `InsertKeys.h`.
+    template <Type TYPE, typename Maps, typename Map>
+    BuildResult insertInto(
+        Map & map, const InsertSettings & settings, const InsertRows & rows, Arena & arena, absl::FunctionRef<void(size_t)> add_bytes);
 
     template <Type TYPE, typename Maps>
     size_t scanNotJoinedTyped(
@@ -437,30 +580,67 @@ private:
         size_t max_rows,
         PaddedPODArray<UInt64> & words) const;
 
+    /// Where a walk over the partitioned form resumes: the partition, and the cell in its map.
+    template <typename Iterator>
+    struct PartitionCursor
+    {
+        size_t partition = 0;
+        Iterator it;
+    };
+
     template <Type TYPE, typename Maps, typename F>
     size_t forEachCellTyped(Cursor & cursor, size_t max_rows, F && f) const
     {
-        using Map = JoinMapOf<TYPE, Maps>;
-        using Iterator = typename Map::const_iterator;
-
-        const auto & map_ptr = std::get<Maps>(maps).template mapOf<TYPE>();
-        if (!map_ptr)
+        const auto & table_ptr = std::get<Maps>(maps).template mapOf<TYPE>();
+        if (!table_ptr)
             return 0;
-        const Map & map = *map_ptr;
+        return visitForm<TYPE, Maps>(
+            [&]<typename Form>(const Form & form) -> size_t
+            {
+                if constexpr (is_join_partitioned_view<Form>)
+                {
+                    using Iterator = typename Form::map_type::const_iterator;
+                    if (!cursor.has_value())
+                        cursor = std::make_any<PartitionCursor<Iterator>>();
+                    auto & pc = std::any_cast<PartitionCursor<Iterator> &>(cursor);
+                    size_t rows = 0;
+                    for (; pc.partition < form.numPartitions(); ++pc.partition)
+                    {
+                        const auto * map = form.partitionOrNull(pc.partition);
+                        if (!map)
+                            continue;
+                        /// A default-constructed iterator marks a partition that the walk has not entered yet.
+                        if (pc.it == Iterator())
+                            pc.it = map->begin();
+                        for (auto end = map->end(); pc.it != end;)
+                        {
+                            rows += f(pc.it->getKey(), pc.it->getMapped());
+                            ++pc.it;
+                            if (rows >= max_rows)
+                                return rows;
+                        }
+                        pc.it = Iterator();
+                    }
+                    return rows;
+                }
+                else
+                {
+                    using Iterator = typename Form::const_iterator;
+                    if (!cursor.has_value())
+                        cursor = std::make_any<Iterator>(form.begin());
+                    Iterator & it = std::any_cast<Iterator &>(cursor);
 
-        if (!cursor.has_value())
-            cursor = std::make_any<Iterator>(map.begin());
-        Iterator & it = std::any_cast<Iterator &>(cursor);
-
-        size_t rows = 0;
-        for (auto end = map.end(); it != end;)
-        {
-            rows += f(it->getKey(), it->getMapped());
-            ++it;
-            if (rows >= max_rows)
-                break;
-        }
-        return rows;
+                    size_t rows = 0;
+                    for (auto end = form.end(); it != end;)
+                    {
+                        rows += f(it->getKey(), it->getMapped());
+                        ++it;
+                        if (rows >= max_rows)
+                            break;
+                    }
+                    return rows;
+                }
+            });
     }
 
     template <Type TYPE, typename Maps>
@@ -525,6 +705,9 @@ private:
     template <bool is_signed, typename Key, typename Maps>
     bool tryConvertToFixedHashMapImpl(Maps & maps_);
 
+    template <Type TYPE, typename Maps>
+    bool collapsePartitions(Maps & maps_);
+
     Type key_type;
     JoinKeyRange key_range;
     Sizes key_sizes;
@@ -533,8 +716,15 @@ private:
     /// and calls of one stream never overlap. Neither kind of allocation needs contiguity or rollback, so a key and its list can
     /// be in different arenas. The arenas are behind pointers so that `releaseArenas` can move them out and free them alone.
     std::vector<std::unique_ptr<Arena>> arenas;
-    BuildSlots slots;
+    /// One per arena, see `noteNextArenaChunks`.
+    std::unique_ptr<std::atomic<size_t>[]> next_arena_chunks;
     std::atomic<size_t> num_keys = 0;
+    /// 1 in the single form.
+    size_t num_partitions = 1;
+    std::atomic<size_t> partition_capacity = 0;
+    std::atomic<size_t> partition_bytes = 0;
+    bool robin_hood_allowed = false;
+    size_t partition_reserve_keys = 0;
     enum class AmacSupport : uint8_t
     {
         Unsupported,
@@ -542,7 +732,7 @@ private:
         LargeTable,
     };
     AmacSupport amac_support = AmacSupport::Unsupported;
-    bool buckets_are_robin_hood = false;
+    bool partitions_are_robin_hood = false;
 };
 
 }

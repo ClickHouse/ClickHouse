@@ -73,7 +73,7 @@ std::unique_ptr<JoinStep> makeJoinStep(JoinPtr join)
 /// `INNER ALL JOIN ON lk = rk` with a `HashJoin`, the shape `convertLogicalJoinToPhysical` produces.
 std::unique_ptr<JoinStep> makeJoinStep()
 {
-    return makeJoinStep(HashJoin::create(makeTableJoin(), right_header, HashJoinBuildLayout::oneBucket(1)));
+    return makeJoinStep(HashJoin::create(makeTableJoin(), right_header, HashJoinBuildLayout::serialLayout(1)));
 }
 
 void expectCloneNotImplemented(const JoinStep & step)

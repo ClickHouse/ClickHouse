@@ -21,6 +21,8 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -29,6 +31,11 @@ namespace CurrentMetrics
 {
     extern const Metric MergeJoinBlocksCacheBytes;
     extern const Metric MergeJoinBlocksCacheCount;
+}
+
+namespace ProfileEvents
+{
+    extern const Event JoinBuildPostProcessingMicroseconds;
 }
 
 namespace DB
@@ -750,6 +757,7 @@ void MergeJoin::setTotals(const Block & totals_block)
 /// pipeline.
 void MergeJoin::runPostBuildPhase()
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
     mergeRightBlocks();
 
     if (is_right || is_full || (is_all_join && table_join->collectExactMatches()))

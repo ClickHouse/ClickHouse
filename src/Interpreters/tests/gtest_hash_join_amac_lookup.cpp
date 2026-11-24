@@ -56,7 +56,7 @@ enum class KeyShape : uint8_t
     PackedOddWidths,
 };
 
-/// A key type of the one-bucket maps, and key columns for which the join chooses this type.
+/// A key type of the join maps, and key columns for which the join chooses this type.
 struct KeyClass
 {
     const char * name;
@@ -65,7 +65,7 @@ struct KeyClass
     Sizes key_sizes;
 };
 
-/// The key types that the ring supports. A table of the parallel layout has the `two_level_` type of each.
+/// The key types that the ring supports. A table of the parallel layout has the partitioned form of each.
 const std::vector<KeyClass> & keyClasses()
 {
     static const std::vector<KeyClass> classes{
@@ -225,22 +225,41 @@ ColumnWithTypeAndName asofColumn(const std::vector<UInt64> & ids)
     return numberColumn<UInt32>("t", ids, [](UInt64 id) { return id % 100; });
 }
 
-/// An empty table of `Maps`. Its map is there already, so a test can ask it for the hash of a key. A two-level map may
-/// switch to the Robin Hood mode, as `enable_robin_hood_hash_for_joins` allows.
+/// The partition counts of the tests: 0 bits is the single form; 256 partitions are the parallel layout fed by one stream, and
+/// 512 and 1024 need the two-byte partition index of the ring.
+constexpr std::array<size_t, 5> partition_bits_to_test{0, 1, 8, 9, 10};
+
+/// An empty table of `Maps`, in the single form with `partition_bits` 0, else with `2^partition_bits` partitions. A map of a
+/// partition may switch to the Robin Hood mode, as `enable_robin_hood_hash_for_joins` allows.
 template <typename Maps>
-std::unique_ptr<HashJoinTable> createTable(const KeyClass & key_class, bool two_level)
+std::unique_ptr<HashJoinTable> createTable(const KeyClass & key_class, size_t partition_bits)
 {
     Sizes key_sizes = key_class.key_sizes;
     if constexpr (is_asof<Maps>)
         key_sizes.push_back(sizeof(UInt32));
-    return std::make_unique<HashJoinTable>(
+    auto table = std::make_unique<HashJoinTable>(
         key_class.type,
         key_sizes,
         JoinOf<Maps>::kind,
         JoinOf<Maps>::strictness,
         JoinOf<Maps>::maps_kind,
-        two_level ? HashJoinBuildLayout::twoLevel(1) : HashJoinBuildLayout::oneBucket(1),
+        partition_bits ? HashJoinBuildLayout::parallelLayout(1) : HashJoinBuildLayout::serialLayout(1),
         /*robin_hood_allowed=*/true);
+    if (partition_bits)
+        table->usePartitions(partition_bits);
+    return table;
+}
+
+/// The hash that the table of `TYPE` computes for `key`, and the partition it puts the key in.
+template <HashJoin::Type TYPE, typename Maps, typename Key>
+size_t hashOfKey(const HashJoinTable & table, const Key & key)
+{
+    return table.visitForm<TYPE, Maps>([&](const auto & form) -> size_t { return form.hash(key); });
+}
+
+size_t partitionOfHash(size_t hash, size_t partition_bits)
+{
+    return partition_bits ? (hash >> (32 - partition_bits)) & ((1uz << partition_bits) - 1) : 0;
 }
 
 /// Inserts the keys of the rows `ids` as one right block and freezes the table, as the end of the build does.
@@ -475,11 +494,11 @@ std::vector<UInt64> probeIds(HitRate hit_rate)
 /// one row count at one hit rate, and the searches with NULL keys and with a condition in the ON section are left out; the
 /// row-list searches always run every size.
 template <typename Maps>
-void checkKeyClass(const KeyClass & key_class, bool two_level, bool with_zero_id, bool reduced)
+void checkKeyClass(const KeyClass & key_class, size_t partition_bits, bool with_zero_id, bool reduced)
 {
-    SCOPED_TRACE(fmt::format("{}, two_level {}, with_zero_id {}", key_class.name, two_level, with_zero_id));
+    SCOPED_TRACE(fmt::format("{}, partition_bits {}, with_zero_id {}", key_class.name, partition_bits, with_zero_id));
 
-    auto table = createTable<Maps>(key_class, two_level);
+    auto table = createTable<Maps>(key_class, partition_bits);
     fillAndFreeze<Maps>(*table, key_class, buildIds(with_zero_id));
     ASSERT_EQ(table->keys(), num_keys + with_zero_id);
 
@@ -576,11 +595,11 @@ void checkKeyClass(const KeyClass & key_class, bool two_level, bool with_zero_id
 /// keys. The runs are as long as the ring or longer: at the first row, in the middle, and in the last rows, where the ring
 /// drains. A zero key is answered in `start` too, so a block of only zero keys never puts a lookup into the ring.
 template <typename Maps>
-void checkRowsOutsideTheRing(const KeyClass & key_class, bool two_level, bool with_zero_id)
+void checkRowsOutsideTheRing(const KeyClass & key_class, size_t partition_bits, bool with_zero_id)
 {
-    SCOPED_TRACE(fmt::format("{}, two_level {}, with_zero_id {}", key_class.name, two_level, with_zero_id));
+    SCOPED_TRACE(fmt::format("{}, partition_bits {}, with_zero_id {}", key_class.name, partition_bits, with_zero_id));
 
-    auto table = createTable<Maps>(key_class, two_level);
+    auto table = createTable<Maps>(key_class, partition_bits);
     fillAndFreeze<Maps>(*table, key_class, buildIds(with_zero_id));
     const auto has_key = [&](UInt64 id) -> bool { return id == 0 ? with_zero_id : id % 2 == 0; };
     const auto range = [](size_t rows) -> ProbeRows { return {.first = first_row, .rows = nullptr, .size = rows}; };
@@ -625,19 +644,32 @@ class HashJoinAmacLookup : public ::testing::Test
 
 using AllMaps = ::testing::Types<HashJoin::MapsOne, HashJoin::MapsAll, HashJoin::MapsAsof, HashJoin::MapsSet>;
 
+/// The ring takes the hashed key types in both Robin Hood modes, as it took their two-level maps before the tables had
+/// partitions. The direct-addressed and LowCardinality maps stay on `PrefetchingLookup`.
+#define M(TYPE) \
+    static_assert(AmacLookup<false>::supports<HashJoin::Type::TYPE, HashJoin::MapsAll>); \
+    static_assert(AmacLookup<true>::supports<HashJoin::Type::TYPE, HashJoin::MapsAll>);
+M(key32) M(key64) M(key_string) M(key_fixed_string) M(keys32) M(keys64) M(keys128) M(keys256) M(hashed) M(key_packed_string)
+#undef M
+static_assert(!AmacLookup<false>::supports<HashJoin::Type::key8, HashJoin::MapsAll>);
+static_assert(!AmacLookup<false>::supports<HashJoin::Type::key16, HashJoin::MapsAll>);
+static_assert(!AmacLookup<false>::supports<HashJoin::Type::range16_key32, HashJoin::MapsAll>);
+static_assert(!AmacLookup<false>::supports<HashJoin::Type::low_cardinality_key_string, HashJoin::MapsAll>);
+
 }
 
 TYPED_TEST_SUITE(HashJoinAmacLookup, AllMaps);
 
 
-/// Every key type that the ring supports, in both layouts, with the zero key in the table and without it.
+/// Every key type that the ring supports, in the single form and with several partition counts, with the zero key in the table
+/// and without it.
 TYPED_TEST(HashJoinAmacLookup, FindsWhatPrefetchingLookupFinds)
 {
     for (const KeyClass & key_class : keyClasses())
-        for (const bool two_level : {false, true})
+        for (const size_t partition_bits : partition_bits_to_test)
         {
-            ASSERT_NO_FATAL_FAILURE(checkKeyClass<TypeParam>(key_class, two_level, /*with_zero_id=*/true, /*reduced=*/false));
-            ASSERT_NO_FATAL_FAILURE(checkKeyClass<TypeParam>(key_class, two_level, /*with_zero_id=*/false, /*reduced=*/true));
+            ASSERT_NO_FATAL_FAILURE(checkKeyClass<TypeParam>(key_class, partition_bits, /*with_zero_id=*/true, /*reduced=*/false));
+            ASSERT_NO_FATAL_FAILURE(checkKeyClass<TypeParam>(key_class, partition_bits, /*with_zero_id=*/false, /*reduced=*/true));
         }
 }
 
@@ -645,59 +677,77 @@ TYPED_TEST(HashJoinAmacLookup, RowsOutsideTheRing)
 {
     for (const HashJoin::Type type :
          {HashJoin::Type::key64, HashJoin::Type::key_string, HashJoin::Type::keys128, HashJoin::Type::key_packed_string})
-        for (const bool two_level : {false, true})
+        for (const size_t partition_bits : partition_bits_to_test)
             for (const bool with_zero_id : {false, true})
-                ASSERT_NO_FATAL_FAILURE(checkRowsOutsideTheRing<TypeParam>(keyClass(type), two_level, with_zero_id));
+                ASSERT_NO_FATAL_FAILURE(checkRowsOutsideTheRing<TypeParam>(keyClass(type), partition_bits, with_zero_id));
 }
 
 
 namespace
 {
 
-/// A bucket gets keys whose home cells are its last few cells, and more keys than those cells can hold. So their chain
+/// A partition gets keys whose home cells are its last few cells, and more keys than those cells can hold. So their chain
 /// continues at the start of the buffer, and present and absent keys with those home cells walk past the end.
-/// With `robin_hood`, the table is reserved so that every bucket starts in the Robin Hood mode. There an absent key may be
+/// With `robin_hood`, the partitions are reserved so that every one starts in the Robin Hood mode. There an absent key may be
 /// stopped by the Robin Hood rule after the walk wraps, where a cell's distance from its home cell wraps too.
-template <HashJoin::Type TYPE>
-void checkWalkPastTheEndOfTheBuffer(bool two_level, bool robin_hood)
+void checkWalkPastTheEndOfTheBuffer(size_t partition_bits, bool robin_hood)
 {
+    constexpr auto TYPE = HashJoin::Type::key64;
     using Maps = HashJoin::MapsOne;
-    using Map = JoinMapOf<TYPE, Maps>;
-    const size_t bucket = robin_hood ? 42 : Map::NUM_BUCKETS - 1;
+    const size_t num_partitions = 1uz << partition_bits;
+    const size_t partition = robin_hood ? 42 : num_partitions - 1;
     const size_t cells = robin_hood ? 1uz << 16 : 256;
     const size_t first_home_cell = cells - (robin_hood ? 32uz : 10uz);
     constexpr size_t keys_of_each_kind = 100;
 
-    const KeyClass & key_class = keyClass(HashJoin::Type::key64);
-    auto table = createTable<Maps>(key_class, two_level);
-    const Map & map = table->template mapOf<TYPE, Maps>();
+    const KeyClass & key_class = keyClass(TYPE);
+    auto table = createTable<Maps>(key_class, partition_bits);
 
     std::vector<UInt64> present;
     std::vector<UInt64> absent;
-    for (UInt64 id = 1; absent.size() < keys_of_each_kind; ++id)
+    /// With `robin_hood`, one key in every other partition, so that the insert creates every partition with the reserve. A
+    /// partition that no key reaches is created empty by `freeze` and stays out of the Robin Hood mode.
+    std::vector<UInt64> one_key_per_other_partition;
+    std::vector<UInt8> reached(num_partitions);
+    reached[partition] = 1;
+    const size_t other_partitions = robin_hood ? num_partitions - 1 : 0;
+    for (UInt64 id = 1; absent.size() < keys_of_each_kind || one_key_per_other_partition.size() < other_partitions; ++id)
     {
-        const size_t hash = map.hash(id);
-        if (Map::getBucketFromHash(hash) != bucket || (hash & (cells - 1)) < first_home_cell)
+        const size_t hash = hashOfKey<TYPE, Maps>(*table, id);
+        const size_t partition_of_id = partitionOfHash(hash, partition_bits);
+        if (robin_hood && !reached[partition_of_id])
+        {
+            reached[partition_of_id] = 1;
+            one_key_per_other_partition.push_back(id);
+            continue;
+        }
+        if (partition_of_id != partition || (hash & (cells - 1)) < first_home_cell || absent.size() == keys_of_each_kind)
             continue;
         (present.size() < keys_of_each_kind ? present : absent).push_back(id);
     }
     if (robin_hood)
-        table->reserve(Map::NUM_BUCKETS * (cells / 2 + 1));
-    fillAndFreeze<Maps>(*table, key_class, present);
+        table->setPartitionReserveOnFirstInsert(cells / 2 + 1);
+    else if (partition_bits)
+        /// The minimum reserve of a partition of the parallel layout fed by one stream: 128 keys, so 256 cells. A partition that
+        /// grows from 2 cells skips 256 (it quadruples while small).
+        table->setPartitionReserveOnFirstInsert(128);
+    std::vector<UInt64> to_insert = present;
+    to_insert.insert(to_insert.end(), one_key_per_other_partition.begin(), one_key_per_other_partition.end());
+    fillAndFreeze<Maps>(*table, key_class, to_insert);
     if (robin_hood)
     {
-        ASSERT_TRUE(table->bucketsAreRobinHood());
+        ASSERT_TRUE(table->partitionsAreRobinHood());
         ASSERT_TRUE(table->shouldUseAmacLookup(HashJoinAmacMode::AUTO));
     }
 
-    const auto & bucket_cells = map.bucket_cells[bucket];
-    ASSERT_EQ(bucket_cells.mask + 1, cells) << "the cells of bucket " << bucket;
+    const auto desc = table->visitForm<TYPE, Maps>([&](const auto & form) { return form.desc(partition); });
+    ASSERT_EQ(desc.mask + 1, cells) << "the cells of partition " << partition;
     size_t keys_past_the_end = 0;
     for (const UInt64 id : present)
     {
-        const auto * cell = map.find(id);
+        const auto * cell = table->visitForm<TYPE, Maps>([&](const auto & form) { return form.find(id); });
         ASSERT_NE(cell, nullptr) << "id " << id;
-        keys_past_the_end += static_cast<size_t>(cell - bucket_cells.cells) < first_home_cell;
+        keys_past_the_end += static_cast<size_t>(cell - desc.cells) < first_home_cell;
     }
     ASSERT_GT(keys_past_the_end, 0u);
 
@@ -717,27 +767,25 @@ void checkWalkPastTheEndOfTheBuffer(bool two_level, bool robin_hood)
                 *table, *keys, found, {.first = 0, .rows = nullptr, .size = ids.size()}, 0, mode, fast_path, robin_hood));
 }
 
-/// A table of the parallel layout that is reserved for so many keys that every bucket starts in the Robin Hood mode. Four
-/// buckets are filled to about 70% with keys chosen by their hash. The left rows have keys of those buckets, half of them
-/// absent, so that a miss stops by the Robin Hood rule. The cells of the 256 buckets take about 270 MB for `key64`.
+/// A table of 256 partitions that are reserved for so many keys that every one starts in the Robin Hood mode. Four partitions
+/// are filled to about 70% with keys chosen by their hash. The left rows have keys of those partitions, half of them absent, so
+/// that a miss stops by the Robin Hood rule. The cells of the 256 partitions take about 270 MB for `key64`.
 template <HashJoin::Type TYPE, typename Maps>
-void checkBucketsInRobinHoodMode()
+void checkPartitionsInRobinHoodMode()
 {
     using Map = JoinMapOf<TYPE, Maps>;
-    constexpr size_t cells_per_bucket = 1uz << 16;
-    constexpr size_t keys_per_bucket = cells_per_bucket * 7 / 10;
+    constexpr size_t partition_bits = 8;
+    constexpr size_t num_partitions = 1uz << partition_bits;
+    constexpr size_t cells_per_partition = 1uz << 16;
+    constexpr size_t keys_per_partition = cells_per_partition * 7 / 10;
     constexpr size_t absent_keys = 20000;
-    constexpr std::array<size_t, 4> filled_buckets{0, 85, 170, 255};
-    /// A bucket reserved for more keys than half of 2^16 cells gets 2^16 cells in the Robin Hood mode.
-    constexpr size_t keys_to_reserve = Map::NUM_BUCKETS * (cells_per_bucket / 2 + 1);
+    constexpr std::array<size_t, 4> filled_partitions{0, 85, 170, 255};
     constexpr bool string_key = std::is_same_v<typename Map::key_type, std::string_view>;
-    constexpr bool packed_string_key = TYPE == HashJoin::Type::two_level_key_packed_string;
+    constexpr bool packed_string_key = TYPE == HashJoin::Type::key_packed_string;
 
-    const KeyClass & key_class = keyClass(
-        packed_string_key ? HashJoin::Type::key_packed_string : string_key ? HashJoin::Type::key_string : HashJoin::Type::key64);
-    auto table = createTable<Maps>(key_class, /*two_level=*/true);
-    const Map & map = table->template mapOf<TYPE, Maps>();
-    const auto bucket_of = [&](UInt64 id) -> size_t
+    const KeyClass & key_class = keyClass(TYPE);
+    auto table = createTable<Maps>(key_class, partition_bits);
+    const auto partition_of = [&](UInt64 id) -> size_t
     {
         if constexpr (packed_string_key)
         {
@@ -745,42 +793,59 @@ void checkBucketsInRobinHoodMode()
             const std::string key = stringKeyOf(id);
             std::array<char, 16> padded{};
             std::copy(key.begin(), key.end(), padded.begin());
-            return Map::getBucketFromHash(map.hash(PackedStringJoinKey::build(padded.data(), key.size())));
+            return partitionOfHash(
+                hashOfKey<TYPE, Maps>(*table, PackedStringJoinKey::build(padded.data(), key.size())), partition_bits);
         }
         else if constexpr (string_key)
         {
             const std::string key = stringKeyOf(id);
-            return Map::getBucketFromHash(map.hash(std::string_view(key)));
+            return partitionOfHash(hashOfKey<TYPE, Maps>(*table, std::string_view(key)), partition_bits);
         }
         else
-            return Map::getBucketFromHash(map.hash(id));
+            return partitionOfHash(hashOfKey<TYPE, Maps>(*table, id), partition_bits);
     };
 
-    /// The first keys of a filled bucket go to the table. The keys after them are absent.
+    /// The first keys of a filled partition go to the table. The keys after them are absent. Every other partition gets one key,
+    /// so that the insert creates every partition with the reserve: a partition that no key reaches is created empty by
+    /// `freeze` and stays out of the Robin Hood mode.
     std::vector<UInt64> present;
     std::vector<UInt64> absent;
-    std::array<size_t, Map::NUM_BUCKETS> keys_in_bucket{};
-    for (UInt64 id = 1; present.size() < filled_buckets.size() * keys_per_bucket || absent.size() < absent_keys; ++id)
+    std::array<size_t, num_partitions> keys_in_partition{};
+    size_t other_partitions_reached = 0;
+    constexpr size_t other_partitions = num_partitions - filled_partitions.size();
+    for (UInt64 id = 1; present.size() < filled_partitions.size() * keys_per_partition + other_partitions || absent.size() < absent_keys
+         || other_partitions_reached < other_partitions;
+         ++id)
     {
-        const size_t bucket = bucket_of(id);
-        if (std::ranges::find(filled_buckets, bucket) == filled_buckets.end())
+        const size_t partition = partition_of(id);
+        if (std::ranges::find(filled_partitions, partition) == filled_partitions.end())
+        {
+            if (keys_in_partition[partition] == 0)
+            {
+                present.push_back(id);
+                ++keys_in_partition[partition];
+                ++other_partitions_reached;
+            }
             continue;
-        if (keys_in_bucket[bucket] < keys_per_bucket)
+        }
+        if (keys_in_partition[partition] < keys_per_partition)
         {
             present.push_back(id);
-            ++keys_in_bucket[bucket];
+            ++keys_in_partition[partition];
         }
         else if (absent.size() < absent_keys)
             absent.push_back(id);
     }
 
-    table->reserve(keys_to_reserve);
+    /// A partition reserved for more keys than half of 2^16 cells gets 2^16 cells in the Robin Hood mode.
+    table->setPartitionReserveOnFirstInsert(cells_per_partition / 2 + 1);
     fillAndFreeze<Maps>(*table, key_class, present);
-    ASSERT_TRUE(map.robin_hood_buckets == Map::RobinHoodBuckets::All);
-    ASSERT_TRUE(table->bucketsAreRobinHood());
+    const auto & view = table->template partitionedView<TYPE, Maps>();
+    ASSERT_TRUE(view.isRobinHood());
+    ASSERT_TRUE(table->partitionsAreRobinHood());
     ASSERT_TRUE(table->shouldUseAmacLookup(HashJoinAmacMode::AUTO));
-    for (const size_t bucket : filled_buckets)
-        ASSERT_EQ(map.bucket_cells[bucket].mask + 1, cells_per_bucket) << "bucket " << bucket;
+    for (const size_t partition : filled_partitions)
+        ASSERT_EQ(view.desc(partition).mask + 1, cells_per_partition) << "partition " << partition;
 
     /// Enough rows to look up most keys of the table. One row in 16 has the zero key, which the table does not have.
     constexpr size_t rows_to_probe = 400000;
@@ -825,31 +890,31 @@ void checkBucketsInRobinHoodMode()
 
 TEST(HashJoinAmacLookupWalk, GoesPastTheEndOfTheBuffer)
 {
-    ASSERT_NO_FATAL_FAILURE(checkWalkPastTheEndOfTheBuffer<HashJoin::Type::key64>(/*two_level=*/false, /*robin_hood=*/false));
-    ASSERT_NO_FATAL_FAILURE(checkWalkPastTheEndOfTheBuffer<HashJoin::Type::two_level_key64>(/*two_level=*/true, /*robin_hood=*/false));
+    for (const size_t partition_bits : partition_bits_to_test)
+        ASSERT_NO_FATAL_FAILURE(checkWalkPastTheEndOfTheBuffer(partition_bits, /*robin_hood=*/false));
 }
 
 TEST(HashJoinAmacLookupWalk, GoesPastTheEndOfTheBufferInRobinHoodMode)
 {
-    ASSERT_NO_FATAL_FAILURE(checkWalkPastTheEndOfTheBuffer<HashJoin::Type::two_level_key64>(/*two_level=*/true, /*robin_hood=*/true));
+    ASSERT_NO_FATAL_FAILURE(checkWalkPastTheEndOfTheBuffer(/*partition_bits=*/8, /*robin_hood=*/true));
 }
 
 
 /// The Robin Hood rule reads the hash of the key in a cell: computed from an integer key, saved in the cell of a string key.
 TEST(HashJoinAmacLookupRobinHood, IntegerKeys)
 {
-    checkBucketsInRobinHoodMode<HashJoin::Type::two_level_key64, HashJoin::MapsOne>();
+    checkPartitionsInRobinHoodMode<HashJoin::Type::key64, HashJoin::MapsOne>();
 }
 
 TEST(HashJoinAmacLookupRobinHood, StringKeys)
 {
-    checkBucketsInRobinHoodMode<HashJoin::Type::two_level_key_string, HashJoin::MapsSet>();
+    checkPartitionsInRobinHoodMode<HashJoin::Type::key_string, HashJoin::MapsSet>();
 }
 
 /// A key of 128 bits, which the prepare step builds.
 TEST(HashJoinAmacLookupRobinHood, PackedStringKeys)
 {
-    checkBucketsInRobinHoodMode<HashJoin::Type::two_level_key_packed_string, HashJoin::MapsSet>();
+    checkPartitionsInRobinHoodMode<HashJoin::Type::key_packed_string, HashJoin::MapsSet>();
 }
 
 TEST(HashJoinAmacOutput, GathersInCompletionOrder)

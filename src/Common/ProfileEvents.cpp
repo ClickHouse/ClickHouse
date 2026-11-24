@@ -575,6 +575,11 @@
     M(JoinSpillingHashJoinSwitchedToMergeJoin, "Number of times a HashJoin was switched to MergeJoin due to memory limit in SpillingHashJoin. MergeJoin is chosen instead of GraceHashJoin when the query plan requires the join to keep the row order of the left stream.", ValueType::Number) \
     M(HashJoinBuiltWithParallelLayout, "Number of hash tables built for hash joins as several parts. Up to `max_threads` threads fill the parts at the same time, and with `max_threads = 1` one thread fills them all. The `parallel_hash_join_threshold` setting decides which hash joins are built this way.", ValueType::Number) \
     M(HashJoinBuiltWithSerialLayout, "Number of hash tables built for hash joins as one part, one insert at a time. Each hash table counts once, so a grace hash join adds one for every bucket that it loads into memory. See HashJoinBuiltWithParallelLayout.", ValueType::Number) \
+    M(HashJoinBuildPartitions, "Number of partition hash tables built by hash joins whose hash table is split into parts, one table per partition of the keys.", ValueType::Number) \
+    M(HashJoinBuildRounds, "Number of rounds in which a hash join scattered the keys of its waiting right blocks to the partitions and inserted them. A build that ends its wait early, or builds in rounds to stay within memory, has more than one.", ValueType::Number) \
+    M(HashJoinPartitionTableResizes, "Number of times the partition hash tables of hash joins grew past the size reserved for them when the build ended.", ValueType::Number) \
+    M(HashJoinBuildScatterMicroseconds, "Elapsed time of hash join builds scattering the keys of the right side to the partitions of the hash table.", ValueType::Microseconds) \
+    M(HashJoinBuildInsertMicroseconds, "Elapsed time of hash join builds inserting the scattered keys of the right side into the partition hash tables.", ValueType::Microseconds) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
