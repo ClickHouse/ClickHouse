@@ -40,9 +40,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
 
     CREATE USER ${U_PARTIAL};
     GRANT SELECT, ALTER ADD COLUMN, ALTER MODIFY COLUMN, ALTER RENAME COLUMN ON ${DB}.t TO ${U_PARTIAL};
-    REVOKE SELECT(restricted), SELECT(\`n.secret\`), SELECT(pub_tup) ON ${DB}.t FROM ${U_PARTIAL};
+    REVOKE SELECT(restricted), SELECT(\`n.secret\`), SELECT(pub_tup), SELECT(tup) ON ${DB}.t FROM ${U_PARTIAL};
     CREATE USER ${U_COLS};
-    GRANT SELECT(id, pub, arr), ALTER ADD COLUMN ON ${DB}.t TO ${U_COLS};
+    GRANT SELECT(id, pub, arr, tup), ALTER ADD COLUMN ON ${DB}.t TO ${U_COLS};
     GRANT dictGet ON ${DB}.d TO ${U_COLS};
     CREATE USER ${U_SUB};
     GRANT SELECT(id, \`tup.a\`), ALTER ADD COLUMN ON ${DB}.t TO ${U_SUB};
@@ -104,7 +104,9 @@ check "${U_COLS}" "not granted column" "ALTER TABLE t ADD COLUMN c_restricted St
 check "${U_COLS}" "not granted virtual column" "ALTER TABLE t ADD COLUMN c_virtual String ALIAS _table" _table
 check "${U_PARTIAL}" "granted virtual column" "ALTER TABLE t ADD COLUMN p_virtual String ALIAS _table"
 check "${U_SUB}" "granted subcolumn" "ALTER TABLE t ADD COLUMN s_a String ALIAS tup.a"
-check "${U_SUB}" "not granted subcolumn" "ALTER TABLE t ADD COLUMN s_b String ALIAS tup.b" tup.b
+check "${U_SUB}" "not granted subcolumn" "ALTER TABLE t ADD COLUMN s_b String ALIAS tup.b" tup
+check "${U_COLS}" "subcolumn of a granted column" "ALTER TABLE t ADD COLUMN c_sub String ALIAS tup.b"
+check "${U_PARTIAL}" "subcolumn of a revoked column" "ALTER TABLE t ADD COLUMN p_sub String ALIAS tup.a" tup
 check "${U_DOT}" "quoted dotted column" "ALTER TABLE t ADD COLUMN d_quoted String ALIAS \`q.k\`"
 check "${U_FULL}" "full access" "ALTER TABLE t ADD COLUMN f String ALIAS concat('F-', restricted)"
 check "${U_COLS}" "dictionary identifier" "ALTER TABLE t ADD COLUMN c_dict String ALIAS dictGet(d, 'v', id)"

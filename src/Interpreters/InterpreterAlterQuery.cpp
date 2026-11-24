@@ -706,6 +706,7 @@ void addRequiredSelectForCommand(
     const String & database,
     const String & table,
     const StoragePtr & storage,
+    StorageMetadataHandle & metadata,
     std::optional<ColumnsDescription> & columns,
     bool on_cluster,
     const ContextPtr & context)
@@ -733,18 +734,18 @@ void addRequiredSelectForCommand(
         return;
     }
 
-    if (!columns)
+    if (!metadata)
     {
-        const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        metadata = storage->getInMemoryMetadataPtr(context, false);
         columns = metadata->getColumnsWithVirtuals();
     }
 
     bool has_unbound_identifier = false;
     const NameSet read_columns = InterpreterAlterQuery::getColumnsReadByColumnExpression(
         *expression, *columns, storage->supportsSubcolumns(), &has_unbound_identifier);
-    Strings sorted(read_columns.begin(), read_columns.end());
+    Names sorted(read_columns.begin(), read_columns.end());
     std::ranges::sort(sorted);
-    for (auto & column : sorted)
+    for (auto & column : metadata->getColumns().getColumnNamesForSelectAccessCheck(sorted, context, storage->getStorageID()))
         required_access.emplace_back(AccessType::SELECT, database, table, std::move(column));
 
     /// The hosts of `ON CLUSTER` run the entry without the user, binding it to their own definition of the table.
@@ -1158,6 +1159,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
         alter.command_list->children,
         [](const auto & child) { return child->template as<ASTAlterCommand &>().sql_security != nullptr; });
 
+    StorageMetadataHandle metadata;
     std::optional<ColumnsDescription> columns;
     const bool on_cluster = !alter.cluster.empty();
     for (const auto & child : alter.command_list->children)
@@ -1167,7 +1169,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
             command, alter.getDatabase(), alter.getTable(), row_exists_column_kind, context_for_source,
             storage && alter.cluster.empty() ? storage->getName() : ""));
         addRequiredSelectForCommand(
-            required_access, command, alter.getDatabase(), alter.getTable(), storage, columns, on_cluster, getContext());
+            required_access, command, alter.getDatabase(), alter.getTable(), storage, metadata, columns, on_cluster, getContext());
 
         if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);

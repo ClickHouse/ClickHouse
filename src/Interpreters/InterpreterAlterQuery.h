@@ -46,8 +46,8 @@ public:
         const ContextPtr & context_,
         const String & engine = {});
 
-    /// Columns whose `SELECT` covers what a column with this DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression would expose;
-    /// `has_unbound_identifier` is set when an identifier names none of `columns`.
+    /// The columns and subcolumns a column with this DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression would expose, named as a
+    /// query reading them names them; `has_unbound_identifier` is set when an identifier names none of `columns`.
     static NameSet getColumnsReadByColumnExpression(
         const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns, bool * has_unbound_identifier = nullptr);
 

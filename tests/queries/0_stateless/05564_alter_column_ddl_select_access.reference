@@ -57,7 +57,11 @@ OK
 -- granted subcolumn
 OK
 -- not granted subcolumn
-ACCESS_DENIED SELECT(tup.b)
+ACCESS_DENIED SELECT(tup)
+-- subcolumn of a granted column
+OK
+-- subcolumn of a revoked column
+ACCESS_DENIED SELECT(tup)
 -- quoted dotted column
 OK
 -- full access
@@ -91,6 +95,7 @@ c_field
 c_pub
 p_virtual
 s_a
+c_sub
 d_quoted
 f
 c_dict
