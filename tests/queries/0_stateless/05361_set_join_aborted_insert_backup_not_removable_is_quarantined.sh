@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT set_or_join_sink_fail_removi
 $CLICKHOUSE_CLIENT --query "INSERT INTO set_quarantine VALUES (2), (3)" 2>&1 | grep -o 'FAULT_INJECTED' | head -n 1
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_set_fail_during_backup_replay"
 
-# The successful insert replays every committed backup into a new `Set`.
+# The failed insert rebuilt the `Set` from the committed backups, and the successful one adds its own rows.
 $CLICKHOUSE_CLIENT --query "INSERT INTO set_quarantine VALUES (4)"
 echo "rows after the next insert:"
 $CLICKHOUSE_CLIENT --query "SELECT groupArray(number) FROM numbers(10) WHERE number IN set_quarantine"

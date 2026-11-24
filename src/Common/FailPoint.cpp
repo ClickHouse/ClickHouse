@@ -157,8 +157,8 @@ static struct InitFiu
     PAUSEABLE(set_or_join_sink_pause_before_publish) \
     PAUSEABLE(set_or_join_sink_pause_before_replay) \
     PAUSEABLE(set_or_join_sink_pause_before_discard) \
-    PAUSEABLE(storage_set_pause_during_backup_replay) \
     REGULAR(storage_set_fail_during_backup_replay) \
+    ONCE(storage_set_publish_fail_during_rollback) \
     REGULAR(set_or_join_sink_fail_removing_promoted_backup) \
     REGULAR(storage_set_or_join_fail_quarantining_backup) \
     ONCE(storage_join_mutate_fail_after_moving_backup_aside) \

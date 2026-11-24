@@ -7,9 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A persistent `INSERT` into a `Set` that fails while replaying its promoted backup must publish
-# nothing at all: the replay builds a private `Set`, so the live one is never touched and the
-# `SetPtr` that a running query captured before the insert keeps describing the committed rows.
+# A persistent `INSERT` into a `Set` replays only its own promoted backup into the live `Set`. If the
+# replay fails, the rows it has already added must not stay: the live state is rebuilt from the other
+# committed backups, so the queries started afterwards see exactly the committed rows.
 # The backup of the failed insert must be removed as well, or a restart would restore its rows.
 
 $CLICKHOUSE_CLIENT --query "

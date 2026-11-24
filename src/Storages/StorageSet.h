@@ -148,6 +148,14 @@ private:
     mutable std::mutex mutex;
     SetPtr set TSA_GUARDED_BY(mutex);
 
+    /// Set when a persistent `INSERT` failed while it was updating `set` and the state could not be rebuilt
+    /// from the committed backups either. `set` then has rows of the failed `INSERT`, so it is not handed
+    /// out until the next `INSERT` rebuilds it.
+    bool live_state_lost TSA_GUARDED_BY(mutex) = false;
+
+    /// Builds a new state from the committed backups, skipping one file by name. Called under `mutate_mutex`.
+    SetPtr buildFromBackups(const String & exclude_file_name, ContextPtr context) const;
+
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;

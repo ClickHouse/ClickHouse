@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int FAULT_INJECTED;
     extern const int INCORRECT_FILE_NAME;
+    extern const int NOT_INITIALIZED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -54,8 +55,8 @@ namespace FailPoints
     extern const char set_or_join_sink_pause_before_publish[];
     extern const char set_or_join_sink_pause_before_replay[];
     extern const char set_or_join_sink_pause_before_discard[];
-    extern const char storage_set_pause_during_backup_replay[];
     extern const char storage_set_fail_during_backup_replay[];
+    extern const char storage_set_publish_fail_during_rollback[];
     extern const char set_or_join_sink_fail_removing_promoted_backup[];
     extern const char storage_set_or_join_fail_quarantining_backup[];
 }
@@ -353,6 +354,11 @@ StorageSet::StorageSet(
 SetPtr StorageSet::getSet() const
 {
     std::lock_guard lock(mutex);
+    if (live_state_lost)
+        throw Exception(ErrorCodes::NOT_INITIALIZED,
+            "The in-memory state of table {} is unavailable: a failed INSERT could not be rolled back. "
+            "It is rebuilt from the backup files by the next INSERT or on restart",
+            getStorageID().getNameForLogs());
     return set;
 }
 
@@ -395,37 +401,99 @@ void StorageSet::finishInsert()
     current_set->finishInsert();
 }
 
-void StorageSet::publishBackup(const String & /*backup_file_path*/, ContextPtr context)
+SetPtr StorageSet::buildFromBackups(const String & exclude_file_name, ContextPtr context) const
 {
-    /// Replay the promoted backup into a private `Set` and publish it with a single swap, instead
-    /// of inserting into the live one. `getSet` hands out a bare `SetPtr` and `Set::insertFromBlock`
-    /// only takes the per-call `Set::rwlock`, so replaying into the live `Set` would let a
-    /// concurrent `... IN set_table` query interleave between blocks and observe the rows of an
-    /// `INSERT` that later throws -- and it would keep observing them for the rest of its lifetime
-    /// through the pointer it had already captured, because rolling back can only replace the
-    /// pointer for future `getSet` calls. The private state has to be built from all committed
-    /// backups (a `Set` cannot be built aside and then merged into another one), which is the cost
-    /// of publishing an update to it atomically.
-    /// The live state is not touched until the final swap, so a failure leaves nothing to restore.
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
     new_set->setHeader(metadata_snapshot->getSampleBlock().getColumnsWithTypeAndName());
 
     forEachBackupBlock([&](const Block & block)
     {
-        FailPointInjection::pauseFailPoint(FailPoints::storage_set_pause_during_backup_replay);
-        fiu_do_on(FailPoints::storage_set_fail_during_backup_replay,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while replaying the backup of an INSERT into a Set");
-        });
         new_set->insertFromBlock(block.getColumnsWithTypeAndName());
-    });
+    }, exclude_file_name);
     new_set->finishInsert();
+    return new_set;
+}
 
-    /// Table data belongs to the server, not to the query releasing it.
-    MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
-    std::lock_guard lock(mutex);
-    set = std::move(new_set);
+void StorageSet::publishBackup(const String & backup_file_path, ContextPtr context)
+{
+    /// Replay only the promoted backup into the live `Set`, so an `INSERT` costs as much as the rows it adds,
+    /// and not as much as the whole table. `getSet` hands out a bare `SetPtr` and `Set::insertFromBlock` only
+    /// takes the per-call `Set::rwlock`, so a running `... IN set_table` query can observe the rows of this
+    /// `INSERT` while it is being published, as it always could. The backup is already complete and committed
+    /// at this point, so the replay normally fails only on a memory limit. If it does, the rows must not stay:
+    /// a new state is built from the other committed backups and swapped in, so that every query started
+    /// afterwards sees exactly the committed rows. A query that captured the `SetPtr` before the swap keeps
+    /// the rows of the failed `INSERT` until it finishes.
+    const String backup_file_name = fs::path(backup_file_path).filename();
+
+    SetPtr current_set;
+    bool rebuild_lost_state = false;
+    {
+        std::lock_guard lock(mutex);
+        rebuild_lost_state = live_state_lost;
+        current_set = set;
+    }
+
+    if (rebuild_lost_state)
+    {
+        /// An earlier failed `INSERT` could not be rolled back. `mutate_mutex` is held by the caller, so nothing
+        /// else publishes or rebuilds the state concurrently.
+        current_set = buildFromBackups(backup_file_name, context);
+
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+        std::lock_guard lock(mutex);
+        set = current_set;
+        live_state_lost = false;
+        LOG_INFO(getLogger("StorageSet"), "Rebuilt the in-memory state of table {} from the backup files", getStorageID().getNameForLogs());
+    }
+
+    try
+    {
+        forEachBlockInBackupFile(backup_file_path, [&](const Block & block)
+        {
+            current_set->insertFromBlock(block.getColumnsWithTypeAndName());
+            fiu_do_on(FailPoints::storage_set_fail_during_backup_replay,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while replaying the backup of an INSERT into a Set");
+            });
+        });
+        current_set->finishInsert();
+    }
+    catch (...)
+    {
+        /// The rollback builds a second copy of the table, so it can fail as well (for example, on memory
+        /// limits). The partially updated state must not stay in use then: mark it as lost, so that queries
+        /// get an exception instead of the rows of the failed insert, until the next `INSERT` rebuilds it
+        /// from the backup files. The rebuild skips the backup of the failed insert, which the caller
+        /// discards before leaving the publish critical section.
+        {
+            std::lock_guard lock(mutex);
+            live_state_lost = true;
+        }
+        try
+        {
+            fiu_do_on(FailPoints::storage_set_publish_fail_during_rollback,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault during the rollback of a failed INSERT into a Set");
+            });
+            auto rebuilt_set = buildFromBackups(backup_file_name, context);
+
+            MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+            current_set.reset();
+            std::lock_guard lock(mutex);
+            set = std::move(rebuilt_set);
+            live_state_lost = false;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("StorageSet"),
+                fmt::format("Cannot restore the in-memory state of table {} after a failed INSERT", getStorageID().getNameForLogs()));
+        }
+        throw;
+    }
 }
 
 size_t StorageSet::getSize(ContextPtr) const
@@ -443,6 +511,8 @@ std::optional<UInt64> StorageSet::totalRows(ContextPtr) const
     SetPtr current_set;
     {
         std::lock_guard lock(mutex);
+        if (live_state_lost)
+            return {};
         current_set = set;
     }
     return current_set->getTotalRowCount();
@@ -453,6 +523,8 @@ std::optional<UInt64> StorageSet::totalBytes(ContextPtr) const
     SetPtr current_set;
     {
         std::lock_guard lock(mutex);
+        if (live_state_lost)
+            return {};
         current_set = set;
     }
     return current_set->getTotalByteCount();
@@ -484,6 +556,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
         MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         std::lock_guard lock(mutex);
         set = new_set;
+        live_state_lost = false;
     }
 }
 

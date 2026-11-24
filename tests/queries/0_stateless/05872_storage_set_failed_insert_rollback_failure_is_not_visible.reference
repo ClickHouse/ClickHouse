@@ -1,0 +1,7 @@
+FAULT_INJECTED
+query after the failed rollback:
+NOT_INITIALIZED
+rows after the next insert:
+[1,4]
+rows after reattach:
+[1,4]

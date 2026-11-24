@@ -29,7 +29,7 @@ failed_insert_pid=$!
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT set_or_join_sink_pause_before_discard PAUSE"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_set_fail_during_backup_replay"
 
-# Publishes a new `Set` replayed from all backups in the table directory.
+# Publishes its own backup into the `Set` that the failed insert rebuilt from the committed backups.
 $CLICKHOUSE_CLIENT --query "INSERT INTO set_race VALUES (4)"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT set_or_join_sink_pause_before_discard"
