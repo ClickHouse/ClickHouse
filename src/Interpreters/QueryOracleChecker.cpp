@@ -2939,7 +2939,6 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
     const auto storage = resolveSingleTableStorage(select, context);
     const bool merge_tree_scan = storage && storage->getName().ends_with("MergeTree");
     const bool has_filter = select.where() || select.prewhere();
-    const bool has_aggregation = hasAggregates(select) || select.groupBy() || select.group_by_all;
     const bool has_functions = containsFunctionCall(select.select()) || containsFunctionCall(select.where())
         || containsFunctionCall(select.prewhere()) || containsFunctionCall(select.having());
 
@@ -2953,10 +2952,12 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
     /// DISTINCT-in-order: needs a DistinctStep over an ordered MergeTree read.
     if (select.distinct && merge_tree_scan)
         flips.push_back("optimize_distinct_in_order");
-    /// Expression / aggregate JIT: need something to compile.
+    /// Expression / aggregate JIT: need something to compile. `compile_aggregate_expressions`
+    /// only affects the compilation of aggregate *functions*, so a bare `GROUP BY` without an
+    /// aggregate (e.g. `SELECT a FROM t GROUP BY a`) must not arm it.
     if (has_functions)
         flips.push_back("compile_expressions");
-    if (has_aggregation)
+    if (hasAggregates(select))
         flips.push_back("compile_aggregate_expressions");
     /// Plan-shape optimizations: need filters / unused-column producers respectively.
     if (has_filter)
@@ -2979,8 +2980,22 @@ bool QueryOracleChecker::checkSettingFlipSweep(const ASTSelectQuery & select, co
     ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
     LOG_TRACE(logger, "setting-flip-sweep oracle ({}): {}", flip, sql);
 
-    const std::vector<std::pair<String, Field>> off{{String(flip), Field(UInt64(0))}};
-    const std::vector<std::pair<String, Field>> on{{String(flip), Field(UInt64(1))}};
+    std::vector<std::pair<String, Field>> off{{String(flip), Field(UInt64(0))}};
+    std::vector<std::pair<String, Field>> on{{String(flip), Field(UInt64(1))}};
+    /// The JIT compile thresholds default to 3, so the first execution of a unique fuzzed query
+    /// never reaches compiled code and the on-side flip would be a no-op. Lower the matching
+    /// threshold on both sides (it is inert when the compile flag is off) so flipping the flag
+    /// actually exercises the compiled path it is meant to validate.
+    if (flip == "compile_expressions")
+    {
+        off.emplace_back("min_count_to_compile_expression", Field(UInt64(0)));
+        on.emplace_back("min_count_to_compile_expression", Field(UInt64(0)));
+    }
+    else if (flip == "compile_aggregate_expressions")
+    {
+        off.emplace_back("min_count_to_compile_aggregate_expression", Field(UInt64(0)));
+        on.emplace_back("min_count_to_compile_aggregate_expression", Field(UInt64(0)));
+    }
 
     auto off_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, off);
     auto on_rows_opt = OracleExec::executeRows(sql, context, ResultShape::SortedBag, on);
@@ -3020,7 +3035,8 @@ bool QueryOracleChecker::checkCodecRoundtrip(const ASTSelectQuery &, const Conte
     const String coded = fixture.allocName("coded");
 
     if (!fixture.execute(
-            "CREATE TABLE " + plain + " (k UInt64, i Int64, f Float64, s String) ENGINE = MergeTree ORDER BY k"))
+            "CREATE TABLE " + plain + " (k UInt64 CODEC(NONE), i Int64 CODEC(NONE), f Float64 CODEC(NONE),"
+            " s String CODEC(NONE)) ENGINE = MergeTree ORDER BY k"))
         return false;
     if (!fixture.execute(
             "CREATE TABLE " + coded + " (k UInt64, i Int64 CODEC(Delta, LZ4), f Float64 CODEC(Gorilla, ZSTD),"
@@ -3035,23 +3051,42 @@ bool QueryOracleChecker::checkCodecRoundtrip(const ASTSelectQuery &, const Conte
     ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleChecks);
     LOG_TRACE(logger, "codec round-trip oracle: {} (CODEC(NONE)) vs {} (codecs)", plain, coded);
 
-    auto plain_rows_opt = OracleExec::executeRows("SELECT * FROM " + plain, context, ResultShape::SortedBag);
-    auto coded_rows_opt = OracleExec::executeRows("SELECT * FROM " + coded, context, ResultShape::SortedBag);
-    if (!plain_rows_opt || !coded_rows_opt)
+    /// Error-observing execution: a one-sided failure (the reference reads fine but the codec
+    /// table throws while compressing/decompressing) is itself the codec bug this oracle exists
+    /// to catch, so it must not be downgraded to a skip by the dispatch's catch-all.
+    auto plain_out = OracleExec::tryExecuteRows("SELECT * FROM " + plain, context, ResultShape::SortedBag);
+    auto coded_out = OracleExec::tryExecuteRows("SELECT * FROM " + coded, context, ResultShape::SortedBag);
+
+    /// The CODEC(NONE) reference read must itself succeed for any comparison to be meaningful; if
+    /// even the control overflows or fails there is nothing trustworthy to compare against — skip.
+    if (plain_out.overflow || plain_out.error_code || !plain_out.rows)
+        return false;
+    /// A coded-side overflow is not a bug (the data merely formatted larger) — skip.
+    if (coded_out.overflow)
         return false;
 
-    if (!OracleCompare::equal(*plain_rows_opt, *coded_rows_opt))
+    if (coded_out.error_code || !coded_out.rows)
+    {
+        fixture.preserve(); /// keep the two tables for triage
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+            "codec round-trip oracle mismatch!\n"
+            "CODEC(NONE) table {} read {} rows, but codec table {} failed to read: {}",
+            plain, plain_out.rows->size(), coded, coded_out.error_message);
+    }
+
+    if (!OracleCompare::equal(*plain_out.rows, *coded_out.rows))
     {
         fixture.preserve(); /// keep the two tables for triage
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "codec round-trip oracle mismatch!\n"
             "CODEC(NONE) table {} ({} rows) vs codec table {} ({} rows)\n{}",
-            plain, plain_rows_opt->size(), coded, coded_rows_opt->size(),
-            OracleCompare::diffSummary(*plain_rows_opt, *coded_rows_opt));
+            plain, plain_out.rows->size(), coded, coded_out.rows->size(),
+            OracleCompare::diffSummary(*plain_out.rows, *coded_out.rows));
     }
 
-    LOG_TRACE(logger, "codec round-trip oracle passed ({} rows)", plain_rows_opt->size());
+    LOG_TRACE(logger, "codec round-trip oracle passed ({} rows)", plain_out.rows->size());
     return true;
 }
 
