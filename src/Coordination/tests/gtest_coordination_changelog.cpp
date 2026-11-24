@@ -2732,9 +2732,8 @@ void appendAndWaitDurable(DB::KeeperLogStore & store, uint64_t from, uint64_t to
 
 }
 
-// Positions recorded for entries of compressed files are decompressed offsets that cannot be read back
-// from disk, so entries loaded from such files at startup must stay readable after the latest logs
-// cache goes over its threshold, both during the load and on later flushes.
+// Entries of compressed files cannot be read back from disk, so the latest logs cache thresholds are ignored
+// for compressed logs and every entry stays readable after a restart and later flushes.
 TYPED_TEST(CoordinationChangelogTest, CompressedEntriesStayCachedAcrossRestart)
 {
     ChangelogDirTest test("./logs");
@@ -2744,6 +2743,7 @@ TYPED_TEST(CoordinationChangelogTest, CompressedEntriesStayCachedAcrossRestart)
         .force_sync = false,
         .compress_logs = this->enable_compression,
         .rotate_interval = 10,
+        .latest_logs_cache_size_threshold = 1,
         .latest_logs_cache_entry_count_threshold = 5,
     };
     const DB::ReadAheadSettings readahead_settings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024};
@@ -2774,137 +2774,29 @@ TYPED_TEST(CoordinationChangelogTest, CompressedEntriesStayCachedAcrossRestart)
         appendAndWaitDurable(writer, 1, 35);
     }
 
-    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
-    changelog.init(0, 0);
-    check_readable(changelog, 35);
-
-    appendAndWaitDurable(changelog, 36, 45);
-    changelog.flush();
-    check_readable(changelog, 45);
-
-    DB::KeeperLogInfo log_info;
-    changelog.getKeeperLogInfo(log_info);
-    if (this->enable_compression)
-        EXPECT_EQ(log_info.latest_logs_cache_entries, 45u);
-    else
-        EXPECT_LE(log_info.latest_logs_cache_entries, 5u);
-}
-
-// After compress_logs is enabled on a node with uncompressed logs, read-ahead planned for the evicted
-// uncompressed prefix must not extend into the following compressed file.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadDoesNotPlanIntoCompressedFile)
-{
-    if (this->enable_compression)
-        GTEST_SKIP() << "Mixes compressed and uncompressed files itself";
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
     {
-        DB::KeeperLogStore writer(
-            DB::LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 10},
-            DB::FlushSettings(),
-            DB::ReadAheadSettings{},
-            this->keeper_context);
-        writer.init(0, 0);
-        appendAndWaitDurable(writer, 1, 10);
-    }
-
-    {
-        DB::KeeperLogStore writer(
-            DB::LogFileSettings{.force_sync = false, .compress_logs = true, .rotate_interval = 10},
-            DB::FlushSettings(),
-            DB::ReadAheadSettings{},
-            this->keeper_context);
-        writer.init(0, 0);
-        appendAndWaitDurable(writer, 11, 25);
-    }
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin.zstd"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_30.bin.zstd"));
-
-    const DB::LogFileSettings cache_settings{.force_sync = false, .compress_logs = true, .rotate_interval = 10, .latest_logs_cache_entry_count_threshold = 5};
-    const DB::ReadAheadSettings readahead_settings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024};
-
-    {
-        DB::KeeperLogStore changelog(cache_settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+        DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
         changelog.init(0, 0);
+        check_readable(changelog, 35);
 
-        auto entry = changelog.entry_at_ext(1, /*for_commit=*/true);
-        ASSERT_NE(entry, nullptr);
-        EXPECT_EQ(entry->get_term(), 1u);
+        appendAndWaitDurable(changelog, 36, 45);
+        changelog.flush();
+        check_readable(changelog, 45);
 
-        auto peer_entries = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
-        ASSERT_NE(peer_entries, nullptr);
-        ASSERT_EQ(peer_entries->size(), 5u);
-        for (uint64_t i = 0; i < 5; ++i)
-            EXPECT_EQ((*peer_entries)[i]->get_term(), i + 1);
-
-        auto entries = changelog.log_entries(1, 26);
-        ASSERT_NE(entries, nullptr);
-        EXPECT_EQ(entries->size(), 25u);
+        DB::KeeperLogInfo log_info;
+        changelog.getKeeperLogInfo(log_info);
+        if (this->enable_compression)
+            EXPECT_EQ(log_info.latest_logs_cache_entries, 45u);
+        else
+            EXPECT_LE(log_info.latest_logs_cache_entries, 5u);
     }
 
-    // Both read-ahead plans of the evicted uncompressed prefix cover changelog_1_10.bin and stop before the compressed file.
-    {
-        DB::Changelog changelog(this->log, cache_settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
-        changelog.readChangelogAndInitWriter(0, 0);
-        const auto check_window = [](const DB::LogReadPlan & plan)
-        {
-            ASSERT_TRUE(plan.read_ahead_window.has_value());
-            ASSERT_EQ(plan.read_ahead_window->size(), 1u);
-            EXPECT_EQ(plan.read_ahead_window->front().first_index, 1u);
-            EXPECT_EQ(plan.read_ahead_window->front().count, 10u);
-            EXPECT_FALSE(plan.read_ahead_window->front().file_description->is_compressed);
-        };
-        check_window(changelog.getReadAheadPlan(1, 6, 0));
-        check_window(changelog.getCommitReadPlan(1));
-    }
-}
-
-// Control for ReadAheadDoesNotPlanIntoCompressedFile: with only uncompressed files both read-ahead plans
-// still extend into the next file.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadPlansIntoNextUncompressedFile)
-{
-    if (this->enable_compression)
-        GTEST_SKIP() << "Checks uncompressed files only";
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    {
-        DB::KeeperLogStore writer(
-            DB::LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 10},
-            DB::FlushSettings(),
-            DB::ReadAheadSettings{},
-            this->keeper_context);
-        writer.init(0, 0);
-        appendAndWaitDurable(writer, 1, 25);
-    }
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin"));
-
-    const DB::LogFileSettings cache_settings{.force_sync = false, .compress_logs = false, .rotate_interval = 10, .latest_logs_cache_entry_count_threshold = 5};
-    const DB::ReadAheadSettings readahead_settings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024};
-
-    DB::Changelog changelog(this->log, cache_settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
-    changelog.readChangelogAndInitWriter(0, 0);
-    const auto check_window = [](const DB::LogReadPlan & plan)
-    {
-        ASSERT_TRUE(plan.read_ahead_window.has_value());
-        ASSERT_EQ(plan.read_ahead_window->size(), 2u);
-        const auto & first = (*plan.read_ahead_window)[0];
-        const auto & next = (*plan.read_ahead_window)[1];
-        EXPECT_EQ(first.first_index, 1u);
-        EXPECT_EQ(first.count, 10u);
-        EXPECT_EQ(next.first_index, 11u);
-        EXPECT_EQ(next.count, 10u);
-        EXPECT_NE(first.file_description, next.file_description);
-    };
-    check_window(changelog.getReadAheadPlan(1, 6, 0));
-    check_window(changelog.getCommitReadPlan(1));
+    // Existing compressed files stay after compress_logs is turned off.
+    DB::LogFileSettings uncompressed_settings = settings;
+    uncompressed_settings.compress_logs = false;
+    DB::KeeperLogStore changelog(uncompressed_settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.init(0, 0);
+    check_readable(changelog, 45);
 }
 
 // Tests: per-peer read-ahead

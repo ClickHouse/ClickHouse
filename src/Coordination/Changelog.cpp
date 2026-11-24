@@ -1256,6 +1256,23 @@ LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, ReadAhead
 {
 }
 
+void LogEntryStorage::ignoreLatestLogsCacheLimits()
+{
+    if (latest_logs_cache.hasUnlimitedSpace())
+        return;
+
+    chassert(latest_logs_cache.empty() && logs_location.empty());
+    LOG_WARNING(
+        log,
+        "latest_logs_cache_size_threshold ({}) and latest_logs_cache_entry_count_threshold ({}) are ignored because compress_logs "
+        "is enabled or compressed changelog files exist: their entries cannot be read back from disk, so the latest logs cache is "
+        "unlimited",
+        latest_logs_cache.size_threshold,
+        latest_logs_cache.count_threshold);
+    latest_logs_cache.size_threshold = 0;
+    latest_logs_cache.count_threshold = 0;
+}
+
 LogEntryStorage::~LogEntryStorage()
 {
     shutdown();
@@ -1464,16 +1481,9 @@ void LogEntryStorage::addEntryToLatestCache(uint64_t index, const LogEntryPtr & 
 {
     /// Invariant across the loop, and every evaluation costs a size-class lookup.
     const size_t entry_bytes = cachedLogEntryBytes(log_entry);
-    while (!latest_logs_cache.hasSpaceAvailable(entry_bytes) && canEvictOldestCachedEntry())
+    while (!latest_logs_cache.hasSpaceAvailable(entry_bytes))
         latest_logs_cache.popOldestEntry();
     latest_logs_cache.addEntry(index, log_entry);
-}
-
-bool LogEntryStorage::canEvictOldestCachedEntry() const
-{
-    /// Positions in compressed files are decompressed offsets that cannot be read back (see assertNotCompressed).
-    auto it = logs_location.find(latest_logs_cache.min_index_in_cache);
-    return it == logs_location.end() || !it->second.file_description->is_compressed;
 }
 
 void LogEntryStorage::reserveLocations(size_t count)
@@ -1811,7 +1821,7 @@ void LogEntryStorage::refreshCache()
         return latest_logs_cache.count_threshold != 0 && latest_logs_cache.numberOfEntries() > latest_logs_cache.count_threshold;
     };
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
-           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()) && canEvictOldestCachedEntry())
+           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()))
         latest_logs_cache.popOldestEntry();
 }
 
@@ -2672,9 +2682,6 @@ void LogEntryStorage::appendNextFileCursors(LogReadPlan::ReadAheadWindow & windo
     if (coverage_end > max_index_with_location)
         return;
     const auto & next_loc = logs_location.at(coverage_end);
-    /// Entries of compressed files are never evicted, they are served from latest_logs_cache.
-    if (next_loc.file_description->is_compressed)
-        return;
     appendRunCursors(window, next_loc.file_description, coverage_end, max_index_with_location + 1);
 }
 
@@ -3775,6 +3782,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// compressed file below the snapshot shouldn't disable the feature).
     const bool any_in_scope_compressed
         = std::ranges::any_of(in_scope_files, [](const auto & file_description) { return file_description->is_compressed; });
+
+    /// Positions in compressed files are decompressed offsets, so their entries must never be evicted.
+    if (compress_logs || any_in_scope_compressed)
+        entry_storage.ignoreLatestLogsCacheLimits();
 
     /// A single in-scope file has no parallelism to exploit; `startup_read_max_streams <= 1`
     /// (explicitly requested, or auto-resolved to 1 on a single-core machine) selects serial too.

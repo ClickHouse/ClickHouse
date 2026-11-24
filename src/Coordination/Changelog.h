@@ -296,7 +296,7 @@ struct ReadAheadReader;
   * suffix), bounded by latest_logs_cache_entry_count_threshold and by
   * latest_logs_cache_size_threshold, which is charged in `cachedLogEntryBytes`, that is resident
   * bytes rather than payload bytes; once persisted, its location is recorded (logs_location) and the
-  * entry may be evicted, unless that location is in a compressed file, which cannot be read back.
+  * entry may be evicted.
   *
   * Replication is served by per-peer read-ahead readers (peer_readers): each follower gets a
   * dedicated reader decoding entries ahead of the requested range.
@@ -396,6 +396,9 @@ struct LogEntryStorage
     /// True when latest_logs_cache has no size or entry-count threshold (retains the whole live log, never evicts).
     bool isUnlimitedCacheMode() const { return latest_logs_cache.hasUnlimitedSpace(); }
 
+    /// Sets both latest_logs_cache thresholds to 0. Must be called before any entry is added.
+    void ignoreLatestLogsCacheLimits();
+
     void addLocation(uint64_t index, uint64_t term, int32_t value_type, const LogEntryPtr & log_entry, LogLocation log_location);
 
     void reserveLocations(size_t count);
@@ -438,8 +441,8 @@ private:
         size_t min_index_in_cache = 0;
         size_t max_index_in_cache = 0;
 
-        const size_t size_threshold;
-        const size_t count_threshold;
+        size_t size_threshold;
+        size_t count_threshold;
     };
 
     InMemoryCache latest_logs_cache;
@@ -485,8 +488,6 @@ private:
         const ChangelogFileDescriptionPtr & file,
         uint64_t from_index,
         uint64_t end_limit) const;
-
-    bool canEvictOldestCachedEntry() const;
 
     /// Shared N+1 planning step: extend the window with the next file's cursors past `coverage_end`.
     /// PRECONDITION: `coverage_end` is located and non-zero (caller must guard the zero/unlocated case,
