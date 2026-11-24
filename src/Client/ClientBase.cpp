@@ -4286,13 +4286,17 @@ void ClientBase::processParsedSingleQuery(
             }
             /// The interrupt handler is already stopped here, so the log stream's cancellation hook
             /// (armed in initLogsOutputStream) is inert; and in --server_logs_file=- mode this flush hits
-            /// std_out after resetOutput() already cleared its hook. Bound this trailing flush to the
-            /// terminal-facing log sink with a best-effort budget so a stuck terminal cannot hang the
-            /// client here - the same discipline tty_buf uses just above.
-            if (logs_out_terminal_buf)
+            /// std_out after resetOutput() already cleared its hook. After a Ctrl+C the terminal-facing
+            /// log sink may be exactly what is stuck, so only in that case bound this trailing flush
+            /// with a best-effort budget - the same condition the post-query epilogue below uses.
+            /// A query that received no interrupt keeps the ordinary non-lossy write: these events
+            /// were explicitly requested, and a slow-but-draining sink (e.g. a pipe whose reader
+            /// pauses for longer than the budget) must eventually receive them.
+            const bool bound_deferred_flush = logs_out_terminal_buf && (cancelled || query_received_interrupt);
+            if (bound_deferred_flush)
                 logs_out_terminal_buf->setBestEffortFlushBudget(1000);
             SCOPE_EXIT({
-                if (logs_out_terminal_buf)
+                if (bound_deferred_flush)
                     logs_out_terminal_buf->setBestEffortFlushBudget(std::nullopt);
             });
             logs_out_stream->writeProfileEvents(profile_events.last_block);
