@@ -1499,18 +1499,24 @@ static QueryTreeNodePtr buildNumericInEquality(
     const DataTypePtr & left_argument_type,
     const DataTypePtr & right_argument_type);
 
-static bool hasCompoundFloatLeaf(const DataTypePtr & type)
+static bool hasFloatLeaf(const DataTypePtr & type)
 {
     const auto nested = removeNullable(removeLowCardinality(type));
     if (isFloat(nested))
         return true;
     if (const auto * array = typeid_cast<const DataTypeArray *>(nested.get()))
-        return hasCompoundFloatLeaf(array->getNestedType());
+        return hasFloatLeaf(array->getNestedType());
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
-        return std::ranges::any_of(tuple->getElements(), hasCompoundFloatLeaf);
+        return std::ranges::any_of(tuple->getElements(), hasFloatLeaf);
     if (const auto * map = typeid_cast<const DataTypeMap *>(nested.get()))
-        return hasCompoundFloatLeaf(map->getKeyType()) || hasCompoundFloatLeaf(map->getValueType());
+        return hasFloatLeaf(map->getKeyType()) || hasFloatLeaf(map->getValueType());
     return false;
+}
+
+static bool hasCompoundFloatLeaf(const DataTypePtr & type)
+{
+    const auto nested = removeNullable(removeLowCardinality(type));
+    return (isArray(nested) || isTuple(nested) || isMap(nested)) && hasFloatLeaf(nested);
 }
 
 static bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
