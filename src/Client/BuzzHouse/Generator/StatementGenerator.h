@@ -222,6 +222,7 @@ private:
     bool repeat_statement = false;
     /// Tables read by the query being generated with distributed shapes, to read them again for self-joins
     std::vector<const SQLTable *> distributed_shape_tables;
+    bool shape_tables_created = false;
 
     uint32_t depth = 0;
     uint32_t width = 0;
@@ -1123,9 +1124,9 @@ public:
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
     /// Whether the statement generated last must run twice, resets the request
     bool takeRepeatStatement() { return std::exchange(repeat_statement, false); }
-    /// A small valid query over `MergeTree` tables in one of the shapes that run differently on parallel replicas,
-    /// empty when there is no table to read
-    String generateShapedQuery(RandomGenerator & rg);
+    /// A small valid query over `MergeTree` tables in one of the shapes that run differently on parallel replicas, after
+    /// the statements that create and fill the tables of the shapes when needed. The query is the last statement
+    DB::Strings generateShapedQueries(RandomGenerator & rg);
     /// The tables `generateShapedQuery` reads
     std::vector<const SQLTable *> shapeTables();
 
