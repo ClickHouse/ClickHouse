@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool precise_float_parsing;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -405,7 +406,7 @@ namespace
 
 constexpr FunctionResultSetting overflow_only_or_default[] = {Setting::date_time_overflow_behavior, Setting::cast_keep_nullable};
 constexpr FunctionResultSetting float_or_default[] = {Setting::date_time_overflow_behavior, Setting::precise_float_parsing, Setting::cast_keep_nullable};
-constexpr FunctionResultSetting date_time_or_default[] = {Setting::date_time_overflow_behavior, Setting::cast_string_to_date_time_mode, Setting::cast_keep_nullable};
+constexpr FunctionResultSetting date_time_or_default[] = {Setting::date_time_overflow_behavior, Setting::cast_string_to_date_time_mode, Setting::cast_keep_nullable, Setting::session_timezone};
 constexpr FunctionResultSetting ip_address_or_default[] = {Setting::cast_ipv4_ipv6_default_on_conversion_error, Setting::cast_keep_nullable};
 constexpr FunctionResultSetting uuid_or_default[] = {Setting::cast_keep_nullable};
 

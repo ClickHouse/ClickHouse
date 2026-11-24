@@ -25,3 +25,9 @@ partition filter	336
 partition filter expected	336
 groups per partition	60
 groups expected	60
+format row expected	1
+format row	1
+json string expected	1
+json string	1
+time zone expected	1
+time zone	1

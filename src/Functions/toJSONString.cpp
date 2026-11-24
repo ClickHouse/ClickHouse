@@ -18,6 +18,7 @@ namespace Setting
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeOutputFormat date_time_output_format;
     extern const SettingsIntervalOutputFormat interval_output_format;
+    extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool output_format_always_write_decimal_point_in_float_and_decimal;
     extern const SettingsBool output_format_decimal_trailing_zeros;
     extern const SettingsUInt64 output_format_float_precision;
@@ -32,6 +33,7 @@ namespace Setting
     extern const SettingsBool output_format_json_skip_null_value_in_named_tuples;
     extern const SettingsBool output_format_json_validate_utf8;
     extern const SettingsBool output_format_trim_fixed_string;
+    extern const SettingsBool type_json_skip_null_typed_paths;
 }
 
 namespace
@@ -49,7 +51,7 @@ namespace
             Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, Setting::interval_output_format,
             Setting::bool_true_representation, Setting::bool_false_representation, Setting::output_format_decimal_trailing_zeros,
             Setting::output_format_always_write_decimal_point_in_float_and_decimal, Setting::output_format_float_precision,
-            Setting::output_format_trim_fixed_string};
+            Setting::output_format_trim_fixed_string, Setting::type_json_skip_null_typed_paths, Setting::json_type_escape_dots_in_keys};
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToJSONString>(context); }
 
         explicit FunctionToJSONString(ContextPtr context)

@@ -22,9 +22,10 @@ extern const SettingsBool validate_enum_literals_in_operators;
 extern const SettingsBool use_variant_default_implementation_for_comparisons;
 extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+extern const SettingsTimezone session_timezone;
 }
 
-constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow, Setting::validate_enum_literals_in_operators, Setting::use_variant_default_implementation_for_comparisons, Setting::cast_string_to_date_time_mode, Setting::date_time_overflow_behavior};
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow, Setting::validate_enum_literals_in_operators, Setting::use_variant_default_implementation_for_comparisons, Setting::cast_string_to_date_time_mode, Setting::date_time_overflow_behavior, Setting::session_timezone};
 
 REGISTER_FUNCTION(GreaterOrEquals)
 {

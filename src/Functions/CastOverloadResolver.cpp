@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsBool output_format_trim_fixed_string;
     extern const SettingsBool output_format_values_escape_quote_with_quote;
     extern const SettingsBool precise_float_parsing;
+    extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64Auto schema_inference_make_columns_nullable;
     extern const SettingsBool type_json_skip_invalid_typed_paths;
     extern const SettingsBool type_json_use_partial_match_to_skip_paths_by_regexp;
@@ -647,7 +648,11 @@ FunctionResultSettings getConversionResultSettings(ConversionResultKind kind)
     };
 
     static constexpr FunctionResultSetting date_time[] = {
-        Setting::date_time_overflow_behavior, Setting::cast_string_to_date_time_mode
+        Setting::date_time_overflow_behavior, Setting::cast_string_to_date_time_mode, Setting::session_timezone
+    };
+
+    static constexpr FunctionResultSetting date_time_best_effort[] = {
+        Setting::date_time_overflow_behavior, Setting::session_timezone
     };
 
     static constexpr FunctionResultSetting ip_address[] = {
@@ -679,7 +684,7 @@ FunctionResultSettings getConversionResultSettings(ConversionResultKind kind)
         Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, Setting::interval_output_format,
         Setting::bool_true_representation, Setting::bool_false_representation, Setting::output_format_decimal_trailing_zeros,
         Setting::output_format_always_write_decimal_point_in_float_and_decimal, Setting::output_format_float_precision,
-        Setting::output_format_trim_fixed_string, Setting::output_format_values_escape_quote_with_quote
+        Setting::output_format_trim_fixed_string, Setting::output_format_values_escape_quote_with_quote, Setting::session_timezone
     };
 
     switch (kind)
@@ -690,6 +695,8 @@ FunctionResultSettings getConversionResultSettings(ConversionResultKind kind)
             return float_settings;
         case ConversionResultKind::DateTime:
             return date_time;
+        case ConversionResultKind::DateTimeBestEffort:
+            return date_time_best_effort;
         case ConversionResultKind::IPAddress:
             return ip_address;
         case ConversionResultKind::String:

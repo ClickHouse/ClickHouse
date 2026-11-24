@@ -66,6 +66,7 @@ namespace Setting
     extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool precise_float_parsing;
+    extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64Auto schema_inference_make_columns_nullable;
     extern const SettingsBool type_json_allow_duplicated_key_with_literal_and_nested_object;
     extern const SettingsBool type_json_skip_duplicated_paths;
@@ -1824,7 +1825,8 @@ constexpr FunctionResultSetting json_typed_settings[] = {
     Setting::input_format_try_infer_dates, Setting::input_format_try_infer_datetimes,
     Setting::input_format_try_infer_datetimes_only_datetime64, Setting::schema_inference_make_columns_nullable,
     Setting::precise_float_parsing, Setting::date_time_input_format, Setting::cast_string_to_date_time_mode,
-    Setting::json_extract_use_cast_string_to_date_time_mode, Setting::json_extract_named_tuples_as_objects};
+    Setting::json_extract_use_cast_string_to_date_time_mode, Setting::json_extract_named_tuples_as_objects,
+    Setting::session_timezone};
 
 template <typename Function>
 void registerWithResultSettings(FunctionFactory & factory, FunctionDocumentation documentation, FunctionResultSettings result_settings)

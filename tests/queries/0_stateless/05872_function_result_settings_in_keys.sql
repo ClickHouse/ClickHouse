@@ -11,6 +11,9 @@ DROP TABLE IF EXISTS t_nested;
 DROP TABLE IF EXISTS t_nested_sample;
 DROP TABLE IF EXISTS t_lambda;
 DROP TABLE IF EXISTS t_part;
+DROP TABLE IF EXISTS t_format_row;
+DROP TABLE IF EXISTS t_json_string;
+DROP TABLE IF EXISTS t_time_zone;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
 INSERT INTO t_sort SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number FROM numbers(10000);
@@ -34,6 +37,15 @@ INSERT INTO t_lambda SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 
 
 CREATE TABLE t_part (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree PARTITION BY formatDateTime(dt, '%M') ORDER BY b;
 INSERT INTO t_part SELECT * FROM t_sort;
+
+-- `formatRow` depends on every format setting, `toJSONString` on the settings of `JSON`, and parsing a time on the time zone.
+CREATE TABLE t_format_row (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY formatRowNoNewline('CSV', x, y) SETTINGS index_granularity = 1;
+INSERT INTO t_format_row SELECT 0, number FROM numbers(10000);
+CREATE TABLE t_json_string (j JSON(a Nullable(Int64))) ENGINE = MergeTree ORDER BY toJSONString(j) SETTINGS index_granularity = 1;
+INSERT INTO t_json_string SELECT '{"a":' || toString(number) || '}' FROM numbers(100);
+INSERT INTO t_json_string VALUES ('{"a":null}');
+CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
+INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
 
 SELECT 'declared', name, result_settings FROM system.functions WHERE name IN ('locate', 'DATE_FORMAT') ORDER BY name;
 
@@ -70,6 +82,19 @@ SETTINGS allow_aggregate_partitions_independently = 1, force_aggregate_partition
 SELECT 'groups expected', count() FROM (SELECT formatDateTime(dt, '%M') AS k FROM t_part GROUP BY k)
 SETTINGS allow_aggregate_partitions_independently = 0, optimize_use_implicit_projections = 0;
 
+-- The full scan runs first: the query condition cache would otherwise give it the granules the query with the index selected.
+SET format_csv_delimiter = ';', type_json_skip_null_typed_paths = 1;
+SELECT 'format row expected', count() FROM t_format_row WHERE formatRowNoNewline('CSV', x, y) = '0;5000' SETTINGS use_primary_key = 0;
+SELECT 'format row', count() FROM t_format_row WHERE formatRowNoNewline('CSV', x, y) = '0;5000';
+SELECT 'json string expected', count() FROM t_json_string WHERE toJSONString(j) = '{}' SETTINGS use_primary_key = 0;
+SELECT 'json string', count() FROM t_json_string WHERE toJSONString(j) = '{}';
+SET session_timezone = 'Pacific/Kiritimati';
+SELECT 'time zone expected', count() FROM t_time_zone WHERE toDateTime(s) = toDateTime('2024-01-01 05:00:00', 'UTC') SETTINGS use_primary_key = 0;
+SELECT 'time zone', count() FROM t_time_zone WHERE toDateTime(s) = toDateTime('2024-01-01 05:00:00', 'UTC');
+
+DROP TABLE t_format_row;
+DROP TABLE t_json_string;
+DROP TABLE t_time_zone;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
 DROP TABLE t_locate_index;

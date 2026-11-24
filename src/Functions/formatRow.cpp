@@ -1,6 +1,8 @@
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
+#include <Core/FormatFactorySettings.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -17,6 +19,21 @@
 
 namespace DB
 {
+namespace Setting
+{
+#define DECLARE_FORMAT_EXTERN(TYPE, NAME, ...) \
+    extern const Settings ## TYPE NAME;
+FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, DECLARE_FORMAT_EXTERN)
+#undef DECLARE_FORMAT_EXTERN
+
+    extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
+    extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
+    extern const SettingsBool apply_string_filters_during_scan;
+    extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsBool http_write_exception_in_output_format;
+    extern const SettingsUInt64 max_parser_depth;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -26,6 +43,19 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The format is an argument, so every setting that `getFormatSettings` reads can change the result.
+#define LIST_FORMAT_SETTING(TYPE, NAME, ...) Setting::NAME,
+constexpr FunctionResultSetting format_row_result_settings[] = {
+    FORMAT_FACTORY_SETTINGS(LIST_FORMAT_SETTING, LIST_FORMAT_SETTING)
+    Setting::aggregate_function_input_format,
+    Setting::allow_special_serialization_kinds_in_output_formats,
+    Setting::apply_string_filters_during_scan,
+    Setting::enable_nullable_tuple_type,
+    Setting::http_write_exception_in_output_format,
+    Setting::max_parser_depth,
+};
+#undef LIST_FORMAT_SETTING
 
 /** formatRow(<format>, x, y, ...) is a function that allows you to use RowOutputFormat over
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
@@ -267,10 +297,10 @@ FROM numbers(3)
 
     factory.registerFunction("formatRow",
         [](ContextPtr ctx){ return FormatRowOverloadResolver::create("formatRow", false, std::move(ctx)); },
-        formatRow_documentation);
+        formatRow_documentation, FunctionFactory::Case::Sensitive, format_row_result_settings);
     factory.registerFunction("formatRowNoNewline",
         [](ContextPtr ctx){ return FormatRowOverloadResolver::create("formatRowNoNewline", true, std::move(ctx)); },
-        formatRowNoNewline_documentation);
+        formatRowNoNewline_documentation, FunctionFactory::Case::Sensitive, format_row_result_settings);
 }
 
 }

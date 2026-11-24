@@ -4159,7 +4159,7 @@ SELECT parseDateTimeBestEffort('1735689600') AS parseDateTimeBestEffort
     FunctionDocumentation::Category parseDateTimeBestEffort_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffort_documentation = {parseDateTimeBestEffort_description, parseDateTimeBestEffort_syntax, parseDateTimeBestEffort_arguments, {}, parseDateTimeBestEffort_returned_value, parseDateTimeBestEffort_examples, parseDateTimeBestEffort_introduced_in, parseDateTimeBestEffort_category};
 
-    registerConversion<detail::FunctionParseDateTimeBestEffort>(factory, parseDateTimeBestEffort_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTimeBestEffort>(factory, parseDateTimeBestEffort_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTimeBestEffortOrZero documentation
     FunctionDocumentation::Description parseDateTimeBestEffortOrZero_description = R"(
@@ -4203,7 +4203,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
     FunctionDocumentation::Category parseDateTimeBestEffortOrZero_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortOrZero_documentation = {parseDateTimeBestEffortOrZero_description, parseDateTimeBestEffortOrZero_syntax, parseDateTimeBestEffortOrZero_arguments, {}, parseDateTimeBestEffortOrZero_returned_value, parseDateTimeBestEffortOrZero_examples, parseDateTimeBestEffortOrZero_introduced_in, parseDateTimeBestEffortOrZero_category};
 
-    registerConversion<detail::FunctionParseDateTimeBestEffortOrZero>(factory, parseDateTimeBestEffortOrZero_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTimeBestEffortOrZero>(factory, parseDateTimeBestEffortOrZero_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTimeBestEffortOrNull documentation
     FunctionDocumentation::Description parseDateTimeBestEffortOrNull_description = R"(
@@ -4247,7 +4247,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
     FunctionDocumentation::Category parseDateTimeBestEffortOrNull_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortOrNull_documentation = {parseDateTimeBestEffortOrNull_description, parseDateTimeBestEffortOrNull_syntax, parseDateTimeBestEffortOrNull_arguments, {}, parseDateTimeBestEffortOrNull_returned_value, parseDateTimeBestEffortOrNull_examples, parseDateTimeBestEffortOrNull_introduced_in, parseDateTimeBestEffortOrNull_category};
 
-    registerConversion<detail::FunctionParseDateTimeBestEffortOrNull>(factory, parseDateTimeBestEffortOrNull_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTimeBestEffortOrNull>(factory, parseDateTimeBestEffortOrNull_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTimeBestEffortUS documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUS_description = R"(
@@ -4281,7 +4281,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
     FunctionDocumentation::Category parseDateTimeBestEffortUS_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortUS_documentation = {parseDateTimeBestEffortUS_description, parseDateTimeBestEffortUS_syntax, parseDateTimeBestEffortUS_arguments, {}, parseDateTimeBestEffortUS_returned_value, parseDateTimeBestEffortUS_examples, parseDateTimeBestEffortUS_introduced_in, parseDateTimeBestEffortUS_category};
 
-    registerConversion<detail::FunctionParseDateTimeBestEffortUS>(factory, parseDateTimeBestEffortUS_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTimeBestEffortUS>(factory, parseDateTimeBestEffortUS_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTimeBestEffortUSOrZero documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUSOrZero_description = R"(
@@ -4315,7 +4315,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
     FunctionDocumentation::Category parseDateTimeBestEffortUSOrZero_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortUSOrZero_documentation = {parseDateTimeBestEffortUSOrZero_description, parseDateTimeBestEffortUSOrZero_syntax, parseDateTimeBestEffortUSOrZero_arguments, {}, parseDateTimeBestEffortUSOrZero_returned_value, parseDateTimeBestEffortUSOrZero_examples, parseDateTimeBestEffortUSOrZero_introduced_in, parseDateTimeBestEffortUSOrZero_category};
 
-    registerConversion<detail::FunctionParseDateTimeBestEffortUSOrZero>(factory, parseDateTimeBestEffortUSOrZero_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTimeBestEffortUSOrZero>(factory, parseDateTimeBestEffortUSOrZero_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTimeBestEffortUSOrNull documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUSOrNull_description = R"(
@@ -4349,7 +4349,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
     FunctionDocumentation::Category parseDateTimeBestEffortUSOrNull_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortUSOrNull_documentation = {parseDateTimeBestEffortUSOrNull_description, parseDateTimeBestEffortUSOrNull_syntax, parseDateTimeBestEffortUSOrNull_arguments, {}, parseDateTimeBestEffortUSOrNull_returned_value, parseDateTimeBestEffortUSOrNull_examples, parseDateTimeBestEffortUSOrNull_introduced_in, parseDateTimeBestEffortUSOrNull_category};
 
-    registerConversion<detail::FunctionParseDateTimeBestEffortUSOrNull>(factory, parseDateTimeBestEffortUSOrNull_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTimeBestEffortUSOrNull>(factory, parseDateTimeBestEffortUSOrNull_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime32BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffort = R"(
@@ -4407,7 +4407,7 @@ AS parseDateTime32BestEffort
     FunctionDocumentation::Category category_parseDateTime32BestEffort = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_parseDateTime32BestEffort = {description_parseDateTime32BestEffort, syntax_parseDateTime32BestEffort, arguments_parseDateTime32BestEffort, {}, returned_value_parseDateTime32BestEffort, examples_parseDateTime32BestEffort, introduced_in_parseDateTime32BestEffort, category_parseDateTime32BestEffort};
 
-    registerConversion<detail::FunctionParseDateTime32BestEffort>(factory, documentation_parseDateTime32BestEffort, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime32BestEffort>(factory, documentation_parseDateTime32BestEffort, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime32BestEffortOrZero documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffortOrZero = R"(
@@ -4440,7 +4440,7 @@ SELECT
     FunctionDocumentation::Category category_parseDateTime32BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_parseDateTime32BestEffortOrZero = {description_parseDateTime32BestEffortOrZero, syntax_parseDateTime32BestEffortOrZero, arguments_parseDateTime32BestEffortOrZero, {}, returned_value_parseDateTime32BestEffortOrZero, examples_parseDateTime32BestEffortOrZero, introduced_in_parseDateTime32BestEffortOrZero, category_parseDateTime32BestEffortOrZero};
 
-    registerConversion<detail::FunctionParseDateTime32BestEffortOrZero>(factory, documentation_parseDateTime32BestEffortOrZero, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime32BestEffortOrZero>(factory, documentation_parseDateTime32BestEffortOrZero, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime32BestEffortOrNull documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffortOrNull = R"(
@@ -4473,7 +4473,7 @@ SELECT
     FunctionDocumentation::Category category_parseDateTime32BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_parseDateTime32BestEffortOrNull = {description_parseDateTime32BestEffortOrNull, syntax_parseDateTime32BestEffortOrNull, arguments_parseDateTime32BestEffortOrNull, {}, returned_value_parseDateTime32BestEffortOrNull, examples_parseDateTime32BestEffortOrNull, introduced_in_parseDateTime32BestEffortOrNull, category_parseDateTime32BestEffortOrNull};
 
-    registerConversion<detail::FunctionParseDateTime32BestEffortOrNull>(factory, documentation_parseDateTime32BestEffortOrNull, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime32BestEffortOrNull>(factory, documentation_parseDateTime32BestEffortOrNull, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime64BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffort = R"(
@@ -4515,7 +4515,7 @@ FORMAT PrettyCompactMonoBlock
     FunctionDocumentation::Category category_parseDateTime64BestEffort = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffort_documentation = {description_parseDateTime64BestEffort, syntax_parseDateTime64BestEffort, arguments_parseDateTime64BestEffort, {}, returned_value_parseDateTime64BestEffort, examples_parseDateTime64BestEffort, introduced_in_parseDateTime64BestEffort, category_parseDateTime64BestEffort};
 
-    registerConversion<detail::FunctionParseDateTime64BestEffort>(factory, parseDateTime64BestEffort_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime64BestEffort>(factory, parseDateTime64BestEffort_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime64BestEffortOrZero documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortOrZero = R"(
@@ -4548,7 +4548,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
     FunctionDocumentation::Category category_parseDateTime64BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortOrZero_documentation = {description_parseDateTime64BestEffortOrZero, syntax_parseDateTime64BestEffortOrZero, arguments_parseDateTime64BestEffortOrZero, {}, returned_value_parseDateTime64BestEffortOrZero, examples_parseDateTime64BestEffortOrZero, introduced_in_parseDateTime64BestEffortOrZero, category_parseDateTime64BestEffortOrZero};
 
-    registerConversion<detail::FunctionParseDateTime64BestEffortOrZero>(factory, parseDateTime64BestEffortOrZero_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime64BestEffortOrZero>(factory, parseDateTime64BestEffortOrZero_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime64BestEffortOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortOrNull = R"(
@@ -4581,7 +4581,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
     FunctionDocumentation::Category category_parseDateTime64BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortOrNull_documentation = {description_parseDateTime64BestEffortOrNull, syntax_parseDateTime64BestEffortOrNull, arguments_parseDateTime64BestEffortOrNull, {}, returned_value_parseDateTime64BestEffortOrNull, examples_parseDateTime64BestEffortOrNull, introduced_in_parseDateTime64BestEffortOrNull, category_parseDateTime64BestEffortOrNull};
 
-    registerConversion<detail::FunctionParseDateTime64BestEffortOrNull>(factory, parseDateTime64BestEffortOrNull_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime64BestEffortOrNull>(factory, parseDateTime64BestEffortOrNull_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime64BestEffortUS documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUS = R"(
@@ -4614,7 +4614,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
     FunctionDocumentation::Category category_parseDateTime64BestEffortUS = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUS_documentation = {description_parseDateTime64BestEffortUS, syntax_parseDateTime64BestEffortUS, arguments_parseDateTime64BestEffortUS, {}, returned_value_parseDateTime64BestEffortUS, examples_parseDateTime64BestEffortUS, introduced_in_parseDateTime64BestEffortUS, category_parseDateTime64BestEffortUS};
 
-    registerConversion<detail::FunctionParseDateTime64BestEffortUS>(factory, parseDateTime64BestEffortUS_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime64BestEffortUS>(factory, parseDateTime64BestEffortUS_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime64BestEffortUSOrZero documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrZero = R"(
@@ -4647,7 +4647,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
     FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUSOrZero_documentation = {description_parseDateTime64BestEffortUSOrZero, syntax_parseDateTime64BestEffortUSOrZero, arguments_parseDateTime64BestEffortUSOrZero, {}, returned_value_parseDateTime64BestEffortUSOrZero, examples_parseDateTime64BestEffortUSOrZero, introduced_in_parseDateTime64BestEffortUSOrZero, category_parseDateTime64BestEffortUSOrZero};
 
-    registerConversion<detail::FunctionParseDateTime64BestEffortUSOrZero>(factory, parseDateTime64BestEffortUSOrZero_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime64BestEffortUSOrZero>(factory, parseDateTime64BestEffortUSOrZero_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// parseDateTime64BestEffortUSOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrNull = R"(
@@ -4680,7 +4680,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
     FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUSOrNull_documentation = {description_parseDateTime64BestEffortUSOrNull, syntax_parseDateTime64BestEffortUSOrNull, arguments_parseDateTime64BestEffortUSOrNull, {}, returned_value_parseDateTime64BestEffortUSOrNull, examples_parseDateTime64BestEffortUSOrNull, introduced_in_parseDateTime64BestEffortUSOrNull, category_parseDateTime64BestEffortUSOrNull};
 
-    registerConversion<detail::FunctionParseDateTime64BestEffortUSOrNull>(factory, parseDateTime64BestEffortUSOrNull_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionParseDateTime64BestEffortUSOrNull>(factory, parseDateTime64BestEffortUSOrNull_documentation, ConversionResultKind::DateTimeBestEffort);
 
     /// toIntervalSecond documentation
     FunctionDocumentation::Description description_toIntervalSecond = R"(

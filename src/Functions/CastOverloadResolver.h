@@ -61,6 +61,7 @@ enum class ConversionResultKind : uint8_t
     OverflowOnly,
     Float,
     DateTime,
+    DateTimeBestEffort,
     IPAddress,
     String,
     Cast,
