@@ -39,7 +39,7 @@ public:
     /// Used to tell whether a setting from the `SETTINGS` clause of `CREATE DATABASE` belongs to the
     /// engine or to the query, before the start of the query interpretation.
     using HasBuiltinSettingFn = bool(std::string_view);
-    using CheckDefinitionFn = void(const ASTStorage & engine_define, const ContextPtr & context);
+    using CheckDefinitionFn = void(ASTStorage & engine_define, const ContextPtr & context);
 
     struct Arguments
     {
@@ -87,7 +87,8 @@ public:
 
         /// Checks a definition that a user gives with the access and the settings constraints of the user, if the engine needs
         /// that. Called before `CREATE DATABASE ... ON CLUSTER` is dispatched, because its workers run without the user by
-        /// default; the creator checks a definition of a local query itself.
+        /// default; the creator checks a definition of a local query itself. It replaces what the workers could evaluate otherwise
+        /// in the definition that is dispatched with what it has checked.
         CheckDefinitionFn * check_definition_fn = nullptr;
     };
 

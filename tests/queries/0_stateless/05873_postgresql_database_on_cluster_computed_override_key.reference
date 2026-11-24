@@ -1,0 +1,6 @@
+--- the workers get the key that was checked
+nc, 'schema' = '127.0.0.2'
+nc, 'schema' = '127.0.0.2'
+--- a key that is computed to a key the user may not override is rejected
+ACCESS_DENIED
+0

@@ -15,6 +15,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTDataType.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
@@ -738,12 +739,30 @@ void checkSettingsOfDefinition(const ASTStorage & engine_define, const NamedColl
 /// collection, the override of its keys by the engine arguments and by the `SETTINGS` clause (`NOT OVERRIDABLE`,
 /// `SHOW NAMED COLLECTIONS SECRETS`), and the constraints. A definition without a `SETTINGS` clause is checked too, as the
 /// creator checks it.
-void checkDefinition(const ASTStorage & engine_define, const ContextPtr & context)
+void checkDefinition(ASTStorage & engine_define, const ContextPtr & context)
 {
     if (!engine_define.engine || !engine_define.engine->arguments)
         return;
+    auto & engine_args = engine_define.engine->arguments->children;
+
+    /// The workers evaluate the key of an override of the named collection again, with their own context, so a computed key,
+    /// such as `if(currentUser() = '...', 'schema', 'host')`, could override another key there than the one checked here. The
+    /// definition that is dispatched has the key that is checked instead.
+    if (!engine_args.empty() && engine_args[0]->as<ASTIdentifier>())
+    {
+        for (size_t i = 1; i < engine_args.size(); ++i)
+        {
+            auto * function = engine_args[i]->as<ASTFunction>();
+            if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+                continue;
+            auto & key = function->arguments->children[0];
+            if (!key->as<ASTIdentifier>() && !key->as<ASTLiteral>())
+                key = evaluateConstantExpressionOrIdentifierAsLiteral(key, context);
+        }
+    }
+
     const auto named_collection = tryGetNamedCollectionWithOverrides(
-        engine_define.engine->arguments->children, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
+        engine_args, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
         /*dependent_table_id=*/ nullptr, engine_define.settings);
     checkSettingsOfDefinition(engine_define, named_collection.get(), context);
 }
