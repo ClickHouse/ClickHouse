@@ -219,7 +219,10 @@ template <bool positive, ReturnMode return_mode, char... symbols>
     pos += 8;
 
 #if FIND_SYMBOLS_USE_SVE2
-    if (__builtin_cpu_supports("sve2"))
+    /// Like the SSE 4.2 threshold on x86: for up to 3 symbols the NEON loop below needs about as many
+    /// compares as `MATCH`, and the out-of-line call, the feature check and the load of the set make
+    /// SVE2 slower for short haystacks and early matches. Measured on Graviton 4.
+    if (sizeof...(symbols) >= 4 && __builtin_cpu_supports("sve2"))
         return find_first_symbols_sve2<positive, return_mode, symbols...>(pos, end);
 #endif
 
