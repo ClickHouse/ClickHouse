@@ -546,6 +546,8 @@ Close the **Filters and Variables** dialog. The new dropdown filter appears belo
 
 To persist a filter selection as the dashboard default, choose **Save Query & Filters as Default** from the dashboard menu. The dashboard will always open with the selected filters applied. To reset, select **Remove Default Query & Filters** from the same menu.
 
+The time range is saved too, always as a relative range: the dashboard opens on a range of the same length, such as the last 6 hours, ending at the current time.
+
 <div className="ch-image-lg">
 
 <Frame>
@@ -701,12 +703,13 @@ A variable expands to the values currently selected in its dropdown. The referen
 
 | Reference             | Expands to                                                                                        | Empty selection |
 |-----------------------|---------------------------------------------------------------------------------------------------|-----------------|
-| `$name`, `${name}`    | The selected values, in `sqlstring` or `lucene` format, depending on context. Braces delimit the name when it is followed by word characters, as in `${name}_total`. | `NULL`          |
+| `$name`, `${name}`    | The selected values, in the default format of the input: `sqlstring` in SQL, `lucene` in Lucene, `promql` in PromQL, and `markdown` in Markdown tiles. Braces delimit the name when it is followed by word characters, as in `${name}_total`. | As for that format (`NULL` in SQL) |
 | `${name:sqlstring}`   | The selected values, single-quoted, comma-separated, and escaped as SQL values, eg. `'a', 'b'`    | `NULL`          |
 | `${name:csv}`         | Unquoted and comma-separated: `a,b`. Not escaped for SQL.                                         | empty string    |
 | `${name:regex}`       | A regex alternation, regex-escaped: `(a\|b)`.                                                     | `.*`            |
 | `${name:lucene}`      | An `OR` of quoted terms, for Lucene inputs: `("a" OR "b")`.                                       | `("")`          |
-| `${name:promql}`      | The default in PromQL tiles. For a single-select filter, the selected value, for use in `label="$name"`. Otherwise a regex alternation, for use in `label=~"$name"`. | `.*` (empty string when single-select) |
+| `${name:promql}`      | For a single-select filter, the selected value, for use in `label="$name"`. Otherwise a regex alternation, for use in `label=~"$name"`. | `.*` (empty string when single-select) |
+| `${name:markdown}`    | For [Markdown tiles](#variables-in-markdown-tiles). Comma-separated, with Markdown punctuation escaped: `a, b`. | empty string    |
 
 Because `$name` renders as `NULL` before anything is selected, prefer the following macros wherever a SQL predicate is expected. Both macros expand to `1=1` while their variable has no selection, so the query stays valid:
 
@@ -751,7 +754,13 @@ See [SQL-based visualizations](/clickstack/observability/features/dashboards/sql
 
 <Note>
 Alerts on a tile that references a dashboard variable evaluate with every variable in its empty state, not the values selected on the dashboard.
+
+To preview a tile the way an alert evaluates it, turn off **Apply filters** above the chart preview in the tile editor; the switch is always off on a tile that has an alert.
 </Note>
+
+#### Using variables in Markdown tiles {#variables-in-markdown-tiles}
+
+Markdown tiles accept variable references in their text and in link targets, for example `[Open the runbook](https://runbooks.example.com/$service)` with a single-select `service` filter. To insert values unescaped, for example inside a code block, use `${name:csv}`.
 
 ## Drilldown to search {#drilldown-to-search}
 
