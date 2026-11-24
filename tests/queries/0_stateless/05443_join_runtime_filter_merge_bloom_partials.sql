@@ -17,8 +17,9 @@ DROP TABLE IF EXISTS fact;
 CREATE TABLE fact (k UInt64, s String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO fact SELECT number, toString(number) FROM numbers(100000);
 
--- The build side is a union of two halves of the key set, read by two streams.
-SELECT explain FROM (EXPLAIN PIPELINE
+-- The build side is a union of two halves of the key set, read by two streams. The indentation of
+-- the line depends on the plan above it, which varies with the randomized settings, so it is trimmed.
+SELECT trimLeft(explain) FROM (EXPLAIN PIPELINE
     SELECT count() FROM fact
     INNER JOIN (SELECT number * 7 AS k FROM numbers(50) UNION ALL SELECT number * 7 + 350 AS k FROM numbers(50)) AS dim
     ON fact.k = dim.k)
