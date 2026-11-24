@@ -257,7 +257,6 @@ DataTypes getStateArgumentTypes(const IDataType & type)
     return typeid_cast<const DataTypeAggregateFunction &>(*state_type).getArgumentsDataTypes();
 }
 
-/// Whether `type` has `Bool` anywhere below it, including inside the arguments of aggregate states.
 bool hasBoolInside(const IDataType & type)
 {
     checkStackSize();
@@ -269,7 +268,7 @@ bool hasBoolInside(const IDataType & type)
     });
 }
 
-/// Only through aggregate states and the types whose common type is built from their children below.
+/// Descends only into aggregate states and the types whose common type is built from their children.
 bool haveBoolInSamePlaces(const IDataType & lhs, const IDataType & rhs)
 {
     checkStackSize();
