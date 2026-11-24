@@ -1,5 +1,6 @@
 import logging
 import threading
+import uuid
 
 import pytest
 
@@ -95,6 +96,49 @@ def delete_ldap_group(ldap_cluster, group_cn):
         f"test_ldap_external_user_directory code:{code} stdout:{stdout}, stderr:{stderr}"
     )
     assert code == 0
+
+
+def add_ldap_user(ldap_cluster, user_cn, password):
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """echo "dn: cn={user_cn},ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+cn: {user_cn}
+sn: {user_cn}
+userPassword: {password}" | \
+ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+    """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
+                password=password,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_external_user_directory code:{code} stdout:{stdout}, stderr:{stderr}"
+    )
+    assert code == 0
+
+
+def syn_sent_count(instance, port, address=None):
+    # TCP sockets of `instance` in SYN_SENT to `port` (and to `address`, hex as in /proc/net/tcp, if given).
+    count = 0
+    for line in instance.exec_in_container(["cat", "/proc/net/tcp"]).splitlines()[1:]:
+        fields = line.split()
+        remote_address, remote_port = fields[2].split(":")
+        if (
+            fields[3] == "02"
+            and remote_port == f"{port:04X}"
+            and address in (None, remote_address)
+        ):
+            count += 1
+    return count
 
 
 # NOTE: In this test suite we have default user explicitly disabled because of `test_push_role_to_other_nodes`.
@@ -262,15 +306,6 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
 
 
 def test_login_not_blocked_by_unreachable_ldap_server(ldap_cluster):
-    def connecting_to_unreachable_server():
-        # 127.0.0.1:1390 in SYN_SENT state.
-        tcp = instance3.exec_in_container(["cat", "/proc/net/tcp"])
-        return sum(
-            1
-            for line in tcp.splitlines()[1:]
-            if line.split()[2] == "0100007F:056E" and line.split()[3] == "02"
-        )
-
     errors = []
 
     def login(user):
@@ -301,7 +336,7 @@ def test_login_not_blocked_by_unreachable_ldap_server(ldap_cluster):
 
         # Both LDAP logins are connecting at the same time.
         wait_condition(
-            connecting_to_unreachable_server,
+            lambda: syn_sent_count(instance3, 1390, "0100007F"),
             lambda n: n == 2,
             max_attempts=200,
             delay=0.1,
@@ -323,7 +358,7 @@ def test_login_not_blocked_by_unreachable_ldap_server(ldap_cluster):
             )
             == "janedoe\n"
         )
-        assert connecting_to_unreachable_server() == 2
+        assert syn_sent_count(instance3, 1390, "0100007F") == 2
 
     for thread in threads:
         thread.join(timeout=120)
@@ -331,3 +366,57 @@ def test_login_not_blocked_by_unreachable_ldap_server(ldap_cluster):
     assert len(errors) == 2
     for error in errors:
         assert "AUTHENTICATION_FAILED" in error
+
+
+def test_concurrent_first_login_of_same_ldap_user(ldap_cluster):
+    # A new name in every run, so that both logins create the user in the `ldap` user directory.
+    user = f"concurrent_{uuid.uuid4().hex[:8]}"
+    add_ldap_user(ldap_cluster, user, "qwerty")
+
+    results = []
+
+    def login():
+        try:
+            results.append(
+                instance2.http_query(
+                    "SELECT currentUser()", user=user, password="qwerty", timeout=120
+                )
+            )
+        except Exception as e:
+            results.append(str(e))
+
+    with PartitionManager() as pm:
+        pm.add_rule(
+            {
+                "instance": instance2,
+                "chain": "OUTPUT",
+                "destination_port": ldap_cluster.ldap_port,
+                "protocol": "tcp",
+                "action": "DROP",
+            }
+        )
+
+        threads = [threading.Thread(target=login) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+
+        # Both logins have looked the user up and are connecting to the LDAP server.
+        wait_condition(
+            lambda: syn_sent_count(instance2, ldap_cluster.ldap_port),
+            lambda n: n == 2,
+            max_attempts=200,
+            delay=0.1,
+        )
+
+    for thread in threads:
+        thread.join(timeout=120)
+        assert not thread.is_alive()
+    assert results == [f"{user}\n"] * 2
+    assert (
+        instance2.query(
+            f"SELECT count() FROM system.users WHERE name = '{user}'",
+            user="common_user",
+            password="qwerty",
+        )
+        == "1\n"
+    )
