@@ -608,12 +608,43 @@ static bool isMergeableStepAboveJoin(
     return false;
 }
 
+/// Whether the subplan contains an equality unsafe as a join key, see `hasEqualityUnsafeAsJoinKey`, in a step
+/// that can end up in the same join graph as a filter merged above it: the expressions and filters above the
+/// joins, and the actions of the joins themselves. The walk does not follow the rules of `buildQueryGraph`,
+/// it descends through every such step, so it covers at least what the graph absorbs. It stops at any other
+/// step: what is computed below it reaches the graph only as a column of a relation.
+static bool hasEqualityUnsafeAsJoinKeyInSubplan(const QueryPlan::Node * node)
+{
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{node};
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+        const auto * step = current->step.get();
+        const ActionsDAG * dag = nullptr;
+        if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+            dag = &expression_step->getExpression();
+        else if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+            dag = &filter_step->getExpression();
+        else if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step))
+            dag = &join_step->getActionsDAG();
+        else
+            continue;
+        if (hasEqualityUnsafeAsJoinKey(*dag))
+            return true;
+        stack.insert(stack.end(), current->children.begin(), current->children.end());
+    }
+    return false;
+}
+
 /// Look through the chain of steps above a join that may be merged into the join graph, see
 /// `isMergeableStepAboveJoin`, and return the node the chain stops at: the join to flatten, or another step.
 /// A merged filter must not contain an equality unsafe as a join key, see `hasEqualityUnsafeAsJoinKey`. The
-/// condition of a filter can be computed by an expression step below it (with `query_plan_merge_expressions = 0`
-/// the filter reads only the result), and that expression is merged into the join graph too, so the check
-/// covers the expression steps below each filter as well. The chain stops at the topmost filter that fails it.
+/// condition of a filter can be computed below it: by an expression step (with `query_plan_merge_expressions = 0`
+/// the filter reads only the result), or below the join the chain stops at, by a step that `buildQueryGraph`
+/// flattens into the same graph afterwards. In the graph the filter reads the resolved expression, so the check
+/// covers the whole subplan below each filter, see `hasEqualityUnsafeAsJoinKeyInSubplan`. The chain stops at
+/// the topmost filter that fails it.
 static const QueryPlan::Node * peelMergeableStepsAboveJoin(
     const QueryPlan::Node * node, bool merge_expression_into_join, bool merge_filters_into_join, bool below_null_supplying)
 {
@@ -624,7 +655,12 @@ static const QueryPlan::Node * peelMergeableStepsAboveJoin(
         node = node->children[0];
     }
 
-    bool unsafe_equality_below = false;
+    const bool has_filter = std::ranges::any_of(
+        chain, [](const QueryPlan::Node * chain_node) { return typeid_cast<const FilterStep *>(chain_node->step.get()) != nullptr; });
+    if (!has_filter)
+        return node;
+
+    bool unsafe_equality_below = hasEqualityUnsafeAsJoinKeyInSubplan(node);
     for (auto it = chain.rbegin(); it != chain.rend(); ++it)
     {
         const auto * step = (*it)->step.get();
