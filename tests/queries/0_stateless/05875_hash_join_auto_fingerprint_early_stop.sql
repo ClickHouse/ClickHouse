@@ -55,7 +55,12 @@ SELECT log_comment,
        (ProfileEvents['HashJoinAutoFingerprintProbeEstimate'] > 0) = (is_arm AND startsWith(log_comment, '05875_full_'))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-  AND startsWith(log_comment, '05875_')
+  AND log_comment IN
+  (
+      '05875_range', '05875_const_distinct', '05875_const_limit_by', '05875_full_distinct', '05875_full_limit_by',
+      '05875_result_rows', '05875_result_bytes', '05875_group_break', '05875_nested_group', '05875_sort_break', '05875_read_break',
+      '05875_full_throw', '05875_full_uncapped'
+  )
 ORDER BY log_comment, event_time_microseconds DESC LIMIT 1 BY log_comment;
 
 DROP VIEW fp_stop_join;
