@@ -2922,7 +2922,7 @@ private:
             /// the set stores it in one alternative, so the two can match different rows.
             if (anyInTypeTree(*expression.node->getResultType(), [](const IDataType & type) { return isVariant(type); }))
             {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                keep_equals_functions();
                 continue;
             }
 
