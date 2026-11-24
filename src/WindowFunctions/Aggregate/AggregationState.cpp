@@ -21,10 +21,15 @@ namespace
 
 constexpr size_t arena_replace_bytes = 16 << 20;
 
-void throwIfNot(bool condition)
+[[noreturn]] NO_INLINE void throwNotCreated()
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function is used after a failed creation");
+}
+
+ALWAYS_INLINE void throwIfNot(bool condition)
 {
     if (unlikely(!condition))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function is used after a failed creation");
+        throwNotCreated();
 }
 
 }
