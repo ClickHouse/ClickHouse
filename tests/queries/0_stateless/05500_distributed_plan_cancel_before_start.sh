@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
-# no-fasttest: the remote executor needs the stateless worker configuration.
+# no-fasttest: the test enables a failpoint.
 # no-parallel: the failpoint holds the task starts of every distributed query on the server.
 #
 # The coordinator sends the `start_tasks` batches of several workers at once from its sender threads, so a cancel can

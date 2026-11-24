@@ -274,8 +274,7 @@ void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStat
         std::optional<TaskFailure> task_failure;
         try
         {
-            /// Set up here rather than before the dispatch reply, so the reply waits only for the description.
-            /// Setup and QueryScope creation can throw, hence the outer try-catch.
+            /// Set up on the task's thread, so the dispatch reply does not wait for it.
             auto [query_context, object_storage, object_storage_path, logs_queue, client_logs_level]
                 = setupTask(unique_task_id, task_description, distributed_query_id, collectors, trace_context);
             logs_queue_slot->set(logs_queue);
@@ -449,9 +448,7 @@ bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id,
         LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Ignoring the start of task {}: it was cancelled before the start arrived", unique_task_id);
         return false;
     }
-    /// `unique_task_id` is unique per task, so a repeated start (e.g. a coordinator retry) is the same
-    /// task. Running it twice would double-write exchanges and temp files and orphan the original from
-    /// cancel/forget, so treat a duplicate start as a no-op.
+    /// A repeated start is ignored: a second run would be orphaned from `cancel` and `forget`.
     if (!tasks.try_emplace(unique_task_id, task_state).second)
     {
         LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);

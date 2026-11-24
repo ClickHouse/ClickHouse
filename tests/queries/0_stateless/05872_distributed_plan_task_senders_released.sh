@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
-# no-fasttest: the remote executor needs the stateless worker configuration.
+# Tags: no-parallel
 # no-parallel: the dispatch thread metric is server-wide.
 #
 # The threads that send a distributed query's task batches go back to the global pool once the batches are sent, instead of

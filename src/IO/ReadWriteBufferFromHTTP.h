@@ -386,8 +386,7 @@ public:
     setterMember(withSkipNotFound, http_skip_not_found_url)
     setterMember(withExpectedETag, expected_etag)
 
-    /// Sends the request even when the current thread's query is killed or past its time limit, e.g. to cancel the
-    /// query's work elsewhere: by default such a query stops every request before it is sent.
+    /// Sends the request even when the thread's query is killed or past its time limit, which otherwise stops it before it is sent.
     BuilderRWBufferFromHTTP & withoutQueryCancellationCheck()
     {
         check_query_cancellation = false;

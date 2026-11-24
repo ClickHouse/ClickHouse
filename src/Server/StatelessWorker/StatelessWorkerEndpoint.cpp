@@ -408,15 +408,13 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
             collectors = TaskCollectors::parse(params.get("collect"));
 
         /// Deserialize task fields from the request body
-        /// This could have been moved to a thread, but it would still require a copy of an object
-        /// and for now it is not expensive part
         DistributedQueryTaskDescription task_description;
         deserializeTask(task_description, *body);
         /// Read the rest of the body, otherwise the keep-alive connection is closed.
         body->ignoreAll();
         body.reset();
 
-        /// Holds a start that is on the wire, so a cancel can overtake it.
+        /// Same as for `start_tasks`.
         FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_before_start_task);
 
         /// Pass it to the runner to start execution

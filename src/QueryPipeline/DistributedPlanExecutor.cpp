@@ -1292,7 +1292,7 @@ protected:
         {
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
-            /// Stands for the exception the per-task copies of the plan once raised here (05407).
+            /// Fails the stage once its first task has started (05407).
             fiu_do_on(FailPoints::distributed_plan_local_start_stage_fails_after_first_task,
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while starting the local tasks of stage {}", stage_name);
@@ -1603,7 +1603,6 @@ protected:
             std::lock_guard g(lock);
             stage_tasks[stage_name][task_name] = std::move(task_info);
 
-            /// Create stage info if this stage was not known before
             if (!all_stages.contains(stage_name))
                 all_stages[stage_name] = std::make_shared<StageInfo>(stage_name);
             all_stages[stage_name]->started_tasks++;
@@ -1660,12 +1659,9 @@ protected:
             return stage_finished;
         }
 
-        /// Cancels the tasks still tracked when the query ends, once: `cleanup` calls this once, and the tasks leave
-        /// `stage_tasks` here, so a second call finds none. Collects them under the lock and sends the requests without
-        /// it, so that `checkStatusFunc` threads can observe the cancellation and exit.
-        /// This can run on a thread of the killed query itself (whichever thread takes the source's `executor_mutex`
-        /// first runs the teardown). An HTTP request from such a thread is stopped before it is sent, so the worker
-        /// client sends `cancel`, `forget` and the cleanup polls with `withoutQueryCancellationCheck`.
+        /// Cancels the tasks still tracked, once: they leave `stage_tasks` here. Collects them under the lock and sends the
+        /// requests without it, so that the `checkStatusFunc` threads can exit. It can run on the killed query's own thread, so
+        /// its requests skip the query cancellation check.
         void cancel()
         {
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
@@ -2098,9 +2094,7 @@ protected:
 
     void checkBeforeStartingTask()
     {
-        /// Reproduce the ordering a failing worker task creates: a task fails and records its
-        /// exception while this loop is still dispatching the rest of the stage, so the next
-        /// `checkCancelled` observes the cancellation. It must report the recorded failure.
+        /// Stands for a task that fails while the stage is queued: the next `checkCancelled` must report its failure.
         fiu_do_on(FailPoints::distributed_plan_record_failure_while_starting_tasks,
         {
             try
@@ -2216,7 +2210,6 @@ protected:
     {
         for (auto & [worker, batches] : queued_batches)
         {
-            /// This is processing batches queued for one worker now
             for (const auto & queued : batches)
             {
                 for (const auto & batch_stage : queued.batch.stages)
@@ -2248,8 +2241,6 @@ protected:
 
             try
             {
-                /// `this` for `running_tasks`: `task_senders` is declared after it, so its jobs are joined first. The queue by value:
-                /// the query thread may add workers to `send_queues` meanwhile.
                 task_senders->scheduleOrThrow(
                     [this, worker, queue, query_cancellation = cancellation, task_logger = logger, thread_group = CurrentThread::getGroup()]
                     {

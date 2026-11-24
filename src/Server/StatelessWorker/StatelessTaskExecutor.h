@@ -75,7 +75,7 @@ public:
     /// already started. A task that cannot be scheduled fails the call; the tasks scheduled before it keep running.
     void startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
-    /// Remembers an unknown id: the coordinator sends the starts of a stage concurrently, so a cancel can overtake a start.
+    /// Remembers an unknown id, so its start, still on the wire, is ignored when it arrives.
     Result cancelTask(const String & task_id);
     Result forgetTask(const String & task_id);
 

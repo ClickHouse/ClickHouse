@@ -42,7 +42,7 @@ SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 8, 
     distributed_plan_default_shuffle_join_bucket_count = 4, distributed_plan_max_rows_to_broadcast = 0,
     log_comment = '05499-join-8';
 
--- A set shipped in every read task's description.
+-- A set shipped in the read stage's plan.
 SELECT 'set';
 SELECT count() FROM t_parallel_dispatch WHERE v IN (SELECT number * 2 FROM numbers(50000))
 SETTINGS make_distributed_plan = 1, distributed_plan_task_dispatch_threads = 0, distributed_plan_default_reader_bucket_count = 4,
