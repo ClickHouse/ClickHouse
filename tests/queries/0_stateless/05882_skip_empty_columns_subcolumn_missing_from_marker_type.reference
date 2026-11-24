@@ -1,0 +1,85 @@
+UInt64 -> Nullable(UInt64), Wide
+2	1
+1
+1	0
+2	0
+3	0
+1	0
+2	0
+3	0
+3
+1
+2
+3
+1	0
+2	0
+3	5
+UInt64 -> Nullable(UInt64), Compact
+2	1
+1
+1	0
+2	0
+3	0
+1	0
+2	0
+3	5
+Tuple(a) -> Tuple(a, b)
+2	1
+1
+1	0
+2	0
+3	0
+1	(0,0)
+2	(0,0)
+3	(5,0)
+Tuple(a) -> Tuple(a, b), x.a in the sorting key
+2	1
+1
+1	0
+2	0
+3	0
+1	0
+2	0
+3	5
+1	(0,0)
+2	(0,0)
+3	(5,0)
+Nullable(Tuple(a)) -> Nullable(Tuple(a, b))
+1	0
+1
+1	\N
+2	\N
+1	\N
+2	\N
+1	\N
+2	\N
+Variant(UInt64) -> Variant(UInt64, String)
+2	1
+1
+1	\N
+2	\N
+3	\N
+1	\N
+2	\N
+3	5
+1	\N
+2	\N
+3	5
+Array(UInt64) -> Array(Nullable(UInt64))
+2	1
+1
+1	[]
+2	[]
+3	[0,0]
+1	[]
+2	[]
+3	[5,6]
+Map(String, UInt64) -> Map(String, Nullable(UInt64))
+2	1
+1
+1	[]
+2	[]
+3	[0]
+1	{}
+2	{}
+3	{'k':5}

@@ -1,4 +1,6 @@
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -142,6 +144,16 @@ bool injectRequiredColumnsRecursively(
             add_column(column_name);
             return true;
         }
+        else if (column_in_storage->isSubcolumn()
+            && !(alter_conversions
+                 && (alter_conversions->isColumnDropped(column_name_in_part, share_nested)
+                     || alter_conversions->isColumnDropped(column_in_storage->getNameInStorage(), share_nested)))
+            && isSubcolumnMissingFromMarkerType(data_part_info_for_reader, column_name_in_part, column_in_storage->getSubcolumnName()))
+        {
+            /// Filled from the marker, the parent is converted and the subcolumn extracted from it; a marker is not a physical column.
+            add_column(column_in_storage->getNameInStorage());
+            return false;
+        }
     }
 
     /// Column doesn't have default value and don't exist in part
@@ -177,6 +189,16 @@ bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
 {
     /// Patches are joined by the keys read in the first step, which the text index reader cannot read.
     return !alter_conversions || !alter_conversions->hasPatches();
+}
+
+bool isSubcolumnMissingFromMarkerType(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader, const String & name_in_part, const String & subcolumn_name)
+{
+    if (subcolumn_name.empty())
+        return false;
+    const auto * missing = data_part_info_for_reader.getSerializationInfos().getMissingColumnInfo(name_in_part);
+    return missing && !missing->type_name.empty()
+        && !DataTypeFactory::instance().get(missing->type_name)->tryGetSubcolumnType(subcolumn_name);
 }
 
 /** If some of the requested columns are not in the part,

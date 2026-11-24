@@ -23,6 +23,11 @@ NameSet injectRequiredColumns(
 /// Otherwise they are computed by their default expressions.
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
 
+/// Whether the part omits the column `name_in_part` (a missing-column marker) and the write-time type of the marker has no
+/// subcolumn `subcolumn_name`: the subcolumn is then extracted from the column, filled from the marker and converted.
+bool isSubcolumnMissingFromMarkerType(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader, const String & name_in_part, const String & subcolumn_name);
+
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
 void addPatchPartsColumns(

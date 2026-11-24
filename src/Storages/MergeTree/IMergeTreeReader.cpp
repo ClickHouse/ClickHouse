@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
 #endif
@@ -618,7 +619,9 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
         bool frozen = false;
-        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        /// A subcolumn the marker type lacks is read like one of an older stored type, see `injectRequiredColumnsRecursively`.
+        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty()
+            && !isSubcolumnMissingFromMarkerType(*data_part_info_for_read, name_pair.first, name_pair.second))
         {
             type_in_part = DataTypeFactory::instance().get(missing->type_name);
             requested_type_in_part = name_pair.second.empty()
