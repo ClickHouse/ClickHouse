@@ -58,6 +58,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/quoteString.h>
@@ -378,7 +379,14 @@ static bool containsExplainAnalyze(const IAST & ast)
     for (const auto & child : ast.children)
         if (child && containsExplainAnalyze(*child))
             return true;
-    return false;
+    /// Some queries keep executable subtrees outside `children`, e.g. the `WHERE` expression of `SHOW TABLES`,
+    /// which can hold a subquery: `SHOW TABLES WHERE name IN (SELECT * FROM (EXPLAIN ANALYZE ...))`.
+    bool found = false;
+    forEachNonChildSemanticAST(ast, [&](const ASTPtr & member)
+    {
+        found = found || containsExplainAnalyze(*member);
+    });
+    return found;
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)

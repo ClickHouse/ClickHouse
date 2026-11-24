@@ -8,25 +8,30 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `EXPLAIN ANALYZE` runs its inner query while its interpreter is built, so a query rule that rewrites the
 # prepared statement into `EXPLAIN ANALYZE` is refused at prepare time, before the inner query runs.
 # The same holds for an `EXPLAIN ANALYZE` in a subquery, which the parser lowers to the `viewExplain` table function.
+# It also holds for an `EXPLAIN ANALYZE` in a part of the query that is not among the children of its AST,
+# such as the `WHERE` expression of `SHOW TABLES`.
 # A rewrite into a plain `EXPLAIN` is still described.
 
 RULE_ANALYZE="rule_prepare_analyze_${CLICKHOUSE_DATABASE}"
 RULE_NESTED_ANALYZE="rule_prepare_nested_analyze_${CLICKHOUSE_DATABASE}"
+RULE_SHOW_ANALYZE="rule_prepare_show_analyze_${CLICKHOUSE_DATABASE}"
 RULE_EXPLAIN="rule_prepare_explain_${CLICKHOUSE_DATABASE}"
 RULE_NESTED_EXPLAIN="rule_prepare_nested_explain_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP RULE IF EXISTS ${RULE_ANALYZE};
 DROP RULE IF EXISTS ${RULE_NESTED_ANALYZE};
+DROP RULE IF EXISTS ${RULE_SHOW_ANALYZE};
 DROP RULE IF EXISTS ${RULE_EXPLAIN};
 DROP RULE IF EXISTS ${RULE_NESTED_EXPLAIN};
 CREATE RULE ${RULE_ANALYZE} AS (SELECT '${RULE_ANALYZE}') REWRITE TO (EXPLAIN ANALYZE SELECT throwIf(number = 0) FROM numbers(1));
 CREATE RULE ${RULE_NESTED_ANALYZE} AS (SELECT '${RULE_NESTED_ANALYZE}') REWRITE TO (SELECT * FROM (EXPLAIN ANALYZE SELECT throwIf(number = 0) FROM numbers(1)));
+CREATE RULE ${RULE_SHOW_ANALYZE} AS (SELECT '${RULE_SHOW_ANALYZE}') REWRITE TO (SHOW TABLES WHERE name IN (SELECT * FROM (EXPLAIN ANALYZE SELECT throwIf(number = 0) FROM numbers(1))));
 CREATE RULE ${RULE_EXPLAIN} AS (SELECT '${RULE_EXPLAIN}') REWRITE TO (EXPLAIN SELECT 1);
 CREATE RULE ${RULE_NESTED_EXPLAIN} AS (SELECT '${RULE_NESTED_EXPLAIN}') REWRITE TO (SELECT * FROM (EXPLAIN SELECT 1));
 "
 
-RULE_ANALYZE="${RULE_ANALYZE}" RULE_NESTED_ANALYZE="${RULE_NESTED_ANALYZE}" RULE_EXPLAIN="${RULE_EXPLAIN}" RULE_NESTED_EXPLAIN="${RULE_NESTED_EXPLAIN}" python3 - <<'PYTHON'
+RULE_ANALYZE="${RULE_ANALYZE}" RULE_NESTED_ANALYZE="${RULE_NESTED_ANALYZE}" RULE_SHOW_ANALYZE="${RULE_SHOW_ANALYZE}" RULE_EXPLAIN="${RULE_EXPLAIN}" RULE_NESTED_EXPLAIN="${RULE_NESTED_EXPLAIN}" python3 - <<'PYTHON'
 import os
 import socket
 import struct
@@ -37,6 +42,7 @@ user = os.environ.get("MYSQL_CLIENT_CLICKHOUSE_USER", "default")
 database = os.environ.get("CLICKHOUSE_DATABASE", "default")
 rule_analyze = os.environ["RULE_ANALYZE"]
 rule_nested_analyze = os.environ["RULE_NESTED_ANALYZE"]
+rule_show_analyze = os.environ["RULE_SHOW_ANALYZE"]
 rule_explain = os.environ["RULE_EXPLAIN"]
 rule_nested_explain = os.environ["RULE_NESTED_EXPLAIN"]
 
@@ -104,6 +110,8 @@ set_query_rules(sock, rule_analyze)
 print("EXPLAIN ANALYZE:", prepare(sock, f"SELECT '{rule_analyze}'"))
 set_query_rules(sock, rule_nested_analyze)
 print("Nested EXPLAIN ANALYZE:", prepare(sock, f"SELECT '{rule_nested_analyze}'"))
+set_query_rules(sock, rule_show_analyze)
+print("EXPLAIN ANALYZE in SHOW TABLES WHERE:", prepare(sock, f"SELECT '{rule_show_analyze}'"))
 set_query_rules(sock, rule_explain)
 print("EXPLAIN:", prepare(sock, f"SELECT '{rule_explain}'"))
 set_query_rules(sock, rule_nested_explain)
@@ -114,6 +122,7 @@ PYTHON
 ${CLICKHOUSE_CLIENT} -q "
 DROP RULE ${RULE_ANALYZE};
 DROP RULE ${RULE_NESTED_ANALYZE};
+DROP RULE ${RULE_SHOW_ANALYZE};
 DROP RULE ${RULE_EXPLAIN};
 DROP RULE ${RULE_NESTED_EXPLAIN};
 "
