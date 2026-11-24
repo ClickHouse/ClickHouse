@@ -139,6 +139,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     StorageSnapshotPtr snapshot;
     SelectQueryInfo select_query_info;
     ASTPtr table_function_ast;
+    /// Set for the reads the planner checks `SELECT` for.
+    std::optional<StorageID> storage_id_to_check;
 
     if (reading_from_table)
     {
@@ -147,6 +149,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
         storage = table_node->getStorage();
         snapshot = table_node->getStorageSnapshot();
+        storage_id_to_check = table_node->getStorageID();
         select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
     }
     else
@@ -177,6 +180,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         {
             storage = table_function_node->getStorage();
             snapshot = table_function_node->getStorageSnapshot();
+            /// Regular table functions are checked in `ITableFunction::execute`.
+            if (table_function_node->isParameterizedView())
+                storage_id_to_check = table_function_node->getStorageID();
             /// Carry the resolved table-function subtree so that the aggregation hash-table-stats
             /// cache key (see calculateHashTableCacheKeys) can tell different arguments apart. A
             /// table-function storage has no UUID and its StorageID does not depend on the arguments
@@ -195,6 +201,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         {
             storage = table_node->getStorage();
             snapshot = table_node->getStorageSnapshot();
+            storage_id_to_check = table_node->getStorageID();
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -291,6 +298,10 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
+
+        /// A direct read bypasses the planner, which checks `SELECT` on the columns.
+        if (storage_id_to_check)
+            checkAccessRights(storage, *storage_id_to_check, snapshot, column_names, context);
 
         storage->read(
             reading_plan,

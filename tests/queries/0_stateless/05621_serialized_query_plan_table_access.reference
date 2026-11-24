@@ -6,3 +6,23 @@ front only, serialize_query_plan = 1
 2
 JOIN hidden, serialize_query_plan = 1
 ACCESS_DENIED
+SHOW COLUMNS, column s, serialize_query_plan = 0
+ACCESS_DENIED
+SHOW COLUMNS, column s, serialize_query_plan = 1
+ACCESS_DENIED
+SELECT(id), column s, serialize_query_plan = 0
+ACCESS_DENIED
+SELECT(id), count, serialize_query_plan = 0
+1
+SELECT(id), column s, serialize_query_plan = 1
+ACCESS_DENIED
+SELECT(id), count, serialize_query_plan = 1
+1
+parameterized view, SHOW COLUMNS, serialize_query_plan = 0
+ACCESS_DENIED
+parameterized view, SHOW COLUMNS, serialize_query_plan = 1
+ACCESS_DENIED
+parameterized view, SELECT, serialize_query_plan = 0
+a
+parameterized view, SELECT, serialize_query_plan = 1
+a
