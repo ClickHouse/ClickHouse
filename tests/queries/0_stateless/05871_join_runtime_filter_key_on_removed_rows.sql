@@ -63,8 +63,12 @@ SELECT count() FROM m_aj JOIN r ON intDiv(100, m_aj.x) = r.k;
 -- LEFT ARRAY JOIN with a condition on the elements removes rows too.
 SELECT count() FROM (SELECT x, a FROM t LEFT ARRAY JOIN arr AS a WHERE a = 1) AS q JOIN r ON intDiv(100, q.x) = r.k;
 SELECT count() FROM (SELECT x, a FROM t LEFT ARRAY JOIN arr AS a WHERE a = 1) AS q JOIN r ON intDiv(100, q.x) = r.k SETTINGS query_plan_fuse_filter_into_array_join = 0;
--- The same with the `arrayJoin` function.
+-- The same with the `arrayJoin` function, also when it stays in an expression.
 SELECT count() FROM (SELECT x, arrayJoin(arr) AS a FROM t) AS q JOIN r ON intDiv(100, q.x) = r.k;
+SELECT count() FROM (SELECT x, arrayJoin(arr) AS a FROM t) AS q JOIN r ON intDiv(100, q.x) = r.k SETTINGS query_plan_lower_array_join_function = 0;
+-- There the filter stays in a Filter step above it; a key that cannot throw still reaches PREWHERE.
+SELECT countIf(explain LIKE '%Filter column: __applyFilter%'), countIf(explain LIKE '%Prewhere filter column: __applyFilter%') FROM (EXPLAIN actions = 1, pretty = 0 SELECT count() FROM (SELECT x, arrayJoin(arr) AS a FROM t) AS q JOIN r ON intDiv(100, q.x) = r.k SETTINGS query_plan_lower_array_join_function = 0, optimize_move_to_prewhere = 1, enable_parallel_replicas = 0, query_plan_join_swap_table = 'false');
+SELECT countIf(explain LIKE '%Filter column: __applyFilter%'), countIf(explain LIKE '%Prewhere filter column: __applyFilter%') FROM (EXPLAIN actions = 1, pretty = 0 SELECT count() FROM (SELECT x, arrayJoin(arr) AS a FROM t) AS q JOIN r ON q.x = r.k SETTINGS query_plan_lower_array_join_function = 0, optimize_move_to_prewhere = 1, enable_parallel_replicas = 0, query_plan_join_swap_table = 'false');
 
 -- A single join with a WHERE below it.
 CREATE TABLE p2 (id UInt64, b UInt8, s String) ENGINE = MergeTree ORDER BY id;
