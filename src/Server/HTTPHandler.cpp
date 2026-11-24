@@ -1046,6 +1046,10 @@ void HTTPHandler::processQuery(
                 /// The columns are the same as of the generated `INSERT` without a column list (not `EPHEMERAL` ones).
                 {
                     StorageID table_id(path_info.database.empty() ? context->getCurrentDatabase() : path_info.database, path_info.table);
+                    /// The lookup of the table does not check if the user can see it, so the visibility is checked first:
+                    /// otherwise a user without grants would tell an existing table (`ACCESS_DENIED`) from a missing one
+                    /// (`UNKNOWN_TABLE`). Any grant on the table, including `INSERT` on some columns, makes it visible.
+                    context->checkAccess(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name);
                     auto table = DatabaseCatalog::instance().getTable(table_id, context);
                     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                     context->checkAccess(
