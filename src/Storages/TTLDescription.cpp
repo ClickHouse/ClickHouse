@@ -1452,6 +1452,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     ContextPtr context,
     const KeyDescription & primary_key,
     TTLValidationMode validation_mode,
+    bool trust_recompression_codec,
     bool plan_where_subqueries_on_attach)
 {
     const auto expression_context = getTTLExpressionContext(context);
@@ -1619,11 +1620,13 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// On `ATTACH` (loading stored metadata) the codec checks are relaxed the same way column codecs are:
             /// a table created on an earlier version must still load even if its recompression codec would now be
             /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. A create with
-            /// `allow_suspicious_ttl_expressions` also skips them, matching `checkTTLExpression` below.
+            /// `allow_suspicious_ttl_expressions` also skips them, matching `checkTTLExpression` below. A stored TTL that an
+            /// `ALTER` rebuilds without defining it again does not check the codec either.
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     ttl_element->recompression_codec, {},
-                    skip_validation ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef()));
+                    skip_validation || trust_recompression_codec ? CodecValidationSettings::trusted()
+                                                                 : CodecValidationSettings(context->getSettingsRef()));
         }
     }
 
@@ -1678,6 +1681,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     ContextPtr context,
     const KeyDescription & primary_key,
     TTLValidationMode validation_mode,
+    bool trust_recompression_codec,
     bool plan_where_subqueries_on_attach)
 {
     TTLTableDescription result;
@@ -1689,7 +1693,9 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode, plan_where_subqueries_on_attach);
+        auto ttl = TTLDescription::getTTLFromAST(
+            ttl_element_ptr, columns, context, primary_key, validation_mode, trust_recompression_codec,
+            plan_where_subqueries_on_attach);
         if (ttl.mode == TTLMode::DELETE)
         {
             if (!ttl.where_expression_ast)
@@ -1726,7 +1732,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     if (validation_mode != TTLValidationMode::Attach && !context->isGlobalContext() && !isSecondaryDDLReplay(context))
         getTTLForTableFromAST(
             definition_ast, columns, context->getGlobalContext(), primary_key, TTLValidationMode::Attach,
-            /*plan_where_subqueries_on_attach=*/ true);
+            /*trust_recompression_codec=*/ false, /*plan_where_subqueries_on_attach=*/ true);
 
     return result;
 }

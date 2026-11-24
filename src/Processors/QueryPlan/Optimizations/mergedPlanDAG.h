@@ -3,6 +3,9 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -18,8 +21,10 @@ namespace DB::QueryPlanOptimizations
 /// A step that passes its input through unchanged and only reads a column of it, such as
 /// `BuildRuntimeFilter`, is looked through: it adds nothing to the DAG but the column it reads.
 ///
+/// An `ARRAY JOIN` is looked through as well: it repeats the rows as a join does, and its elements are values of the DAG.
+///
 /// The walk stops at any step whose expressions the DAG cannot represent - an aggregation, a window, an
-/// exchange, but also an `arrayJoin`, which changes the number of rows. Such a step becomes a source:
+/// exchange, but also an `arrayJoin` in an expression, which changes the number of rows. Such a step becomes a source:
 /// its output header turns into the DAG's inputs and the subtree below it is left alone, so the columns
 /// above it can still be deferred even though nothing below it can. That is also what keeps a caller
 /// inside one distributed fragment.
@@ -44,7 +49,7 @@ struct MergedPlanDAG
 
     /// A list rather than a vector so that joining two of these is a splice and the pointers below stay
     /// put, which saves renumbering every value's padded side on the way up.
-    using PaddedSides = std::list<PaddedSide>;
+    using PaddedSides = ListWithMemoryTracking<PaddedSide>;
 
     /// Where a value comes from in the plan: the plan node whose step computes it, and the node of that
     /// step's own DAG it is a copy of. A source's columns have the source's plan node and no step node,
@@ -72,34 +77,34 @@ struct MergedPlanDAG
 
     /// A position in this vector is the source index reported by `getSources`, which is how the sources
     /// of a value are read off a `BitSet`, so this one has to stay indexable.
-    std::vector<Source> sources;
+    VectorWithMemoryTracking<Source> sources;
     PaddedSides padded_sides;
 
-    /// The values with a join above their own computation point, whatever its kind. Letting one of these
-    /// cross the `LIMIT` means a column every join above it replicates, and a hash join copies into its
-    /// build side, over every row that reaches there.
+    /// The values with a join above their own computation point, whatever its kind, an `ARRAY JOIN` included. Letting one
+    /// of these cross the `LIMIT` means a column every join above it replicates, and a hash join copies into its build
+    /// side, over every row that reaches there.
     NodeSet nodes_with_join_above;
 
     /// The nearest padded side above a node's own computation point, for the nodes that have one. Kept
     /// because it cannot be recovered from the DAG afterwards, and it is the only one such a node needs:
     /// a mask column emitted at a join's unmatched side is carried through the joins above it and
     /// padded by them in turn, so it already answers "did every join above this point match".
-    std::unordered_map<const ActionsDAG::Node *, const PaddedSide *> nearest_padded_side;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const PaddedSide *> nearest_padded_side;
 
     /// Every value, mapped to where it comes from. Needed to rebuild the plan step by step: the steps are
     /// not interchangeable - a filter decides which rows the steps above it see, so moving something it
     /// sits below to beneath it can throw where the query does not - so whatever is decided about a value
     /// has to be carried out in the step that computes it.
-    std::unordered_map<const ActionsDAG::Node *, Origin> origins;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Origin> origins;
 
     /// Per plan node of the subtree, sources included: the value of each column of its output header, in
     /// order. What a step passes through without reading is only here.
-    std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;
 
-    const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
+    [[nodiscard]] const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 
     /// Nodes for the columns of the subtree's output header, in order.
-    const ActionsDAG::NodeRawConstPtrs & getOutputs() const { return getDAG().getOutputs(); }
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getOutputs() const { return getDAG().getOutputs(); }
 
     /// Which sources the node reads. Empty for a constant.
     const BitSet & getSources(const ActionsDAG::Node * node) const;
@@ -108,7 +113,7 @@ struct MergedPlanDAG
     size_t getSourceOfInput(const ActionsDAG::Node * input) const;
 
     /// The nearest padded side of the columns of a source, which is the same for all of them, or null.
-    const PaddedSide * getNearestPaddedSideOfSource(size_t source) const;
+    [[nodiscard]] const PaddedSide * getNearestPaddedSideOfSource(size_t source) const;
 
     /// The padded side that decides whether this node has a value of its own at all. Where it is set, a
     /// join above this node replaced the node's value by a default or a NULL for the rows that matched
@@ -130,8 +135,8 @@ struct MergedPlanDAG
 };
 
 /// Whether the walk of `buildMergedPlanDAG` can go through the step of this node, as far as the step alone tells: an
-/// expression, a filter, a runtime filter or a join of two inputs, which can prune its columns and computes no
-/// `arrayJoin`. The walk can still stop at such a step, where the DAG built for it does not reproduce its header, so
+/// expression, a filter, a runtime filter, an `ARRAY JOIN` or a join of two inputs, which can prune its columns and
+/// computes no `arrayJoin` in an expression. The walk can still stop at such a step, where the DAG built for it does not reproduce its header, so
 /// this is what a cheap check of the plan before the walk can rely on, not what the walk does.
 bool canEnterStep(const QueryPlan::Node & node);
 

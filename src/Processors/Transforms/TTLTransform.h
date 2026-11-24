@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
@@ -22,6 +24,7 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
+        bool apply_ttl_,
         bool force_,
         bool ttl_delete_applied_by_merge_ = false
     );
@@ -42,9 +45,12 @@ protected:
     void finalize();
 
 private:
-    std::vector<TTLAlgorithmPtr> algorithms;
+    VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
+    /// If false, only fills default values for `expired_columns`: no TTL algorithm runs and the part keeps its TTL infos.
+    /// TODO: move the fill into its own step, build `TTLStep` only when the merge applies TTL, and drop this flag.
+    const bool apply_ttl = true;
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
     const bool ttl_delete_applied_by_merge = false;
 
@@ -60,8 +66,9 @@ private:
         DataTypePtr type;
         ExpressionActionsPtr default_expression;
         String default_column_name;
+        bool shares_nested_offsets;
     };
-    std::unordered_map<String, ExpiredColumnData> expired_columns_data;
+    UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
 
     /// A `MATERIALIZED` column whose expression reads a column that a column TTL resets to its default.
     /// Its stored value describes the pre-expiry data, so it is recomputed once the TTL algorithms that
@@ -79,24 +86,24 @@ private:
     {
         /// Run this stage right before `algorithms[before_algorithm]`.
         size_t before_algorithm;
-        std::vector<DependentMaterializedColumn> columns;
+        VectorWithMemoryTracking<DependentMaterializedColumn> columns;
     };
 
     /// Ordered by `before_algorithm`.
-    std::vector<RecomputeStage> recompute_stages;
+    VectorWithMemoryTracking<RecomputeStage> recompute_stages;
 
     /// The `MATERIALIZED` columns that resetting `reset_columns` makes stale, grouped into levels: a
     /// dependent may read another dependent (`m2 MATERIALIZED m1 + 1`), and a column of level `i` reads
     /// only columns of the lower levels, so recomputing level by level always reads an already
     /// recomputed value. `columns_to_leave_alone` are never recomputed, even when they are stale.
-    static std::vector<std::vector<DependentMaterializedColumn>> analyzeDependentMaterializedColumns(
+    static VectorWithMemoryTracking<VectorWithMemoryTracking<DependentMaterializedColumn>> analyzeDependentMaterializedColumns(
         const MergeTreeData & storage,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & reset_columns,
         const NameSet & columns_to_leave_alone);
 
     /// Recomputes `dependents` in the block the TTL algorithms have already worked on.
-    static void recomputeDependentColumns(Block & block, const std::vector<DependentMaterializedColumn> & dependents);
+    static void recomputeDependentColumns(Block & block, const VectorWithMemoryTracking<DependentMaterializedColumn> & dependents);
 
     /// Runs the TTL algorithms, recomputing the dependents in between.
     void executeAlgorithms(Block & block);
