@@ -112,15 +112,33 @@ bool ObjectStorageQueueSource::hasStrongETag(const std::optional<ObjectMetadata>
 }
 
 std::string ObjectStorageQueueSource::makeDeduplicationToken(
-    const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset)
+    const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset, UInt64 token_version)
 {
+    if (token_version != ObjectStorageQueueTableMetadata::DEDUPLICATION_TOKEN_VERSION_ETAG
+        && token_version != ObjectStorageQueueTableMetadata::DEDUPLICATION_TOKEN_VERSION_PATH_AND_ETAG)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "The queue uses the version {} of the deduplication token, which this server does not know. "
+            "It was created by a newer server",
+            token_version);
+
     /// A unique token per chunk: the path, the `ETag` and the row offset. The `ETag` identifies the
     /// content of an object, not the object: for an ordinary single-part S3 upload it is the MD5 of
     /// the bytes, so two files with identical bytes at different paths have the same tag, and without
     /// the path the rows of the second file would be deduplicated away. The path is prefixed with its
     /// length, and the offset is what follows the last `:`, so the three parts cannot be confused.
+    ///
+    /// The path was not always a part of the token, and a token is the identity of a chunk in the
+    /// deduplication logs of the dependent targets. A queue created before that keeps the old scheme:
+    /// its files may have been inserted partially under it (a batch aborted on shutdown is replayed
+    /// from offset `0`, also by another replica or after an upgrade), and under another token the
+    /// rows already inserted would be inserted again.
     if (hasStrongETag(object_metadata))
+    {
+        if (token_version == ObjectStorageQueueTableMetadata::DEDUPLICATION_TOKEN_VERSION_ETAG)
+            return fmt::format("{}:{}", unquoteETag(object_metadata->etag), row_offset);
         return fmt::format("{}:{}:{}:{}", path.size(), path, unquoteETag(object_metadata->etag), row_offset);
+    }
 
     /// `ETag` is an optional response header, and not every tag that is reported is a strong
     /// content identifier (see `ObjectMetadata::etag_is_strong`). Without a strong one there is
@@ -1363,7 +1381,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
             {
                 try
                 {
-                    makeDeduplicationToken(reader.getObjectInfo()->getObjectMetadata(), file_metadata->getPath(), /*row_offset=*/ 0);
+                    makeDeduplicationToken(
+                        reader.getObjectInfo()->getObjectMetadata(),
+                        file_metadata->getPath(),
+                        /*row_offset=*/ 0,
+                        files_metadata->getTableMetadata().deduplication_token_version);
                 }
                 catch (...)
                 {
@@ -1502,7 +1524,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
             std::string dedup_token;
             if (add_deduplication_info)
             {
-                dedup_token = makeDeduplicationToken(object_metadata, path, row_offset);
+                dedup_token = makeDeduplicationToken(
+                    object_metadata, path, row_offset, files_metadata->getTableMetadata().deduplication_token_version);
 
                 auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());

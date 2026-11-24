@@ -54,6 +54,18 @@ struct ObjectStorageQueueTableMetadata
     bool processing_threads_num_changed = false;
     String source_hash;
 
+    /// The scheme of the per-chunk deduplication token (see `ObjectStorageQueueSource::makeDeduplicationToken`).
+    /// A token is the identity of a chunk in the deduplication logs of the dependent targets, so a file that is
+    /// replayed (after an aborted batch, by another replica) must get the tokens of the scheme its first pass used,
+    /// or the rows already inserted would be inserted again. The scheme is therefore fixed when the metadata of the
+    /// queue is created in Keeper and is shared by every table on the same `keeper_path`: a queue created before the
+    /// scheme was recorded keeps the first one, also after an upgrade, and only a new queue uses the latest one.
+    /// `<etag>:<offset>`. Two files with identical bytes may have the same `ETag`, so their chunks collide.
+    static constexpr UInt64 DEDUPLICATION_TOKEN_VERSION_ETAG = 1;
+    /// `<path length>:<path>:<etag>:<offset>`.
+    static constexpr UInt64 DEDUPLICATION_TOKEN_VERSION_PATH_AND_ETAG = 2;
+    UInt64 deduplication_token_version = DEDUPLICATION_TOKEN_VERSION_PATH_AND_ETAG;
+
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
         const ColumnsDescription & columns_,
@@ -76,6 +88,7 @@ struct ObjectStorageQueueTableMetadata
         , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
         , buckets(other.buckets.load())
         , source_hash(other.source_hash)
+        , deduplication_token_version(other.deduplication_token_version)
     {
     }
 

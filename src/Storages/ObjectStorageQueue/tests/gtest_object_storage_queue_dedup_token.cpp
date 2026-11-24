@@ -24,9 +24,25 @@ ObjectMetadata makeMetadata(const std::string & etag, uint64_t size_bytes, Poco:
     return metadata;
 }
 
+constexpr UInt64 LEGACY_VERSION = ObjectStorageQueueTableMetadata::DEDUPLICATION_TOKEN_VERSION_ETAG;
+constexpr UInt64 CURRENT_VERSION = ObjectStorageQueueTableMetadata::DEDUPLICATION_TOKEN_VERSION_PATH_AND_ETAG;
+
+std::string legacyToken(const std::string & etag, const std::string & path, size_t row_offset)
+{
+    return ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata(etag, 1024, 1700000000000000), path, row_offset, LEGACY_VERSION);
+}
+
+/// The metadata of a queue as a server that did not record the scheme of the token wrote it to Keeper.
+std::string metadataWrittenBeforeTheTokenWasVersioned()
+{
+    return R"({"after_processing":"keep","mode":"unordered","tracked_files_limit":0,"tracked_files_ttl_sec":0,)"
+        R"("processing_threads_num":1,"buckets":0,"format_name":"CSV","columns":"columns format version: 1\n0 columns:\n",)"
+        R"("last_processed_file":"","loading_retries":10})";
+}
+
 std::string token(const std::string & etag, const std::string & path, size_t row_offset)
 {
-    return ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata(etag, 1024, 1700000000000000), path, row_offset);
+    return ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata(etag, 1024, 1700000000000000), path, row_offset, CURRENT_VERSION);
 }
 
 }
@@ -57,9 +73,53 @@ TEST(ObjectStorageQueueDeduplicationToken, PathETagAndOffsetIdentifyTheChunk)
     /// The very same file read twice keeps the very same token, which is what makes a retried
     /// chunk deduplicate. The size and the modification time play no part in it.
     EXPECT_EQ(
-        ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("\"abc\"", 1024, 1700000000000000), "data/one.csv", 0),
-        ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("\"abc\"", 2048, 1700000009000000), "data/one.csv", 0));
+        ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("\"abc\"", 1024, 1700000000000000), "data/one.csv", 0, CURRENT_VERSION),
+        ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("\"abc\"", 2048, 1700000009000000), "data/one.csv", 0, CURRENT_VERSION));
     EXPECT_EQ(token("\"abc\"", "data/one.csv", 100), token("\"abc\"", "data/one.csv", 100));
+}
+
+/// The token is the identity of a chunk in the deduplication logs of the dependent targets. A server
+/// before the path was added built it as `<etag>:<offset>`. Such a server may have inserted a part of
+/// a file and aborted the batch on shutdown, which resets the file to be replayed from offset `0` - by
+/// the upgraded server, or by another replica in the middle of a rolling upgrade. The replay has to
+/// produce the very tokens of the first pass, or the rows already inserted are inserted again.
+TEST(ObjectStorageQueueDeduplicationToken, QueueCreatedBeforeThePathWasAddedKeepsItsTokens)
+{
+    /// Exactly what the previous servers produced, quotes removed.
+    EXPECT_EQ(legacyToken("\"abc\"", "data/one.csv", 0), "abc:0");
+    EXPECT_EQ(legacyToken("\"abc\"", "data/one.csv", 100), "abc:100");
+    EXPECT_EQ(legacyToken("abc", "data/one.csv", 100), "abc:100");
+
+    /// The metadata such a queue has in Keeper does not name a scheme, and that means the first one:
+    /// the file replayed after the upgrade gets the tokens the old server gave its chunks.
+    const auto old_queue = ObjectStorageQueueTableMetadata::parse(metadataWrittenBeforeTheTokenWasVersioned());
+    EXPECT_EQ(old_queue.deduplication_token_version, LEGACY_VERSION);
+    EXPECT_EQ(
+        ObjectStorageQueueSource::makeDeduplicationToken(
+            makeMetadata("\"abc\"", 1024, 1700000000000000), "data/one.csv", 100, old_queue.deduplication_token_version),
+        "abc:100");
+
+    /// The scheme survives every rewrite of the metadata (`ALTER TABLE ... MODIFY SETTING`), and a table
+    /// that attaches to the queue takes it over instead of the one it would use for a new queue.
+    const auto rewritten = ObjectStorageQueueTableMetadata::parse(old_queue.toString());
+    EXPECT_EQ(rewritten.deduplication_token_version, LEGACY_VERSION);
+
+    auto attached = ObjectStorageQueueTableMetadata::parse(old_queue.toString());
+    attached.deduplication_token_version = CURRENT_VERSION;
+    attached.adjustFromKeeper(old_queue);
+    EXPECT_EQ(attached.deduplication_token_version, LEGACY_VERSION);
+
+    /// A queue that records the scheme with the path keeps it the same way.
+    attached.deduplication_token_version = CURRENT_VERSION;
+    const auto new_queue = ObjectStorageQueueTableMetadata::parse(attached.toString());
+    EXPECT_EQ(new_queue.deduplication_token_version, CURRENT_VERSION);
+
+    /// The old scheme requires a strong `ETag` just as well.
+    EXPECT_ANY_THROW(legacyToken("", "data/one.csv", 0));
+
+    /// A scheme this server does not know is refused instead of being replaced with another one.
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(
+        makeMetadata("\"abc\"", 1024, 1700000000000000), "data/one.csv", 0, CURRENT_VERSION + 1));
 }
 
 /// `ETag` is an optional response header, and without it nothing identifies a chunk exactly. Every
@@ -79,9 +139,9 @@ TEST(ObjectStorageQueueDeduplicationToken, NoETagFailsClosed)
     /// The placeholder that `skip_object_metadata` leaves behind carries no real values at all.
     auto not_fetched = makeMetadata("", 0, 0);
     not_fetched.is_fetched = false;
-    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(not_fetched, "data/one.csv", 0));
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(not_fetched, "data/one.csv", 0, CURRENT_VERSION));
 
-    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(std::nullopt, "data/one.csv", 0));
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(std::nullopt, "data/one.csv", 0, CURRENT_VERSION));
 }
 
 /// A `(size, modification time)` pair is not a substitute for the tag either. Listings report the
@@ -92,17 +152,17 @@ TEST(ObjectStorageQueueDeduplicationToken, NoETagFailsClosed)
 TEST(ObjectStorageQueueDeduplicationToken, WeakGenerationSurrogateFailsClosed)
 {
     /// Two generations of the same path, same size, same second. Neither may yield a token.
-    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000000000000), "data/one.csv", 0));
-    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000000000000), "data/one.csv", 0));
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000000000000), "data/one.csv", 0, CURRENT_VERSION));
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("", 1024, 1700000000000000), "data/one.csv", 0, CURRENT_VERSION));
 
     /// The weak `(mtime, size)` token that HDFS reports as an `ETag` is refused as well.
     auto weak = makeMetadata("1700000000_1024", 1024, 1700000000000000);
     weak.etag_is_strong = false;
-    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(weak, "data/one.csv", 0));
+    EXPECT_ANY_THROW(ObjectStorageQueueSource::makeDeduplicationToken(weak, "data/one.csv", 0, CURRENT_VERSION));
 
     /// The same tag, reported as strong, is accepted - it is the strength that decides.
     auto strong = makeMetadata("1700000000_1024", 1024, 1700000000000000);
-    EXPECT_EQ(ObjectStorageQueueSource::makeDeduplicationToken(strong, "data/one.csv", 0), "12:data/one.csv:1700000000_1024:0");
+    EXPECT_EQ(ObjectStorageQueueSource::makeDeduplicationToken(strong, "data/one.csv", 0, CURRENT_VERSION), "12:data/one.csv:1700000000_1024:0");
 }
 
 /// `hasStrongETag` is the predicate the source asks before the first pull of a file: a file whose
@@ -132,7 +192,7 @@ TEST(ObjectStorageQueueDeduplicationToken, StrongETagIsWhatDecidesTheReadCheck)
         bool token_built = true;
         try
         {
-            ObjectStorageQueueSource::makeDeduplicationToken(metadata, "data/one.csv", 0);
+            ObjectStorageQueueSource::makeDeduplicationToken(metadata, "data/one.csv", 0, CURRENT_VERSION);
         }
         catch (const Exception & e)
         {
