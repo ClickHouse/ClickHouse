@@ -81,6 +81,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/digits10.h>
+#include <Common/escapeString.h>
 #include <Common/quoteString.h>
 #include <base/wide_integer_to_string.h>
 
@@ -1390,13 +1391,13 @@ inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer &
 [[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, const IDataType & result_type)
 {
     WriteBufferFromOwnString message_buf;
-    message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
+    message_buf << "Cannot parse string " << escapeNonPrintableCharacters(quoteString({read_buffer.buffer().begin(), read_buffer.buffer().size()}))
                 << " as " << result_type.getName()
                 << ": syntax error";
 
     if (read_buffer.offset())
         message_buf << " at position " << read_buffer.offset()
-                    << " (parsed just " << quote << String(read_buffer.buffer().begin(), read_buffer.offset()) << ")";
+                    << " (parsed just " << escapeNonPrintableCharacters(quoteString({read_buffer.buffer().begin(), read_buffer.offset()})) << ")";
     else
         message_buf << " at begin of string";
 
