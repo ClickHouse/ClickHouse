@@ -77,6 +77,8 @@ select a,b,c from {{ source('raw', 'table_2') }}
 --mv2:end
 ```
 
+The views can select from [ephemeral models](https://docs.getdbt.com/docs/build/materializations#ephemeral) when no view has its own `WITH` clause. dbt adds the CTEs of the ephemeral models once, before the first view, and dbt-clickhouse adds them to each view. When a view has its own `WITH` clause, dbt adds the CTEs to that clause instead, so a view that selects from an ephemeral model without them fails with an error. In that case, write each view as its own model with an explicit target table (see [Migrating from implicit to explicit target](#migration-implicit-to-explicit)).
+
 <Warning>
 When updating a model with multiple materialized views (MVs), especially when renaming one of the MV names,
 dbt-clickhouse does not automatically drop the old MV. Instead,
