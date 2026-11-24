@@ -79,6 +79,7 @@ namespace Setting
 {
 extern const SettingsBool ast_fuzzer_oracle;
 extern const SettingsJoinStrictness join_default_strictness;
+extern const SettingsBool make_distributed_plan;
 }
 
 namespace ErrorCodes
@@ -423,6 +424,10 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     /// SELECT-list alias (e.g. one introduced by `* REPLACE (expr AS b)`), which the structural gates
     /// cannot see and which a rewrite that drops the projection silently redefines. Skip such queries.
     if (ast->as<ASTQueryParameter>())
+        return true;
+
+    /// `SHUFFLE` returns the rows in random order, and with `LIMIT` a random subset of them.
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->shuffle)
         return true;
 
     /// Virtual columns that expose the physical part layout (`_part`, `_part_offset`,
@@ -850,6 +855,24 @@ bool hasGroupByTotalsModifierAnywhere(const ASTPtr & ast)
     return false;
 }
 
+/// True if any SELECT keeps a subset of its rows chosen by position.
+bool hasRowLimitAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+        if (select->limitLength() || select->limitOffset() || select->limitBy() || select->limitAfter() || select->limitUntil())
+            return true;
+    return anyChild(ast, [](const ASTPtr & child) { return hasRowLimitAnywhere(child); });
+}
+
+/// A distributed plan feeds a `LIMIT` one stream per source task, so the rows it keeps can change with the query
+/// around it, and the oracle's rewritten reads of the same subquery can keep different rows.
+bool hasRowLimitInDistributedPlan(const ASTPtr & ast, const ContextPtr & context)
+{
+    return context->getSettingsRef()[Setting::make_distributed_plan] && hasRowLimitAnywhere(ast);
+}
+
 /// True if any table expression in the query uses `FINAL`. FINAL's dedup is
 /// global over the table's row versions and is NOT distributive over a WHERE
 /// predicate: the TLP rewrites split rows into `p` / `NOT p` / `p IS NULL`
@@ -1157,6 +1180,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                         || hasGroupByTotalsModifierAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesNonDeterministicEngineAnywhere(definition, context)
+                        || hasRowLimitInDistributedPlan(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
                         return true;
             }
@@ -3177,6 +3201,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (referencesNonDeterministicEngineAnywhere(query_ast, context))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from a Distributed or Buffer table");
+        return false;
+    }
+
+    if (hasRowLimitInDistributedPlan(query_ast, context))
+    {
+        LOG_TRACE(logger, "Oracle skip: LIMIT/OFFSET in a query run as a distributed plan");
         return false;
     }
 
