@@ -55,7 +55,7 @@ SELECT timeSeriesHistogramDivByScalar((0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.]
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
