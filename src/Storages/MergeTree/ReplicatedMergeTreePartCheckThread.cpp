@@ -16,6 +16,9 @@ namespace ProfileEvents
     extern const Event ReplicatedPartChecks;
     extern const Event ReplicatedPartChecksFailed;
     extern const Event ReplicatedDataLoss;
+    extern const Event CreatedReadBufferDirectIO;
+    extern const Event CreatedReadBufferDirectIOFailed;
+    extern const Event PartCheckPassedAfterPageCacheReadError;
 }
 
 namespace DB
@@ -74,7 +77,7 @@ void ReplicatedMergeTreePartCheckThread::stop()
     getTask()->deactivate();
 }
 
-void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
+void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds, bool after_read_error)
 {
     /// Serialize against cancelRemovedPartsCheck so no in-range part can be enqueued during its
     /// parts_mutex gap (otherwise its recheck throws "Inconsistent parts_queue"). Lock order matches
@@ -83,10 +86,18 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     std::lock_guard lock(parts_mutex);
 
     if (parts_set.contains(name))
+    {
+        if (after_read_error)
+        {
+            auto it = std::ranges::find_if(parts_queue, [&name](const auto & elem) { return elem.name == name; });
+            if (it != parts_queue.end())
+                it->after_read_error = true;
+        }
         return;
+    }
 
     LOG_TRACE(log, "Enqueueing {} for check after {}s", name, delay_to_check_seconds);
-    parts_queue.emplace_back(name, std::chrono::steady_clock::now() + std::chrono::seconds(delay_to_check_seconds));
+    parts_queue.emplace_back(name, std::chrono::steady_clock::now() + std::chrono::seconds(delay_to_check_seconds), after_read_error);
     parts_set.insert(name);
     getTask()->schedule();
 }
@@ -314,7 +325,8 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
     return std::make_pair(exists_in_zookeeper, part);
 }
 
-ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const String & part_name, bool throw_on_broken_projection)
+ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
+    const String & part_name, bool throw_on_broken_projection, bool after_read_error)
 {
     ReplicatedCheckResult result;
     auto [exists_in_zookeeper, part] = findLocalPart(part_name);
@@ -401,12 +413,21 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 
             zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);
 
-            checkDataPart(
+            const auto & thread_events = CurrentThread::getProfileEvents();
+            const auto direct_io_before = thread_events[ProfileEvents::CreatedReadBufferDirectIO];
+            const auto direct_io_failed_before = thread_events[ProfileEvents::CreatedReadBufferDirectIOFailed];
+
+            const auto checked_checksums = checkDataPart(
                 part,
                 /* require_checksums */true,
                 is_broken_projection,
                 [this] { return need_stop.load(); },
                 throw_on_broken_projection);
+
+            /// Empty checksums: the check stopped at a retryable error.
+            const bool checked_with_direct_io = !checked_checksums.empty()
+                && thread_events[ProfileEvents::CreatedReadBufferDirectIO] > direct_io_before
+                && thread_events[ProfileEvents::CreatedReadBufferDirectIOFailed] == direct_io_failed_before;
 
             bool cancelled = need_stop;
             fiu_do_on(FailPoints::check_table_inject_part_check_cancelled, { cancelled = true; });
@@ -418,6 +439,12 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             }
 
             LOG_INFO(log, "Part {} looks good.", part_name);
+            if (after_read_error && checked_with_direct_io && !is_broken_projection)
+            {
+                LOG_WARNING(log, "Part {} was checked after a read error and is fine when read with O_DIRECT, bypassing the OS page cache; "
+                    "the read error was probably caused by the page cache, not by the data on disk", part_name);
+                ProfileEvents::increment(ProfileEvents::PartCheckPassedAfterPageCacheReadError);
+            }
             result.status = {part_name, true, ""};
             result.action = ReplicatedCheckResult::DoNothing;
             return result;
@@ -479,12 +506,16 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 
 
 CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(
-    const String & part_name, std::optional<time_t> * recheck_after, bool throw_on_broken_projection, bool throw_if_cancelled)
+    const String & part_name,
+    std::optional<time_t> * recheck_after,
+    bool throw_on_broken_projection,
+    bool throw_if_cancelled,
+    bool after_read_error)
 {
     LOG_INFO(log, "Checking part {}", part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
-    ReplicatedCheckResult result = checkPartImpl(part_name, throw_on_broken_projection);
+    ReplicatedCheckResult result = checkPartImpl(part_name, throw_on_broken_projection, after_read_error);
     switch (result.action)
     {
         case ReplicatedCheckResult::None: UNREACHABLE();
@@ -645,7 +676,8 @@ void ReplicatedMergeTreePartCheckThread::run()
         }
 
         std::optional<time_t> recheck_after;
-        checkPartAndFix(selected.name, &recheck_after, /* throw_on_broken_projection */false);
+        checkPartAndFix(
+            selected.name, &recheck_after, /* throw_on_broken_projection */false, /* throw_if_cancelled */false, selected.after_read_error);
 
         if (need_stop)
             return;
