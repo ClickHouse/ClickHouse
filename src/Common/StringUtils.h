@@ -158,6 +158,17 @@ inline bool isControlASCII(char c)
     return static_cast<unsigned char>(c) <= 31;
 }
 
+inline bool isControlOrDeleteASCII(char c)
+{
+    return isControlASCII(c) || c == 0x7F;
+}
+
+/// A character allowed in an HTTP token, such as a header name (RFC 9110, section 5.6.2).
+inline bool isHTTPTokenChar(char c)
+{
+    return isAlphaNumericASCII(c) || std::string_view("!#$%&'*+-.^_`|~").contains(c);
+}
+
 inline bool isPrintableASCII(char c)
 {
     uint8_t uc = c;
