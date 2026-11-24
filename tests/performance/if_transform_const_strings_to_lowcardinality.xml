@@ -13,4 +13,10 @@
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(transform(number % 10, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other'))</query>
     <query>SELECT number % 1000 = 0 ? 'a' : 'b' AS x, count() FROM numbers(100000000) GROUP BY x FORMAT Null</query>
     <query>SELECT transform(number % 10, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other') AS x, count() FROM numbers(100000000) GROUP BY x FORMAT Null</query>
+    <!-- A `LowCardinality` input of `transform` is mapped over its dictionary, not row by row. -->
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(transform(toLowCardinality(toString(number % 10)), ['2', '4', '6'], ['google', 'yandex', 'yahoo'], 'other'))</query>
+    <!-- A branch that is rarely taken: the dictionary of most blocks has only the other branch. -->
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(number % 1000000 = 0 ? 'rare' : 'common')</query>
+    <!-- Only some values of the mapping occur in the data. -->
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(transform(number % 10, [2, 4, 6, 20, 40, 60], ['google', 'yandex', 'yahoo', 'bing', 'baidu', 'ask'], 'other'))</query>
 </test>

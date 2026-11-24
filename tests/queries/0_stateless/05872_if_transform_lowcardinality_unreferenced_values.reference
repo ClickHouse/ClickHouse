@@ -1,0 +1,16 @@
+if	LowCardinality(String)	1
+if_then_not_taken	1
+if_nullable_condition	1
+multiIf	LowCardinality(String)	1
+multiIf_first_not_taken	1
+multiIf_first_not_taken	1
+multiIf_first_not_taken	1
+transform	LowCardinality(String)	1
+transform_value_not_taken	1
+transform_value_not_taken	1
+transform_value_not_taken	1
+transform_large_mapping	10
+if_blocks	10
+multiIf_blocks	10
+transform_blocks	10
+transform_low_cardinality_input	LowCardinality(String)	['a','b','z','a','b','z']

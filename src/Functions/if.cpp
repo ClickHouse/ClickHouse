@@ -1536,17 +1536,7 @@ public:
         const auto & low_cardinality_type = assert_cast<const DataTypeLowCardinality &>(*result_type);
         const auto & dictionary_type = low_cardinality_type.getDictionaryType();
 
-        auto values = dictionary_type->createColumn();
-        for (const auto * arg : {&arg_then, &arg_else})
-        {
-            auto value = castColumn(*arg, dictionary_type);
-            values->insertFrom(assert_cast<const ColumnConst &>(*value).getDataColumn(), 0);
-        }
-        LowCardinalityOfKnownValues known_values(low_cardinality_type, *values);
-        /// The dictionary has at most four values: the default value, NULL and the two branches.
-        const UInt8 then_index = static_cast<UInt8>(known_values.positions[0]);
-        const UInt8 else_index = static_cast<UInt8>(known_values.positions[1]);
-
+        /// First, whether each row takes the `then` branch.
         auto indexes = ColumnUInt8::create(input_rows_count);
         UInt8 * __restrict res = indexes->getData().data();
         const UInt8 * __restrict cond = cond_data_col->getData().data();
@@ -1554,13 +1544,34 @@ public:
         {
             const UInt8 * __restrict null_map = cond_null_map->data();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res[i] = (cond[i] && !null_map[i]) ? then_index : else_index;
+                res[i] = (cond[i] != 0) & (null_map[i] == 0);
         }
         else
         {
             for (size_t i = 0; i < input_rows_count; ++i)
-                res[i] = cond[i] ? then_index : else_index;
+                res[i] = cond[i] != 0;
         }
+
+        /// The dictionary holds only the branches that some row takes (see `LowCardinalityOfKnownValues`).
+        const bool has_then = input_rows_count && memchr(res, 1, input_rows_count) != nullptr;
+        const bool has_else = input_rows_count && memchr(res, 0, input_rows_count) != nullptr;
+
+        auto values = dictionary_type->createColumn();
+        for (const auto & [arg, is_taken] : {std::pair{&arg_then, has_then}, std::pair{&arg_else, has_else}})
+        {
+            if (!is_taken)
+                continue;
+            auto value = castColumn(*arg, dictionary_type);
+            values->insertFrom(assert_cast<const ColumnConst &>(*value).getDataColumn(), 0);
+        }
+        LowCardinalityOfKnownValues known_values(low_cardinality_type, *values);
+        /// The dictionary has at most four values: the default value, NULL and the two branches.
+        size_t num_taken = 0;
+        const UInt8 then_index = has_then ? static_cast<UInt8>(known_values.positions[num_taken++]) : 0;
+        const UInt8 else_index = has_else ? static_cast<UInt8>(known_values.positions[num_taken]) : 0;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+            res[i] = res[i] ? then_index : else_index;
 
         return ColumnLowCardinality::create(MutableColumnPtr(std::move(known_values.dictionary)), MutableColumnPtr(std::move(indexes)), /*is_shared=*/false);
     }

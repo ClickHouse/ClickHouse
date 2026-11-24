@@ -252,6 +252,11 @@ namespace
             if (arguments.size() != 4)
                 return nullptr;
 
+            /// The default implementation evaluates the function over the dictionary of a `LowCardinality` input,
+            /// which is less work than a lookup for every row.
+            if (arguments[0].type->lowCardinality())
+                return nullptr;
+
             /// The same conversion as in the default implementation for `LowCardinality`.
             ColumnsWithTypeAndName args = arguments;
             for (auto & arg : args)
@@ -278,13 +283,29 @@ namespace
             std::call_once(low_cardinality_once_flag, [&] { low_cardinality = buildLowCardinalityResult(low_cardinality_type); });
 
             auto indexes = FunctionTransform(low_cardinality->index_cache).executeImpl(args, low_cardinality->index_type, input_rows_count);
-            return ColumnLowCardinality::create(low_cardinality->dictionary, indexes, /*is_shared=*/true);
+            indexes = indexes->convertToFullColumnIfConst();
+            auto result = ColumnLowCardinality::create(low_cardinality->dictionary, indexes, /*is_shared=*/true);
+
+            /// The dictionary of the result holds only the values that some row refers to (see `LowCardinalityOfKnownValues`),
+            /// so the shared dictionary is used only for the blocks that refer to all of its values.
+            const auto & dictionary = assert_cast<const IColumnUnique &>(*low_cardinality->dictionary);
+            bool all_values_are_referenced = false;
+            if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(indexes.get()))
+                all_values_are_referenced = allDictionaryValuesAreReferenced(dictionary, indexes_uint8->getData());
+            else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(indexes.get()))
+                all_values_are_referenced = allDictionaryValuesAreReferenced(dictionary, indexes_uint16->getData());
+            else
+                all_values_are_referenced = allDictionaryValuesAreReferenced(dictionary, assert_cast<const ColumnUInt32 &>(*indexes).getData());
+
+            if (all_values_are_referenced)
+                return result;
+            return result->cutAndCompact(0, input_rows_count);
         }
 
     private:
         struct LowCardinalityResult
         {
-            /// Shared by the results of all blocks.
+            /// Shared by the results of all blocks that refer to all of its values.
             ColumnPtr dictionary;
             /// Like `cache`, but maps to the indexes in `dictionary`.
             TransformCachePtr index_cache;

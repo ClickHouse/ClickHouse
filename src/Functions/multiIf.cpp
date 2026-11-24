@@ -563,25 +563,36 @@ private:
             if (!instruction.source_is_constant)
                 return nullptr;
 
+        /// First, the number of the branch of every row. `calculateInserts` leaves `instructions.size()` in the rows
+        /// where no condition holds, which cannot happen, as the last instruction is the `else` branch.
+        auto indexes = ColumnUInt8::create(rows, static_cast<UInt8>(instructions.size()));
+        auto & indexes_data = indexes->getData();
+        calculateInserts(instructions, rows, indexes_data);
+
+        std::array<UInt8, std::numeric_limits<UInt8>::max() + 1> branch_is_taken{};
+        for (const auto index : indexes_data)
+            branch_is_taken[index] = 1;
+
+        /// The dictionary holds only the branches that some row takes (see `LowCardinalityOfKnownValues`).
         const auto & dictionary_type = low_cardinality_type->getDictionaryType();
         auto values = dictionary_type->createColumn();
-        for (const auto & instruction : instructions)
+        for (size_t i = 0; i < instructions.size(); ++i)
         {
-            const auto & value = assert_cast<const ColumnConst &>(*instruction.source).getDataColumn();
+            if (!branch_is_taken[i])
+                continue;
+            const auto & value = assert_cast<const ColumnConst &>(*instructions[i].source).getDataColumn();
             values->insertFrom(*value.convertToFullColumnIfLowCardinality(), 0);
         }
         LowCardinalityOfKnownValues known_values(*low_cardinality_type, *values);
 
-        /// `calculateInserts` leaves `instructions.size()` in the rows where no condition holds, which cannot
-        /// happen, as the last instruction is the `else` branch. Map it to the default value anyway.
-        std::array<UInt8, std::numeric_limits<UInt8>::max() + 1> dictionary_index_of_branch{};
+        /// The rows where no condition holds get the default value.
+        std::array<UInt8, std::numeric_limits<UInt8>::max() + 1> dictionary_index_of_branch;
+        dictionary_index_of_branch.fill(static_cast<UInt8>(known_values.dictionary->getDefaultValueIndex()));
+        size_t num_taken = 0;
         for (size_t i = 0; i < instructions.size(); ++i)
-            dictionary_index_of_branch[i] = static_cast<UInt8>(known_values.positions[i]);
-        dictionary_index_of_branch[instructions.size()] = static_cast<UInt8>(known_values.dictionary->getDefaultValueIndex());
+            if (branch_is_taken[i])
+                dictionary_index_of_branch[i] = static_cast<UInt8>(known_values.positions[num_taken++]);
 
-        auto indexes = ColumnUInt8::create(rows, static_cast<UInt8>(instructions.size()));
-        auto & indexes_data = indexes->getData();
-        calculateInserts(instructions, rows, indexes_data);
         for (auto & index : indexes_data)
             index = dictionary_index_of_branch[index];
 
