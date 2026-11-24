@@ -753,6 +753,24 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
 }
 
+bool holdsInputValues(const ActionsDAG::Node & node)
+{
+    const ActionsDAG::Node * current = &node;
+    while (current->type != ActionsDAG::ActionType::INPUT)
+    {
+        bool passes_values_on = current->type == ActionsDAG::ActionType::ALIAS;
+        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base)
+        {
+            const auto & name = current->function_base->getName();
+            passes_values_on = name == "_CAST" || name == "CAST" || name == "materialize" || name == "toNullable";
+        }
+        if (!passes_values_on || current->children.empty())
+            return false;
+        current = current->children.front();
+    }
+    return true;
+}
+
 VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
 {
     using TraceState = std::optional<ActionsDAGInputLineage>;
