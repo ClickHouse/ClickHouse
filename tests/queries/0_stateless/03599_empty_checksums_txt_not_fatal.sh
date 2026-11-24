@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-object-storage, no-parallel-replicas
+# Tags: no-fasttest, no-shared-merge-tree, no-object-storage, no-parallel-replicas, no-random-detach
+# no-random-detach: an extra `DETACH`/`ATTACH` reloads the part with the emptied `checksums.txt`
+# and sends the recount warning to the client at an unexpected point.
 
 # Regression test for a data-loss bug: a CHECK TABLE checksums.txt repair (and the
 # loadChecksums backfill) rewrote checksums.txt in place without fsync, so a power loss could

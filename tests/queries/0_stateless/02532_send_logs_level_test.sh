@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-debug, no-random-merge-tree-settings
+# Tags: no-object-storage, no-debug, no-random-merge-tree-settings, no-random-detach
+# no-random-detach: test checks log output
 # - no-object-storage - S3 has additional logging
 # - no-debug - debug builds also has additional logging
 # - no-random-merge-tree-settings - changes content of log messages

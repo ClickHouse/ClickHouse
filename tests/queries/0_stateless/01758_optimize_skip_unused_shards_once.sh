@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: shard
+# Tags: shard, no-random-detach
+# Tag no-random-detach: extra logging at DETACH
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=trace
 

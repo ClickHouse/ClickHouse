@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- A read task can contain several disjoint mark ranges. Cached blocks are stored
 -- per contiguous range, so a repeated query must be served from the cache for
 -- every range, not only for the range that ends at the task's last mark.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-parallel, no-msan, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+# Tags: no-fasttest, long, no-parallel, no-msan, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+# no-random-detach: concurrent readers fail with `UNKNOWN_TABLE` while another session's query has the table detached
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

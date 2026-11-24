@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- Tag no-random-detach: test checks inactive parts, which may be removed after DETACH/ATTACH.
+
 -- There is different code path when:
 -- - _state is not requested
 -- - _state is requested

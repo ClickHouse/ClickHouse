@@ -40,6 +40,12 @@ public:
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
+    /// Tables of this database are virtual: they are resolved dynamically from the URL and are not
+    /// detachable. Resolving a table is also not free of side effects (it infers the structure from
+    /// the data and requires the read source grant), so the reattach randomization hook must reject
+    /// this database before trying to resolve a table of it (see `reattachTablesUsedInQuery`).
+    bool supportsDetachingTables() const override { return false; }
+
     bool empty() const override { return true; }
 
     bool isReadOnly() const override { return true; }

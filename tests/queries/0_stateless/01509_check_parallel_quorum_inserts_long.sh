@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-shared-merge-tree
+# Tags: long, no-replicated-database, no-shared-merge-tree, no-random-detach
+# no-random-detach: test checks replication state
 # Tag no-replicated-database: Fails due to additional replicas or shards
 # Tag no-shared-merge-tree: Quorum inserts unsupported for smt
 

@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
 -- no-parallel: SYSTEM CLEAR MARK CACHE is used.
 
 DROP TABLE IF EXISTS t_prewarm_add_column;

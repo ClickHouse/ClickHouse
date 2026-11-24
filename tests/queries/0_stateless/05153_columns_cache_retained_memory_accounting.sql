@@ -1,8 +1,9 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
 -- - no-parallel -- `SYSTEM DROP COLUMNS CACHE` is server-wide
 -- - no-random-settings, no-random-merge-tree-settings -- the byte counts and the read task layout
 --   have to be deterministic
 -- - no-replicated-database -- the cache is per server
+-- - no-random-detach -- the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 
 -- The columns cache is bounded by, and reports, the memory its entries retain - not the logical
 -- size of the rows in them.

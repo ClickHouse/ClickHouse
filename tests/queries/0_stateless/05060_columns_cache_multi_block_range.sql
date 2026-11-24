@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- A read task is handed out in several output blocks when its rows exceed `max_block_size`
 -- or its bytes exceed `preferred_block_size_bytes`, which is the ordinary case: a task spans
 -- at least `merge_tree_min_rows_for_concurrent_read` rows, several times the default block.

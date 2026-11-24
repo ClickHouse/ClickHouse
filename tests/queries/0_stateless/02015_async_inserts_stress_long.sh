@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest
+# Tags: no-random-settings, no-fasttest, no-random-detach
+# no-random-detach: DETACH/ATTACH interferes with async insert pipeline
 
 set -e
 

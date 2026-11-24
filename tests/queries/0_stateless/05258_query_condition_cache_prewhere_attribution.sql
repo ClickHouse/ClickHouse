@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
 -- Tag no-parallel: the second query of each pair reads the entries the first one wrote to the server-wide query condition cache, which other tests clear
+-- Tag no-random-detach: attaching a `MergeTree` table clears the query condition cache, so the second query of a pair would miss the entries of the first one
 
 -- The query condition cache must record the static WHERE conditions of a join whose PREWHERE also holds
 -- a join runtime filter, and it must never record granules that only the runtime filter emptied.
