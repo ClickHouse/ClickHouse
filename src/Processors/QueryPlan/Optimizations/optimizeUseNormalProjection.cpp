@@ -454,7 +454,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         auto & child = iter->node->children[iter->next_child - 1];
         if (!query.build(*child, context->getSettingsRef()[Setting::max_expanded_ast_elements]))
-            return reject_all("the steps between the read and its consumer cannot be rewritten onto a projection");
+            return reject_all("the steps between the read and its consumer cannot be rewritten onto a projection, or their filter condition exceeds max_expanded_ast_elements");
 
         if (need_parent_part_offset)
         {

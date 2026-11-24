@@ -819,7 +819,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryDAG dag;
     if (!dag.build(*node.children.front(), context->getSettingsRef()[Setting::max_expanded_ast_elements]))
     {
-        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection");
+        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection, or their filter condition exceeds max_expanded_ast_elements");
         return candidates;
     }
 
@@ -945,7 +945,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryDAG dag;
     if (!dag.build(*node.children.front(), context->getSettingsRef()[Setting::max_expanded_ast_elements]))
     {
-        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection");
+        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection, or their filter condition exceeds max_expanded_ast_elements");
         return candidates;
     }
 
