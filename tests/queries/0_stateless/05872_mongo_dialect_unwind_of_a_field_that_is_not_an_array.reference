@@ -1,0 +1,32 @@
+-- a string and a number
+{"id":1,"name":"x"}
+{"id":2,"name":"y"}
+{"id":2,"lc":"m"}
+{"id":1,"lc":"l"}
+{"id":2,"lc":"m"}
+-- the field is still a string or a number
+{"name":"x!","id":2}
+-- the index is null
+{"id":1,"name":"x","i":null}
+{"id":2,"name":"y","i":null}
+-- a null is dropped
+{"id":2,"n":"v","i":null}
+-- a null is kept with preserveNullAndEmptyArrays
+{"id":1,"n":null,"i":null}
+{"id":2,"n":"v","i":null}
+{"id":1,"name":"x"}
+{"id":2,"name":"y"}
+-- an array is unwound
+{"id":1,"tags":"a","i":0}
+{"id":1,"tags":"b","i":1}
+{"id":1,"tags":"a","i":0}
+{"id":1,"tags":"b","i":1}
+{"id":2,"tags":null,"i":null}
+{"id":1,"nested":[1,2]}
+{"id":1,"nested":[3]}
+-- an array and then its elements
+{"id":1,"tags":"a"}
+{"id":1,"tags":"b"}
+-- a Dynamic field is rejected
+(TYPE_MISMATCH)
+(TYPE_MISMATCH)

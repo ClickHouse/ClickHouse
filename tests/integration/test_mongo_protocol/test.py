@@ -645,8 +645,16 @@ def test_aggregate(started_cluster):
     assert [doc["score"] for doc in collection.aggregate([{"$sort": {"score": 1}}, {"$skip": 1}, {"$limit": 2}])] == [20, 30]
     assert [doc["score"] for doc in collection.aggregate([{"$sort": {"score": 1}}, {"$limit": 2}, {"$skip": 1}])] == [20]
 
+    # A field that is not an array is unwound into itself, with a null index.
+    assert [
+        (doc["id"], doc["city"], doc["position"])
+        for doc in collection.aggregate(
+            [{"$match": {"id": 1}}, {"$unwind": {"path": "$city", "includeArrayIndex": "position"}}]
+        )
+    ] == [(1, "berlin", None)]
+
     with pytest.raises(pymongo.errors.PyMongoError):
-        list(collection.aggregate([{"$unwind": "$city"}]))
+        list(collection.aggregate([{"$facet": {"a": []}}]))
 
     # The server is still healthy after the rejected pipeline.
     assert list(collection.aggregate([{"$match": {"id": 1}}, {"$count": "c"}])) == [{"c": 1}]

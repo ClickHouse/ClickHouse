@@ -837,6 +837,54 @@ ASTPtr makeArrayJoin(ASTPtr expressions)
     return array_join;
 }
 
+/** Whether `$unwind` treats the field as a single value rather than unwinds it, which Mongo does for
+  * a field that is not an array: a constant condition on the type of the column. A `Map`, a `Dynamic`
+  * and a `Variant` are left to the `ARRAY JOIN` as they are: whether a `Dynamic` or a `Variant` holds
+  * an array differs from row to row, so wrapping it would silently keep an array in one piece.
+  */
+ASTPtr makeIsSingleValue(const std::string & path)
+{
+    auto has_type_prefix = [&](const char * prefix)
+    {
+        return makeASTFunction(
+            "startsWith", makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(path)), makeLiteral(Field(String(prefix))));
+    };
+    auto is_left_as_is = makeASTFunction(
+        "or", has_type_prefix("Array("), has_type_prefix("Map("), has_type_prefix("Dynamic"), has_type_prefix("Variant("));
+    return makeASTFunction("not", std::move(is_left_as_is));
+}
+
+/** One of two expressions, by whether the field is a single value or an array, where only the chosen
+  * one has to be valid for the type of the column, and its type is the type of the result:
+  *
+  *     if(is_single, if(is_single, <for_single_value>, __mongo_unreachable),
+  *                   if(is_single, __mongo_unreachable, <for_array>))
+  *
+  * A plain `if(is_single, <for_single_value>, <for_array>)` would not do: both of its branches are
+  * analyzed, and the result has their common type, which an array and its element do not have. The
+  * analyzer replaces an `if` of a constant condition with the branch it selects when the other one
+  * cannot be analyzed, and `__mongo_unreachable` names no column - the prefix is reserved - so each
+  * of the inner functions is replaced with the branch it selects, and the outer one with the inner
+  * one it selects, because the other inner one selects the column that does not exist.
+  */
+ASTPtr makeBySingleValueOrArray(const std::string & path, ASTPtr for_single_value, ASTPtr for_array)
+{
+    static constexpr auto unreachable = "__mongo_unreachable";
+    auto when_single = makeASTFunction("if", makeIsSingleValue(path), std::move(for_single_value), make_intrusive<ASTIdentifier>(unreachable));
+    auto when_array = makeASTFunction("if", makeIsSingleValue(path), make_intrusive<ASTIdentifier>(unreachable), std::move(for_array));
+    return makeASTFunction("if", makeIsSingleValue(path), std::move(when_single), std::move(when_array));
+}
+
+/// `[value]`, or `[]` when the value is null and `keep_null` is not set: what a field that is not an array unwinds into.
+ASTPtr makeSingleValueArray(const std::string & path, ASTPtr value, bool keep_null)
+{
+    auto single = makeASTFunction("array", std::move(value));
+    if (keep_null)
+        return single;
+    return makeASTFunction(
+        "if", makeASTFunction("isNull", make_intrusive<ASTIdentifier>(path)), makeASTFunction("array"), std::move(single));
+}
+
 /** `if(notEmpty(array), <elements>, [NULL])`: an array with one null element in place of an empty one.
   * The type of the result is the common one of both arrays: an array of `Nullable` elements, or of the
   * elements themselves when they hold a null on their own, as a `Dynamic` and a `Variant` do.
@@ -867,31 +915,44 @@ void addUnwindIndexField(SelectChain & chain, const std::string & index_name)
         chain.fields = {};
 }
 
-/** `$unwind` with `preserveNullAndEmptyArrays`, which keeps a document whose array is empty, with
-  * the field missing and the index, if asked for, null. A left `ARRAY JOIN` would keep it with the
-  * default value of the element type in place of the field, which is a value the document does not
-  * have, so the empty array is replaced with an array of one null element before the join instead:
+/** `$unwind`. The array to join and the array of its indexes are computed under names of their own,
+  * below the join, because both are computed from the field itself, and the element then takes the
+  * place of the field:
   *
   *     SELECT * EXCEPT (__mongo_unwind_element, __mongo_unwind_index)
   *            REPLACE (__mongo_unwind_element AS a), __mongo_unwind_index AS index
-  *     FROM (SELECT *, if(notEmpty(a), a, [NULL]) AS __mongo_unwind_element,
-  *                     if(notEmpty(a), arrayMap(i -> i - 1, arrayEnumerate(a)), [NULL]) AS __mongo_unwind_index
+  *     FROM (SELECT *, <array of a> AS __mongo_unwind_element, <indexes of a> AS __mongo_unwind_index
   *           FROM ...)
   *     ARRAY JOIN __mongo_unwind_element, __mongo_unwind_index
   *
-  * The arrays are computed under names of their own, below the join, because both are computed from
-  * the array itself. An array of elements that can hold no null, such as an array of arrays, has no
+  * Mongo drops a document whose array is empty or whose field is null, which is what an inner
+  * `ARRAY JOIN` does, and unwinds a field that is not an array into itself, with a null index:
+  * such a field is joined as an array of that one value, or an empty one when the value is null.
+  *
+  * `preserveNullAndEmptyArrays` keeps a document whose array is empty, with the field missing and
+  * the index, if asked for, null. A left `ARRAY JOIN` would keep it with the default value of the
+  * element type in place of the field, which is a value the document does not have, so the empty
+  * array is replaced with an array of one null element before the join instead:
+  * `if(notEmpty(a), a, [NULL])`, and `if(notEmpty(a), arrayMap(i -> i - 1, arrayEnumerate(a)), [NULL])`
+  * for the indexes. An array of elements that can hold no null, such as an array of arrays, has no
   * array type in common with `[NULL]`, so the query is rejected rather than unwound into fabricated
   * values.
   */
-void translateUnwindPreservingEmpty(SelectChain & chain, const std::string & path, const std::string & index_name)
+void translateUnwindOfChain(SelectChain & chain, const std::string & path, const std::string & index_name, bool preserve_empty)
 {
     static constexpr auto element_column = "__mongo_unwind_element";
     static constexpr auto index_column = "__mongo_unwind_index";
 
+    auto for_array = [&](ASTPtr elements) { return preserve_empty ? makeNullIfEmpty(path, std::move(elements)) : elements; };
+
     auto lower_select_list = make_intrusive<ASTExpressionList>();
     lower_select_list->children.push_back(makeAsterisk({}));
-    lower_select_list->children.push_back(withAlias(makeNullIfEmpty(path, make_intrusive<ASTIdentifier>(path)), element_column));
+    lower_select_list->children.push_back(withAlias(
+        makeBySingleValueOrArray(
+            path,
+            makeSingleValueArray(path, make_intrusive<ASTIdentifier>(path), preserve_empty),
+            for_array(make_intrusive<ASTIdentifier>(path))),
+        element_column));
 
     auto join_expressions = make_intrusive<ASTExpressionList>();
     join_expressions->children.push_back(make_intrusive<ASTIdentifier>(element_column));
@@ -902,8 +963,12 @@ void translateUnwindPreservingEmpty(SelectChain & chain, const std::string & pat
         /// `arrayEnumerate` counts from one and Mongo's index from zero.
         auto index = makeASTFunction("minus", make_intrusive<ASTIdentifier>("__mongo_index"), makeLiteral(Field(UInt64(1))));
         auto positions = makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path));
-        lower_select_list->children.push_back(
-            withAlias(makeNullIfEmpty(path, makeArrayMap("__mongo_index", std::move(index), std::move(positions))), index_column));
+        lower_select_list->children.push_back(withAlias(
+            makeBySingleValueOrArray(
+                path,
+                makeSingleValueArray(path, makeLiteral(Field()), preserve_empty),
+                for_array(makeArrayMap("__mongo_index", std::move(index), std::move(positions)))),
+            index_column));
         join_expressions->children.push_back(make_intrusive<ASTIdentifier>(index_column));
         helper_columns.emplace_back(index_column);
     }
@@ -995,49 +1060,7 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     if (chain.where || !chain.onlyFiltered() || chain.array_join)
         chain.wrap();
 
-    if (preserve_empty)
-    {
-        translateUnwindPreservingEmpty(chain, path, index_name);
-        return;
-    }
-
-    auto expressions = make_intrusive<ASTExpressionList>();
-    expressions->children.push_back(make_intrusive<ASTIdentifier>(path));
-
-    /// The index is joined under a name of its own, so that a field of the name it is given is not
-    /// confused with it in the select that joins it.
-    static constexpr auto index_column = "__mongo_unwind_index";
-    if (!index_name.empty())
-    {
-        /// A second array of the same length is joined element by element with the first one.
-        /// `arrayEnumerate` counts from one and Mongo's index from zero.
-        auto body = makeASTFunction("minus", make_intrusive<ASTIdentifier>("__mongo_index"), makeLiteral(Field(UInt64(1))));
-        auto positions = makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path));
-        auto indexes = makeArrayMap("__mongo_index", std::move(body), std::move(positions));
-        expressions->children.push_back(withAlias(std::move(indexes), index_column));
-    }
-
-    /// Mongo drops a document whose array is empty or missing, which is what an inner `ARRAY JOIN` does.
-    chain.array_join = makeArrayJoin(std::move(expressions));
-
-    if (!index_name.empty())
-    {
-        /// A `*` does not expand to the columns an `ARRAY JOIN` introduces, so the index has to be
-        /// named in the list of the select that produces it. It replaces a field of the same name,
-        /// as in Mongo, so that field is not carried along.
-        auto select_list = make_intrusive<ASTExpressionList>();
-        select_list->children.push_back(makeAsterisk({index_name}));
-        select_list->children.push_back(withAlias(make_intrusive<ASTIdentifier>(index_column), index_name));
-        chain.select_list = std::move(select_list);
-        chain.select_list_preserves_order_keys = exclusionPreservesOrderKeys(chain.order, {path, index_name});
-        addUnwindIndexField(chain, index_name);
-    }
-
-    /** The stages that follow see documents in which the field is one element of the array, so the
-      * unwinding is closed off into a subquery of its own. Referring to the field by name in the
-      * same select would otherwise be ambiguous between the array and the element.
-      */
-    chain.wrap();
+    translateUnwindOfChain(chain, path, index_name, preserve_empty);
 }
 
 void translateReplaceRoot(SelectChain & chain, const rapidjson::Value & new_root, std::string_view stage_name)
