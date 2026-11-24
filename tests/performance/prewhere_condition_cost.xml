@@ -35,7 +35,7 @@
 
     <query>SELECT count() FROM prewhere_cost_json WHERE toUInt64OrZero(toString(j.k0)) = 1234567 AND lc IN ('v0', 'v1')</query>
     <query>SELECT count() FROM prewhere_cost_ends WHERE k LIKE '%@ZZZZZZ' AND v = 'p7' SETTINGS optimize_rewrite_like_perfect_affix = 1</query>
-    <query>SELECT count() FROM prewhere_cost_edit WHERE a &lt; 4294967 AND editDistance(s, repeat('ab-dc-', 50)) &gt; 3</query>
+    <query>SELECT count() FROM prewhere_cost_edit WHERE editDistance(s, repeat('ab-dc-', 50)) &gt; 3 AND a &lt; 4294967</query>
 
     <drop_query>DROP TABLE IF EXISTS prewhere_cost_json</drop_query>
     <drop_query>DROP TABLE IF EXISTS prewhere_cost_ends</drop_query>
