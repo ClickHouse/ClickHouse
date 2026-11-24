@@ -47,7 +47,7 @@ private:
 
     static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             arrayImpl_x86_64_v4(src, src_end, dst);
