@@ -744,6 +744,13 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
     }
 }
 
+void ThreadStatus::restartPerformanceCounters()
+{
+    performance_counters_finalized = false;
+    performance_counters.resetCounters();
+    resetPerformanceCountersLastUsage();
+}
+
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
 #if defined(QUERY_PROFILER_SUPPORTED)

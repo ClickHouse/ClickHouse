@@ -579,8 +579,12 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
 
         /// The chunks share the thread group of the request, and a chunk is charged to the quotas with the counters of the group,
         /// so they start from zero for the next chunk. The memory tracker of the group still accounts the whole request.
+        /// This thread finalizes its counters again for the next chunk, so its usage there, including the merge, is charged too.
         if (auto thread_group = CurrentThread::getGroup())
+        {
             thread_group->performance_counters.resetCounters();
+            CurrentThread::get().restartPerformanceCounters();
+        }
 
         limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::THROW);
         chunk_start = next_chunk_start;

@@ -400,9 +400,12 @@ def test_quota_charges_events_of_each_chunk_once():
     node.query("SYSTEM DROP QUERY CACHE")
 
     def create_quota(max_cache_hits):
-        # The limit on SelectedRows only makes system.quotas_usage track it.
+        # The limits on SelectedRows and RealTimeMicroseconds only make system.quotas_usage track them.
         node.query(f"DROP QUOTA IF EXISTS {quota}")
-        node.query(f"CREATE QUOTA {quota} FOR INTERVAL 100 year MAX SelectedRows = 1000000000000, QueryCacheHits = {max_cache_hits} TO {user}")
+        node.query(
+            f"CREATE QUOTA {quota} FOR INTERVAL 100 year"
+            f" MAX SelectedRows = 1000000000000, RealTimeMicroseconds = 1000000000000, QueryCacheHits = {max_cache_hits} TO {user}"
+        )
 
     def assert_quota_usage(query_id, errors, hits):
         # Each chunk has its own row in query_log with the rows it read, from the tables or from the query cache.
@@ -432,9 +435,24 @@ def test_quota_charges_events_of_each_chunk_once():
         # Two chunks come from the query cache: two hits, not 1 + 2 + 2, so the limit of two hits lets the last chunk run.
         create_quota(2)
         query_id = f"range-split-{uuid.uuid4()}"
-        assert query_range("node_load1", start, end, step, params, query_id) == expected
+        # The request thread waits a second before the merge. Its real time is sampled with its CPU time, so the last chunk
+        # must be charged with that second, although the first chunk has already finalized the counters of the thread.
+        failpoint = "prometheus_range_query_pause_before_merge"
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(query_range, "node_load1", start, end, step, params, query_id)
+            try:
+                node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+                time.sleep(1)
+            finally:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            assert future.result(timeout=60) == expected
         assert_executed_queries(query_id, 3)
         assert_quota_usage(query_id, errors=0, hits=2)
+        last_chunk = f"SELECT ProfileEvents['RealTimeMicroseconds'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1"
+        assert int(node.query(last_chunk)) >= 1000000
+        usage = f"SELECT profile_events['RealTimeMicroseconds'] FROM system.quotas_usage WHERE quota_name = '{quota}'"
+        assert int(node.query(usage)) >= 1000000
 
         # After two hits over the limit of one, the last chunk is rejected and is charged only with its own events.
         create_quota(1)

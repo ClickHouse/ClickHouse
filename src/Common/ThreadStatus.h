@@ -385,6 +385,10 @@ public:
     /// Set the counters last usage to now
     void resetPerformanceCountersLastUsage();
 
+    /// Starts the counters of the thread from zero for the next of the queries it runs one after another in the same thread group,
+    /// so that finalizePerformanceCounters() accounts the usage of the thread in that query too.
+    void restartPerformanceCounters();
+
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
