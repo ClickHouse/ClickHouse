@@ -12,26 +12,20 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически создаются на основе исходного кода ClickHouse.
 
-<div id="primary_key_compress_block_size">
-  ## primary_key_compress_block_size
-</div>
+## primary_key_compress_block_size {#primary_key_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-Размер блока сжатия для первичного ключа; фактический размер сжимаемого блока.
+Размер блоков (в несжатых байтах), используемых при записи сжатого индекса первичного ключа для новых или перезаписанных частей данных. Применяется только при включённом параметре `compress_primary_key`. Эта настройка управляет обрамлением и буферизацией при сжатии; на первичный ключ и гранулярность индекса она не влияет.
 
-<div id="primary_key_compression_codec">
-  ## primary_key_compression_codec
-</div>
+## primary_key_compression_codec {#primary_key_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 
 Кодек сжатия, используемый для первичного ключа; первичный ключ достаточно мал и кэшируется,
 поэтому по умолчанию используется сжатие ZSTD(3).
 
-<div id="primary_key_lazy_load">
-  ## primary_key_lazy_load
-</div>
+## primary_key_lazy_load {#primary_key_lazy_load}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -39,9 +33,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 при первом использовании, а не при инициализации таблицы. Это может сэкономить память
 при большом количестве таблиц.
 
-<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
-  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
-</div>
+## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns {#primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns}
 
 <SettingsInfoBlock type="Float" default_value="0.9" />
 

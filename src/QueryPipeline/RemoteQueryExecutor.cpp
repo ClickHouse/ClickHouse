@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/SelectQueryInfo.h>
@@ -24,6 +25,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
@@ -32,16 +34,24 @@
 #include <Storages/StorageMemory.h>
 
 #include <Columns/ColumnBLOB.h>
+#include <Common/assert_cast.h>
 
 #include <base/scope_guard.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
+#include <Common/quoteString.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 
 namespace ProfileEvents
 {
     extern const Event SuspendSendingQueryToShard;
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
@@ -72,6 +82,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int ACCESS_DENIED;
 }
 
 namespace FailPoints
@@ -406,17 +418,50 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
   */
-static Block adaptBlockStructure(const Block & block, const Block & header)
+static Block adaptBlockStructure(Block block, const Block & header)
 {
     /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
     if (header.empty())
         return block;
 
+    /// Columns may be moved out of `block` below, so compute the number of rows up front.
+    const size_t num_rows = block.rows();
+
+    /// Both `block` and `header` may contain several columns with the same name. Match the same-named elements
+    /// of `header` to the same-named columns of `block` in order, so that each of them reads its own column.
+    /// If `block` has fewer columns with this name, the remaining elements of `header` read the last of them.
+    UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<size_t>> block_positions_by_name;
+    for (size_t i = 0; i < block.columns(); ++i)
+        block_positions_by_name[block.getByPosition(i).name].push_back(i);
+
+    VectorWithMemoryTracking<std::optional<size_t>> source_positions;
+    source_positions.reserve(header.columns());
+    /// A column may be moved out of `block` only on its last use.
+    VectorWithMemoryTracking<size_t> remaining_uses(block.columns());
+    {
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
+        for (const auto & elem : header)
+        {
+            const size_t occurrence = occurrences[elem.name]++;
+            auto it = block_positions_by_name.find(elem.name);
+            if (it == block_positions_by_name.end())
+            {
+                source_positions.emplace_back();
+                continue;
+            }
+            const size_t position = it->second[std::min(occurrence, it->second.size() - 1)];
+            source_positions.emplace_back(position);
+            ++remaining_uses[position];
+        }
+    }
+
     Block res;
     res.info = block.info;
 
-    for (const auto & elem : header)
+    for (size_t header_position = 0; header_position < header.columns(); ++header_position)
     {
+        const auto & elem = header.getByPosition(header_position);
+        const auto source_position = source_positions[header_position];
         ColumnPtr column;
 
         if (elem.column && isColumnConst(*elem.column))
@@ -424,13 +469,13 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
             /// We expect constant column in block.
             /// If block is not empty, then get value for constant from it,
             /// because it may be different for remote server for functions like version(), uptime(), ...
-            if (block.rows() > 0 && block.has(elem.name))
+            if (num_rows > 0 && source_position)
             {
                 /// Const column is passed as materialized. Get first value from it.
                 ///
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
-                auto col = block.getByName(elem.name);
+                auto col = block.getByPosition(*source_position);
                 if (const auto * blob = typeid_cast<const ColumnBLOB *>(col.column.get()))
                     col.column = blob->convertFrom();
                 col.column = col.column->cut(0, 1);
@@ -438,21 +483,29 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
                 column = castColumn(col, elem.type);
 
                 if (!isColumnConst(*column))
-                    column = ColumnConst::create(column, block.rows());
+                    column = ColumnConst::create(column, num_rows);
                 else
                     /// It is not possible now. Just in case we support const columns serialization.
-                    column = column->cloneResized(block.rows());
+                    column = column->cloneResized(num_rows);
             }
             else
-                column = elem.column->cloneResized(block.rows());
+                column = elem.column->cloneResized(num_rows);
         }
         else
         {
-            const auto & col = block.getByName(elem.name);
-            if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
+            if (!source_position)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", elem.name, block.dumpNames());
+
+            auto & col = block.getByPosition(*source_position);
+            const bool is_last_use = --remaining_uses[*source_position] == 0;
+            if (typeid_cast<const ColumnBLOB *>(col.column.get()))
             {
-                blob->addCast(col.type, elem.type);
-                column = col.column;
+                /// The block is owned here, so move the column out on its last use to let `IColumn::mutate`
+                /// reuse it without a copy when it is not shared with anyone else.
+                ColumnPtr blob = is_last_use ? std::move(col.column) : col.column;
+                auto mutable_blob = IColumn::mutate(std::move(blob));
+                assert_cast<ColumnBLOB &>(*mutable_blob).addCast(col.type, elem.type);
+                column = std::move(mutable_blob);
             }
             else
                 column = castColumn(col, elem.type);
@@ -600,7 +653,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     const auto & settings = context->getSettingsRef();
     const bool replica_unavailable = isReplicaUnavailable();
-    if (replica_unavailable || needToSkipUnavailableShard())
+    if (replica_unavailable || shouldSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
@@ -619,7 +672,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         if (replica_unavailable)
             finishFragmentSpanForUnavailableReplica();
         else
+        {
             finishFragmentSpanForSkippedShard("Shard is unavailable: no replicas to connect to (skipped because of `skip_unavailable_shards`)");
+            reportShardSkipped();
+        }
         return;
     }
 
@@ -650,9 +706,51 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
     /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
+    /// A node that runs a secondary query passes on the current roles of the initial user it received, so that the next
+    /// node takes the row policies of the initial user for these roles too. Without an interserver secret, the query
+    /// runs here as the cluster user, or as the initial user but with its default roles, so the current roles of this
+    /// node are not the ones of the initial query. The received roles are dropped where the initial user is changed
+    /// (`remote` with another user), so they always belong to `initial_user`.
+    std::optional<Strings> received_roles_of_initial_user;
+    if (modified_client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        received_roles_of_initial_user = modified_client_info.current_roles;
+
+    const bool push_roles = context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     modified_client_info.current_roles.reset();
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
-        && modified_client_info.initial_user == modified_client_info.current_user)
+    if (push_roles && received_roles_of_initial_user)
+    {
+        /// The next node may be connected with an interserver secret, which is used only if the initial user is
+        /// the current user (see `Connection::sendQuery`), and then it enables the forwarded roles without checking
+        /// their grants. Roles received on a connection without a secret come from the client, so they must be granted
+        /// to the user here, as `SET ROLE` requires. Otherwise they are used only to find row policies.
+        if (modified_client_info.initial_user == modified_client_info.current_user
+            && context->getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
+        {
+            /// A context may have no user (`SQL SECURITY NONE`, full access): the query does not run with the roles of
+            /// the initial user then, so they are not passed on.
+            const auto user = context->getAccess()->tryGetUser();
+            if (!user)
+            {
+                received_roles_of_initial_user.reset();
+            }
+            else
+            {
+                /// Fail closed: dropping a role could drop a restrictive row policy on the next node.
+                const auto & access_control = context->getAccessControl();
+                for (const auto & role_name : *received_roles_of_initial_user)
+                {
+                    auto role_id = access_control.find<Role>(role_name);
+                    if (!role_id || !user->granted_roles.isGranted(*role_id))
+                        throw Exception(ErrorCodes::ACCESS_DENIED,
+                            "The current role {} of the initial user is not granted to the user {} on this node",
+                            backQuote(role_name), backQuote(user->getName()));
+                }
+            }
+        }
+        modified_client_info.current_roles = std::move(received_roles_of_initial_user);
+    }
+    else if (push_roles && modified_client_info.initial_user == modified_client_info.current_user)
     {
         const auto & access_control = context->getAccessControl();
         Strings current_role_names;
@@ -843,7 +941,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         read_context->resume();
 
         const bool replica_unavailable = isReplicaUnavailable();
-        if (replica_unavailable || needToSkipUnavailableShard())
+        if (replica_unavailable || shouldSkipUnavailableShard())
         {
             /// We need to tell the coordinator not to wait for this replica.
             /// But at this point it may lead to an incomplete result set, because
@@ -859,7 +957,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             if (replica_unavailable)
                 finishFragmentSpanForUnavailableReplica();
             else
+            {
                 finishFragmentSpanForSkippedShard("Shard is unavailable: lost all replica connections (skipped because of `skip_unavailable_shards`)");
+                reportShardSkipped();
+            }
             return ReadResult(Block());
         }
 
@@ -911,7 +1012,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (!packet.block.empty() && (packet.block.rows() > 0))
             {
                 got_data_from_replica = true;
-                return ReadResult(adaptBlockStructure(packet.block, *header));
+                return ReadResult(adaptBlockStructure(std::move(packet.block), *header));
             }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
@@ -926,12 +1027,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                         connections->dumpAddresses(),
                         packet.exception->displayText());
 
-                reportShardSkipped();
-
                 /// The server terminated the query with this exception and will not send `EndOfStream`,
                 /// so mark the executor finished to signal end of data.
                 finished = true;
                 finishFragmentSpanForSkippedShard(packet.exception->message());
+                reportShardSkipped();
                 return ReadResult(Block{});
             }
 
@@ -967,15 +1067,15 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::Totals:
-            totals = packet.block;
+            totals = std::move(packet.block);
             if (!totals.empty())
-                totals = adaptBlockStructure(totals, *header);
+                totals = adaptBlockStructure(std::move(totals), *header);
             break;
 
         case Protocol::Server::Extremes:
-            extremes = packet.block;
+            extremes = std::move(packet.block);
             if (!extremes.empty())
-                extremes = adaptBlockStructure(packet.block, *header);
+                extremes = adaptBlockStructure(std::move(extremes), *header);
             break;
 
         case Protocol::Server::Log:
@@ -985,10 +1085,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::ProfileEvents:
-            /// Pass profile events from remote server to client
-            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                if (!profile_queue->emplace(std::move(packet.block)))
-                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            processProfileEventsPacket(std::move(packet.block));
             break;
 
         case Protocol::Server::TimezoneUpdate:
@@ -1004,6 +1101,39 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     }
 
     return ReadResult(ReadResult::Type::Nothing);
+}
+
+void RemoteQueryExecutor::processProfileEventsPacket(Block block)
+{
+    /// The local counters of the query do not include what the remote servers do for it, so their
+    /// reports are collected for the quotas over profile events, which are charged at the end of the
+    /// query with both. They are collected regardless of whether such limits govern the query now:
+    /// a limit installed by `ALTER QUOTA` while the query runs applies to the whole query at its end,
+    /// and the reports received before that could not be reconstructed.
+    if (auto process_list_elem = context->getProcessListElementSafe())
+        process_list_elem->addRemoteProfileEvents(block);
+
+    /// When this server executes a part of a query for another server, the read progress of the remote
+    /// server is already in the local `SelectedRows` / `SelectedBytes` (see `ReadProgressCallback`), which
+    /// are reported to the initiator together with the forwarded packet. The initiator of a distributed
+    /// `SELECT` skips these two in the reports anyway, but the initiator of a distributed `INSERT` takes
+    /// them from the reports (e.g. for a materialized view reading from `remote`), so it would count them
+    /// twice if they were forwarded.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        UInt64 selected_rows = std::numeric_limits<UInt64>::max();
+        UInt64 selected_bytes = std::numeric_limits<UInt64>::max();
+        ProfileEvents::subtractIncrements(block, ProfileEvents::SelectedRows, selected_rows);
+        ProfileEvents::subtractIncrements(block, ProfileEvents::SelectedBytes, selected_bytes);
+    }
+
+    if (profile_events_callback)
+        profile_events_callback(block);
+
+    /// Pass profile events from remote server to client
+    if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+        if (!profile_queue->emplace(std::move(block)))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
 }
 
 void RemoteQueryExecutor::processReadTaskRequest()
@@ -1036,7 +1166,7 @@ void RemoteQueryExecutor::processReadTaskRequest()
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
 
-    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica);
+    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica, stop_waiting_for_read_task);
     connections->sendClusterFunctionReadTaskResponse(*response);
 }
 
@@ -1056,9 +1186,9 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     /// Followers only block on the response when they actually need it (in-order modes pin
-    /// per-split parts via the response). In `Default` mode the caller discards the response,
-    /// so the round-trip would be pure overhead — skip it on both sides.
-    const bool send_response = announcement.mode != CoordinationMode::Default;
+    /// per-split parts via the response). In `Default` mode the caller needs it only when it asks
+    /// for the analyzed ranges, otherwise the round-trip would be pure overhead — skip it on both sides.
+    const bool send_response = announcement.mode != CoordinationMode::Default || announcement.wants_analyzed_ranges;
 
     announcement_received = true;
 
@@ -1069,6 +1199,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
+    stop_waiting_for_read_task = true;
     {
         std::lock_guard gate(finish_gate_mutex);
         ++finish_in_progress;
@@ -1195,12 +1326,11 @@ void RemoteQueryExecutor::finishUnlocked()
                             connections->dumpAddresses(),
                             packet.exception->displayText());
 
-                    reportShardSkipped();
-
                     /// The server terminated the query with this exception.
                     /// Record it before `finish` closes the span as cancelled: the first outcome wins.
                     finished = true;
                     finishFragmentSpanForSkippedShard(packet.exception->message());
+                    reportShardSkipped();
                     break;
                 }
 
@@ -1214,10 +1344,7 @@ void RemoteQueryExecutor::finishUnlocked()
                 break;
 
             case Protocol::Server::ProfileEvents:
-                /// Pass profile events from remote server to client
-                if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                    if (!profile_queue->emplace(std::move(packet.block)))
-                        throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+                processProfileEventsPacket(std::move(packet.block));
                 break;
 
             case Protocol::Server::ProfileInfo:
@@ -1239,6 +1366,7 @@ void RemoteQueryExecutor::finishUnlocked()
 
 void RemoteQueryExecutor::cancel()
 {
+    stop_waiting_for_read_task = true;
     /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
     /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
     /// gate is what makes the check meaningful: a `finish` that owns it already incremented the counter.
@@ -1335,6 +1463,10 @@ void RemoteQueryExecutor::sendExternalTables()
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context));
+
+                    /// The receiver accepts only the default serialization, while a table that is not filled
+                    /// through the insert chain (a materialized CTE) keeps `Sparse` columns.
+                    builder->addSimpleTransform([](const SharedHeader & table_header) { return std::make_shared<MaterializingTransform>(table_header); });
 
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getSharedHeader(), limits));
@@ -1445,14 +1577,24 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
+void RemoteQueryExecutor::setProfileEventsCallback(ProfileEventsCallback callback)
+{
+    LockAndBlocker guard(was_cancelled_mutex);
+    profile_events_callback = std::move(callback);
+}
+
+bool RemoteQueryExecutor::shouldSkipUnavailableShard() const
+{
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
+}
+
 bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
-    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-    {
-        reportShardSkipped();
-        return true;
-    }
-    return false;
+    if (!shouldSkipUnavailableShard())
+        return false;
+
+    reportShardSkipped();
+    return true;
 }
 
 void RemoteQueryExecutor::reportShardSkipped()
@@ -1467,7 +1609,7 @@ void RemoteQueryExecutor::reportShardSkipped()
     /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
     /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
     if (unavailable_shard_tracker)
-        unavailable_shard_tracker->onShardSkipped();
+        unavailable_shard_tracker->onShardSkipped(got_data_from_replica);
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

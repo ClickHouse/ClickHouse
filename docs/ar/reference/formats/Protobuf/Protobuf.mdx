@@ -15,7 +15,7 @@ doc_type: 'guide'
 | ----- | ----- | ---------- |
 | ✔     | ✔     |            |
 
-## الوصف
+## الوصف {#description}
 
 تنسيق `Protobuf` هو تنسيق [Protocol Buffers](https://protobuf.dev/).
 
@@ -109,9 +109,9 @@ SELECT * FROM string_or_string
 يستقبل ClickHouse رسائل protobuf ويُخرجها بتنسيق `محدد بالطول`.
 وهذا يعني أنه يجب كتابة طول كل رسالة قبلها على هيئة [عدد صحيح بعرض متغير (varint)](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 
-## مثال للاستخدام
+## مثال للاستخدام {#example-usage}
 
-### قراءة البيانات وكتابتها
+### قراءة البيانات وكتابتها {#basic-examples}
 
 <Note title="ملفات Example">
   الملفات المستخدمة في هذا المثال متاحة في [مستودع الأمثلة](https://github.com/ClickHouse/formats/ProtoBuf)
@@ -274,10 +274,10 @@ SELECT * FROM test.protobuf_messages INTO OUTFILE 'protobuf_message_from_clickho
 
 باستخدام مخطط Protobuf الخاص بك، يمكنك الآن فك تسلسل البيانات التي كتبها ClickHouse إلى الملف `protobuf_message_from_clickhouse.bin`.
 
-### قراءة البيانات وكتابتها باستخدام ClickHouse Cloud
+### قراءة البيانات وكتابتها باستخدام ClickHouse Cloud {#basic-examples-cloud}
 
-في ClickHouse Cloud، لا يمكنك تحميل ملف مخطط Protobuf. ومع ذلك، يمكنك استخدام الإعداد `format_protobuf_schema`
-لتحديد المخطَّط داخل الاستعلام. في هذا المثال، نوضّح كيفية قراءة البيانات المُسلسلة من جهازك المحلي
+في ClickHouse Cloud، لا يمكنك تحميل ملف مخطط Protobuf. ومع ذلك، يمكنك استخدام الإعداد `format_schema_source`
+لتحديد المخطَّط داخل الاستعلام. في هذا المثال، نوضّح كيفية قراءة البيانات المُسلسلة من جهازك المحلي
 وإدراجها في جدول في ClickHouse Cloud.
 
 كما في المثال السابق، أنشئ الجدول وفقًا لمخطط Protobuf الخاص بك في ClickHouse Cloud:
@@ -302,18 +302,18 @@ ORDER BY tuple()
 * &#39;string&#39;: يكون `format_schema` هو المحتوى الحرفي للمخطط.
 * &#39;query&#39;: يكون `format_schema` استعلامًا لاسترجاع المخطط.
 
-### `format_schema_source='string'`
+### `format_schema_source='string'` {#format-schema-source-string}
 
 لإدراج البيانات في ClickHouse Cloud مع تحديد المخطط على هيئة سلسلة نصية، شغّل:
 
 ```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema='schemafile:MessageType' FORMAT Protobuf"
+cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO test.protobuf_messages SETTINGS format_schema_source='string', format_schema='syntax = \"proto3\";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema_message_name='MessageType' FORMAT Protobuf"
 ```
 
 اعرض البيانات التي أُدرجت في الجدول:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -322,14 +322,14 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### `format_schema_source='query'`
+### `format_schema_source='query'` {#format-schema-source-query}
 
 يمكنك أيضًا تخزين مخطط Protobuf في جدول.
 
-أنشئ جدولًا على ClickHouse Cloud لإدراج البيانات فيه:
+أنشئ جدولًا في ClickHouse Cloud لإدراج البيانات فيه:
 
 ```sql
-CREATE TABLE testing.protobuf_schema (
+CREATE TABLE test.protobuf_schema (
   schema String
 )
 ENGINE = MergeTree()
@@ -337,19 +337,32 @@ ORDER BY tuple();
 ```
 
 ```sql
-INSERT INTO testing.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
+INSERT INTO test.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
 ```
 
-أدرِج البيانات في ClickHouse Cloud، مع تحديد المخطّط في استعلام لتشغيله:
+إذا كنت قد شغّلت المثال السابق، فأفرغ الجدول أولاً حتى تتطابق نتيجتك مع النتيجة أدناه:
 
-```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='SELECT schema FROM testing.protobuf_schema', format_schema='schemafile:MessageType' FORMAT Protobuf"
+```sql
+TRUNCATE TABLE test.protobuf_messages;
 ```
 
-اعرض البيانات المُدخلة في الجدول:
+أدرِج البيانات في ClickHouse Cloud، مع تحديد المخطط على هيئة استعلام يُنفَّذ.
+أرسِل عملية الإدراج هذه عبر [واجهة HTTP](/ar/concepts/features/interfaces/http#insert-protobuf)، حيث يحلّل الخادم البيانات وينفّذ استعلام المخطط؛ أما `clickhouse client` فيحلّل بيانات الإدخال على جهة العميل، وهناك يفشل استعلام المخطط.
+يُرمِّز الخيار `--url-query` في curl (الإصدار 7.87 وما بعده) كل معلمة بترميز URL، لذا يمكن كتابة الاستعلام واستعلام المخطط كما هما دون تعديل:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+curl 'https://<hostname>:8443/' --user 'default:<password>' \
+    --url-query 'query=INSERT INTO test.protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=query' \
+    --url-query 'format_schema=SELECT schema FROM test.protobuf_schema' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @protobuf_messages.bin
+```
+
+استعلم عن البيانات المُدرَجة في الجدول:
+
+```bash
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -358,7 +371,7 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### استخدام المخطط المُنشأ تلقائيًا
+### استخدام المخطط المُنشأ تلقائيًا {#using-autogenerated-protobuf-schema}
 
 إذا لم يكن لديك مخطط Protobuf خارجي لبياناتك، فلا يزال بإمكانك إخراج البيانات أو إدخالها بتنسيق Protobuf
 باستخدام مخطط مُنشأ تلقائيًا. ولهذا الغرض، استخدم الإعداد `format_protobuf_use_autogenerated_schema`.
@@ -388,7 +401,7 @@ SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerat
 
 في هذه الحالة، سيُحفَظ مخطط Protobuf المُنشأ تلقائيًا في الملف `path/to/schema/schema.capnp`.
 
-### حذف ذاكرة التخزين المؤقت لـ Protobuf
+### حذف ذاكرة التخزين المؤقت لـ Protobuf {#drop-protobuf-cache}
 
 لإعادة تحميل مخطط Protobuf الذي تم تحميله من [`format_schema_path`](/ar/reference/settings/server-settings/settings/format#format_schema_path)، استخدم تعليمة [`SYSTEM DROP ... FORMAT CACHE`](/ar/reference/statements/system#system-drop-schema-format).
 

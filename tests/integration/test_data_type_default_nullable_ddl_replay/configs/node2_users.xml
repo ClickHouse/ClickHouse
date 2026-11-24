@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <data_type_default_nullable>1</data_type_default_nullable>
+        </default>
+    </profiles>
+</clickhouse>

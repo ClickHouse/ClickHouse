@@ -1,0 +1,7 @@
+-- The left read under the filled join must be in order
+['ReadType: InOrder']
+-- One output row per left row, in the left order
+1000	168	1
+0	v0
+1	v37
+2	v74

@@ -6,7 +6,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Columns/IColumn.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
@@ -22,19 +22,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-/// True when every key of `description` is constant in `header`, so all rows compare equal under it.
-static bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header)
-{
-    for (const auto & column_description : description)
-    {
-        const auto * column = header.findByName(column_description.column_name);
-        if (!column || !column->column || !isColumnConst(*column->column))
-            return false;
-    }
-
-    return true;
 }
 
 QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
@@ -71,6 +58,11 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
                 /* blocks_are_granules_size */ false));
     }
 
+    /// Combine small chunks: every chunk becomes one packet. A sorted gather sends every chunk at
+    /// once, because `GatherReceiveStep` merges the streams in order and waits for the rows it needs next.
+    if (!maintain_sort_description)
+        ProgressiveSquashingChunksTransform::addToPipeline(pipeline, settings.max_block_size);
+
     /// A serializer on every stream; the sink takes packets only. After the merge above one stream is
     /// left, and its serializer is the only one.
     pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
@@ -82,7 +74,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"));
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"), /*advisory*/ false);
     });
 
     return std::move(pipelines.front());
@@ -108,7 +100,7 @@ void GatherSendStep::serialize(Serialization & ctx) const
 
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ctx)

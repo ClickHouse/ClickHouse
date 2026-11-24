@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <base/types.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
@@ -19,14 +20,14 @@ struct BigQueryConfiguration
 
     /// Exactly one authentication method must be provided.
     /// 1. A ready-made OAuth 2.0 access token (e.g. from `gcloud auth print-access-token`). Expires quickly, cannot be refreshed.
-    String access_token;
+    SecretString access_token;
     /// 2. The content of a Google service account key in JSON format (with `client_email` and `private_key`).
-    String service_account_key;
+    SecretString service_account_key;
     /// 3. An OAuth 2.0 client with a refresh token, as in Application Default Credentials
     ///    (`~/.config/gcloud/application_default_credentials.json` after `gcloud auth application-default login`).
     String client_id;
-    String client_secret;
-    String refresh_token;
+    SecretString client_secret;
+    SecretString refresh_token;
 
     /// Optional project to attribute quota and billing to (sent as the `X-Goog-User-Project` header).
     String billing_project;
@@ -57,6 +58,9 @@ struct BigQueryConfiguration
     /// When `table_id` is provided (the persistent table engine), the table is registered as a dependency
     /// of the named collection so that `DROP NAMED COLLECTION` is blocked while the table exists.
     static BigQueryConfiguration fromArguments(ASTs & args, ContextPtr context, const StorageID * table_id = nullptr);
+
+    /// Validates the user-supplied values sent as HTTP headers with `HTTPHeaderFilter`.
+    void checkHeaders(const ContextPtr & context) const;
 };
 
 }

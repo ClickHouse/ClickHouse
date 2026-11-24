@@ -11,6 +11,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
+#include <Databases/IDatabase.h>
 
 namespace DB
 {
@@ -72,6 +73,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             else
             {
                 getContext()->checkAccess(AccessType::SHOW_TABLES, database, table);
+                /// With the asynchronous loading of tables, a table is attached only by its load job, so
+                /// wait for it the same way `tryGetTable` does: a table that is still loading exists.
+                if (auto db = DatabaseCatalog::instance().tryGetDatabase(database))
+                    db->waitTableStarted(table);
                 result = DatabaseCatalog::instance().isTableExist({database, table}, getContext());
             }
         }

@@ -7,9 +7,7 @@ title: '数据类型'
 doc_type: 'reference'
 ---
 
-<div id="type-conversions">
-  ## 类型转换
-</div>
+## 类型转换 {#type-conversions}
 
 对于插入以及响应编组，客户端力求在接受变量类型方面尽可能灵活。在大多数情况下，ClickHouse 的列类型都存在对应的 Golang 类型，例如，[UInt64](/zh/reference/data-types/int-uint) 对应 [uint64](https://pkg.go.dev/builtin#uint64)。这类逻辑映射应始终受到支持。如果变量或接收到的数据能够先完成转换，你也可以使用可插入列中或可用于接收响应的变量类型。客户端力求透明地支持这些转换，这样一来，用户在插入前无需先将数据精确转换到完全匹配的类型，同时也能在查询时实现灵活的编组。这种透明转换不允许出现精度损失。例如，不能使用 uint32 来接收来自 UInt64 列的数据。相反，只要满足格式要求，字符串就可以插入到 datetime64 字段中。
 
@@ -19,13 +17,9 @@ doc_type: 'reference'
 
 标准的 `database/sql` 接口应支持与 ClickHouse API 相同的类型。也有少数例外，主要涉及复杂类型，相关内容已在下文各节中说明。与 ClickHouse API 类似，客户端在接受用于插入和响应编组的变量类型方面，也力求尽可能灵活。
 
-<div id="complex-types">
-  ## 复杂类型
-</div>
+## 复杂类型 {#complex-types}
 
-<div id="datedatetime">
-  ### Date/DateTime
-</div>
+### Date/DateTime {#datedatetime}
 
 ClickHouse Go client 支持 `Date`、`Date32`、`DateTime` 和 `DateTime64` 日期/日期时间类型。日期既可以以 `2006-01-02` 格式的字符串插入，也可以使用原生 Go 类型 `time.Time{}` 或 `sql.NullTime`。DateTime 同样支持后两种类型，但字符串必须采用 `2006-01-02 15:04:05` 格式，并可选择附带时区偏移，例如 `2006-01-02 15:04:05 +08:00`。读取时也支持 `time.Time{}` 和 `sql.NullTime`，以及任何实现了 `sql.Scanner` 接口的类型。
 
@@ -38,9 +32,7 @@ ClickHouse Go client 支持 `Date`、`Date32`、`DateTime` 和 `DateTime64` 日�
   * 在 **insert** 时，将日期转换为 unix timestamp 时会考虑日期的 timezone；也就是说，在按日期存储之前，会先根据 timezone 进行偏移，因为 ClickHouse 中的 Date 类型本身不包含时区信息。如果字符串值中未指定这一信息，则会使用本地 timezone。
   * 在 **select** 时，扫描到 `time.Time{}` 或 `sql.NullTime{}` 实例中的日期值，返回时将不包含时区信息。
 
-<div id="timetime64-types">
-  ### Time/Time64 类型
-</div>
+### Time/Time64 类型 {#timetime64-types}
 
 `Time` 和 `Time64` 列类型用于存储不包含日期部分的时刻值。两者都映射为 Go 的 `time.Duration`。
 
@@ -80,9 +72,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 fmt.Printf("col1=%v, col2=%v\n", col1, col2)
 ```
 
-<div id="array">
-  ### Array
-</div>
+### Array {#array}
 
 Array 应以切片形式插入。其元素的类型规则与[基本类型](#type-conversions)一致，也就是说，在可能的情况下会进行类型转换。
 
@@ -133,9 +123,7 @@ rows.Close()
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/array.go)
 
-<div id="map">
-  ### Map
-</div>
+### Map {#map}
 
 应以 Golang map 的形式插入 Map，其中的键和值必须符合[前文](#type-conversions)定义的类型规则。
 
@@ -191,9 +179,7 @@ rows.Close()
   [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/map.go)
 </Note>
 
-<div id="tuples">
-  ### 元组
-</div>
+### 元组 {#tuples}
 
 Tuples 表示一组长度任意的列。这些列既可以显式命名，也可以仅指定类型，例如：
 
@@ -254,11 +240,9 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
 
 注意：支持类型化的切片和 Map，前提是命名元组中的各个子列类型都相同。
 
-<div id="nested">
-  ### Nested
-</div>
+### Nested {#nested}
 
-Nested 字段等同于由命名元组组成的 Array。具体用法取决于用户是否将 [flatten&#95;nested](/zh/reference/settings/session-settings/other#flatten_nested) 设置为 1 或 0。
+Nested 字段等同于由命名元组组成的 Array。具体用法取决于用户是否将 [flatten&#95;nested](/zh/reference/settings/session-settings#flatten_nested) 设置为 1 或 0。
 
 将 flatten&#95;nested 设置为 0 后，Nested 列会保持为单个元组数组。这样你就可以使用Map切片进行插入和读取，并支持任意层级的嵌套。映射中的键名必须与列名相同，如下例所示。
 
@@ -357,7 +341,7 @@ for rows.Next() {
     }
     fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
 }
-// NOTE: Do not skip rows.Err() check
+// 注意：不要跳过 rows.Err() 检查
 if err := rows.Err(); err != nil {
     return err
 }
@@ -438,9 +422,7 @@ if err := batch.Send(); err != nil {
 
 由于其接口更直观，且官方支持嵌套，我们建议使用 `flatten_nested=0`。
 
-<div id="geo-types">
-  ### Geo 类型
-</div>
+### Geo 类型 {#geo-types}
 
 客户端支持以下 Geo 类型：Point、Ring、LineString、Polygon、MultiPolygon 和 MultiLineString。这些类型在 Go 中通过 [github.com/paulmach/orb](https://github.com/paulmach/orb) 包来表示。
 
@@ -543,9 +525,7 @@ fmt.Printf("point=%v, ring=%v, lineString=%v, polygon=%v, mPolygon=%v, mLineStri
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/geo.go)
 
-<div id="uuid">
-  ### UUID
-</div>
+### UUID {#uuid}
 
 [github.com/google/uuid](https://github.com/google/uuid) 包支持 UUID 类型。你也可以将 UUID 作为字符串，或作为任何实现了 `sql.Scanner` 或 `Stringify` 的类型进行发送和序列化。
 
@@ -590,9 +570,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/uuid.go)
 
-<div id="decimal">
-  ### Decimal
-</div>
+### Decimal {#decimal}
 
 由于 Go 没有内置的 Decimal 类型，我们建议使用第三方包 [github.com/shopspring/decimal](https://github.com/shopspring/decimal)，以便在不修改原始查询的情况下原生处理 Decimal 类型。
 
@@ -651,9 +629,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/decimal.go)
 
-<div id="nullable">
-  ### Nullable
-</div>
+### Nullable {#nullable}
 
 Go 中的 Nil 值表示 ClickHouse 的 NULL。如果某个字段声明为 Nullable，就可以使用它。在写入时，对于列的普通版本和 Nullable 版本，都可以传入 Nil。对于前者，会写入该类型的默认值，例如 string 类型的空字符串。对于 Nullable 版本，则会在 ClickHouse 中存储 NULL 值。
 
@@ -707,9 +683,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &
 
 该客户端还额外支持 `sql.Null*` 类型，例如 `sql.NullInt64`。这些类型与对应的 ClickHouse 类型兼容。
 
-<div id="big-ints">
-  ### 大整数
-</div>
+### 大整数 {#big-ints}
 
 超过 64 位的数值类型使用 Go 原生的 [big](https://pkg.go.dev/math/big) 包表示。
 
@@ -779,9 +753,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v, col6=%v, col7=%v\n", co
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/big_int.go)
 
-<div id="bfloat16">
-  ### BFloat16
-</div>
+### BFloat16 {#bfloat16}
 
 `BFloat16` 是一种用于机器学习场景的 16 位 brain float 类型。在 Go 中，`BFloat16` 值以 `float32` 形式插入和扫描。Nullable 变体使用 `sql.NullFloat64`。
 
@@ -814,9 +786,7 @@ fmt.Printf("Col1: %v, Col2: %v\n", col1, col2)
 
 [完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bfloat16.go)
 
-<div id="qbit">
-  ### QBit
-</div>
+### QBit {#qbit}
 
 `QBit` 是一种 Experimental 列类型，用于以位切片格式存储嵌入向量，并针对向量相似性搜索进行了优化。它要求启用 `allow_experimental_qbit_type` 设置。
 
