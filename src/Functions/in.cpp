@@ -401,6 +401,14 @@ namespace
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting 'in_null_as_unknown' does not yet support comparing {} with an active carrier of {}",
                 left_bare->getName(), active_type->getName());
+        if (hasCompoundCarrierForIn(left_bare, active_type))
+        {
+            auto source_row = source->cut(right_row, 1);
+            auto extracted = tryConvertColumnToTypeOrNull(
+                *source_row, right_bare, active_type, {}, /*strict=*/true);
+            return extracted && accurateEqualsCompoundWithActiveTypes(
+                left, (*extracted)[0], left_bare, active_type, *extracted, 0);
+        }
         return accurateEqualsCompoundFields(left, right, left_bare, active_type);
     }
 
@@ -638,12 +646,15 @@ public:
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a map carrier of {}",
                     map_type->getName(), active_type->getName());
-            if (active_type && isMap(active_type) && hasCompoundDecimalFloatPair(map_type, active_type))
+            if (active_type && isMap(active_type)
+                && (hasCompoundDecimalFloatPair(map_type, active_type)
+                    || hasCompoundCarrierForIn(map_type, active_type)))
             {
                 auto active_row = carrier->cut(row, 1);
                 auto extracted = tryConvertColumnToTypeOrNull(
                     *active_row, source_type, active_type, {}, /*strict=*/true);
-                values[row] = extracted && accurateEqualsCompoundFields((*maps)[row], (*extracted)[0], map_type, active_type);
+                values[row] = extracted && accurateEqualsCompoundWithActiveTypes(
+                    (*maps)[row], (*extracted)[0], map_type, active_type, *extracted, 0);
                 continue;
             }
             if (isMap(source_type) && hasCompoundCarrierForIn(map_type, source_type))
@@ -779,14 +790,16 @@ public:
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with an array carrier of {}",
                     left_type->getName(), active_type->getName());
-            if (hasCompoundDecimalFloatPair(left_element_type, source_element_type))
+            if (hasCompoundDecimalFloatPair(left_element_type, source_element_type)
+                || hasCompoundCarrierForIn(left_type, active_type))
             {
                 /// Compare the extracted value in its source type so nested decimals
                 /// retain their scale instead of being cast to floating point.
                 auto extracted_source = tryConvertColumnToTypeOrNull(
                     *source_row, source_type, active_type, {}, /*strict=*/true);
                 values[row] = extracted_source
-                    && accurateEqualsCompoundFields((*left_row)[0], (*extracted_source)[0], left_type, active_type);
+                    && accurateEqualsCompoundWithActiveTypes(
+                        (*left_row)[0], (*extracted_source)[0], left_type, active_type, *extracted_source, 0);
             }
             else
             {
