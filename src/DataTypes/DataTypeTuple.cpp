@@ -45,7 +45,7 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_)
     size_t size = elems.size();
     names.resize(size);
     for (size_t i = 0; i < size; ++i)
-        names[i] = toString(i + 1);
+        names[i] = std::to_string(i + 1);
 }
 
 static std::optional<Exception> checkTupleNames(const Strings & names)
@@ -365,7 +365,7 @@ SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettin
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        String elem_name = has_explicit_names ? names[i] : toString(i + 1);
+        String elem_name = has_explicit_names ? names[i] : std::to_string(i + 1);
         auto serialization = elems[i]->getSerialization(settings);
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
@@ -380,7 +380,7 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        String elem_name = has_explicit_names ? names[i] : toString(i + 1);
+        String elem_name = has_explicit_names ? names[i] : std::to_string(i + 1);
         auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
