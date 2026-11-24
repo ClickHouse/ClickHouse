@@ -3,7 +3,6 @@
 
 -- Test for issue #84508 (incorrect results caused by query condition cache when used with IN functions on non-const sets)
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 
 DROP TABLE IF EXISTS tab1;

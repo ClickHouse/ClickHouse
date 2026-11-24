@@ -1,0 +1,30 @@
+[1,4,5]
+[1,4,5]
+[1,4,5]
+[2,3,6]
+-- a quote without the end extends to the end of the regex
+[4,5]
+[1,2,3,6]
+[5]
+-- alternatives inside a group, a character class or a quote are not wrapped
+[1,3]
+[4]
+[6]
+-- generated regular expressions
+0
+6
+6
+6
+6
+promql_anchor_1	\'^(node_foo|node_bar)$\'
+promql_anchor_2	\'m.*\'
+promql_anchor_3	\'zzz|m.*\'
+promql_anchor_4	\'\\\\Qm\'
+promql_anchor_5	\'zzz|\\\\Qm\'
+-- the closing bracket of a POSIX named class does not close the enclosing class
+[3,4,5,6,7]
+[1,2]
+-- an inline multiline flag does not apply to the end anchor
+[6]
+[1,2,3,4,5,7]
+[6]

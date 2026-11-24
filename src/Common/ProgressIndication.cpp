@@ -149,6 +149,11 @@ void ProgressIndication::writeFinalProgress()
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
+    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
+    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
+    if (message.isCanceled())
+        return;
+
     std::lock_guard lock(progress_mutex);
 
     static const char * indicators[8] = {
@@ -229,7 +234,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
         profiling_msg = profiling_msg_builder.str();
     }
 
-    int64_t remaining_space = static_cast<int64_t>(terminal_width) - written_progress_chars;
+    int64_t remaining_space = static_cast<int64_t>(terminal_width) - static_cast<int64_t>(written_progress_chars);
 
     /// `Progress` is updated concurrently and only piecewise atomically, so the counts are taken from
     /// one snapshot: otherwise a total number of rows published between two loads could make the
@@ -331,7 +336,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             if (show_progress_bar)
             {
                 /// We will display profiling info only if there is enough space for it.
-                int64_t width_of_progress_bar = remaining_space - strlen(" 99%");
+                int64_t width_of_progress_bar = remaining_space - static_cast<int64_t>(strlen(" 99%"));
 
                 /// We need at least twice the space, because it will be displayed either
                 /// at right after progress bar or at left on top of the progress bar.
@@ -436,6 +441,11 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
 void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
+    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
+    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
+    if (message.isCanceled())
+        return;
+
     std::lock_guard lock(progress_mutex);
 
     if (written_progress_chars)

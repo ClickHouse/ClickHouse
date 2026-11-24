@@ -243,9 +243,12 @@ TEST(MergingSortedBatchLimits, AverageBlockSize)
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithRepeatedLowCardinalityValues)
 {
-    EXPECT_EQ(
-        getFirstLowCardinalityChunkSize(SortingQueueStrategy::Default, 100),
-        getFirstLowCardinalityChunkSize(SortingQueueStrategy::Batch, 100));
+    /// `byteSizeAt` only estimates the growth of a `LowCardinality` column, so the batch queue may
+    /// flush at a different row than the default queue, but it must still flush on the byte limit
+    /// before consuming all input rows.
+    const auto batch_chunk_size = getFirstLowCardinalityChunkSize(SortingQueueStrategy::Batch, 100);
+    EXPECT_GT(batch_chunk_size, 0uz);
+    EXPECT_LT(batch_chunk_size, 200uz);
 }
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithAggregateFunctionState)

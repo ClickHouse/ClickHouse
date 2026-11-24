@@ -9,9 +9,8 @@
   // bug disappear.) Restore the expected behavior by scrolling to the top
   // whenever a forward navigation changes the path.
   //
-  // The path is watched from a rAF loop rather than by wrapping
-  // history.pushState — the router can hold a reference to the original
-  // pushState from before this script runs, which would bypass a wrapper.
+  // Mintlify fires `mintlify:navigate` once the new page has rendered, so the
+  // scroll happens on the new page rather than on the old one mid-navigation.
   //
   // Back/forward (popstate) is deliberately left alone so the browser and
   // router can restore the previous scroll position. Cross-page hash links
@@ -88,23 +87,20 @@
     }
   });
 
-  function watch() {
+  window.addEventListener('mintlify:navigate', function () {
     var path = window.location.pathname;
-    if (path !== lastPath) {
-      lastPath = path;
-      if (traversed) {
-        traversed = false;
-      } else if (window.location.hash) {
-        scrollToAnchor(window.location.hash, 180);
-      } else {
-        window.scrollTo(0, 0);
-      }
+    if (path === lastPath) return;
+    lastPath = path;
+    if (traversed) {
+      traversed = false;
+    } else if (window.location.hash) {
+      scrollToAnchor(window.location.hash, 180);
+    } else {
+      window.scrollTo(0, 0);
     }
-    window.requestAnimationFrame(watch);
-  }
+  });
 
   if (window.location.hash) {
     scrollToLegacyAnchor(window.location.hash, 180);
   }
-  window.requestAnimationFrame(watch);
 })();
