@@ -34,11 +34,14 @@ ORDER BY table, mutation_id;
 
 SYSTEM START MERGES t_in_partition;
 SYSTEM START MERGES t_pruned;
-SYSTEM SYNC REPLICA t_in_partition;
-SYSTEM SYNC REPLICA t_pruned;
+-- A later mutation's synchronous wait returns only after the earlier ones are done.
+ALTER TABLE t_in_partition DELETE IN PARTITION 3 WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE t_pruned DELETE WHERE p = 3 SETTINGS mutations_sync = 2, optimize_mutations_with_partition_pruning = 1;
 
 SELECT 'in_partition', p, id, v FROM t_in_partition ORDER BY id;
 SELECT 'pruned', p, id, v FROM t_pruned ORDER BY id;
+SELECT 'not_done', count() FROM system.mutations
+WHERE database = currentDatabase() AND table IN ('t_in_partition', 't_pruned') AND NOT is_done;
 
 DROP TABLE t_in_partition SYNC;
 DROP TABLE t_pruned SYNC;

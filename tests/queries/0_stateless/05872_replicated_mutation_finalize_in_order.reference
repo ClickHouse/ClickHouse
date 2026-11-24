@@ -6,3 +6,4 @@ in_partition	1	1	110
 in_partition	2	2	20
 pruned	1	1	110
 pruned	2	2	20
+not_done	0
