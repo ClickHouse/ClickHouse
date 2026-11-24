@@ -765,6 +765,24 @@ def write_max_threads_override():
     return True
 
 
+def keep_fingerprint_default_for_comparison():
+    """Keep the binary's automatic mode active for queries that set an old `compatibility`."""
+    setting = "experimental_join_fingerprint_mode"
+    for server_dir, config_dir in ((perf_left, perf_left_config), (perf_right, perf_right_config)):
+        binary = f"{server_dir}/clickhouse"
+        query = f"SELECT default FROM system.settings WHERE name = '{setting}'"
+        mode = Shell.get_output(f'{local_command(binary)} --query "{query}"', strict=True)
+        profile = Path(config_dir) / "users.d" / "zzz-perf-fingerprint.xml"
+        if mode == "4":
+            profile.write_text(
+                f"<clickhouse><profiles><default><{setting}>4</{setting}></default></profiles></clickhouse>\n"
+            )
+        else:
+            # A reused config may have been copied from the other binary.
+            profile.unlink(missing_ok=True)
+    return True
+
+
 ICEBERG_PROFILE_OVERRIDE_FILE = "zzz-perf-iceberg.xml"
 
 
@@ -3742,6 +3760,7 @@ def main():
             # On x86_64, cap max_threads at the number of pinned physical
             # cores (must run after the right->left config copy above).
             write_max_threads_override,
+            keep_fingerprint_default_for_comparison,
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
