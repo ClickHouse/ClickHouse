@@ -99,6 +99,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -129,7 +130,6 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_skip_unused_shards;
@@ -195,7 +195,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int ACCESS_DENIED;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -441,9 +440,6 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
             continue;
 
         const auto & storage_id = table_node.getStorageID();
-        if (isInsertedDataOfTableFunction(table_node.getStorage(), storage_id, query_context))
-            continue;
-
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
     }
@@ -469,32 +465,6 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
       * Because it is the column that is cheapest to read.
       */
-    class ColumnWithSize
-    {
-    public:
-        ColumnWithSize(NameAndTypePair column_, ColumnSize column_size_)
-            : column(std::move(column_))
-            , compressed_size(column_size_.data_compressed)
-            , uncompressed_size(column_size_.data_uncompressed)
-            , type_size(column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100)
-        {
-        }
-
-        bool operator<(const ColumnWithSize & rhs) const
-        {
-            return std::tie(compressed_size, type_size, uncompressed_size)
-                < std::tie(rhs.compressed_size, rhs.type_size, rhs.uncompressed_size);
-        }
-
-        NameAndTypePair column;
-        size_t compressed_size = 0;
-        size_t uncompressed_size = 0;
-        size_t type_size = 0;
-    };
-
-    std::vector<ColumnWithSize> columns_with_sizes;
-
-    auto column_sizes = storage->getColumnSizes();
     auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
 
     if (!column_names_allowed_to_select.empty())
@@ -524,35 +494,13 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         }
     }
 
-    if (!column_sizes.empty())
-    {
-        for (auto & column_name_and_type : column_names_and_types)
-        {
-            auto it = column_sizes.find(column_name_and_type.name);
-            if (it == column_sizes.end())
-                continue;
+    /// A table expression can resolve to no columns at all, for example a table function over a
+    /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+    if (column_names_and_types.empty())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Cannot read from table expression with no columns");
 
-            columns_with_sizes.emplace_back(column_name_and_type, it->second);
-        }
-    }
-
-    NameAndTypePair result;
-
-    if (!columns_with_sizes.empty())
-        result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
-    else
-    {
-        /// A table expression can resolve to no columns at all, for example a table function over a
-        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
-        if (column_names_and_types.empty())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Cannot read from table expression with no columns");
-
-        /// If we have no information about columns sizes, choose a column of minimum size of its data type
-        result = ExpressionActions::getSmallestColumn(column_names_and_types);
-    }
-
-    return result;
+    return ExpressionActions::getCheapestColumnToRead(column_names_and_types, storage->getColumnSizes());
 }
 
 /// True if the table expression carries modifiers that prevent answering a
@@ -680,8 +628,7 @@ bool applyTrivialCountIfPossible(
     /// `select count() from table` query. But if we have current transaction, then we should return number of rows in current snapshot
     /// (that may include parts in Outdated state), so the totalRows for transactional case should return the number of rows visible for
     /// the current transaction.
-    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-    std::optional<UInt64> num_rows = storage->totalRowsInSnapshot(storage_snapshot, query_context);
+    std::optional<UInt64> num_rows = storage->totalRows(query_context);
     if (!num_rows)
         return false;
 
@@ -1367,10 +1314,11 @@ void pushOrderByIntoView(
     if (storage->getStorageID().database_name == "_table_function")
         return;
 
-    /// A sealed view hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
+    /// A sealed view not read by its definer hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
     /// below that boundary, so the amount of data read would depend on the rows the view hides.
     if (const auto * view = typeid_cast<const StorageView *>(storage.get());
-        view && view->isSealed(*storage_snapshot->metadata, query_context))
+        view && view->isSealed(*storage_snapshot->metadata, query_context)
+        && !view->isReadByDefiner(*storage_snapshot->metadata, query_context))
         return;
 
     /// `SAMPLE` / `FINAL` applied to the view in the outer query (e.g.
@@ -1734,13 +1682,8 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
 /// that a single leaf (the leftmost) takes the WithMergeableState path with the
 /// whole join query tree; the other leaves must take the plain `storage->read`
 /// path.  Callers should compute this once for the join tree and gate the
-/// per-leaf parallel-replicas activation accordingly.  `query_sets_additional_table_filters` says
-/// whether the query sent to the replicas sets `additional_table_filters` anywhere.
-bool allowParallelReplicasForJoinTree(
-    const QueryTreeNodePtr & join_tree_node,
-    const ContextPtr & context,
-    const Settings & query_settings,
-    bool query_sets_additional_table_filters)
+/// per-leaf parallel-replicas activation accordingly.
+bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, const ContextPtr & context, const Settings & query_settings)
 {
     if (!join_tree_node)
         return false;
@@ -1767,8 +1710,7 @@ bool allowParallelReplicasForJoinTree(
 
         const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
         if (left_table_function)
-            return tableFunctionCanDriveParallelReplicasRead(*left_table_function, query_sets_additional_table_filters)
-                && parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
+            return parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
 
         // check if left one is not subquery
         return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
@@ -1830,43 +1772,6 @@ void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
     });
 }
 
-}
-
-void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & node, const ContextPtr & query_context)
-{
-    /// Query-based and plan-based parallel replicas cannot be mixed in one query: the subtree planned for
-    /// the other one reads without parallel replicas. Any subquery (table expression, `IN` set, CTE,
-    /// correlated subquery) has its own context, so it can set a different `parallel_replicas_plan_based`.
-    /// A (sub)query with parallel replicas disabled is skipped: the setting has no effect there.
-    auto parallel_replicas_enabled = [](const Settings & settings)
-    {
-        return settings[Setting::allow_experimental_parallel_reading_from_replicas] || settings[Setting::automatic_parallel_replicas_mode];
-    };
-
-    const auto & settings = query_context->getSettingsRef();
-    if (!parallel_replicas_enabled(settings))
-        return;
-    if (query_context->getClientInfo().collaborate_with_initiator)
-        return;
-
-    const bool plan_based = settings[Setting::parallel_replicas_plan_based];
-    auto check = [plan_based, &parallel_replicas_enabled](const ContextPtr & context)
-    {
-        const auto & context_settings = context->getSettingsRef();
-        if (parallel_replicas_enabled(context_settings) && context_settings[Setting::parallel_replicas_plan_based] != plan_based)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "A subquery sets `parallel_replicas_plan_based` = {}, while the query reads with parallel replicas with "
-                "`parallel_replicas_plan_based` = {}. One query uses one implementation of parallel replicas: set it for the whole query",
-                !plan_based, plan_based);
-    };
-
-    traverseQueryTree(node, Everything{}, [&check](const QueryTreeNodePtr & current_node)
-    {
-        if (const auto * query_node = current_node->as<QueryNode>())
-            check(query_node->getContext());
-        else if (const auto * union_node = current_node->as<UnionNode>())
-            check(union_node->getContext());
-    });
 }
 
 void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
@@ -2307,6 +2212,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             custom_key_ast,
                             table_expression_query_info.table_expression,
                             query_context,
+                            planner_context->isViewSourceInSubqueries(),
                             /*check_access_rights=*/ true);
 
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
@@ -2619,6 +2525,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     additional_filter_ast,
                                     table_expression_query_info.table_expression,
                                     query_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
 
                                 auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
@@ -2651,6 +2558,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     table_expression_query_info.additional_filter_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2669,6 +2577,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     custom_key_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2825,25 +2734,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// It is just a safety check needed until we have a proper sending plan to replicas.
                     /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                     /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
-                    /// The chosen table is a `TableNode`, or a `TableFunctionNode` that only references a
-                    /// table, so compare against whichever of the two this table expression is.
-                    const ITableExpressionNode * table_expression_node
-                        = table_node ? static_cast<const ITableExpressionNode *>(table_node) : table_function_node;
+                    /// The chosen table and union children are TableNodes, so a table function matches
+                    /// neither and equality against them is meaningless when table_node is null.
                     const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                         = query_context->canUseParallelReplicasOnFollower()
-                        && (!table_expression_node
-                            || table_expression_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
+                        && (!table_node || table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
                         ContextPtr updated_context = effective_context;
                         if (const UnionNode * table_union
-                            = table_expression_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
+                            = table_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
                         {
                             SelectQueryOptions options;
                             for (const auto & child : table_union->getQueries().getNodes())
                             {
-                                if (table_expression_node == findTableForParallelReplicas(child, options))
+                                if (table_node == findTableForParallelReplicas(child, options))
                                 {
                                     disable_parallel_replicas_for_storage = false;
                                     break;
@@ -2913,6 +2819,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 custom_key_ast,
                                 table_expression_query_info.table_expression,
                                 query_context,
+                                planner_context->isViewSourceInSubqueries(),
                                 /*check_access_rights=*/ true);
 
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
@@ -2933,18 +2840,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    /// A table function drives the read only when it is a stable reference to a table: the
-                    /// query shipped to the replicas contains the call, and each replica must resolve it to its
-                    /// own copy of the same table. A table function that builds a storage of its own resolves to
-                    /// something local to this server, so it stays on a single replica even when that storage
-                    /// happens to be a `MergeTree`.
                     else if (
-                        const bool query_sets_additional_table_filters
-                            = queryTreeSetsAdditionalTableFilters(table_expression_query_info.query_tree.get());
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && (!table_function_node || tableFunctionCanDriveParallelReplicasRead(*table_function_node, query_sets_additional_table_filters))
-                        && allowParallelReplicasForJoinTree(
-                            parent_join_tree, query_context, settings, query_sets_additional_table_filters))
+                        && allowParallelReplicasForJoinTree(parent_join_tree, query_context, settings))
                     {
                         // (1) find read step
 
@@ -3026,11 +2924,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// plan. Deciding whether to use parallel replicas and where to place the
                                 /// local/remote boundary is done later, as an analysis of the whole plan
                                 /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
-                                ///
-                                /// For a read through a table function the fragment names the storage the call
-                                /// resolved to here. The inner table of a `TimeSeries` table is named after the
-                                /// table's UUID, so a replica that created its table on its own, with another UUID,
-                                /// fails to find it rather than reading something else.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,

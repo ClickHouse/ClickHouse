@@ -117,7 +117,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsBool log_queries;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
@@ -1197,7 +1196,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     ContextMutablePtr context_copy = Context::createCopy(want_stateful ? Context::getGlobalContextInstance() : context_);
     Settings settings_copy = context_copy->getSettingsCopy();
     settings_copy[Setting::use_hive_partitioning] = false;
-    settings_copy[Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
     context_copy->setSettings(settings_copy);
 
     applyCatalogSpecificConfiguration(*configuration);
@@ -1235,7 +1233,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
 
-    if (can_use_parallel_replicas && !is_secondary_query && !context_->isSQLSecurityOverriddenBody())
+    if (can_use_parallel_replicas && !is_secondary_query)
     {
         auto storage_id = StorageID(getDatabaseName(), name, table_uuid);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
@@ -1710,7 +1708,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
-    ContextPtr /* context_ */,
+    ContextPtr context_,
     bool throw_on_error) const
 {
     const auto settings_version = database_settings.get();
@@ -1750,7 +1748,18 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
-    for (const auto & column_type_and_name : table_metadata.getSchema())
+    auto columns = table_metadata.getSchema();
+    if (columns.empty() && table_metadata.isDefaultReadableTable())
+    {
+        /// The catalog left the schema to the table storage, which reads it from the table metadata.
+        if (auto table = tryGetTableImpl(name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ false, /*use_stateful_tables*/ false))
+        {
+            auto metadata = table->getInMemoryMetadataPtr(context_, false);
+            columns = metadata->getColumns().getOrdinary();
+        }
+    }
+
+    for (const auto & column_type_and_name : columns)
     {
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();

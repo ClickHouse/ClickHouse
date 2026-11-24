@@ -45,6 +45,7 @@ private:
     const Mode mode;
     SortQueueVariants queue_variants;
     size_t total_merged_rows = 0;
+    size_t total_input_rows = 0;
 
     SortCursorImpls cursors;
 

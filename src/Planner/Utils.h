@@ -107,9 +107,11 @@ NameSet checkAccessRights(
     const ContextPtr & query_context);
 
 /// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
+/// `view_source_in_subqueries`: see `SelectQueryOptions`.
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
+        bool view_source_in_subqueries,
         bool check_access_rights = false);
 
 /// Build filter for specific table_expression
@@ -139,7 +141,8 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
 /// Remove query plan steps that don't affect the number of rows in the result.
 /// Returns true if the query always returns at least 1 row.
-bool optimizePlanForExists(QueryPlan & query_plan);
+/// `is_correlated` means the remaining plan is decorrelated rather than executed as is.
+bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated);
 
 /// Create ExpressionStep that projects only used columns
 QueryPlanStepPtr projectOnlyUsedColumns(

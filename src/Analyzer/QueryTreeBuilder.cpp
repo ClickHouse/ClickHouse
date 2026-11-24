@@ -313,10 +313,6 @@ void applyQueryLevelSettings(
             query_parameters_map.insert_or_assign(parameter_name, parameter_value);
         updated_context->addQueryParameters(query_parameters_map);
     }
-
-    /// The clause of a query inside the body of a `SQL SECURITY DEFINER` / `NONE` view must not turn parallel replicas back on.
-    if (updated_context->isSQLSecurityOverriddenBody())
-        updated_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
@@ -458,6 +454,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     const auto & select_query_typed = select_query->as<ASTSelectQuery &>();
 
     auto updated_context = Context::createCopy(context);
+    if (select_query_typed.is_view_inner_query)
+        updated_context->setIsViewInnerQuery(true);
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
     std::vector<String> default_settings;

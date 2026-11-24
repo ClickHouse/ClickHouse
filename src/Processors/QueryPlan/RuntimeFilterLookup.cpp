@@ -7,7 +7,6 @@
 #include <utility>
 #include <vector>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
@@ -266,16 +265,6 @@ bool equalsCanDisagreeWithHashTable(const IDataType & type)
     return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
 }
 
-/// A runtime filter key comes from an `=` predicate, which never matches NULL, so a `Nullable` integer key keeps
-/// only its non-NULL values, in the set of the nested type.
-bool canDropNullKeys(const DataTypePtr & type)
-{
-    if (!type->isNullable())
-        return false;
-    const auto nested = removeNullable(type);
-    return nested->isValueRepresentedByInteger() && nested->getSizeOfValueInMemory() <= 16;
-}
-
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
 {
     const char * position = raw_data;
@@ -346,10 +335,9 @@ ExactSetRuntimeFilter<negate>::ExactSetRuntimeFilter(
     const DataTypePtr & filter_column_target_type_, UInt64 bytes_limit_, UInt64 exact_values_limit_)
     : filter_column_target_type(filter_column_target_type_)
     , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type_))
-    , drop_null_keys(canDropNullKeys(filter_column_target_type_))
     , bytes_limit(bytes_limit_)
     , exact_values_limit(exact_values_limit_)
-    , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls && !drop_null_keys)})
+    , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls)})
 {
     ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(filter_column_target_type_, String())};
     getExactValues().setHeader(set_header);
@@ -372,12 +360,6 @@ const Set & ExactSetRuntimeFilter<negate>::getExactValues() const
     if (!many || !many->exact_values)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter exact values are not available");
     return *many->exact_values;
-}
-
-template <bool negate>
-ColumnPtr ExactSetRuntimeFilter<negate>::toFilterColumnType(const ColumnPtr & set_elements) const
-{
-    return drop_null_keys ? makeNullable(set_elements) : set_elements;
 }
 
 template <bool negate>
@@ -408,7 +390,7 @@ void ExactSetRuntimeFilter<negate>::finishInsert()
     /// If the set is empty just return a constant false column.
     if (set.getTotalRowCount() == 0)
     {
-        lookup_state = Empty{toFilterColumnType(set.getSetElements().front())};
+        lookup_state = Empty{set.getSetElements().front()};
         return;
     }
 
@@ -479,13 +461,13 @@ ColumnPtr ExactSetRuntimeFilter<negate>::getValuesColumn() const
         Overloaded{
             [](const Empty & empty) -> ColumnPtr { return empty.column; },
             [](const Single & single) -> ColumnPtr { return single.column; },
-            [this](const Many & many) -> ColumnPtr
+            [](const Many & many) -> ColumnPtr
             {
                 if (!many.exact_values)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter exact values are not available");
 
                 many.exact_values->finishInsert();
-                return toFilterColumnType(many.exact_values->getSetElements().front());
+                return many.exact_values->getSetElements().front();
             },
         },
         lookup_state);

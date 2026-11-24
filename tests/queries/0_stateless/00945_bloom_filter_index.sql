@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long
 
 SET parallel_replicas_local_plan = 1;
 

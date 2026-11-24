@@ -183,7 +183,7 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
-    /// Best-effort removal of the written data files and manifests; never throws.
+    /// Best-effort removal of the files kept across commit retries.
     void removeDataFilesAndManifests();
     bool initializeMetadata();
 
@@ -194,8 +194,6 @@ private:
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
-    /// The snapshot referencing the written files is committed, so they must never be removed.
-    bool committed = false;
 
     /// Manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;
@@ -208,8 +206,10 @@ private:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
+    /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
+    String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;
-    const DataLakeStorageSettingsPtr data_lake_settings;
+    const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
 
 };

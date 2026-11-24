@@ -350,11 +350,6 @@ bool ReadBufferFromHDFS::supportsReadAt()
     return impl->enable_pread;
 }
 
-void ReadBufferFromHDFS::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
-{
-    impl->read_settings.io_scheduling = io_scheduling;
-}
-
 }
 
 #endif

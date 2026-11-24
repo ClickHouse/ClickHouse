@@ -408,7 +408,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 }
                 else
                 {
-                    readStringBinaryGrowing(data_type_name, *structure_stream);
+                    readStringBinary(data_type_name, *structure_stream);
                     data_type = getDataTypesCache().getType(data_type_name);
                 }
 
@@ -454,7 +454,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 String data_type_name;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
-                    readStringBinaryGrowing(data_type_name, *structure_stream);
+                    readStringBinary(data_type_name, *structure_stream);
                     variants.push_back(getDataTypesCache().getType(data_type_name));
                 }
             }
@@ -781,9 +781,6 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
 
 void SerializationDynamic::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    /// See the comment in deserializeBinary: the nesting depth comes from the data.
-    checkStackSize();
-
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_column = dynamic_column.getVariantColumn();

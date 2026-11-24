@@ -435,9 +435,9 @@ Proto::ColumnStatistics StatisticsBuilder::toProto() const
                 stats.minimum_utc = int_minimum;
                 stats.maximum_utc = int_maximum;
                 if (minimum_nanos != 0)
-                    stats.minimum_nanos = minimum_nanos + 1;
+                    stats.minimum_nanos = static_cast<UInt64>(minimum_nanos) + 1;
                 if (maximum_nanos != 999999)
-                    stats.maximum_nanos = maximum_nanos + 1;
+                    stats.maximum_nanos = static_cast<UInt64>(maximum_nanos) + 1;
             }
             break;
         }
