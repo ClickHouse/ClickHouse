@@ -13,12 +13,24 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # appends to the buffer, and doing so flushes B's buffered block to the destination, creating a part.
 # B's second block exceeds the buffer thresholds and is written to the destination directly - with
 # `parts_to_throw_insert = 1` that nested `INSERT` used to run the check, count the part holding B's
-# own rows, and reject B in the middle of the query. The interleaving is timing-dependent: when it is
-# not reached (B's first row is not observed in the buffer in time), query A runs only after B, see below.
+# own rows, and reject B in the middle of the query.
+#
+# B reads its two blocks from the two parts of a source table in a single stream, so that the one-row
+# block comes first regardless of how many threads the query is granted. (Two branches of a `UNION ALL`
+# do not give that: when the query gets a single thread, the sleeping branch can run first, and the
+# one-row block reaches the buffer only together with the second one.) The interleaving still depends
+# on timing: when it is not reached, query A runs only after B, see below.
 
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_05054_dst;
     DROP TABLE IF EXISTS t_05054_buf;
+    DROP TABLE IF EXISTS t_05054_src;
+
+    -- Two parts: the first one holds a single row, the second one three rows.
+    CREATE TABLE t_05054_src (n UInt64) ENGINE = MergeTree ORDER BY n;
+    SYSTEM STOP MERGES t_05054_src;
+    INSERT INTO t_05054_src VALUES (0);
+    INSERT INTO t_05054_src VALUES (10), (11), (12);
 
     CREATE TABLE t_05054_dst (n UInt64) ENGINE = MergeTree ORDER BY n
         SETTINGS parts_to_throw_insert = 1;
@@ -29,32 +41,30 @@ ${CLICKHOUSE_CLIENT} -q "
         ENGINE = Buffer(currentDatabase(), t_05054_dst, 1, 1000000, 1000000, 1000000, 2, 1000000000, 1000000000);
 "
 
-# Query B: the first branch produces a single row at once, the second one a single three-row block
-# after 1.5 seconds of sleeping.
+# Query B: every block sleeps for half a second per row, so the single-row block of the first part is
+# buffered after 0.5 seconds, and the three-row block of the second part is written 1.5 seconds later.
 ${CLICKHOUSE_CLIENT} -q "
     INSERT INTO t_05054_buf
-    SELECT number FROM numbers(1)
-    UNION ALL
-    SELECT number + 10 + ignore(sleepEachRow(0.5)) FROM numbers(3)
+    SELECT n + ignore(sleepEachRow(0.5)) FROM t_05054_src
     SETTINGS max_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1,
-        max_insert_threads = 1, max_threads = 2
+        max_insert_threads = 1, max_threads = 1
 " &
 query_b_pid=$!
 
 # Wait until B's first block sits in the buffer, so that query A below is the one to flush it.
-# The wait is bounded in wall-clock time rather than in iterations: every poll starts a client
-# process, which costs seconds rather than milliseconds under a sanitizer, so a fixed iteration
-# count would let the test run far longer there than the interleaving it waits for is worth.
-poll_deadline=$((SECONDS + 15))
+# The wait ends as soon as B does: once B has written its second block, the interleaving cannot be
+# reached anymore. The deadline is only a safeguard, and it is in wall-clock time rather than in
+# iterations, because every poll starts a client process, which is slow under a sanitizer.
+poll_deadline=$((SECONDS + 10))
 buffered_b=0
-while [ "$SECONDS" -lt "$poll_deadline" ]
+while [ "$SECONDS" -lt "$poll_deadline" ] && kill -0 "$query_b_pid" 2>/dev/null
 do
     if [ "$(${CLICKHOUSE_CLIENT} -q 'SELECT count() FROM t_05054_buf')" = "1" ]
     then
         buffered_b=1
         break
     fi
-    sleep 0.2
+    sleep 0.1
 done
 
 if [ "$buffered_b" = "1" ]
@@ -65,7 +75,7 @@ then
     # B has to succeed: the flush of its first block already made its pre-write decision for it.
     wait $query_b_pid
 else
-    # The interleaving was not reached: B's first row was never observed in the buffer before the deadline,
+    # The interleaving was not reached: B's first row was never observed in the buffer before B finished,
     # so A could have buffered its rows first and made B's first block flush them, which is not the scenario
     # of the test. Let B finish alone instead, and run A only afterwards, with the limit lifted: the flush of
     # B's row then happens on behalf of A alone. The result is the same as in the interleaving.
@@ -84,4 +94,5 @@ ${CLICKHOUSE_CLIENT} -q "
 
     DROP TABLE t_05054_buf;
     DROP TABLE t_05054_dst;
+    DROP TABLE t_05054_src;
 "
