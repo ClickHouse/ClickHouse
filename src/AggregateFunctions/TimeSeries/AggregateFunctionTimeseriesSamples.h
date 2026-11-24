@@ -374,8 +374,10 @@ private:
         }
 
         const auto minmax = std::minmax_element(first, last, lessByTimestamp);
-        const UInt64 min_timestamp = static_cast<UInt64>(static_cast<Int64>(minmax.first->first));
-        auto offset = [&](TimestampType timestamp) { return static_cast<UInt64>(static_cast<Int64>(timestamp)) - min_timestamp; };
+        /// The sign bit is flipped, so negative timestamps stay below positive ones and the subtraction does not wrap.
+        auto to_unsigned = [](TimestampType timestamp) { return static_cast<UInt64>(static_cast<Int64>(timestamp)) ^ (UInt64{1} << 63); };
+        const UInt64 min_timestamp = to_unsigned(minmax.first->first);
+        auto offset = [&](TimestampType timestamp) { return to_unsigned(timestamp) - min_timestamp; };
 
         /// The offsets are scaled down to 32 bits, so that `(offset >> shift) * scale` fits 64 bits and a group index is below `groups`.
         const UInt64 span = offset(minmax.second->first);
