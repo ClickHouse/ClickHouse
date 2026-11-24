@@ -1,0 +1,144 @@
+pending s v1	1	0
+s v1	1	abc
+s v1	2	u
+s v1	3	abc
+s v1 prewhere	1
+s v1 prewhere	3
+done s v1	1	
+done s v1 stored	1
+done s v1	1	abc
+done s v1	2	u
+done s v1	3	abc
+pending d v1	1	0
+d v1	1	d1
+d v1	2	u
+d v1	3	d3
+done d v1	1	
+done d v1 stored	1
+done d v1	1	d1
+done d v1	2	u
+done d v1	3	d3
+pending lc v1	1	0
+lc v1	1	abc
+lc v1	2	u
+lc v1	3	abc
+done lc v1	1	
+done lc v1 stored	1
+done lc v1	1	abc
+done lc v1	2	u
+done lc v1	3	abc
+pending x v1	1	0
+x v1	1	(7)
+x v1	2	(5)
+x v1	3	(7)
+done x v1	1	
+done x v1 stored	1
+done x v1	1	(7)	7
+done x v1	2	(5)	5
+done x v1	3	(7)	7
+done x v1 where	1
+done x v1 where	3
+pending arr v1	1	0
+arr v1	1	[7]
+arr v1	2	[5]
+arr v1	3	[7]
+done arr v1	1	
+done arr v1 stored	1
+done arr v1	1	[7]
+done arr v1	2	[5]
+done arr v1	3	[7]
+pending v v1	1	0
+v v1	1	abc	0
+v v1	2	u	0
+v v1	3	\N	1
+done v v1	1	
+done v v1 stored	1
+done v v1	1	abc	0
+done v v1	2	u	0
+done v v1	3	abc	0
+pending y v1	1	0
+y v1	1	7
+y v1	2	5
+y v1	3	7
+done y v1	1	
+done y v1 stored	1
+done y v1	1	7
+done y v1	2	5
+done y v1	3	7
+killed v1 patch type	LowCardinality(Nullable(String))
+killed v1 patch type	Nullable(String)
+killed v1	1	[7]
+killed v1	2	[5]
+killed v1	3	[7]
+pending s v2	1	0
+s v2	1	abc
+s v2	2	u
+s v2	3	abc
+s v2 prewhere	1
+s v2 prewhere	3
+done s v2	1	
+done s v2 stored	1
+done s v2	1	abc
+done s v2	2	u
+done s v2	3	abc
+pending d v2	1	0
+d v2	1	d1
+d v2	2	u
+d v2	3	d3
+done d v2	1	
+done d v2 stored	1
+done d v2	1	d1
+done d v2	2	u
+done d v2	3	d3
+pending lc v2	1	0
+lc v2	1	abc
+lc v2	2	u
+lc v2	3	abc
+done lc v2	1	
+done lc v2 stored	1
+done lc v2	1	abc
+done lc v2	2	u
+done lc v2	3	abc
+pending x v2	1	0
+x v2	1	(7)
+x v2	2	(5)
+x v2	3	(7)
+done x v2	1	
+done x v2 stored	1
+done x v2	1	(7)	7
+done x v2	2	(5)	5
+done x v2	3	(7)	7
+done x v2 where	1
+done x v2 where	3
+pending arr v2	1	0
+arr v2	1	[7]
+arr v2	2	[5]
+arr v2	3	[7]
+done arr v2	1	
+done arr v2 stored	1
+done arr v2	1	[7]
+done arr v2	2	[5]
+done arr v2	3	[7]
+pending v v2	1	0
+v v2	1	abc	0
+v v2	2	u	0
+v v2	3	\N	1
+done v v2	1	
+done v v2 stored	1
+done v v2	1	abc	0
+done v v2	2	u	0
+done v v2	3	abc	0
+pending y v2	1	0
+y v2	1	7
+y v2	2	5
+y v2	3	7
+done y v2	1	
+done y v2 stored	1
+done y v2	1	7
+done y v2	2	5
+done y v2	3	7
+killed v2 patch type	LowCardinality(Nullable(String))
+killed v2 patch type	Nullable(String)
+killed v2	1	[7]
+killed v2	2	[5]
+killed v2	3	[7]
