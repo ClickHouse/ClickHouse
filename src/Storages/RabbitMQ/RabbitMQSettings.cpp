@@ -23,12 +23,12 @@ namespace ErrorCodes
     DECLARE(String, rabbitmq_exchange_type, "default", "The exchange type.", 0) \
     DECLARE(String, rabbitmq_routing_key_list, "5672", "A string of routing keys, separated by dots.", 0) \
     DECLARE(String, rabbitmq_schema, "", "Schema identifier (used by schema-based formats) for RabbitMQ engine", 0) \
-    DECLARE(UInt64, rabbitmq_num_consumers, 1, "The number of consumer channels per table.", 0) \
+    DECLARE(NonZeroUInt64, rabbitmq_num_consumers, 1, "The number of consumer channels per table.", 0) \
     DECLARE(UInt64, rabbitmq_num_queues, 1, "The number of queues per consumer.", 0) \
     DECLARE(String, rabbitmq_queue_base, "", "Base for queue names to be able to reopen non-empty queues in case of failure.", 0) \
     DECLARE(Bool, rabbitmq_persistent, false, "For insert query messages will be made 'persistent', durable.", 0) \
     DECLARE(Bool, rabbitmq_secure, false, "Use SSL connection", 0) \
-    DECLARE(String, rabbitmq_address, "", "Address for connection", 0) \
+    DECLARE(SecretString, rabbitmq_address, "", "Address for connection", 0) \
     DECLARE(UInt64, rabbitmq_skip_broken_messages, 0, "Skip at least this number of broken messages from RabbitMQ per block", 0) \
     DECLARE(UInt64, rabbitmq_max_block_size, 0, "Number of row collected before flushing data from RabbitMQ.", 0) \
     DECLARE(UInt64, rabbitmq_flush_interval_ms, 0, "Timeout for flushing data from RabbitMQ.", 0) \
@@ -39,10 +39,11 @@ namespace ErrorCodes
     DECLARE(UInt64, rabbitmq_empty_queue_backoff_step_ms, 100, "A backoff step to reschedule read if the RabbitMQ queue is empty", 0) \
     DECLARE(Bool, rabbitmq_queue_consume, false, "Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings", 0) \
     DECLARE(String, rabbitmq_username, "", "RabbitMQ username", 0) \
-    DECLARE(String, rabbitmq_password, "", "RabbitMQ password", 0) \
+    DECLARE(SecretString, rabbitmq_password, "", "RabbitMQ password", 0) \
     DECLARE(Bool, reject_unhandled_messages, false, "Allow messages to be rejected in case they cannot be processed. This also automatically implies if there is a x-deadletter-exchange queue setting added", 0) \
     DECLARE(Bool, rabbitmq_commit_on_select, false, "Commit messages when select query is made", 0) \
     DECLARE(UInt64, rabbitmq_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
+    DECLARE(UInt64, rabbitmq_max_idle_producer_connections, 0, "The maximum number of idle connections, each with an open channel, that are kept to be reused by subsequent INSERT queries. 0 disables the reuse: every INSERT query opens and closes its own connection.", 0) \
     DECLARE(StreamingHandleErrorMode, rabbitmq_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for RabbitMQ engine. Possible values: default (throw an exception after rabbitmq_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error), dead_letter_queue (error related data will be saved in system.dead_letter_queue).", 0) \
 
 #define OBSOLETE_RABBITMQ_SETTINGS(M, ALIAS) \
