@@ -285,7 +285,7 @@ bool haveBoolInSamePlaces(const IDataType & lhs, const IDataType & rhs)
         return true;
     }
     if (!which.isArray() && !which.isTuple() && !which.isMap() && !which.isNullable() && !which.isLowCardinality()
-        && !which.isObject())
+        && !which.isObject() && !which.isVariant())
         return true;
     for (size_t i = 0; i < lhs.getNumberOfChildren(); ++i)
         if (!haveBoolInSamePlaces(*lhs.getChild(i), *rhs.getChild(i)))

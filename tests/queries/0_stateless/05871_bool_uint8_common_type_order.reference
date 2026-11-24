@@ -54,3 +54,11 @@ AggregateFunction(anyTuple, Tuple(UInt8))	(2)
 AggregateFunction(anyTuple, Tuple(UInt8))	(1)
 AggregateFunction(anyTuple, Tuple(UInt8))	(2)
 Array(AggregateFunction(anyTuple, Tuple(UInt8)))	Array(AggregateFunction(anyTuple, Tuple(UInt8)))
+Variant(Array(Bool), Array(UInt8), String)	[2]
+Variant(Array(Bool), Array(UInt8), String)	[true]
+Variant(Array(Bool), Array(UInt8), String)	[2]
+Variant(Array(Bool), Array(UInt8), String)	[true]
+Variant(Array(Bool), Array(UInt8), String)	[2]
+Variant(Array(Bool), Array(UInt8), String)	[true]
+Variant(Array(Bool), Array(UInt8), String)	[2]
+Variant(Array(Bool), Array(UInt8), String)	[true]
