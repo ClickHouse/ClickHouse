@@ -20,10 +20,9 @@ CREATE TABLE t_encrypted (k UInt64, s String) ENGINE = MergeTree ORDER BY k
 SETTINGS storage_policy = 's3_no_cache_encrypted', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
     prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024;
 
-INSERT INTO t_plain SELECT number, toString(number) FROM numbers(100000);
-INSERT INTO t_plain SELECT number, toString(number) FROM numbers(100000, 100000);
-INSERT INTO t_encrypted SELECT number, toString(number) FROM numbers(100000);
-INSERT INTO t_encrypted SELECT number, toString(number) FROM numbers(100000, 100000);
+-- One part per table, so that no background merge runs before `OPTIMIZE` and each table has exactly one merge.
+INSERT INTO t_plain SELECT number, toString(number) FROM numbers(200000) SETTINGS max_insert_threads = 1;
+INSERT INTO t_encrypted SELECT number, toString(number) FROM numbers(200000) SETTINGS max_insert_threads = 1;
 OPTIMIZE TABLE t_plain FINAL;
 OPTIMIZE TABLE t_encrypted FINAL;
 
