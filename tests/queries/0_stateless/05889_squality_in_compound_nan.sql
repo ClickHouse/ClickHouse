@@ -1,3 +1,5 @@
+SET in_null_as_unknown = 1;
+
 SELECT
     [toFloat64(toFloat32('nan'))] IN ([toFloat32('nan')], NULL),
     [toFloat64(toFloat32('nan'))] IN (materialize([toFloat32('nan')]), NULL)
