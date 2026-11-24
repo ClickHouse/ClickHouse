@@ -731,6 +731,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes
             && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes).empty())
             run_as_submitting_user = true;
+        /// This host runs its copy after the entries queued before it, which can change what an alias in the condition expands to.
+        else if (command.type == ASTAlterCommand::ADD_INDEX && command.index_decl
+            && command.index_decl->as<ASTIndexDeclaration &>().getWhere())
+            run_as_submitting_user = true;
     }
 
     /// A statement that could not be checked here runs as the submitting user, so `AlterCommands::apply` checks it.
