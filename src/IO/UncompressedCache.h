@@ -82,8 +82,8 @@ public:
         size_t max_size_in_bytes,
         double size_ratio);
 
-    /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & path_to_file, size_t offset);
+    /// Calculate key from path to file, checksum of the file (a path can be reused for another file) and offset.
+    static UInt128 hash(const String & path_to_file, UInt128 file_hash, size_t offset);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)

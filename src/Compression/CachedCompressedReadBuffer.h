@@ -25,6 +25,7 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> file_in;
 
     const std::string path;
+    const UInt128 file_hash;
 
     /// Current position in file_in
     size_t file_pos;
@@ -50,7 +51,12 @@ private:
     /* size_t nextimpl_working_buffer_offset; */
 
 public:
-    CachedCompressedReadBuffer(const std::string & path, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator, UncompressedCache * cache_, bool allow_different_codecs_ = false);
+    CachedCompressedReadBuffer(
+        const std::string & path,
+        UInt128 file_hash_,
+        std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator,
+        UncompressedCache * cache_,
+        bool allow_different_codecs_ = false);
 
     /// Seek is lazy. It doesn't move the position anywhere, just remember them and perform actual
     /// seek inside nextImpl.

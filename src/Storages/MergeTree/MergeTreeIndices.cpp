@@ -32,32 +32,63 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+/// The checksums entry of the file, or of `skp_idx.packed` for a member of the archive.
+const MergeTreeDataPartChecksum * findIndexFileChecksum(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const std::string & extension,
+    const IDataPartStorage * storage)
+{
+    if (auto it = checksums.files.find(path_prefix + extension); it != checksums.files.end())
+        return &it->second;
+
+    /// Also check for hashed version of the filename
+    auto hash = sipHash128String(path_prefix);
+    if (auto it = checksums.files.find(hash + extension); it != checksums.files.end())
+        return &it->second;
+
+    /// A standalone file always has a checksums entry, so the only files missing above are members
+    /// of `skp_idx.packed`, which are written under the unhashed name. Answer from the archive index
+    /// (loaded once per part and cached) and do not ask the disk about the file: this runs for every
+    /// part during query planning, often for optional substreams that do not exist.
+    if (storage)
+    {
+        auto archive_it = checksums.files.find(String(SKIP_INDICES_PACKED_FILENAME));
+        if (archive_it != checksums.files.end())
+        {
+            const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage);
+            if (disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
+                return &archive_it->second;
+        }
+    }
+
+    return nullptr;
+}
+
+}
+
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
     const std::string & extension,
     const IDataPartStorage * storage)
 {
-    if (checksums.files.contains(path_prefix + extension))
-        return true;
+    return findIndexFileChecksum(checksums, path_prefix, extension, storage) != nullptr;
+}
 
-    /// Also check for hashed version of the filename
-    auto hash = sipHash128String(path_prefix);
-    if (checksums.files.contains(hash + extension))
-        return true;
-
-    /// A standalone file always has a checksums entry, so the only files missing above are members
-    /// of `skp_idx.packed`, which are written under the unhashed name. Answer from the archive index
-    /// (loaded once per part and cached) and do not ask the disk about the file: this runs for every
-    /// part during query planning, often for optional substreams that do not exist.
-    if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
-    {
-        const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage);
-        if (disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
-            return true;
-    }
-
-    return false;
+std::optional<UInt128> getFileHashForCaches(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const std::string & extension,
+    const IDataPartStorage * storage)
+{
+    const auto * checksum = findIndexFileChecksum(checksums, path_prefix, extension, storage);
+    if (!checksum)
+        return std::nullopt;
+    return UInt128{checksum->file_hash.low64, checksum->file_hash.high64};
 }
 
 String getIndexFileName(const String & index_name, bool escape_filename)
