@@ -731,8 +731,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
+        /// The access check above covers the statement, but not what its execution resolves and evaluates after the entries
+        /// queued before it, e.g. the targets of an `Alias` or a partition value with a scalar subquery. So the replica the
+        /// query is submitted to executes its own copy as the user, and the other replicas execute only the entries that
+        /// succeeded there (see `QueryFlags::run_as_submitting_user`). An internal `ALTER` that skips the access check has
+        /// been authorized by its caller.
         return database->tryEnqueueReplicatedDDL(
-            query_ptr, getContext(), {.run_as_submitting_user = run_as_submitting_user}, std::move(guard));
+            query_ptr, getContext(), {.run_as_submitting_user = run_as_submitting_user || !skip_access_check}, std::move(guard));
     }
 
 #if CLICKHOUSE_CLOUD
