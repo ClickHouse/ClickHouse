@@ -1244,7 +1244,18 @@ String getInsertDataSchemaMismatchDescriptionImpl(
                     const auto * inferred_pair_tuple = typeid_cast<const DataTypeTuple *>(inferred_pair_type.get());
                     if (!typeid_cast<const DataTypeArray *>(inferred_pair_type.get())
                         && !(inferred_pair_tuple && !inferred_pair_tuple->hasExplicitNames()))
+                    {
+                        /// An empty array is a valid empty `Map` in this mode. Schema inference
+                        /// has no element to look at there: it types `[]` as `Array(Nothing)` and
+                        /// then substitutes `String` for the incomplete element type, so an
+                        /// inferred `String` element is a placeholder rather than a malformed pair
+                        /// as long as every sampled array is empty (or the sample is unavailable,
+                        /// in which case there is no evidence of a malformed pair at all).
+                        if (isString(removeNullable(inferred_pair_type)))
+                            return !evidence.column_index
+                                || sampled_values_are_arrays_of_size(*evidence.column_index, evidence.path, 0).value_or(true);
                         return false;
+                    }
 
                     return types_are_compatible(
                         inferred_pair_type,
