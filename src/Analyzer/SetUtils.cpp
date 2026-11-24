@@ -854,6 +854,25 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
     {
         WhichDataType rhs_which_type(rhs_type);
 
+        /// A dynamic array element can itself hold an array, even though its declared
+        /// type adds no static depth. In that case the RHS is a collection of array
+        /// values, as it is for a row-dependent RHS in the analyzer.
+        if (rhs_which_type.isArray()
+            && typeid_cast<const DataTypeArray *>(removeNullable(removeLowCardinality(lhs_expression_type)).get()))
+        {
+            const auto & nested_type = assert_cast<const DataTypeArray &>(*rhs_type).getNestedType();
+            if (isDynamic(nested_type) || isVariant(nested_type))
+            {
+                const auto full_column = rhs_column->convertToFullColumnIfConst();
+                const auto & elements = assert_cast<const ColumnArray &>(*full_column).getData();
+                for (size_t i = 0, size = elements.size(); i < size; ++i)
+                {
+                    if (elements[i].getType() == Field::Types::Array)
+                        return build_from_array(rhs_type);
+                }
+            }
+        }
+
         bool is_null_in_rhs = columnCollectionHasNull(rhs_column, rhs_which_type);
         bool has_tuple_in_rhs = columnCollectionHasTuple(rhs_column, rhs_type, rhs_which_type);
 

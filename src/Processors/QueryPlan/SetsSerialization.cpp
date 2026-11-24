@@ -78,6 +78,7 @@ struct QueryPlanAndSets::SetFromTuple : public QueryPlanAndSets::Set
     ColumnsWithTypeAndName set_columns;
     std::optional<bool> source_is_empty;
     bool source_has_null = false;
+    std::optional<bool> transform_null_in;
 };
 
 struct QueryPlanAndSets::SetFromSubquery : public QueryPlanAndSets::Set
@@ -178,6 +179,8 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
             writeIntBinary(SetSerializationKind::TupleValues, out);
             auto columns = from_tuple->getKeyColumns();
             writeSetSourceState(from_tuple->isSourceEmpty(), from_tuple->sourceHasNull(), columns, out, flags.version);
+            if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE)
+                writeVarUInt(UInt64{from_tuple->get()->transformNullIn()}, out);
             writeSetValues(from_tuple->getTypes(), columns, out);
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
@@ -220,6 +223,8 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                 const bool source_has_null = from_subquery->sourceStateRequired()
                     ? built_set->hasNull() : columnsContainNull(columns);
                 writeSetSourceState(source_is_empty, source_has_null, columns, out, flags.version);
+                if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE)
+                    writeVarUInt(UInt64{built_set->transformNullIn()}, out);
                 writeSetValues(built_set->getElementsTypes(), columns, out);
             }
             else
@@ -293,16 +298,20 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         {
             std::optional<bool> source_is_empty;
             bool source_has_null = false;
+            std::optional<bool> transform_null_in;
             if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE)
             {
                 UInt64 source_is_empty_value = 0;
                 UInt64 source_has_null_value = 0;
+                UInt64 transform_null_in_value = 0;
                 readVarUInt(source_is_empty_value, in);
                 readVarUInt(source_has_null_value, in);
-                if (source_is_empty_value > 1 || source_has_null_value > 1)
+                readVarUInt(transform_null_in_value, in);
+                if (source_is_empty_value > 1 || source_has_null_value > 1 || transform_null_in_value > 1)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid serialized IN set source state");
                 source_is_empty = source_is_empty_value != 0;
                 source_has_null = source_has_null_value != 0;
+                transform_null_in = transform_null_in_value != 0;
             }
 
             UInt64 num_columns = 0;
@@ -339,7 +348,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             }
 
             res.sets_from_tuple.emplace_back(QueryPlanAndSets::SetFromTuple{
-                {hash, std::move(columns)}, std::move(set_columns), source_is_empty, source_has_null});
+                {hash, std::move(columns)}, std::move(set_columns), source_is_empty, source_has_null, transform_null_in});
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
@@ -411,7 +420,7 @@ static void makeSetsFromTuple(ListWithMemoryTracking<QueryPlanAndSets::SetFromTu
             set.hash,
             nullptr,
             std::move(set.set_columns),
-            set_settings.transform_null_in,
+            set.transform_null_in.value_or(set_settings.transform_null_in),
             set_settings.size_limits,
             set.source_is_empty,
             set.source_has_null);

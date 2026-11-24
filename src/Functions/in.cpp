@@ -49,6 +49,33 @@ namespace Setting
 namespace
 {
 
+[[nodiscard]] bool mayContainFloatForIn(const DataTypePtr & type)
+{
+    const auto nested = removeNullable(removeLowCardinality(type));
+    if (isFloat(nested) || isDynamic(nested) || isVariant(nested))
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(nested.get()))
+        return mayContainFloatForIn(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
+        return std::ranges::any_of(tuple->getElements(), mayContainFloatForIn);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(nested.get()))
+        return mayContainFloatForIn(map->getKeyType()) || mayContainFloatForIn(map->getValueType());
+    return false;
+}
+
+[[nodiscard]] bool fieldContainsNaNForIn(const Field & field)
+{
+    if (field.getType() == Field::Types::Float64)
+        return std::isnan(field.safeGet<Float64>());
+    if (field.getType() == Field::Types::Array)
+        return std::ranges::any_of(field.safeGet<Array>(), fieldContainsNaNForIn);
+    if (field.getType() == Field::Types::Tuple)
+        return std::ranges::any_of(field.safeGet<Tuple>(), fieldContainsNaNForIn);
+    if (field.getType() == Field::Types::Map)
+        return std::ranges::any_of(field.safeGet<Map>(), fieldContainsNaNForIn);
+    return false;
+}
+
 [[nodiscard]] bool hasCompoundDecimalFloatPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -948,6 +975,18 @@ public:
                         && (left_arg.column->isNullAt(row) || !std::isnan(left_arg.column->getFloat64(row)));
                 res = std::move(without_nan_matches);
             }
+        }
+
+        if (in_null_as_unknown && columns_of_key_columns.size() == 1
+            && !left_is_float && mayContainFloatForIn(left_arg.type))
+        {
+            /// The set hashes compound keys by their bits, but row-wise equality
+            /// rejects a compound value containing `NaN` at any depth.
+            auto without_nan_matches = ColumnUInt8::create(res->size());
+            for (size_t row = 0; row < res->size(); ++row)
+                without_nan_matches->getData()[row] = res->getBool(row)
+                    && !fieldContainsNaNForIn((*left_arg.column)[row]);
+            res = std::move(without_nan_matches);
         }
 
         if (check_numeric_probe_exactness && columns_of_key_columns.size() == 1)
