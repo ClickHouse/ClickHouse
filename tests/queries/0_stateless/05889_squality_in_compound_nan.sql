@@ -43,6 +43,5 @@ CREATE TABLE squality_in_nan_constraint
     b Array(Float64),
     CONSTRAINT c CHECK a IN (b, NULL)
 ) ENGINE = Memory;
-INSERT INTO squality_in_nan_constraint VALUES ([nan], [nan])
-SETTINGS in_null_as_unknown = 1; -- { serverError VIOLATED_CONSTRAINT }
+INSERT INTO squality_in_nan_constraint VALUES ([nan], [nan]); -- { serverError VIOLATED_CONSTRAINT }
 DROP TABLE squality_in_nan_constraint;
