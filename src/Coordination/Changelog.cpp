@@ -15,6 +15,7 @@
 #include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
@@ -473,7 +474,18 @@ public:
                 }
             }
             else
-                file_buffer->next();
+            {
+                /// `next` on a decorated buffer (e.g. `WriteBufferFromEncryptedFile`) only moves the data
+                /// into the nested buffer, so flush the whole chain to make sure the data reaches the file.
+                /// Otherwise, entries whose locations are published below could not be read back from disk.
+                WriteBuffer * buffer = file_buffer;
+                while (buffer)
+                {
+                    buffer->next();
+                    auto * decorator = dynamic_cast<WriteBufferDecorator<WriteBufferFromFileBase> *>(buffer);
+                    buffer = decorator ? decorator->getNestedBuffer() : nullptr;
+                }
+            }
         }
         entry_storage.addLogLocations(std::move(unflushed_indices_with_log_location));
         unflushed_indices_with_log_location.clear();
