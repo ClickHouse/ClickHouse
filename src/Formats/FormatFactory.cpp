@@ -543,19 +543,23 @@ UInt64 getFormatSettingsHash(const Settings & settings)
     return hash.get64();
 }
 
-/// Settings for writing values as JSON text that is parsed back right away: numbers are written unquoted
-/// so they are read back as numbers, and inf and nan, which JSON has no number for, are quoted instead of
-/// being written as null.
+/// Settings for writing values as JSON text that is parsed back right away: numbers unquoted (inf and nan
+/// quoted, JSON has no number for them), maps and named tuples as objects, date and time in the default form.
 FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
 {
     FormatSettings result = format_settings;
     result.json.quote_64bit_integers = false;
     result.json.quote_denormals = true;
-    /// An internal round trip must be lossless and independent of the user's presentation settings, which
-    /// would otherwise change the stored value: shortest float text and canonical Boolean tokens.
+    result.json.quote_64bit_floats = false;
+    result.json.quote_decimals = false;
+    result.json.write_named_tuples_as_objects = true;
+    result.json.skip_null_value_in_named_tuples = false;
+    result.json.write_map_as_array_of_tuples = false;
+    /// The round trip must not depend on the user's presentation settings, which would change the stored value.
     result.float_precision = 0;
     result.bool_true_representation = "true";
     result.bool_false_representation = "false";
+    result.date_time_output_format = FormatSettings::DateTimeOutputFormat::Simple;
     return result;
 }
 

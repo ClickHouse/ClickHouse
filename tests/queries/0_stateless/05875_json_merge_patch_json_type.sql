@@ -82,6 +82,11 @@ SELECT id, JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM t_map ORDER BY id;
 SELECT 'round-trip settings';
 SELECT JSONAllPathsWithTypes(JSONMergePatch(c, '{"m":{"y":2}}'))['n'] FROM (SELECT CAST('{"m":{"x":1},"n":42}', 'JSON(m Map(String, UInt8))') AS c) SETTINGS output_format_json_quote_64bit_integers = 1;
 SELECT JSONAllPathsWithTypes(JSONMergePatch('{"a":1}'::JSON, '{"k":5}'::JSON))['k'] SETTINGS output_format_json_quote_64bit_integers = 1;
+SELECT JSONAllPathsWithTypes(JSONMergePatch('{"a":1}'::JSON, '{"k":0.5}'::JSON))['k'] SETTINGS output_format_json_quote_64bit_floats = 1;
+SELECT id, r.u FROM (SELECT id, JSONMergePatch(c, '{"u":{"a":9}}') AS r FROM t_map) ORDER BY id SETTINGS output_format_json_named_tuples_as_objects = 0;
+SELECT id, r.m FROM (SELECT id, JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM t_map) ORDER BY id SETTINGS output_format_json_map_as_array_of_tuples = 1;
+SELECT JSONAllPathsWithTypes(r)['t'] FROM (SELECT JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM (SELECT CAST('{"t":"2020-01-01 10:00:00","m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c)) SETTINGS date_time_output_format = 'unix_timestamp';
+SELECT JSONAllPathsWithTypes(CAST(c, 'JSON(b UInt32)'))['a'] FROM (SELECT '{"a":0.5,"b":1}'::JSON AS c) SETTINGS json_use_optimized_type_conversion = 0, output_format_json_quote_64bit_floats = 1;
 
 SELECT 'stored types of untouched paths';
 SET input_format_try_infer_dates = 0, input_format_try_infer_datetimes = 0;
@@ -126,6 +131,8 @@ SELECT JSONMergePatch(c, '{"a":{"b":"x"}}') AS r, JSONMergePatch(c, '{"c":1}') A
 FROM (SELECT CAST('{"a":5,"a":{"b":"y"}}', 'JSON(a UInt32, `a.b` String)') AS c)
 SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 1;
 SELECT p, JSONMergePatch(c, p) FROM (SELECT '{"k0":0,"k0":{"x":0}}'::JSON AS c) AS src, (SELECT arrayJoin(['{"k0":null}', '{"k0":5}', '{"k0":{"y":1}}']) AS p) AS patches ORDER BY p;
+SELECT p, JSONMergePatch(c, p) FROM (SELECT CAST('{"k0":0,"k0":{"x":0},"m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c) AS src,
+    (SELECT arrayJoin(['{"m":{"y":2},"k0":5}', '{"m":{"y":2},"k0":null}', '{"m":{"y":2},"k0":{"y":1}}']) AS p) AS patches ORDER BY p;
 
 SELECT 'many rows';
 DROP TABLE IF EXISTS t_many;

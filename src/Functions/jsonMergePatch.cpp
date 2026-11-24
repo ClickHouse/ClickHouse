@@ -145,6 +145,34 @@ namespace
         }
     }
 
+    /// Merges a patch into the text form of a stored row, where a value stored at both `x` and `x.y` is two members
+    /// named `x`, a literal and an object: a patch value replaces both, a patch object replaces the literal.
+    void mergeIntoStoredRow(TrackedValue & dest, const TrackedValue & src, TrackedPoolAllocator & allocator)
+    {
+        for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
+        {
+            const bool is_object = it->value.IsObject();
+            for (auto member = dest.MemberBegin(); member != dest.MemberEnd();)
+            {
+                if (member->name == it->name && !(is_object && member->value.IsObject()))
+                    member = dest.EraseMember(member);
+                else
+                    ++member;
+            }
+
+            if (auto member = dest.FindMember(it->name); member != dest.MemberEnd())
+            {
+                mergeIntoStoredRow(member->value, it->value, allocator);
+            }
+            else
+            {
+                TrackedValue key(it->name, allocator);
+                TrackedValue value(it->value, allocator);
+                dest.AddMember(key, value, allocator);
+            }
+        }
+    }
+
     void writeJSONDocument(const TrackedValue & value, ColumnString & column)
     {
         TrackedStringBuffer buffer;
@@ -201,8 +229,8 @@ namespace
         }
     };
 
-    /// Merges patches into a column of the `JSON` type path by path. The result is the same as merging the text
-    /// form of each row and parsing it back into the type, because the values of a patch are parsed by the same CAST.
+    /// Merges patches into a column of the `JSON` type path by path, by RFC 7396 on the stored paths. The values of a
+    /// patch are parsed by the same CAST as `::JSON`.
     class ObjectMergePatcher
     {
     public:
@@ -725,7 +753,7 @@ namespace
                 parseJSONDocument(texts.getDataAt(next_text++), merged);
                 TrackedDocument patch;
                 parseJSONDocument(patches.getDataAt(patch_is_const ? 0 : i), patch);
-                mergeObjects(merged, patch, merged.GetAllocator());
+                mergeIntoStoredRow(merged, patch, merged.GetAllocator());
                 writeJSONDocument(merged, *result);
             }
             return result;
@@ -869,7 +897,7 @@ Returns the merged JSON object string which is formed by merging multiple JSON o
 
 If the first argument has the `JSON` type, the result has the same type.
 Most patches update the stored paths directly, without converting the value to text.
-A `null` value in a patch removes the path.
+For a `JSON` first argument, `null` in a patch removes the path, or sets a typed path to the default value of its type.
 A patch of the `JSON` type is applied as its text.
     )";
     FunctionDocumentation::Syntax syntax = "JSONMergePatch(json1[, json2, ...])";

@@ -94,6 +94,13 @@ objects on Map and Tuple typed paths
 round-trip settings
 Int64
 Int64
+Float64
+1	(9,'z')
+2	(9,'')
+1	{'x':1,'y':2}
+2	{'y':2}
+DateTime
+Float64
 stored types of untouched paths
 {"k":1,"k":2}	Date
 {"k":2}	String
@@ -119,6 +126,9 @@ literal and nested object under the same key
 {"k0":5}	{"k0":5}
 {"k0":null}	{}
 {"k0":{"y":1}}	{"k0":{"x":0,"y":1}}
+{"m":{"y":2},"k0":5}	{"k0":5,"m":{"x":1,"y":2}}
+{"m":{"y":2},"k0":null}	{"m":{"x":1,"y":2}}
+{"m":{"y":2},"k0":{"y":1}}	{"k0":{"x":0,"y":1},"m":{"x":1,"y":2}}
 many rows
 1000	1000
 1000	1000
