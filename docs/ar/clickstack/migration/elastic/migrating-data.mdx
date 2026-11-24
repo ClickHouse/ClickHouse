@@ -31,32 +31,24 @@ doc_type: 'guide'
 </div>
 
 <Steps>
-  <Step>
-    #### تهيئة الإدخال المزدوج
-
+  <Step title="تهيئة الإدخال المزدوج" id="configure-dual-ingestion">
     اضبط pipeline جمع البيانات لديك لإرسال البيانات إلى كلٍّ من Elastic وClickStack في الوقت نفسه.
 
     وتعتمد طريقة تنفيذ ذلك على الوكلاء الذين تستخدمهم حاليًا لعملية الجمع — راجع [&quot;ترحيل الوكلاء&quot;](/ar/clickstack/migration/elastic/migrating-agents).
   </Step>
 
-  <Step>
-    #### ضبط فترات الاحتفاظ
-
+  <Step title="ضبط فترات الاحتفاظ" id="adjust-retention-period">
     هيّئ إعدادات TTL في Elastic بما يتوافق مع فترة الاحتفاظ المطلوبة. ثم اضبط [TTL](/ar/clickstack/managing/production#configure-ttl) في ClickStack للاحتفاظ بالبيانات للمدة نفسها.
   </Step>
 
-  <Step>
-    #### التحقق والمقارنة
-
+  <Step title="التحقق والمقارنة" id="validate-and-compare">
     * شغّل استعلامات على كلا النظامين للتأكد من اتساق البيانات
     * قارن أداء الاستعلامات والنتائج
     * انقل لوحات المعلومات والتنبيهات إلى ClickStack. هذه العملية يدوية حاليًا.
     * تحقّق من أن جميع لوحات المعلومات والتنبيهات المهمة تعمل كما هو متوقع في ClickStack
   </Step>
 
-  <Step>
-    #### الانتقال التدريجي
-
+  <Step title="الانتقال التدريجي" id="graudal-transition">
     * مع انتهاء صلاحية البيانات في Elastic بشكل طبيعي، ستعتمد تدريجيًا على ClickStack بصورة أكبر
     * وبعد ترسخ الثقة في ClickStack، يمكنك البدء في إعادة توجيه الاستعلامات ولوحات المعلومات
   </Step>
@@ -141,9 +133,7 @@ doc_type: 'guide'
 تتيح الخطوات التالية ترحيل فهرس Elasticsearch واحد باستخدام ClickHouse.
 
 <Steps>
-  <Step>
-    ### ترحيل المخطط
-
+  <Step title="ترحيل المخطط" id="migrate-scheme">
     أنشئ جدولاً في ClickHouse للفهرس المُراد ترحيله من Elasticsearch. يمكنك تعيين [أنواع Elasticsearch إلى ما يقابلها في ClickHouse](/ar/clickstack/migration/elastic/types). وبدلاً من ذلك، يمكنك الاعتماد على نوع بيانات JSON في ClickHouse، الذي سيُنشئ تلقائياً أعمدةً بالنوع المناسب عند إدراج البيانات.
 
     خذ بعين الاعتبار تعيين Elasticsearch التالي لفهرس يحتوي على بيانات `syslog`:
@@ -578,9 +568,7 @@ doc_type: 'guide'
     لمزيد من التفاصيل حول استخدام نوع JSON في المخططات وكيفية تطبيقه بكفاءة، نوصي بالرجوع إلى الدليل [&quot;تصميم مخططك&quot;](/ar/guides/clickhouse/data-formats/json/schema).
   </Step>
 
-  <Step>
-    ### ثبّت `elasticdump`
-
+  <Step title={<>ثبّت <code>elasticdump</code></>} id="install-elasticdump">
     نوصي باستخدام [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) لتصدير البيانات من Elasticsearch. تتطلب هذه الأداة `node`، ويجب تثبيتها على جهاز يتمتع بقرب شبكي من كلٍّ من Elasticsearch وClickHouse. نوصي باستخدام خادم مخصّص يحتوي على 4 أنوية على الأقل و16GB من RAM لمعظم عمليات التصدير.
 
     ```shell
@@ -596,15 +584,11 @@ doc_type: 'guide'
     حيثما أمكن، نوصي بتشغيل ClickHouse وElasticsearch و`elastic dump` جميعها ضمن منطقة التوفّر نفسها أو مركز البيانات نفسه لتقليل حركة البيانات الصادرة عبر الشبكة إلى الحد الأدنى وزيادة معدل النقل إلى الحد الأقصى.
   </Step>
 
-  <Step>
-    ### تثبيت عميل ClickHouse
-
+  <Step title="تثبيت عميل ClickHouse" id="install-clickhouse-client">
     تأكد من أنّ ClickHouse [مثبّت على الخادم](/ar/get-started/setup/install) الذي يوجد عليه `elasticdump`. **لا تشغّل خادم ClickHouse** — فهذه الخطوات لا تتطلب سوى العميل.
   </Step>
 
-  <Step>
-    ### دفق البيانات
-
+  <Step title="دفق البيانات" id="stream-data">
     لدفق البيانات بين Elasticsearch وClickHouse، استخدم الأمر `elasticdump` مع توجيه المخرجات مباشرةً إلى `clickhouse client`. يقوم ما يلي بإدراج البيانات في جدولنا المنظَّم جيدًا `logs_system_syslog`.
 
     ```shell
@@ -660,9 +644,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ### تحويل البيانات (اختياري)
-
+  <Step title="تحويل البيانات (اختياري)" id="transform-data">
     تفترض الأوامر أعلاه وجود مطابقة 1:1 بين حقول Elasticsearch وأعمدة ClickHouse. وغالبًا ما يحتاج المستخدمون إلى تصفية بيانات Elasticsearch وتحويلها قبل إدخالها إلى ClickHouse.
 
     يمكن تحقيق ذلك باستخدام table function ‏[`input`](/ar/reference/functions/table-functions/input)، التي تتيح لنا تنفيذ أي استعلام `SELECT` على stdout.

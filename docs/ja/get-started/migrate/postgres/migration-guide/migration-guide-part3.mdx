@@ -8,8 +8,6 @@ sidebarTitle: '第3部'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > これは、PostgreSQL から ClickHouse への移行ガイドの**第3部**です。実践的な例を通じて、PostgreSQL から移行する場合に ClickHouse でどのようにデータをモデリングするかを説明します。
 
 Postgres から移行するユーザーには、[ClickHouse でのデータモデリングに関するガイド](/ja/guides/clickhouse/data-modelling/schema-design)を読むことをお勧めします。このガイドでは同じ Stack Overflow データセットを使用し、ClickHouse の機能を活用した複数のアプローチを紹介しています。
@@ -32,9 +30,25 @@ ClickHouseでOLTPの主キーをそのまま使うのが適切でない理由を
 
 詳細については、こちらの[詳細ガイド](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を参照することをおすすめします。
 
-<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="PostgreSQL B-Tree 索引" />
+<div className="ch-image-lg">
 
-<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="PostgreSQL スパース索引" />
+<Frame>
+
+![PostgreSQL B-Tree 索引](/images/migrations/postgres-b-tree.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![PostgreSQL スパース索引](/images/migrations/postgres-sparse-index.webp)
+
+</Frame>
+
+</div>
 
 ClickHouseで選択したキーは、索引だけでなく、データがディスクに書き込まれる順序も決定します。そのため、圧縮率に大きな影響を及ぼし、ひいてはクエリ性能にも影響します。大半のカラムの値が連続した順序で書き込まれるような並び順キーを選べば、使用する圧縮アルゴリズム (およびcodec) によって、データをより効率的に圧縮できます。
 
@@ -56,7 +70,15 @@ Postgresを使ってきた方なら、大規模なデータベースのパフォ
 
 ClickHouseでは、パーティション化はテーブルを最初に定義するときに`PARTITION BY`句で指定します。この句には任意のカラムに対するSQL式を含めることができ、その結果によって行がどのパーティションに送られるかが決まります。
 
-<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="PostgreSQLのパーティションからClickHouseのパーティションへ" />
+<div className="ch-image-md">
+
+<Frame>
+
+![PostgreSQLのパーティションからClickHouseのパーティションへ](/images/migrations/postgres-partitions.webp)
+
+</Frame>
+
+</div>
 
 データパーツは、ディスク上で各パーティションに論理的に関連付けられており、個別にクエリできます。以下の例では、`toYear(CreationDate)`式を使って`posts`テーブルを年ごとにパーティション化しています。行がClickHouseに挿入されると、この式が各行に対して評価され、対応するパーティションが存在すればそこに振り分けられます (その年の最初の行であれば、パーティションが作成されます) 。
 
@@ -272,7 +294,15 @@ WHERE UserId = 8592047
 PROJECTIONは、データの挿入に伴って自動的に維持されるため、新規ユーザーにとって魅力的な機能です。
 さらに、クエリは単一のテーブルに送るだけでよく、可能な場合はPROJECTIONが利用されて応答時間の短縮につながります。
 
-<Image img="/images/migrations/postgres-projections.webp" size="md" alt="ClickHouse における PostgreSQL の PROJECTION" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse における PostgreSQL の PROJECTION](/images/migrations/postgres-projections.webp)
+
+</Frame>
+
+</div>
 
 これは materialized view とは対照的です。materialized view では、フィルターに応じて、
 ユーザーが適切に最適化されたターゲットテーブルを選択するか、クエリを書き換える必要があります。
@@ -302,8 +332,8 @@ PROJECTIONは、データの挿入に伴って自動的に維持されるため�
   ## 非正規化
 </div>
 
-Postgres はリレーショナルデータベースであるため、そのデータモデルは高度に[正規化](https://en.wikipedia.org/wiki/Database_normalization)されており、多くの場合、数百ものテーブルにまたがっています。ClickHouse では、JOIN のパフォーマンスを最適化するために、状況によっては非正規化が有効です。
+Postgres はリレーショナルデータベースであるため、そのデータモデルは [正規化](https://en.wikipedia.org/wiki/Database_normalization) が高度に進んでおり、数百もの table に分かれることも少なくありません。ClickHouse では、JOIN のパフォーマンスを最適化するために、場合によっては非正規化が有効です。
 
-ClickHouse で Stack Overflow データセットを非正規化するメリットを示したこの[ガイド](/ja/guides/clickhouse/data-modelling/denormalization)も参照してください。
+ClickHouse で Stack Overflow dataset を非正規化する利点については、この[ガイド](/ja/guides/clickhouse/data-modelling/denormalization)を参照してください。
 
-以上で、Postgres から ClickHouse へ移行する方向けの基本ガイドは終了です。ClickHouse の高度な機能についてさらに学ぶには、[ClickHouse でのデータモデリングに関するガイド](/ja/guides/clickhouse/data-modelling/schema-design)を読むことをお勧めします。
+これで、Postgres から ClickHouse へ移行する方向けの基本ガイドは終了です。ClickHouse の高度な機能についてさらに学ぶには、[ClickHouse でのデータモデリングに関するガイド](/ja/guides/clickhouse/data-modelling/schema-design)を読むことをお勧めします。

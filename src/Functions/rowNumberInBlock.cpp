@@ -19,39 +19,39 @@ public:
     }
 
     /// Get the name of the function.
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isStateful() const override
+    [[nodiscard]] bool isStateful() const override
     {
         return true;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    bool isDeterministic() const override
+    [[nodiscard]] bool isDeterministic() const override
     {
         return false;
     }
 
-    bool isDeterministicInScopeOfQuery() const override
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt64>();
+        return "() -> UInt64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto column = ColumnUInt64::create();
         auto & data = column->getData();
@@ -67,7 +67,7 @@ public:
 REGISTER_FUNCTION(RowNumberInBlock)
 {
     FunctionDocumentation::Description description = R"(
-For each [block](../../development/architecture.md#block) processed by `rowNumberInBlock`, returns the number of the current row.
+For each [block](/resources/develop-contribute/introduction/architecture#block) processed by `rowNumberInBlock`, returns the number of the current row.
 
 The returned number starts from 0 for each block.
     )";
@@ -90,20 +90,12 @@ FROM
 ┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
-└────────────────────┘
-┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
-└────────────────────┘
-┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
-└────────────────────┘
-┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
-└────────────────────┘
-┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
 └────────────────────┘

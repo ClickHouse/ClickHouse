@@ -7,8 +7,6 @@ sidebarTitle: 'Системные таблицы'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Во всех экземплярах ClickHouse есть набор [системных таблиц](/ru/reference/system-tables/overview) в базе данных `system`, которые содержат информацию о:
 
 * Состоянии сервера, процессах и окружении.
@@ -58,7 +56,15 @@ ORDER BY
 
 В ClickHouse есть встроенная расширенная панель обсервабилити, доступная по адресу `$HOST:$PORT/dashboard` (требуются имя пользователя и пароль), которая показывает метрики Cloud Overview из `system.dashboards`.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Встроенная расширенная панель обсервабилити" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Встроенная расширенная панель обсервабилити](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Для этой панели мониторинга требуется прямая аутентификация в экземпляре ClickHouse; она не связана с [консолью ClickHouse Cloud Advanced Dashboard](/ru/products/cloud/features/monitoring/cloud-console#advanced-dashboard), которая доступна через интерфейс консоли ClickHouse Cloud без дополнительной аутентификации.
@@ -108,6 +114,6 @@ FORMAT VERTICAL
 </div>
 
 * [Справочник по системным таблицам](/ru/reference/system-tables/overview) — Полный справочник по всем доступным системным таблицам
-* [Мониторинг в консоли ClickHouse Cloud](/ru/products/cloud/features/monitoring/cloud-console) — Панели мониторинга, не требующие настройки и не влияющие на производительность сервиса
+* [Мониторинг в консоли ClickHouse Cloud](/ru/products/cloud/features/monitoring/cloud-console) — Панели мониторинга без настройки, не влияющие на производительность сервиса
 * [Конечная точка Prometheus](/ru/products/cloud/features/monitoring/prometheus) — Экспорт метрик во внешние инструменты мониторинга
-* [Advanced dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard) — Подробное описание визуализаций панели мониторинга
+* [Advanced dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard) — Подробный справочник по визуализациям панели мониторинга

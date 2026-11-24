@@ -1,0 +1,20 @@
+Insert quote / backslash / newline / tab / NUL through the SQLite table engine:
+Exact bytes stored in SQLite (hex):
+610062
+610962
+610A62
+612762
+615C62
+Read back through ClickHouse (hex of each value, must match the bytes above):
+610062
+610962
+610A62
+612762
+615C62
+Insert the same values through the sqlite table function:
+Exact bytes stored by the table function (hex):
+610062
+610962
+610A62
+612762
+615C62

@@ -9,6 +9,8 @@
 #include <base/BorrowedObjectPool.h>
 #include <Core/PostgreSQL/Connection.h>
 
+#include <atomic>
+
 
 namespace postgres
 {
@@ -64,7 +66,8 @@ private:
     PoolPtr pool;
     ConnectionPtr connection;
     bool auto_close;
-    bool is_broken = false;
+    /// Written by the cancelling thread and by the thread that starts the read, which can race.
+    std::atomic<bool> is_broken = false;
 };
 
 using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;

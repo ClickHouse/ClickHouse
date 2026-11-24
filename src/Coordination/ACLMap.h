@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <unordered_map>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -45,13 +46,21 @@ private:
 
     MapEntry & numToAcl(ACLId id); // like num_to_acl.at(id), but with better exception on error
 public:
+    ACLMap() = default;
+
+    /// The `SharedMutex` member makes `ACLMap` non-copyable. The move operations transfer the
+    /// mappings and leave each object with its own (fresh) mutex. They must be used only when no
+    /// other thread can access either object, e.g. moving a snapshot reader's ACL map into the
+    /// freshly loaded storage.
+    ACLMap(ACLMap && other) noexcept;
+    ACLMap & operator=(ACLMap && other) noexcept;
 
     /// Convert ACL to number. If it's new ACL than adds it to map with new id.
     /// Increments usage counter for the returned id (no need to call addUsage after this).
     /// Be careful to not discard the returned id without calling removeUsage;
     /// in particular, make sure nothing can fail after convertACLs call but before
     /// storing the ACLId somewhere (e.g. in a list of Delta-s that would be rolled back on error).
-    ACLId convertACLs(const Coordination::ACLs & acls);
+    ACLId NO_SANITIZE_UNSIGNED_OVERFLOW convertACLs(const Coordination::ACLs & acls);
 
     /// Convert number to ACL vector. If number is unknown for map
     /// than throws LOGICAL ERROR

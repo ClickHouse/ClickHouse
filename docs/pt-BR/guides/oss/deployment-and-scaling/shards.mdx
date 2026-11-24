@@ -6,8 +6,6 @@ keywords: ['shard', 'shards', 'sharding', 'réplica', 'réplicas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <br />
 
 <Note>
@@ -20,13 +18,29 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Em clusters ClickHouse [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) tradicionais, o sharding é usado quando ① os dados são grandes demais para um único servidor ou ② um único servidor é lento demais para processar os dados. A figura a seguir ilustra o caso ①, em que a tabela [uk&#95;price&#95;paid&#95;simple](/pt-BR/concepts/core-concepts/parts) excede a capacidade de uma única máquina:
 
-<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Nesse caso, os dados podem ser divididos entre vários servidores ClickHouse na forma de shards de tabela:
 
-<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -59,7 +73,15 @@ Para os [parâmetros do motor Distributed](/pt-BR/reference/engines/table-engine
 
 O diagrama abaixo ilustra como os INSERTs em uma tabela distribuída são processados no ClickHouse:
 
-<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -75,7 +97,15 @@ A próxima seção explica como funciona o encaminhamento de SELECT.
 
 Este diagrama mostra como consultas SELECT são processadas usando uma tabela distribuída no ClickHouse:
 
-<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -95,7 +125,15 @@ Observe que a replicação exige um componente [Keeper](https://clickhouse.com/c
 
 O diagrama a seguir ilustra um cluster do ClickHouse com seis servidores, em que os dois shards de tabela `Shard-1` e `Shard-2` apresentados anteriormente têm, cada um, três réplicas. Uma consulta é enviada a esse cluster:
 
-<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SHARDS](/images/managing-data/core-concepts/shards_replicas_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -105,11 +143,11 @@ O processamento de consultas funciona de forma semelhante ao de configurações 
 
 ① Uma consulta direcionada à tabela distribuída é enviada ao servidor ClickHouse correspondente, seja diretamente ou por meio de um balanceador de carga.
 
-② A tabela distribuída encaminha a consulta para uma réplica de cada shard, em que cada servidor ClickHouse que hospeda a réplica selecionada calcula, em paralelo, seu resultado local da consulta.
+② A tabela distribuída encaminha a consulta para uma réplica de cada shard, em que cada servidor ClickHouse que hospeda a réplica selecionada calcula seu resultado local da consulta em paralelo.
 
 O restante funciona da [mesma forma](#select-forwarding) que em configurações sem réplicas e não é mostrado no diagrama acima. O servidor ClickHouse que hospeda a tabela distribuída inicialmente direcionada coleta todos os resultados locais, mescla-os no resultado global final e o retorna ao cliente que enviou a consulta.
 
-Observe que o ClickHouse permite configurar a estratégia de encaminhamento de consultas para ②. Por padrão — diferentemente do diagrama acima — a tabela distribuída [prefere](/pt-BR/reference/settings/session-settings#prefer_localhost_replica) uma réplica local, se disponível, mas outras [estratégias](/pt-BR/reference/settings/session-settings#load_balancing) de balanceamento de carga podem ser usadas.
+Observe que o ClickHouse permite configurar a estratégia de encaminhamento de consultas para ②. Por padrão — diferentemente do diagrama acima — a tabela distribuída [prefere](/pt-BR/reference/settings/session-settings/prefer#prefer_localhost_replica) uma réplica local, se disponível, mas outras [estratégias](/pt-BR/reference/settings/session-settings/load-balancing#load_balancing) de balanceamento de carga podem ser usadas.
 
 <div id="where-to-find-more-information">
   ## Onde encontrar mais informações

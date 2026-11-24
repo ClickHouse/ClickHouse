@@ -1,13 +1,13 @@
 ---
 description: '数据湖相关文档'
-sidebarTitle: '数据湖'
+sidebarTitle: '概览'
 slug: /sql-reference/datalakes
 title: '数据湖'
 doc_type: 'reference'
 ---
 
 本节将介绍 ClickHouse 对数据湖的支持。
-ClickHouse 支持多种主流表格式和数据目录，包括 Iceberg、Delta Lake、Hudi、AWS Glue、REST Catalog、Unity Catalog 和 Microsoft OneLake。
+ClickHouse 支持多种主流表存储格式和数据目录，包括 Iceberg、Delta Lake、Hudi、AWS Glue、REST Catalog、Unity Catalog 和 Microsoft OneLake。
 
 <div id="open-table-formats">
   # 开放表存储格式
@@ -46,6 +46,13 @@ AWS Glue 数据目录可与 Iceberg 表搭配使用。你可以将其与 `iceber
 </div>
 
 Iceberg REST Catalog 可用于 Iceberg 表。你可以将其与 `iceberg` 表引擎一起使用，也可以与 [DataLakeCatalog](/zh/reference/engines/database-engines/datalake) 数据库引擎一起使用。
+
+<div id="snowflake-horizon-catalog">
+  ## Snowflake Horizon Catalog
+</div>
+
+Snowflake Horizon Catalog 为 Snowflake 托管的 Iceberg 表提供 Iceberg REST API。
+使用 `catalog_type = 'horizon'` 的 `DataLakeCatalog`。请参阅 [Horizon catalog 指南](/zh/guides/use-cases/data-warehousing/horizon-catalog)。
 
 <div id="unity-catalog">
   ## Unity Catalog

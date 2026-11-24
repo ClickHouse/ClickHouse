@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <base/getThreadId.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace ProfileEvents
@@ -54,7 +55,6 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     request.priority = Priority{base_priority.value + priority.value};
     request.ignore = bytes_to_ignore;
     request.direct_io = direct_io;
-    bytes_to_ignore = 0;
 
     return reader.submit(request);
 }
@@ -63,6 +63,11 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
 void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
 {
     if (prefetch_future.valid())
+        return;
+
+    /// Nothing to prefetch at a known EOF: nextImpl reports EOF without submitting. An O_DIRECT
+    /// read starting there returns EINVAL on some kernels/filesystems instead of 0.
+    if (isNextReadAtOrPastKnownEOF())
         return;
 
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
@@ -76,22 +81,23 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
 
 void AsynchronousReadBufferFromFileDescriptor::appendToPrefetchLog(FilesystemPrefetchState state, int64_t size, const std::unique_ptr<Stopwatch> & execution_watch)
 {
-    FilesystemReadPrefetchesLogElement elem
+    prefetches_log->add([&](FilesystemReadPrefetchesLogElement & element)
     {
-        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .query_id = query_id,
-        .path = getFileName(),
-        .offset = file_offset_of_buffer_end,
-        .size = size,
-        .prefetch_submit_time = last_prefetch_info.submit_time,
-        .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
-        .priority = last_prefetch_info.priority,
-        .state = state,
-        .thread_id = getThreadId(),
-        .reader_id = current_reader_id,
-    };
-
-    prefetches_log->add(std::move(elem));
+        element = FilesystemReadPrefetchesLogElement
+        {
+            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .query_id = query_id,
+            .path = getFileName(),
+            .offset = file_offset_of_buffer_end,
+            .size = size,
+            .prefetch_submit_time = last_prefetch_info.submit_time,
+            .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
+            .priority = last_prefetch_info.priority,
+            .state = state,
+            .thread_id = getThreadId(),
+            .reader_id = current_reader_id,
+        };
+    });
 }
 
 
@@ -118,6 +124,12 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     }
     else
     {
+        /// Same guard as ReadBufferFromFileDescriptor::readImpl: with a known size, never submit
+        /// a read that starts at or past EOF. Some kernels/filesystems reject such O_DIRECT reads
+        /// with EINVAL instead of returning 0 (see #33372).
+        if (isNextReadAtOrPastKnownEOF())
+            return false;
+
         /// No pending request. Do synchronous read.
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousReadWaitMicroseconds);
         /// * If prefetch() was never called, internal_buffer may point to existing_memory, so we want
@@ -132,18 +144,35 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         result = asyncReadInto(buf, internal_buffer.size(), DEFAULT_PREFETCH_PRIORITY).get();
     }
 
+    /// The skipped bytes belong to the request just consumed; until then getPosition counts them.
+    bytes_to_ignore = 0;
+
     chassert(!result.page_cache_cell);
     chassert(result.size >= result.offset);
     size_t bytes_read = result.size - result.offset;
     file_offset_of_buffer_end = result.file_offset_of_buffer_end;
 
+    /// The local read throttler exists to keep the load on the block device within the configured
+    /// budget, so the data that was copied from the OS page cache must not consume its tokens.
+    /// The other throttlers that can be combined here (for backups, merges and mutations) limit
+    /// the amount of work regardless of where the data came from, and still account it.
     if (throttler)
-        throttler->throttle(result.size);
+    {
+        if (result.from_os_page_cache)
+            throttler->throttleOSPageCacheRead(result.size);
+        else
+            throttler->throttle(result.size);
+    }
 
     if (bytes_read)
     {
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
+        if (result.buf == memory.data())
+            working_buffer = WorkingBuffer::fromPaddedStorage(memory, result.offset, bytes_read);
+        else if (result.buf == prefetch_buffer.data())
+            working_buffer = WorkingBuffer::fromPaddedStorage(prefetch_buffer, result.offset, bytes_read);
+        else
+            working_buffer = WorkingBuffer(result.buf + result.offset, result.buf + result.size);
         pos = working_buffer.begin();
     }
 
@@ -207,12 +236,17 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
-        chassert(offset >= 0);
-        new_pos = offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {}", offset);
+        new_pos = static_cast<size_t>(offset);
     }
     else if (whence == SEEK_CUR)
     {
-        new_pos = static_cast<size_t>(getPosition()) + offset;
+        /// Keep the target signed until it is checked, so that a backward seek past the start cannot wrap around.
+        off_t target = 0;
+        if (common::addOverflow(getPosition(), offset, target) || target < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {} {:+}", getPosition(), offset);
+        new_pos = static_cast<size_t>(target);
     }
     else
     {
@@ -278,7 +312,12 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
                         "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}"
                         ") >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());
 
-    return seek_pos;
+    /// Return the position we are actually at, not `seek_pos`. With O_DIRECT (`required_alignment > 1`)
+    /// `seek_pos` is `new_pos` rounded down to the alignment, and the difference is accounted for by
+    /// `bytes_to_ignore` (which `getPosition` includes), so the buffer is positioned at `new_pos`.
+    /// Returning `seek_pos` would break callers that take the returned value as the new position
+    /// (see `ReadBufferFromEncryptedFile`).
+    return static_cast<off_t>(new_pos);
 }
 
 

@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – Имя столбца, содержащего ключи.
 
-<div id="composite-key">
-  ### Составной ключ
-</div>
+### Составной ключ {#composite-key}
 
 Ключом может быть `Tuple` из полей любых типов. [Структура](/ru/reference/statements/create/dictionary/layouts/overview) в этом случае должна быть `complex_key_hashed` или `complex_key_cache`.
 
@@ -124,6 +122,7 @@ PRIMARY KEY Id
         ...
     </key>
 ...
+</structure>
 ```
 
 or
@@ -139,6 +138,8 @@ PRIMARY KEY field1, field2
 ```
 
 В запросе к функции `dictGet*` в качестве ключа передаётся Tuple. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+
+Когда составной ключ состоит из одного атрибута, значение ключа можно передать напрямую, без обёртки в `tuple`. Например, допустимы оба варианта: `dictGetString('dict_name', 'attr_name', 'key')` и `dictGetString('dict_name', 'attr_name', tuple('key'))`.
 
 <div id="attributes">
   ## Атрибуты

@@ -1,0 +1,22 @@
+-- non-numeric chime-threshold-seconds in config is rejected before the query runs
+1
+-- non-numeric profile-events-delay-ms in config is rejected before the query runs
+1
+-- non-numeric history_max_entries in config is rejected before the query runs
+1
+-- non-numeric suggestion_limit in config is rejected before the query runs
+1
+-- non-boolean print-profile-events in config is rejected before the query runs
+1
+-- out-of-range history_max_entries in config is rejected before the query runs
+1
+-- out-of-range suggestion_limit in config is rejected before the query runs
+1
+-- a wide value is accepted where the read site is 64-bit
+1
+-- no rows were inserted
+0
+-- the empty <print-profile-events/> form means enabled
+SelectedRows printed
+-- a valid numeric value is accepted
+1

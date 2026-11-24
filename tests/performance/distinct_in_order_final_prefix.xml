@@ -1,0 +1,13 @@
+<test>
+    <!-- Final DISTINCT over a stream sorted by a prefix of the distinct columns: ranges of 1000
+         rows share one `a` value, so the transform deduplicates each range by hashing only `b`. -->
+    <create_query>CREATE TABLE distinct_final_prefix (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a</create_query>
+    <fill_query>INSERT INTO distinct_final_prefix SELECT intDiv(number, 1000), number % 1000 FROM numbers_mt(5e7)</fill_query>
+    <fill_query>OPTIMIZE TABLE distinct_final_prefix FINAL</fill_query>
+
+    <!-- ORDER BY is a prefix of the DISTINCT columns, so the plan places a final sorted distinct
+         above the sort in addition to the in-order pre-distinct at the read. -->
+    <query>SELECT DISTINCT a, b FROM distinct_final_prefix ORDER BY a FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS distinct_final_prefix</drop_query>
+</test>

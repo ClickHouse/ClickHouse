@@ -119,7 +119,7 @@ void CustomSeparatedRowInputFormat::resetReadBuffer()
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     PeekableReadBuffer & buf_, bool ignore_spaces_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_)
+    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_), default_csv_delimiter(format_settings_.csv.delimiter)
 {
 }
 
@@ -138,7 +138,12 @@ void CustomSeparatedFormatReader::skipRowStartDelimiter()
 void CustomSeparatedFormatReader::skipFieldDelimiter()
 {
     skipSpaces();
-    assertString(format_settings.custom.field_delimiter, *buf);
+    /// This is called for every field, so check the common one-character delimiter inline instead of calling `assertString`.
+    const auto & delimiter = format_settings.custom.field_delimiter;
+    if (delimiter.size() == 1)
+        assertChar(delimiter.front(), *buf);
+    else
+        assertString(delimiter, *buf);
 }
 
 void CustomSeparatedFormatReader::skipRowEndDelimiter()
@@ -156,10 +161,25 @@ void CustomSeparatedFormatReader::skipRowBetweenDelimiter()
 void CustomSeparatedFormatReader::skipField()
 {
     skipSpaces();
-    if (format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
-        readCSVFieldWithTwoPossibleDelimiters(*buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
-    else
-        skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
+    /// Skipping is the main cost of reading a few columns from a wide file, so the `Escaped` and `Raw`
+    /// rules read the field directly, as `TabSeparatedFormatReader::skipField` does, instead of going
+    /// through the generic `skipFieldByEscapingRule` for every field.
+    NullOutput out;
+    switch (format_settings.custom.escaping_rule)
+    {
+        case FormatSettings::EscapingRule::Escaped:
+            readEscapedStringInto<NullOutput, false>(out, *buf);
+            break;
+        case FormatSettings::EscapingRule::Raw:
+            readStringInto(out, *buf);
+            break;
+        case FormatSettings::EscapingRule::CSV:
+            readCSVFieldWithTwoPossibleDelimiters(*buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
+            break;
+        default:
+            skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
+            break;
+    }
 }
 
 bool CustomSeparatedFormatReader::checkForEndOfRow()
@@ -215,9 +235,9 @@ String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_l
 }
 
 template <CustomSeparatedFormatReader::ReadFieldMode mode>
-std::vector<String> CustomSeparatedFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> CustomSeparatedFormatReader::readRowImpl()
 {
-    std::vector<String> values;
+    VectorWithMemoryTracking<String> values;
     skipRowStartDelimiter();
 
     if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
@@ -312,7 +332,7 @@ void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
     }
 }
 
-bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &)
+bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &, size_t /*column_index*/)
 {
     skipSpaces();
     updateFormatSettings(is_last_file_column);
@@ -398,6 +418,9 @@ void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
+    columns = 0;
+    format_settings.csv.delimiter = default_csv_delimiter;
+    format_settings.csv.custom_delimiter.clear();
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
@@ -415,7 +438,7 @@ CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (no_more_data || reader.checkForSuffix())
     {
@@ -461,7 +484,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);
-            });
+            }, /*supports_reset_parser=*/ true);
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);
@@ -475,20 +498,20 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
 
 ## Description {#description}
 
-Similar to [Template](../Template/Template.md), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../../../operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from the following settings:
+Similar to [Template](/reference/formats/Template/Template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/reference/settings/formats/format-custom#format_custom_escaping_rule) setting and delimiters from the following settings:
 
-- [format_custom_field_delimiter](/operations/settings/settings-formats.md/#format_custom_field_delimiter)
-- [format_custom_row_before_delimiter](/operations/settings/settings-formats.md/#format_custom_row_before_delimiter)
-- [format_custom_row_after_delimiter](/operations/settings/settings-formats.md/#format_custom_row_after_delimiter)
-- [format_custom_row_between_delimiter](/operations/settings/settings-formats.md/#format_custom_row_between_delimiter)
-- [format_custom_result_before_delimiter](/operations/settings/settings-formats.md/#format_custom_result_before_delimiter)
-- [format_custom_result_after_delimiter](/operations/settings/settings-formats.md/#format_custom_result_after_delimiter) 
+- [format_custom_field_delimiter](/reference/settings/formats/format-custom#format_custom_field_delimiter)
+- [format_custom_row_before_delimiter](/reference/settings/formats/format-custom#format_custom_row_before_delimiter)
+- [format_custom_row_after_delimiter](/reference/settings/formats/format-custom#format_custom_row_after_delimiter)
+- [format_custom_row_between_delimiter](/reference/settings/formats/format-custom#format_custom_row_between_delimiter)
+- [format_custom_result_before_delimiter](/reference/settings/formats/format-custom#format_custom_result_before_delimiter)
+- [format_custom_result_after_delimiter](/reference/settings/formats/format-custom#format_custom_result_after_delimiter)
 
-:::note
+<Note>
 It does not use escaping rules settings and delimiters from format strings.
-:::
+</Note>
 
-There is also the [`CustomSeparatedIgnoreSpaces`](../CustomSeparated/CustomSeparatedIgnoreSpaces.md) format, which is similar to [TemplateIgnoreSpaces](../Template//TemplateIgnoreSpaces.md).
+There is also the [`CustomSeparatedIgnoreSpaces`](/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpaces) format, which is similar to [TemplateIgnoreSpaces](/reference/formats/Template/TemplateIgnoreSpaces).
 
 ## Example usage {#example-usage}
 
@@ -548,9 +571,9 @@ Additional settings:
 
 | Setting                                                                                                                                                        | Description                                                                                                                 | Default |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|---------|
-| [input_format_custom_detect_header](../../../operations/settings/settings-formats.md/#input_format_custom_detect_header)                                       | enables automatic detection of header with names and types if any.                                                          | `true`  |
-| [input_format_custom_skip_trailing_empty_lines](../../../operations/settings/settings-formats.md/#input_format_custom_skip_trailing_empty_lines)               | skip trailing empty lines at the end of file.                                                                              | `false` |
-| [input_format_custom_allow_variable_number_of_columns](../../../operations/settings/settings-formats.md/#input_format_custom_allow_variable_number_of_columns) | allow variable number of columns in CustomSeparated format, ignore extra columns and use default values for missing columns. | `false` |
+| [input_format_custom_detect_header](/reference/settings/formats/input-format#input_format_custom_detect_header)                                       | enables automatic detection of header with names and types if any.                                                          | `true`  |
+| [input_format_custom_skip_trailing_empty_lines](/reference/settings/formats/input-format#input_format_custom_skip_trailing_empty_lines)               | skip trailing empty lines at the end of file.                                                                              | `false` |
+| [input_format_custom_allow_variable_number_of_columns](/reference/settings/formats/input-format#input_format_custom_allow_variable_number_of_columns) | allow variable number of columns in CustomSeparated format, ignore extra columns and use default values for missing columns. | `false` |
 )DOCS_MD"});
 
     factory.setDocumentation("CustomSeparatedIgnoreSpaces", Documentation{
@@ -672,7 +695,7 @@ INSERT INTO football FROM INFILE 'football.txt' FORMAT CustomSeparatedIgnoreSpac
 
 ## Description {#description}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](../TabSeparated/TabSeparatedWithNames.md).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames).
 
 ## Example usage {#example-usage}
 
@@ -728,12 +751,12 @@ row('date';'season';'home_team';'away_team';'home_team_goals';'away_team_goals')
 
 ## Format settings {#format-settings}
 
-:::note
-If setting [`input_format_with_names_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,
+<Note>
+If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from the input data will be mapped to the columns from the table by their names, 
-columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](../../../operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 
     factory.setDocumentation("CustomSeparatedWithNamesAndTypes", Documentation{
@@ -744,7 +767,7 @@ Otherwise, the first row will be skipped.
 
 ## Description {#description}
 
-Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](../TabSeparated/TabSeparatedWithNamesAndTypes.md).
+Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes).
 
 ## Example usage {#example-usage}
 
@@ -800,16 +823,16 @@ row('date';'season';'home_team';'away_team';'home_team_goals';'away_team_goals')
 
 ## Format settings {#format-settings}
 
-:::note
-If setting [`input_format_with_names_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](../../../operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+<Note>
+If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 
-:::note
-If setting [`input_format_with_types_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to `1`,
+<Note>
+If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 }
 

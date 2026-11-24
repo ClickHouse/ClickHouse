@@ -11,68 +11,95 @@ integration:
 keywords: ['DataGrip', 'بيئة تطوير متكاملة لقواعد البيانات', 'JetBrains', 'عميل SQL', 'بيئة تطوير متكاملة']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
-import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 <div id="start-or-download-datagrip">
-  ## ابدأ باستخدام DataGrip أو نزّله
+  ## ابدأ استخدام DataGrip أو نزّله
 </div>
 
-يمكنك الحصول على DataGrip من https://www.jetbrains.com/datagrip/
+يتوفر DataGrip على https://www.jetbrains.com/datagrip/
 
-<div id="1-gather-your-connection-details">
-  ## 1. جهّز تفاصيل الاتصال لديك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="حمّل برنامج تشغيل ClickHouse" id="2-load-the-clickhouse-driver">
+    1. شغّل DataGrip، ثم في علامة التبويب **Data Sources** ضمن مربع الحوار **Data Sources and Drivers**، انقر على أيقونة **+**
 
-<div id="2-load-the-clickhouse-driver">
-  ## 2. تحميل برنامج تشغيل ClickHouse
-</div>
+    <div className="ch-image-lg">
 
-1. شغّل DataGrip، ثم في علامة التبويب **Data Sources** ضمن مربع الحوار **Data Sources and Drivers**، انقر على الرمز **+**
+    <Frame>
 
-<Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="علامة تبويب Data Sources في DataGrip مع تمييز الرمز +" />
+    ![علامة التبويب Data Sources في DataGrip مع تمييز الأيقونة +](/images/integrations/sql-clients/datagrip-5.webp)
 
-حدِّد **ClickHouse**
+    </Frame>
 
-<Tip>
-  يتغيّر الترتيب كلما أنشأت اتصالات، لذا قد لا يظهر ClickHouse في أعلى قائمتك بعد.
-</Tip>
+    </div>
 
-<Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="تحديد ClickHouse من قائمة مصادر البيانات في DataGrip" />
+    حدِّد **ClickHouse**
 
-* انتقل إلى علامة التبويب **Drivers** وحمِّل برنامج تشغيل ClickHouse
+    <Tip>
+      عند إنشاء الاتصالات، يتغيّر الترتيب، لذا قد لا يظهر ClickHouse في أعلى القائمة بعد.
+    </Tip>
 
-  لا يأتي DataGrip مزوّدًا ببرامج تشغيل لتقليل حجم التنزيل إلى الحد الأدنى. في علامة التبويب **Drivers**،
-  حدِّد **ClickHouse** من قائمة **Complete Support**، ثم وسِّع علامة **+**. اختر برنامج التشغيل **Latest stable** من خيار **Provided Driver**:
+    <div className="ch-image-sm">
 
-<Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="علامة تبويب Drivers في DataGrip تعرض تثبيت برنامج تشغيل ClickHouse" />
+    <Frame>
 
-<div id="3-connect-to-clickhouse">
-  ## 3. الاتصال بـ ClickHouse
-</div>
+    ![تحديد ClickHouse في DataGrip من قائمة مصادر البيانات](/images/integrations/sql-clients/datagrip-6.webp)
 
-* حدِّد تفاصيل الاتصال بقاعدة البيانات، ثم انقر على **Test Connection**.
-  في الخطوة الأولى، جمعتَ تفاصيل الاتصال — أدخِل URL الخاص بالمضيف، والمنفذ، واسم المستخدم، وكلمة المرور، واسم قاعدة البيانات، ثم اختبر الاتصال.
+    </Frame>
 
-<Tip>
-  أدخل اسم المضيف فقط في حقل **Host** (على سبيل المثال، `your-host.clickhouse.cloud`) من دون أي بادئة بروتوكول مثل `https://`.
+    </div>
 
-  بالنسبة إلى اتصالات ClickHouse Cloud، يجب إضافة `?ssl=true` إلى حقل **URL** أسفل المضيف. يجب أن يكون JDBC URL الكامل على النحو التالي:
+    * انتقل إلى علامة التبويب **Drivers** وحمّل برنامج تشغيل ClickHouse
 
-  `jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
+      لا يأتي DataGrip مرفقًا ببرامج التشغيل لتقليل حجم التنزيل. في علامة التبويب **Drivers**
+      حدِّد **ClickHouse** من قائمة **Complete Support**، ثم انقر لتوسيع علامة **+**. اختر برنامج التشغيل **Latest stable** من خيار **Provided Driver**:
 
-  يتطلب ClickHouse Cloud تشفير SSL لجميع الاتصالات. ومن دون المعلَمة `?ssl=true`، ستظهر أخطاء &quot;Connection reset&quot; حتى مع بيانات الاعتماد الصحيحة.
+    <div className="ch-image-lg">
 
-  لمزيد من التفاصيل حول إعدادات JDBC URL، يُرجى الرجوع إلى [repository الخاص بـ برنامج تشغيل ClickHouse JDBC](https://github.com/ClickHouse/clickhouse-java).
-</Tip>
+    <Frame>
 
-<Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="نموذج تفاصيل الاتصال في DataGrip مع إعدادات ClickHouse" />
+    ![علامة التبويب Drivers في DataGrip تعرض تثبيت برنامج تشغيل ClickHouse](/images/integrations/sql-clients/datagrip-1.webp)
+
+    </Frame>
+
+    </div>
+  </Step>
+
+  <Step title="الاتصال بـ ClickHouse" id="3-connect-to-clickhouse">
+    * حدِّد تفاصيل الاتصال بقاعدة البيانات، ثم انقر على **Test Connection**.
+      في الخطوة الأولى، جمعتَ تفاصيل الاتصال — أدخِل URL الخاص بالمضيف، والمنفذ، واسم المستخدم، وكلمة المرور، واسم قاعدة البيانات، ثم اختبر الاتصال.
+
+    <Tip>
+      أدخِل اسم المضيف فقط في حقل **Host** (على سبيل المثال، `your-host.clickhouse.cloud`) من دون أي بادئة بروتوكول مثل `https://`.
+
+      بالنسبة إلى اتصالات ClickHouse Cloud، يجب إضافة `?ssl=true` إلى حقل **URL** أسفل المضيف. يجب أن يكون JDBC URL الكامل على النحو التالي:
+
+      `jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
+
+      يتطلب ClickHouse Cloud تشفير SSL لجميع الاتصالات. ومن دون المعلَمة `?ssl=true`، ستظهر أخطاء &quot;Connection reset&quot; حتى مع بيانات الاعتماد الصحيحة.
+
+      لمزيد من التفاصيل حول إعدادات JDBC URL، يُرجى الرجوع إلى repository [ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java).
+    </Tip>
+
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![نموذج تفاصيل الاتصال في DataGrip مع إعدادات ClickHouse](/images/integrations/sql-clients/datagrip-7.webp)
+
+    </Frame>
+
+    </div>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## معرفة المزيد

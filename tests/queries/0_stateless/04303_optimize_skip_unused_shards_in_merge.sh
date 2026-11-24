@@ -35,7 +35,6 @@ CREATE TABLE ${DB}.merge_dist AS ${DB}.data1 ENGINE = Merge(${DB}, '^dist[12]\$'
 CREATE VIEW ${DB}.view1 AS SELECT * FROM ${DB}.dist1;
 CREATE TABLE ${DB}.merge_view AS ${DB}.data1 ENGINE = Merge(${DB}, '^view1\$');
 
-SET enable_analyzer = 1;
 SET optimize_skip_unused_shards = 1;
 
 -- Baseline: a direct \`Distributed\` query prunes the unused shard.

@@ -14,7 +14,7 @@ from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 
-STATUS_NAME = "Report messages"
+STATUS_NAME = "CI Infrastructure Messages"
 
 
 def check():

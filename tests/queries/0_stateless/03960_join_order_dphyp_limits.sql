@@ -1,6 +1,5 @@
 -- Edge cases for `query_plan_optimize_join_order_limit` setting.
 
-SET allow_experimental_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 -- =====================================================================

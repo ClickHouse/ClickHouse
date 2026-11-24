@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'drilldown', 'table', 'row click', 'inspection', 'observability']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 テーブルタイルは、多くの場合 **カタログ** として機能します。サービス、ホスト、エンドポイント、またはエラーグループごとに1行があり、それぞれを評価するためのカラムがいくつか表示されます。行クリックアクションを使うと、このカタログが調査ワークフローになります。カタログを見て重要な行を見つけてクリックすると、ClickStack がその行の値をフィルターとして引き継ぎます。すると宛先は、その項目にあらかじめ絞り込まれた状態で開くため、クエリを手作業で組み直す必要はありません。
 
 クリック先は次の2つのいずれかです。
@@ -25,26 +23,30 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 サービスごとに1行の概要テーブルを使うと、「どのサービスが不健全か？」を把握できます。さらに行をクリックすると、クリックしたサービスに絞り込まれたサービス別ダッシュボードが開き、「その内部で何が起きているのか？」を確認できます。以下のパターンでは、サービス一覧テーブルと `Service Detail` ダッシュボードを組み合わせます。
 
 <Steps>
-  <Step>
-    ### 詳細ダッシュボードを作成する
+  <Step title="詳細ダッシュボードを作成する" id="detail-dashboard">
+    `Service Detail` という名前のダッシュボードを作成し、トレースソースに対して、式 `ServiceName` の[カスタムフィルター](/ja/clickstack/features/dashboards/overview#custom-filters)を追加します。このダッシュボードレベルのフィルターにより、すべてのタイルが単一のサービスに絞り込まれるため、各タイルのクエリにサービス名をハードコードする必要はありません。必要なサービス別ビューを追加します。たとえば、RED の主要指標 (requests、errors、P95 duration)、レイテンシのパーセンタイルチャート (P50、P95、P99)、時間ごとのリクエスト率、`SpanName` でグループ化したエンドポイントごとの内訳などです。
 
-    `Service Detail` という名前のダッシュボードを作成し、トレース ログソースに対して、式 `ServiceName` の[カスタムフィルター](/ja/clickstack/features/dashboards/overview#custom-filters)を追加します。このダッシュボードレベルのフィルターにより、すべてのタイルが単一のサービスに絞り込まれるため、各タイルのクエリにサービス名をハードコードする必要はありません。必要なサービス別ビューを追加します。たとえば、RED の主要指標 (requests、errors、P95 duration) 、レイテンシのパーセンタイルチャート (P50、P95、P99) 、時間ごとのリクエスト率、`SpanName` でグループ化したエンドポイントごとの内訳などです。
-
-    次の手順で対象として選択できるよう、まずこのダッシュボードを保存します。
+    まずこのダッシュボードを保存して、次の手順でターゲットとして選択できるようにします。
   </Step>
 
-  <Step>
-    ### サービス一覧を作成する
+  <Step title="サービス一覧を作成する" id="service-inventory">
+    概要ダッシュボードで、トレースソースに `ServiceName` でグループ化した **Table** タイルを追加します。各サービスを評価するための RED のカラムを追加し、それぞれをエイリアス付きのseriesにします。
 
-    概要ダッシュボードで、トレース ログソースに `ServiceName` でグループ化した **Table** タイルを追加します。各サービスを評価するための RED のカラムを追加し、それぞれをエイリアス付きのシリーズにします。
-
-    * `Requests`: span 数 (rate) 。
+    * `Requests`: span 数 (rate)。
     * `Errors`: error status の span 数。
     * `P95 Duration`: `Duration` の95パーセンタイル。カラムの数値フォーマットを duration に設定し、生のナノ秒ではなく `288ms` のように表示されるようにします。
 
     `Requests` の降順で並べ替え、最もトラフィックの多いサービスが上位に来るようにします。このテーブルがカタログとなり、各サービスが1行ずつ RED で評価されます。
 
-    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="各サービスについて RED のカラム（Requests、Errors、P95 Duration）を表示し、リクエスト量順に並べたサービス一覧テーブル。その上に requests-over-time のトレンドを表示" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![各サービスについて RED のカラム（Requests、Errors、P95 Duration）を表示し、リクエスト量順に並べたサービス一覧テーブル。その上に requests-over-time のトレンドを表示](/images/clickstack/dashboards/row-click-catalog.webp)
+
+    </Frame>
+
+    </div>
 
     <Tip>
       **group-by カラムを先頭に置く**
@@ -53,10 +55,8 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ### 行クリックを設定する
-
-    一覧テーブルで **Row Click Action** を開き、**Dashboard** を選択して、ダッシュボード一覧から `Service Detail` を選びます。ダッシュボードを直接選ぶと、ID で固定されます。これにより、後でダッシュボード名を変更してもリンクは機能し続け、ダッシュボードをエクスポート／インポートしても維持されます。 (行ごとに別のダッシュボードを選ぶ場合のみ **Template** オプションを使います。[行クリックアクションを設定する](#set-up)を参照してください。)
+  <Step title="行クリックを設定する" id="wire-dashboard">
+    一覧テーブルで **Row Click Action** を開き、**Dashboard** を選択して、ダッシュボード一覧から `Service Detail` を選びます。ダッシュボードを直接選ぶと、ID で固定されます。これにより、後でダッシュボード名を変更してもリンクは機能し続け、ダッシュボードをエクスポート／インポートしても維持されます。(行ごとに別のダッシュボードを選ぶ場合のみ **Template** オプションを使います。[行クリックアクションを設定する](#set-up)を参照してください。)
 
     `Service Detail` では `ServiceName` のカスタムフィルターを定義しているため、ドロワーにはその式に対応する空のフィルターがあらかじめ表示されます。そのテンプレートを入力します。
 
@@ -66,12 +66,18 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     **Apply** をクリックして保存します。これで、クリックした行のサービスがダッシュボードの `ServiceName` フィルターに渡されます。
   </Step>
 
-  <Step>
-    ### 行をクリックする
-
+  <Step title="行をクリックする" id="click-dashboard">
     行にホバーすると、テーブル右端にリンク用の操作要素が表示され、操作内容を示すヒント (`Open dashboard "Service Detail"`) が表示されます。行をクリックすると、`Service` フィルターがクリックした値に設定された状態で `Service Detail` ダッシュボードが開き、すべてのタイル (RED の主要指標、レイテンシのパーセンタイル、エンドポイントごとの内訳) が、その1つのサービスに絞り込まれます。
 
-    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="行クリック後の Service Detail ダッシュボード。Service フィルターがクリックしたサービスに設定され、RED の主要指標、レイテンシのパーセンタイル、エンドポイントごとの内訳がすべてそのサービスにスコープされている" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![行クリック後の Service Detail ダッシュボード。Service フィルターがクリックしたサービスに設定され、RED の主要指標、レイテンシのパーセンタイル、エンドポイントごとの内訳がすべてそのサービスにスコープされている](/images/clickstack/dashboards/row-click-drilldown.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -84,9 +90,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 同じサービス一覧テーブルから始めて、行クリックの遷移先を詳細ダッシュボードではなく、トレースそのものに設定します。
 
 <Steps>
-  <Step>
-    ### 行クリックの遷移先を Search に設定する
-
+  <Step title="行クリックの遷移先を Search に設定する" id="wire-search">
     一覧テーブルで **Row Click Action** を開き、**Search** を選択します。トレースソースを選択します (表示されるのはログソースとトレースソースのみです) 。フィルターを 1 つ追加します。
 
     * **Expression**: `ServiceName`
@@ -95,16 +99,22 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     **Apply** をクリックして保存します。
   </Step>
 
-  <Step>
-    ### 行をクリックする
-
+  <Step title="行をクリックする" id="click-search">
     これでサービスの行をクリックすると、そのトレースソースの Search ページが開き、`ServiceName = <service>` で絞り込まれるため、同じ時間範囲内でそのサービスの span だけを表示できます。
 
-    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="行クリック後にトレースソースの Search ページが開き、クリックしたサービスで絞り込まれた状態" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![行クリック後にトレースソースの Search ページが開き、クリックしたサービスで絞り込まれた状態](/images/clickstack/dashboards/row-click-search-drilldown.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
-この方法は、どのような項目カタログにも応用できます。テーブルを `ServiceName` ではなく操作 (`SpanName`) や endpoint 属性でグループ化し、そのカラムからフィルターをテンプレート化すれば、各行のクリックでその操作または endpoint に対応するイベントを開けます。map 属性での group-by については、[Validation and limitations](#validation) の alias に関する注記を参照してください。
+この方法は、どのような項目カタログにも応用できます。テーブルを `ServiceName` ではなく操作 (`SpanName`) や endpoint 属性でグループ化し、そのカラムからフィルターをテンプレート化すれば、各行のクリックでその操作または endpoint に対応するイベントを開けます。map 属性での group-by については、[Validation and limitations](#validation) の エイリアス に関する注記を参照してください。
 
 <div id="set-up">
   ## 行クリックアクションを設定する
@@ -112,7 +122,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 行クリックアクションはテーブルタイル上で設定します。専用の設定ページはありません。タイルを追加または編集し、visualization type を **Table** に設定します。すると、エディタのツールバーで **Display Settings** の横に **Row Click Action** ボタンが表示されます。このボタンはテーブルタイルでのみ表示され、ラベルには現在のアクションが反映されます: `Row Click Action: Default`、`Row Click Action: Search`、`Row Click Action: Dashboard`。クリックするとドロワーが開きます。
 
-<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="Dashboard モードの Row Click Action ドロワー。宛先として Service Detail ダッシュボードが選択され、クリックした行の ServiceName フィルタがテンプレート化されている" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboard モードの Row Click Action ドロワー。宛先として Service Detail ダッシュボードが選択され、クリックした行の ServiceName フィルタがテンプレート化されている](/images/clickstack/dashboards/row-click-drawer.webp)
+
+</Frame>
+
+</div>
 
 このドロワーでは 3 つのアクションを選択できます。
 
@@ -129,7 +147,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 <Info>
   **テンプレートはテーブルのカラムを参照します**
 
-  `{{...}}` テンプレートは、テーブルタイル自身のカラム、つまり group-by カラムと、各 series をその名前または alias で、テーブルに表示されているとおりに参照して解決されます。テーブルが選択していない基盤ログソースのカラムは参照できません。クリックで値を引き継ぐには、その値がテーブル内のカラムである必要があります。そのため、`ServiceName` はテーブルの group-by カラムなので `{{ServiceName}}` は機能し、alias が付いたカラムはその alias で参照します。テーブルに存在しない名前を参照すると、クリックは `Row has no column '<name>'` で失敗します。
+  `{{...}}` テンプレートは、テーブルタイル自身のカラム、つまり group-by カラムと、各 series をその名前またはエイリアスで、テーブルに表示されているとおりに参照して解決されます。テーブルが選択していない基盤ログソースのカラムは参照できません。クリックで値を引き継ぐには、その値がテーブル内のカラムである必要があります。そのため、`ServiceName` はテーブルの group-by カラムなので `{{ServiceName}}` は機能し、エイリアス が付いたカラムはその エイリアス で参照します。テーブルに存在しない名前を参照すると、クリックは `Row has no column '<name>'` で失敗します。
 </Info>
 
 **Apply** をクリックしてテンプレートを検証し (ClickStack は構文が無効なものを報告します) 、その後ダッシュボードを保存してアクションを永続化します。

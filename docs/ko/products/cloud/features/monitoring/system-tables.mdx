@@ -7,8 +7,6 @@ sidebarTitle: '시스템 테이블'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 모든 ClickHouse 인스턴스에는 `system` 데이터베이스에 포함된 [시스템 테이블](/ko/reference/system-tables/overview) 집합이 있으며, 여기에는 다음과 같은 정보가 담겨 있습니다.
 
 * 서버 상태, 프로세스 및 환경
@@ -58,7 +56,15 @@ ORDER BY
 
 ClickHouse에는 `$HOST:$PORT/dashboard`에서 접근할 수 있는 기본 제공 고급 관측성 대시보드 기능이 있으며(사용자 이름과 비밀번호 필요), `system.dashboards`에 포함된 Cloud Overview 메트릭을 표시합니다.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="네이티브 고급 관측성 대시보드" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![네이티브 고급 관측성 대시보드](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   이 대시보드는 ClickHouse 인스턴스에 직접 인증해야 하며, 추가 인증 없이 Cloud Console UI를 통해 접근할 수 있는 [Cloud Console Advanced Dashboard](/ko/products/cloud/features/monitoring/cloud-console#advanced-dashboard)와는 별개입니다.
@@ -107,7 +113,7 @@ FORMAT VERTICAL
   ## 관련 페이지
 </div>
 
-* [시스템 테이블 참고](/ko/reference/system-tables/overview) — 사용 가능한 모든 시스템 테이블의 전체 참고 문서
-* [Cloud Console 모니터링](/ko/products/cloud/features/monitoring/cloud-console) — 설정이 필요 없고 서비스 성능에 영향을 주지 않는 대시보드
-* [Prometheus 엔드포인트](/ko/products/cloud/features/monitoring/prometheus) — 외부 모니터링 도구로 메트릭 내보내기
-* [Advanced dashboard](/ko/products/cloud/features/monitoring/advanced-dashboard) — 대시보드 시각화에 대한 자세한 참고 문서
+* [시스템 테이블 참고](/ko/reference/system-tables/overview) — 사용 가능한 모든 시스템 테이블에 대한 전체 참고 자료
+* [Cloud Console 모니터링](/ko/products/cloud/features/monitoring/cloud-console) — 서비스 성능에 영향을 주지 않는 무설정 대시보드
+* [Prometheus 엔드포인트](/ko/products/cloud/features/monitoring/prometheus) — 메트릭을 외부 모니터링 도구로 내보내기
+* [고급 대시보드](/ko/products/cloud/features/monitoring/advanced-dashboard) — 대시보드 시각화에 대한 자세한 참고 자료

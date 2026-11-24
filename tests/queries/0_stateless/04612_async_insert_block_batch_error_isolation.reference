@@ -1,0 +1,6 @@
+=== VALUES (Parsed): bad entry is isolated, good entry survives ===
+1	100
+=== native block (Preprocessed): bad entry is isolated, good entry survives ===
+1	100
+Preprocessed	Ok	1
+Preprocessed	FlushError	1

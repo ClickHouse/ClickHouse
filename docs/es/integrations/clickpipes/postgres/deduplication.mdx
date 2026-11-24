@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Las actualizaciones y eliminaciones replicadas de Postgres a ClickHouse generan filas duplicadas en ClickHouse debido a su estructura de almacenamiento de datos y al proceso de replicación. Esta página explica por qué ocurre esto y qué estrategias usar en ClickHouse para gestionar los duplicados.
 
 <div id="how-does-data-get-replicated">
@@ -64,15 +62,23 @@ ORDER BY id;
 
 La siguiente ilustración muestra un ejemplo básico de sincronización de una tabla `users` entre PostgreSQL y ClickHouse mediante ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="carga inicial de ClickPipes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![carga inicial de ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+
+</Frame>
+
+</div>
 
 **Paso 1** muestra la instantánea inicial de las 2 filas en PostgreSQL y cómo ClickPipes realiza la carga inicial de esas 2 filas en ClickHouse. Como puede observar, ambas filas se copian tal cual en ClickHouse.
 
 **Paso 2** muestra tres operaciones en la tabla `users`: insertar una nueva fila, actualizar una fila existente y eliminar otra fila.
 
-**Paso 3** muestra cómo ClickPipes replica las operaciones INSERT, UPDATE y DELETE en ClickHouse como inserciones versionadas. UPDATE aparece como una nueva versión de la fila con ID 2, mientras que DELETE aparece como una nueva versión del ID 1 marcada como true mediante `_is_deleted`. Debido a esto, ClickHouse tiene tres filas más que PostgreSQL.
+**Paso 3** muestra cómo ClickPipes replica las operaciones INSERT, UPDATE y DELETE en ClickHouse como inserciones versionadas. UPDATE aparece como una nueva versión de la fila con ID 2, mientras que DELETE aparece como una nueva versión del ID 1, marcada como true mediante `_is_deleted`. Debido a esto, ClickHouse tiene tres filas más que PostgreSQL.
 
-Como resultado, ejecutar una consulta sencilla como `SELECT count(*) FROM users;` puede producir resultados distintos en ClickHouse y PostgreSQL. Según la [documentación de ClickHouse sobre merges](/es/concepts/core-concepts/merges#replacing-merges), las versiones obsoletas de las filas acaban descartándose durante el proceso de merge. Sin embargo, el momento en que se produce este merge es impredecible, lo que significa que las consultas en ClickHouse pueden devolver resultados inconsistentes hasta que eso ocurra.
+Como resultado, ejecutar una consulta sencilla como `SELECT count(*) FROM users;` puede producir resultados distintos en ClickHouse y PostgreSQL. Según la [documentación de ClickHouse sobre merges](/es/concepts/core-concepts/merges#replacing-merges), las versiones obsoletas de las filas acaban descartándose durante el proceso de fusión. Sin embargo, el momento en que se produce esta fusión es impredecible, lo que significa que las consultas en ClickHouse pueden devolver resultados inconsistentes hasta que eso ocurra.
 
 ¿Cómo podemos garantizar resultados idénticos en las consultas tanto en ClickHouse como en PostgreSQL?
 
@@ -136,15 +142,15 @@ LIMIT 10
   #### configuración FINAL
 </div>
 
-En lugar de añadir el modificador FINAL a cada nombre de tabla de la consulta, puedes usar la [configuración FINAL](/es/reference/settings/session-settings#final) para aplicarlo automáticamente a todas las tablas de la consulta.
+En lugar de añadir el modificador FINAL a cada nombre de tabla de la consulta, puedes usar la [configuración FINAL](/es/reference/settings/session-settings/other#final) para aplicarlo automáticamente a todas las tablas de la consulta.
 
 Esta configuración puede aplicarse por consulta o a toda una sesión.
 
 ```sql
--- Configuración FINAL por consulta
+-- Per query FINAL setting
 SELECT count(*) FROM posts SETTINGS FINAL = 1;
 
--- Establecer FINAL para la sesión
+-- Set FINAL for the session
 SET final = 1;
 SELECT count(*) FROM posts; 
 ```

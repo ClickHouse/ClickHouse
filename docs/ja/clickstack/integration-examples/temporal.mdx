@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Temporal', 'メトリクス', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -40,9 +38,7 @@ Temporal は、シンプルでありながら高度で耐障害性の高いア�
 * ClickStack から Temporal Cloud への HTTP ネットワークアクセス
 
 <Steps>
-  <Step>
-    #### Temporal Cloud キーを作成する
-
+  <Step title="Temporal Cloud キーを作成する" id="create-temporal-cloud-key">
     Temporal Cloud の API キーを用意してください。これは、Temporal のドキュメントにある[認証ガイド](https://docs.temporal.io/production-deployment/cloud/metrics/openmetrics/api-reference#authentication)に従って作成できます。
 
     <Warning>
@@ -52,9 +48,7 @@ Temporal は、シンプルでありながら高度で耐障害性の高いア�
     </Warning>
   </Step>
 
-  <Step>
-    #### カスタム OTel collector 設定を作成する
-
+  <Step title="カスタム OTel collector 設定を作成する" id="custom-otel">
     ClickStack では、カスタム設定ファイルをマウントして環境変数を設定することで、ベースの OpenTelemetry collector 設定を拡張できます。このカスタム設定は、OpAMP 経由で HyperDX が管理するベース設定にマージされます。
 
     `temporal-metrics.yaml` という名前のファイルを、次の設定内容で作成します。
@@ -111,9 +105,7 @@ Temporal は、シンプルでありながら高度で耐障害性の高いア�
     </Note>
   </Step>
 
-  <Step>
-    #### カスタム設定を読み込むように ClickStack を構成する
-
+  <Step title="カスタム設定を読み込むように ClickStack を構成する" id="load-custom">
     既存の ClickStack デプロイメントでカスタム collector 設定を有効にするには、次の作業が必要です。
 
     1. カスタム設定ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントする
@@ -130,13 +122,13 @@ Temporal は、シンプルでありながら高度で耐障害性の高いア�
     ```yaml
     services:
       clickstack:
-        # ... 既存の設定 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
         volumes:
           - ./temporal-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - ./temporal.key:/etc/otelcol-contrib/temporal.key:ro
-          # ... その他のボリューム ...
+          # ... other volumes ...
     ```
 
     ##### オプション 2: Docker run (オールインワンイメージ)
@@ -153,16 +145,22 @@ Temporal は、シンプルでありながら高度で耐障害性の高いア�
     ```
   </Step>
 
-  <Step>
-    #### HyperDX でメトリクスを確認する
-
+  <Step title="HyperDX でメトリクスを確認する" id="verifying-metrics">
     設定後、HyperDX にログインし、メトリクスが取り込まれていることを確認します。
 
     1. Metrics エクスプローラーに移動します
     2. `temporal` で始まるメトリクスを検索します (例: `temporal_cloud_v1_workflow_success_count`、`temporal_cloud_v1_poll_timeout_count`)
     3. 設定した収集間隔でメトリクスのデータポイントが表示されるはずです
 
-    <Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Temporalメトリクス" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Temporalメトリクス](/images/clickstack/temporal/temporal-metrics.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -173,29 +171,49 @@ Temporal は、シンプルでありながら高度で耐障害性の高いア�
 ClickStack で Temporal Cloud の監視をすぐに始められるよう、Temporal メトリクス向けの可視化例をいくつか用意しています。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">ダウンロード</TrackedLink> ダッシュボード設定
+  <Step title="ダッシュボード設定をダウンロードする" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
   </Step>
 
-  <Step>
-    #### あらかじめ用意されたダッシュボードをインポートする
-
+  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポートボタン" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ダッシュボードのインポートボタン](/images/clickstack/import-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     3. `temporal-metrics-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
-    <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="インポート完了ダイアログ" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![インポート完了ダイアログ](/images/clickstack/temporal/import-temporal-metrics-dashboard.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### ダッシュボードを表示する
-
+  <Step title="ダッシュボードを表示する" id="created-dashboard">
     すべての可視化があらかじめ設定された状態でダッシュボードが作成されます。
 
-    <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Temporal メトリクスのダッシュボード" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Temporal メトリクスのダッシュボード](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -296,7 +314,7 @@ ClickStack から Temporal Cloud に接続できない場合は、Docker Compose
 * receiver 設定を異なるエンドポイントとサービス名で複製し、複数の Temporal Cloud アカウントを監視します
 
 <div id="going-to-production">
-  ## 本番環境での運用
+  ## 本番環境への移行
 </div>
 
-このガイドでは、すばやくセットアップできるように、ClickStack に組み込まれている OpenTelemetry Collector を利用しています。本番環境でデプロイする場合は、独自の OTel Collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの設定については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector を使用します。本番環境にデプロイする場合は、独自の OTel Collector を実行し、ClickStack の OTLP エンドポイントへデータを送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

@@ -50,7 +50,7 @@ void registerAggregateFunctionsQuantileBFloat16(AggregateFunctionFactory & facto
 void registerAggregateFunctionsQuantileBFloat16(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers.
@@ -89,12 +89,12 @@ SELECT quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileBFloat16::name, {createAggregateFunctionQuantile<FuncQuantileBFloat16>, documentation});
+    factory.registerFunction(NameQuantileBFloat16::name, {createAggregateFunctionQuantile<FuncQuantileBFloat16>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers at different levels simultaneously.
 
-This function is equivalent to [`quantileBFloat16`](/sql-reference/aggregate-functions/reference/quantilebfloat16) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileBFloat16`](/reference/functions/aggregate-functions/quantileBFloat16) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesBFloat16(level1, level2, ...)(expr)

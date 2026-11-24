@@ -4,10 +4,12 @@
 
 #if USE_AVRO
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatFilterInfo.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataFile.hh>
@@ -31,7 +33,7 @@ public:
 
     void backup(size_t len) override { out.position() -= len; }
 
-    uint64_t byteCount() const override { return out.count(); }
+    [[nodiscard]] uint64_t byteCount() const override { return out.count(); }
     void flush() override {}
 
 private:
@@ -42,8 +44,8 @@ private:
 class AvroSerializer
 {
 public:
-    AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>, const FormatSettings & settings_);
-    const avro::ValidSchema & getSchema() const { return valid_schema; }
+    AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>, const FormatSettings & settings_, ColumnMapperPtr column_mapper_ = nullptr);
+    [[nodiscard]] const avro::ValidSchema & getSchema() const { return valid_schema; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
     using SerializeFn = std::function<void(const IColumn & column, size_t row_num, avro::Encoder & encoder)>;
@@ -55,18 +57,33 @@ public:
 
 private:
     /// Type names for different complex types (e.g. enums, fixed strings) must be unique. We use simple incremental number to give them different names.
-    SchemaWithSerializeFn createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name);
+    /// `column_path` is the field's dotted path (`t.x`, `arr.element`, `m.value`); on the Iceberg
+    /// path it picks Avro `string` vs `bytes` for a String column from the source logical type.
+    SchemaWithSerializeFn createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name, const String & column_path);
 
-    std::vector<SerializeFn> serialize_fns;
+    /// Same, but for a site that owns a field (top-level column, tuple field, array element, map
+    /// value). A complex container is never wrapped in Nullable, so its Iceberg optionality is not
+    /// recoverable from the type: consult the per-path metadata and add the `["null", T]` union an
+    /// optional field needs. A schema that is already a union or null carries its own optionality,
+    /// so the union is added exactly once per path.
+    SchemaWithSerializeFn createFieldSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name, const String & column_path);
+
+    /// Sets the Iceberg `field-id` on every Avro record field, descending through union
+    /// (Nullable/Variant), array and map wrappers so nested records also get ids. No-op without a mapper.
+    void setIcebergFieldIds(const avro::NodePtr & node, const String & path);
+
+    VectorWithMemoryTracking<SerializeFn> serialize_fns;
     avro::ValidSchema valid_schema;
     std::unique_ptr<AvroSerializerTraits> traits;
     const FormatSettings & settings;
+    /// Non-null only for Iceberg writes; maps dotted column name -> Iceberg field-id.
+    ColumnMapperPtr column_mapper;
 };
 
 class AvroRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    AvroRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
+    AvroRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_, ColumnMapperPtr column_mapper_ = nullptr);
     ~AvroRowOutputFormat() override;
 
     String getName() const override { return "AvroRowOutputFormat"; }

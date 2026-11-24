@@ -1,166 +1,202 @@
 ---
 sidebarTitle: '用語集'
-description: 'このページでは、ClickHouse に関してよく使われる単語や語句と、その定義をまとめています。'
+description: 'データベースの概念とClickHouseの用語に関する定義。トランザクション型データベースとは異なる動作に重点を置いています。'
 title: '用語集'
 slug: /concepts/glossary
 keywords: ['用語集', '定義', '用語']
+mode: 'wide'
 doc_type: 'reference'
 ---
 
-{/* no-glossary */}
+{/* 用語集なし */}
 
-<div id="atomicity">
+import { Glossary } from '/snippets/ja/components/Glossary/Glossary.jsx'
+
+データベースの概念とClickHouse用語の用語集です。一般的なデータベース用語がClickHouseではどのように異なるかも説明します。
+
+export const glossaryMetadata = {
+  delete: { learnMore: '/deletes/overview' },
+  deduplication: { aliases: ['重複行', '一意制約'], learnMore: '/guides/developer/deduplication' },
+  dictionary: { learnMore: '/dictionary' },
+  'distributed-table': { learnMore: '/engines/table-engines/special/distributed' },
+  final: { aliases: ['重複が残る', 'クエリ時のマージ'], code: true, learnMore: '/sql-reference/statements/select/from#final-modifier' },
+  granule: { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
+  'incremental-materialized-view': { aliases: ['挿入トリガー'], learnMore: '/materialized-view/incremental-materialized-view' },
+  json: { code: true, learnMore: '/sql-reference/data-types/newjson' },
+  'materialized-view': { aliases: ['MV', '保存済みクエリ', '挿入トリガー', '動的テーブル', '動的テーブル'], learnMore: '/materialized-views' },
+  merge: { learnMore: '/merges' },
+  mergetree: { code: true, learnMore: '/engines/table-engines/mergetree-family/mergetree' },
+  mutation: { aliases: ['ALTER UPDATE', 'ALTER DELETE', 'MERGEステートメント'], learnMore: '/concepts/best-practices/avoid-mutations' },
+  'nullable-column': { aliases: ['NULL', 'NULL とデフォルト値'], learnMore: '/sql-reference/data-types/nullable' },
+  parts: { learnMore: '/concepts/core-concepts/parts' },
+  partition: { aliases: ['PARTITION BY', 'パーティションプルーニング'], learnMore: '/partitions' },
+  'partitioning-key': { learnMore: '/concepts/core-concepts/partitions' },
+  'primary-key': { aliases: ['ORDER BY', 'ソートキー', '一意キー', '一意制約'], learnMore: '/concepts/core-concepts/primary-indexes' },
+  projection: { aliases: ['projection と materialized view の比較', '代替ソート順'], learnMore: '/data-modeling/projections' },
+  'refreshable-materialized-view': { aliases: ['スケジュールされた materialized view', 'materialized view の更新', 'スケジュールされたクエリ', 'スケジュールされたクエリ'], learnMore: '/materialized-view/refreshable-materialized-view' },
+  replacingmergetree: { aliases: ['upsert', '重複排除', '重複が残る', 'MERGEステートメント'], code: true, learnMore: '/guides/replacing-merge-tree' },
+  'secondary-index': { learnMore: '/optimize/skipping-indexes' },
+  'skipping-index': { learnMore: '/optimize/skipping-indexes' },
+  'sorting-key': { aliases: ['ORDER BY', 'プライマリキー', 'ディスク上の順序', 'クラスタリングキー', 'クラスタリングカラム', 'クラスタリングテーブル', 'CLUSTER BY'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
+  'sparse-index': { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes' },
+  'table-engine': { learnMore: '/engines/table-engines' },
+  transaction: { learnMore: '/guides/developer/transactional' },
+  ttl: { aliases: ['有効期限', '保持期間', 'データ保持'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
+  update: { aliases: ['行の更新', '論理更新'], legacyIds: ['lightweight-update'], learnMore: '/updating-data/overview' },
+  upsert: { aliases: ['ON CONFLICT', '挿入または更新', 'MERGEステートメント'], learnMore: '/guides/replacing-merge-tree' },
+  warehouse: { aliases: ['コンピュート分離', '仮想ウェアハウス', '仮想ウェアハウス'], learnMore: '/cloud/reference/warehouses' },
+}
+
+<Glossary metadata={glossaryMetadata}>
   ## アトミック性
-</div>
 
-アトミック性とは、トランザクション (一連のデータベース操作) を、単一の不可分な単位として扱うことを保証する性質です。つまり、トランザクション内のすべての操作が実行されるか、まったく実行されないかのどちらかです。アトミックなトランザクションの例として、ある銀行口座から別の銀行口座へ送金する処理が挙げられます。送金の途中でいずれかの段階が失敗した場合、トランザクション全体が失敗し、お金は最初の口座に残ります。アトミック性により、お金が失われたり、新たに生じたりすることはありません。
+  アトミック性とは、操作が完全に反映されるか、まったく反映されないかのいずれかであることを意味します。ClickHouse では、`MergeTree` ファミリーの単一テーブルの単一パーティションへの挿入は、その行が単一のブロックとして書き込まれる場合にアトミックになります。複数のパーティションにまたがる挿入はパーティションごとに、分散テーブルへの挿入は分片ごとに、それぞれ個別にアトミックとなります。マルチステートメントトランザクションは依然として実験的であり、利用に制限があります。
 
-<div id="block">
   ## ブロック
-</div>
 
-ブロックは、データ処理と保存を整理するための論理的な単位です。各ブロックには列指向データが含まれており、クエリ実行時のパフォーマンスを高めるためにまとめて処理されます。データをブロック単位で処理することで、ClickHouse は cache ミスを最小限に抑えつつ、ベクトル化実行を可能にし、CPU コアを効率的に活用します。ClickHouse は、LZ4、ZSTD、Delta などのさまざまな圧縮アルゴリズムを使用して、ブロック内のデータを圧縮します。
+  ブロックとは、クエリ処理およびデータ転送に使用される、自己記述的な列指向の行のバッチです。ブロックはランタイムおよびワイヤ上の単位であり、データパーツやグラニュールはこれとは別の、ストレージおよび索引付けに関する概念です。ブロック単位でカラム値を処理することで、ベクトル化実行が可能になります。
 
-<div id="cluster">
   ## クラスター
-</div>
 
-データの保存と処理を行うために連携して動作するノード (サーバー) の集まり。
+  データの保存と処理を連携して行うノード (サーバー) の集合です。
 
-<div id="cmek">
   ## CMEK
-</div>
 
-顧客管理暗号鍵 (CMEK) を使用すると、お客様は自身の鍵管理サービス (KMS) のキーで ClickHouse のディスクデータキーを暗号化し、保存データを保護できます。
+  ClickHouse Cloud では、カスタマー管理暗号化キー (CMEK) を使用することで、顧客のキー管理サービス (KMS) のキーによって、保存データ (data at rest) の暗号化に使用されるデータ暗号化キー (DEK) を保護できます。
 
-<div id="dictionary">
+  ## 削除
+
+  `MergeTree` ファミリーのテーブルにおける行の削除には、`DELETE FROM` で行を削除済みとしてマークする方法、`ALTER TABLE ... DELETE` で該当するデータパーツを書き換える方法、パーティション全体を効率的に削除する方法があります。論理削除では、バックグラウンドマージ時にデータが物理的に削除されるまでの間、対象の行が以降のクエリから見えなくなります。
+
+  ## 重複排除
+
+  重複排除は、ClickHouse では複数の異なる仕組みを指す場合があります。行バージョンの重複排除では、`ReplacingMergeTree` などのエンジンがソートキーによって重複するバージョンを特定し、パーティション内のバックグラウンドマージ時にそれらを解決します。一方、Replicated テーブルエンジンでは、これとは別に、再試行された挿入ブロックをブロック識別子に基づいて重複排除できます。
+
   ## Dictionary
-</div>
 
-Dictionary は、さまざまな種類の参照リストで役立つキー・バリューの対応付けです。これは強力な機能であり、クエリ内で Dictionary を効率的に利用できます。多くの場合、参照テーブルに対して `JOIN` を使用するよりも効率的です。
+  Dictionary は、インメモリまたは外部のソースにある参照データに対して、キー・バリュー形式のアクセスを提供します。キーに基づくルックアップが適用できる場合、Dictionary 関数や Dictionary への直接の `JOIN` を使うことで、参照テーブルを繰り返しスキャンせずに済みます。
 
-<div id="distributed-table">
   ## 分散テーブル
-</div>
 
-ClickHouse の分散テーブルは、データ自体は保存せず、クラスター内の複数のサーバーにまたがる分散クエリ処理のための一元的なビューを提供する特別なテーブルです。
+  ClickHouse の分散テーブルは、自身はデータを保持せず、クラスター内の複数のサーバーにまたがる分散クエリ処理のための統一されたビューを提供する特別な種類のテーブルです。
 
-<div id="granule">
-  ## グラニュール
-</div>
+  ## `FINAL`
 
-グラニュールは、非圧縮ブロック内の複数の行をまとめた単位です。データの読み取り時、ClickHouseは個々の行ではなくグラニュール単位でアクセスするため、分析ワークロードでのデータ処理を高速化できます。グラニュールには、デフォルトで8192行が含まれます。プライマリインデックスには、グラニュールごとに1つのエントリがあります。
+  `FINAL` は、保存されているパーツを物理的にマージすることなく、データの読み取り時にエンジンのマージ時の変換を適用するクエリ修飾子です。バックグラウンドマージの完了を待たずに、`ReplacingMergeTree` などのエンジンからリコンサイルされた結果を返せますが、その分クエリ実行時のコンピュートとメモリを追加で消費します。
 
-<div id="incremental-materialized-view">
+  ## Granule
+
+  グラニュール (granule) とは、ClickHouse がプライマリインデックスによるプルーニングのために読み取る最小の論理的な行グループです。デフォルトでは最大 8,192 行を含みますが、アダプティブインデックス粒度によってより小さなグラニュールが作成されることもあります。プライマリインデックスは通常、グラニュールごとに 1 つのエントリを保持します。
+
   ## インクリメンタルmaterialized view
-</div>
 
-ClickHouse における materialized view の一種で、挿入時にデータを処理・集計します。新しいデータがソーステーブルに挿入されると、materialized view は新たに挿入されたブロックに対してのみ、あらかじめ定義された SQL の集計クエリを実行し、その集計結果をターゲットテーブルに書き込みます。
+  インクリメンタルmaterialized viewは、ソーステーブルにデータが挿入されるタイミングでクエリを実行し、その結果をターゲットテーブルに書き込みます。処理対象となるのは新しく挿入されたblockのみで、ソーステーブルの現在の全データではありません。また、joinしているright-sideのテーブルが変更されても、再実行のトリガーにはなりません。
 
-<div id="lightweight-update">
-  ## 論理更新
-</div>
+  ## `JSON`
 
-ClickHouse の論理更新は実験的な機能で、標準的な SQL の `UPDATE` 構文を使ってテーブル内の行を更新できます。ただし、従来の mutation のようにカラム全体やデータパート全体を書き換えるのではなく、更新されたカラムと行のみを含む「パッチパート」を作成します。これらの更新は、パッチの適用によって `SELECT` クエリからすぐに見えるようになりますが、物理的なデータが更新されるのは、その後の merge 時のみです。
+  `JSON` 型は、行ごとにパスや型が異なりうる半構造化ドキュメントを格納します。ClickHouse は検出されたパスをサブカラムとして格納するため、クエリは個々のフィールドを効率的に読み取れます。スキーマが安定している場合は、型付きカラムや `Tuple` などの構造型を使用してください。
 
-<div id="mark-file">
   ## マークファイル
-</div>
 
-ClickHouse のマークファイルは、「marks (マーク) 」、つまり特定のデータ範囲がデータファイル内のどこに格納されているかを ClickHouse がすばやく特定するのに役立つ索引エントリを保存するファイルです。
+  mark file には、圧縮されたカラムデータ内の granule の位置を特定するための offset が格納されます。各 mark は、圧縮ファイル内の offset と、対応する展開後の block 内の offset を記録します。これにより ClickHouse は、カラム全体を読み取ることなく目的の granule へ直接 seek できます。
 
-<div id="materialized-view">
-  ## materialized view
-</div>
+  ## Materialized view
 
-ClickHouse の materialized view は、データがソーステーブルに挿入される際に自動的にクエリを実行し、変換後または集計後の結果を別のターゲットテーブルに格納することで、クエリを高速化する仕組みです。
+  ClickHouse には2種類の materialized view のモデルがあります。インクリメンタル materialized view は insert-time のトリガーのように動作し、新たに挿入された block を処理します。一方、リフレッシャブル materialized view は、データセット全体に対して定期的にクエリを再実行します。他のデータベースで似た名前を持つ機能はこれらの動作を組み合わせている場合があるため、必ずしも1対1で対応するとは限りません。
 
-<div id="mergetree">
-  ## MergeTree
-</div>
+  ## マージ
 
-ClickHouse における MergeTree は、高いデータ取り込み性能と大規模データ向けに設計されたテーブルエンジンです。ClickHouse の中核となるストレージエンジンであり、列指向ストレージ、柔軟なパーティション化、スパースプライマリインデックス、バックグラウンドでのデータマージのサポートなどの機能を備えています。
+  ClickHouse におけるマージとは、同一パーティション内の小さなイミュータブルなデータパーツを、より大きなパーツへと統合するバックグラウンドのストレージ操作です。テーブルエンジンによっては、マージ時に行の集約、折りたたみ、置換が行われることもあります。これはトランザクショナルな SQL の `MERGE` ステートメントとは別のものです。
 
-<div id="mutation">
+  ## `MergeTree`
+
+  ClickHouse の `MergeTree` は、高いデータ取り込みレートと大量のデータを扱うために設計されたテーブルエンジンです。ClickHouse の中核となるストレージエンジンであり、列指向ストレージ、カスタムのパーティション化、スパースプライマリインデックス、バックグラウンドでのデータマージのサポートといった機能を提供します。
+
   ## ミューテーション
-</div>
 
-ClickHouse におけるミューテーションとは、通常、ALTER TABLE ... UPDATE や ALTER TABLE ... DELETE などのコマンドを使用して、テーブル内の既存データを変更または削除する操作を指します。ミューテーションは非同期のバックグラウンドプロセスとして実行され、行をその場で変更するのではなく、変更の影響を受けるデータパーツ全体を書き換えます。
+  `MergeTree` ファミリーのテーブルでは、mutation は `ALTER TABLE ... UPDATE` や `ALTER TABLE ... DELETE` などのコマンドによって既存のデータを変更または削除します。OLTP における行単位の更新とは異なり、影響を受ける data parts を書き換える方式であり、通常は非同期で処理が進みます。パーツは準備が整ったものから順に置き換えられるため、この操作はテーブル全体を対象とするアトミックなトランザクションではありません。
 
-<div id="on-the-fly-mutation">
-  ## オンザフライミューテーション
-</div>
+  ## Nullable カラム
 
-ClickHouse におけるオンザフライミューテーションは、更新や削除の内容を、ミューテーションの送信直後から以後の SELECT クエリに即座に反映できる仕組みであり、バックグラウンドのミューテーション処理が完了するのを待つ必要がありません。
+  `0` や空文字列を含む型 `T` の通常の値と `NULL` を区別するには、カラムで `Nullable(T)` を使用する必要があります。ClickHouse は null マスクを別途保持するため、ストレージと処理のオーバーヘッドが増加します。そのため、nullable カラムはデフォルトの選択肢とするのではなく、欠損値が意味を持つ場合にのみ使用してください。
 
-<div id="parts">
+  ## On-the-fly mutation
+
+  mutation とその後の読み取りの両方で `apply_mutations_on_fly` が有効になっている場合、ClickHouse は `SELECT` クエリの実行時に保留中の更新や削除を適用するため、保存済みのパーツが書き換えられる前でもその結果を参照できます。mutation 自体は、引き続きバックグラウンドで非同期にマテリアライズされます。
+
   ## パーツ
-</div>
 
-テーブルのデータの一部を格納する、ディスク上の物理ファイルです。これは、パーティションキーを使って作成される、テーブルデータの論理的な区分であるパーティションとは異なります。
+  データパートとは、テーブルの行の一部を格納した、ストレージ上のイミュータブルなファイル群です。パーツは挿入によって作成され、パーティション内でバックグラウンドマージによって結合されます。データの論理的なグループ化であるパーティションとは異なり、パーツは ClickHouse が管理する物理的なストレージ単位です。
 
-<div id="partitioning-key">
+  ## パーティション
+
+  パーティションとは、`MergeTree` ファミリーのテーブルにおける data parts を論理的にまとめた単位です。パーティション化は主に、データのグループ単位での削除、移動、保持ポリシーの適用といったデータ管理操作のために用いられます。パーティションプルーニングは、少数のパーティションのみを対象とするクエリでは効果がありますが、クエリパフォーマンスにおいては通常、ソートキーと主キーの方が重要です。
+
   ## パーティショニングキー
-</div>
 
-ClickHouse におけるパーティショニングキーは、テーブル作成時に PARTITION BY 句で定義する SQL 式です。これは、データをディスク上のパーティションに論理的にどのようにグループ化するかを決定します。パーティショニングキーの値ごとに個別の物理パーティションが形成されるため、パーティション全体の削除、移動、アーカイブといったデータ管理操作を効率的に実行できます。
+  パーティショニングキーとは、テーブルの `PARTITION BY` 句に指定する式のことです。同じパーティション ID になる行は同一の論理パーティションに属しますが、挿入が別々に行われた場合は、そのパーティション内に別々のデータパーツが作成されることがあります。このようにグループ化しておくことで、パーティション単位での削除、移動、アーカイブといった操作が可能になります。
 
-<div id="primary-key">
   ## 主キー
-</div>
 
-ClickHouse では、主キーによってデータがディスク上に格納される順序が決まり、クエリのフィルタリングを高速化するスパースインデックスの構築にも使われます。従来のデータベースとは異なり、ClickHouse の主キーは一意性を保証しないため、複数の行が同じ主キー値を持つことがあります。
+  多くのトランザクション型データベースの主キーとは異なり、ClickHouse の主キーは行レベルの一意性制約ではありません。主キーは、読み取り時に ClickHouse が granule をスキップできるようにするスパースプライマリインデックスのカラムを定義するものです。デフォルトでは `ORDER BY` で定義された sorting key と一致し、個別に定義する場合は sorting key のプレフィックスである必要があります。
 
-<div id="projection">
   ## プロジェクション
-</div>
 
-ClickHouse のプロジェクションは、データを異なる順序で格納したり、事前に計算した集計結果を保持したりするための、非表示で自動的に維持されるテーブルです。特に、メインの主キーに含まれないカラムで絞り込むクエリの高速化に役立ちます。
+  PROJECTION とは、テーブルのデータを別の並び順、一部のカラム、または事前に計算された集約として保持する、自動的に維持される表現です。ClickHouse は元のテーブルへのクエリ実行時に、PROJECTION を自動的に選択できます。PROJECTION は保存データを重複して持つため書き込みのオーバーヘッドが増える可能性がありますが、`_part_offset` を用いた PROJECTION では、基となるテーブルからの追加の読み取りと引き換えにストレージ使用量を抑えられます。
 
-<div id="refreshable-materialized-view">
   ## リフレッシャブルmaterialized view
-</div>
 
-リフレッシャブルmaterialized viewは、データセット全体に対してクエリを定期的に再実行し、その結果をターゲットテーブルに格納するタイプのmaterialized viewです。インクリメンタルmaterialized viewとは異なり、リフレッシャブルmaterialized viewはスケジュールに沿って更新され、JOINやUNIONを含む複雑なクエリも制限なくサポートできます。
+  リフレッシャブルmaterialized viewは、データセット全体に対してクエリを定期的に再実行し、スケジュールに従って保存済みの結果を置き換えるか追記します。インクリメンタルmaterialized viewとは異なり、挿入されたblockごとにトリガーされることはなく、複雑なクエリも使用できます。`SELECT`の結果をマテリアライズするスケジュール実行クエリの代わりとして利用できますが、任意のDDLやDMLステートメントを実行する汎用のスケジューラーではありません。
 
-<div id="replica">
+  ## `ReplacingMergeTree`
+
+  `ReplacingMergeTree` は、同じソートキーを持つ行の複数バージョンを受け入れ、バックグラウンドマージの際に 1 つのバージョンだけを残すことで、更新や upsert を表現します。重複排除は挿入時点で一意性を保証するものではなく、最終的に収束する形で行われます。そのため、`FINAL` や同等のクエリロジックを使用するか、該当するパーツがマージされるまでは、クエリ結果に複数のバージョンが現れることがあります。
+
   ## レプリカ
-</div>
 
-ClickHouseデータベースに保存されたデータのコピーです。冗長性と信頼性を高めるために、同じデータのレプリカをいくつでも持つことができます。レプリカはReplicatedMergeTreeテーブルエンジンと組み合わせて使用され、ClickHouseはこれにより異なるサーバー間で複数のデータコピーの同期を維持できます。
+  レプリカとは、可用性とクエリ処理能力を確保するために、他のレプリカと同一の論理テーブルデータを保持する、あるいはそのデータにアクセスするサーバーまたはコンピュートインスタンスです。`ReplicatedMergeTree` では、各レプリカがデータの独立したコピーを保持します。一方、`SharedMergeTree` を使用する ClickHouse Cloud のレプリカは、オブジェクトストレージを共有します。
 
-<div id="shard">
+  ## セカンダリ索引
+
+  ClickHouse において、従来のセカンダリ索引に最も近い存在は、通常データスキッピングインデックスです。B-tree で個々の行を特定するのではなく、granule のまとまりごとにメタデータを保持することで、一致する値を含み得ない block の読み取りを ClickHouse が回避できるようにします。
+
   ## 分片
-</div>
 
-データの一部です。ClickHouse では、データには常に少なくとも 1 つの分片があります。データを複数のサーバーに分割しない場合、データは 1 つの分片に格納されます。データを複数のサーバーに分片化することで、単一サーバーの処理能力を超える場合に負荷を分散できます。
+  シャードとは、分散デプロイメントにおいて1つのサーバーまたはレプリカグループに割り当てられる、テーブルデータの論理的な部分集合です。シャーディングによってデータとクエリ処理が複数のサーバーに分散され、レプリカは各シャード内のデータに対する冗長なアクセスまたは並列アクセスを提供します。
 
-<div id="skipping-index">
-  ## スキッピングインデックス
-</div>
+  ## スキップ索引
 
-スキッピングインデックスは、複数の連続したグラニュール単位で少量のメタデータを保持するために使用され、これにより ClickHouse は無関係な行をスキャンせずに済みます。スキッピングインデックスは、プロジェクションに代わる軽量な手段です。
+  データスキッピングインデックスは、連続する 1 つ以上の granule についてコンパクトなメタデータを保持し、クエリに一致し得ない block の読み取りを ClickHouse がスキップできるようにします。インデックス対象の値がテーブルのソート順と相関している場合に最も効果を発揮し、一致する値がインデックス対象の block の大半に出現する場合はほとんど効果がありません。
 
-<div id="sorting-key">
   ## ソートキー
-</div>
 
-ClickHouse では、ソートキーによってディスク上の行の物理的な並び順が定義されます。主キーを指定しない場合、ClickHouse はソートキーを主キーとして使用します。両方を指定する場合、主キーはソートキーのプレフィックスである必要があります。
+  `MergeTree` ファミリーのテーブルでは、`ORDER BY` 句がソートキー、すなわち各データパート内での物理的な行の並び順を定義します。これは他の分析データベースにおけるクラスタリングカラムやクラスタリングキーと似た役割を果たしますが、ClickHouse ではこれを用いて明確な辞書順の行順序を維持します。主キーを別途指定しない場合、ソートキーがそのまま主キーになります。両者は関連していますが、必ずしも同一である必要はありません。
 
-<div id="sparse-index">
   ## スパースインデックス
-</div>
 
-プライマリインデックスが、単一の行ではなく行のグループごとに1つのエントリを持つ索引方式の一種です。行のグループに対応するエントリは、マークと呼ばれます。スパースインデックスでは、ClickHouse はまずクエリに一致する可能性のある行グループを特定し、その後それらを個別に処理して一致するものを見つけます。そのため、プライマリインデックスはメモリに読み込めるほど小さく保たれます。
+  スパースプライマリインデックスは、行ごとに1つのエントリを保持するのではなく、granuleごとにキー値を格納します。ClickHouseはこれらのエントリをもとに候補となるgranuleを特定し、その行を読み取ります。サイズは行数ではなくgranule数に比例するため、この索引は通常メモリ上に保持できる程度に小さく収まります。
 
-<div id="table-engine">
   ## テーブルエンジン
-</div>
 
-ClickHouse のテーブルエンジンは、データの書き込み、保存、アクセスの方法を定義します。MergeTree は最も一般的なテーブルエンジンで、大量のデータを高速に挿入でき、それらはバックグラウンドで処理されます。
+  ClickHouse のテーブルエンジンは、データの書き込み方法、保存方法、アクセス方法を決定します。最も一般的なテーブルエンジンは `MergeTree` で、大量のデータを高速に挿入でき、挿入されたデータはバックグラウンドで処理されます。
 
-<div id="ttl">
-  ## 有効期限 (TTL)
-</div>
+  ## トランザクション
 
-Time To Live (TTL) は、一定期間が経過すると、カラムや行を自動的に移動、削除、または集約する ClickHouse の機能です。これにより、頻繁にアクセスする必要のなくなったデータを削除、移動、またはアーカイブできるため、ストレージをより効率的に管理できます。
+  ClickHouse では、トランザクション保証の適用範囲が一般的な OLTP データベースとは異なります。条件を満たす挿入はブロック単位またはパーティション単位でアトミックに実行されますが、`COMMIT` と `ROLLBACK` を用いる従来型のマルチステートメントトランザクションは依然として実験的な機能であり、大きな制約があります。
+
+  ## 有効期限 (`TTL`)
+
+  `TTL` ルールは、式が条件を満たした時点でデータの移動、削除、またはロールアップを行います。ただし、有効期限切れは即座に反映されるわけではありません。ClickHouse は通常、バックグラウンドマージの際に期限切れデータに対する処理を適用するため、該当するパーツがマージで処理されるまでの間、期限切れの行がディスク上に残り、クエリの結果として返されることがあります。
+
+  ## 更新
+
+  ClickHouse は、頻繁なインプレースでの行更新ではなく、イミュータブルで追記中心のデータ向けに最適化されています。更新は一般的に、専用のテーブルエンジンで新しいバージョンを挿入する形でモデル化するか、対象のデータパーツを書き換える mutation として実行します。
+
+  ## Upsert
+
+  `MergeTree`ファミリーのテーブルは、トランザクションによる`INSERT ... ON CONFLICT`のupsertをサポートしていません。upsertは通常、`ReplacingMergeTree`などのエンジンに、より新しいバージョンの行を挿入する形でモデル化します。古いバージョンはバックグラウンドマージの際に解決されるため、マージが実行されるまではクエリ側で`FINAL`または同等のロジックが必要になる場合があります。
+
+  ## ウェアハウス
+
+  ClickHouse Cloud におけるウェアハウスとは、同一のデータを共有しながら、それぞれ独立したコンピュートリソースとエンドポイントを持つサービスの集合です。ウェアハウスが 1 つのコンピュートクラスターを意味するシステムでは、個々の ClickHouse サービスの方が近い概念にあたり、ClickHouse のウェアハウスは複数のサービスをまとめたものに相当します。
+</Glossary>

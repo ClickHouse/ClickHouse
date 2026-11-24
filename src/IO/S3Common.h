@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
 #include <base/types.h>
@@ -9,11 +11,19 @@
 
 #include "config.h"
 
+namespace DB
+{
+
+using ObjectAttributes = std::map<std::string, std::string>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+}
+
 #if USE_AWS_S3
 
 #include <IO/S3/URI.h>
 #include <IO/S3/Credentials.h>
 #include <aws/core/Aws.h>
+#include <aws/core/utils/memory/stl/AWSMap.h>
 #include <aws/s3/S3Errors.h>
 
 namespace DB
@@ -31,8 +41,8 @@ struct Settings;
 /// eventual-consistency quirks of the same class and are safe to retry (callers list parts in
 /// ascending order, so a genuine InvalidPartOrder cannot originate here). InvalidPart /
 /// InvalidPartOrder are not in the typed S3Errors enum, so the SDK leaves GetErrorType() == UNKNOWN
-/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD is a genuine
-/// error handled by DB::S3::Client, not retried here.
+/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD is not retried
+/// here; `Client::CompleteMultipartUpload` resolves it.
 bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error);
 
 class S3Exception : public Exception
@@ -46,8 +56,8 @@ public:
     {
     }
 
-    S3Exception(const std::string & msg, Aws::S3::S3Errors code_)
-        : Exception(msg, ErrorCodes::S3_ERROR)
+    S3Exception(std::string_view msg, Aws::S3::S3Errors code_)
+        : Exception(std::string(msg), ErrorCodes::S3_ERROR)
         , code(code_)
     {}
 
@@ -60,11 +70,19 @@ public:
     bool isAccessTokenExpiredError() const;
 
     S3Exception * clone() const override { return new S3Exception(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 
 private:
     Aws::S3::S3Errors code;
 };
+
+namespace S3
+{
+
+Aws::Map<Aws::String, Aws::String> objectAttributesToAwsMap(const ObjectAttributes & attributes);
+ObjectAttributes objectAttributesFromAwsMap(const Aws::Map<Aws::String, Aws::String> & map);
+
+}
 }
 
 #endif

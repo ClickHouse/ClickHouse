@@ -22,6 +22,6 @@ The first 3 neighbours returned by vector index dont pass the attr2 >= 1008 filt
 10
 11
 12
--- Negative parameter values throw an exception
+-- Fractional parameter values below 1.0 throw an exception (regression test for #110407)
 -- Zero parameter values throw an exception
 -- Too large parameter values throw an exception

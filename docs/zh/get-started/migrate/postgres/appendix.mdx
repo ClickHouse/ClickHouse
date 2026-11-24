@@ -6,8 +6,6 @@ description: '有关从 PostgreSQL 迁移的补充信息'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
   ## Postgres 与 ClickHouse：对应概念与差异
 </div>
@@ -40,7 +38,15 @@ ClickHouse 使用 ClickHouse Keeper (一个用 C++ 实现的 ZooKeeper，也可�
 
 ClickHouse 中的复制过程 (1) 始于数据被插入任意一个副本时。这些处于原始插入形式的数据会连同其校验和一起被 (2) 写入磁盘。写入完成后，该副本会 (3) 尝试在 Keeper 中注册这个新的数据分区片段，具体做法是分配唯一的块编号并记录该新分区片段的详细信息。其他副本在 (4) 检测到复制日志中的新条目后，会 (5) 通过内部 HTTP 协议下载相应的数据分区片段，并根据 ZooKeeper 中列出的校验和进行校验。该方法确保即使各副本处理速度不同或存在潜在延迟，最终也都能持有一致且最新的数据。此外，系统还能够并发处理多项操作，从而优化数据管理流程，并提升系统的可扩展性以及应对硬件差异的稳健性。
 
-<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="最终一致性" />
+<div className="ch-image-md">
+
+<Frame>
+
+![最终一致性](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
+
+</Frame>
+
+</div>
 
 请注意，ClickHouse Cloud 使用一种[针对云环境优化的复制机制](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates)，以适配其存储与计算分离的架构。由于数据存储在共享对象存储中，所有计算节点都可以自动访问这些数据，而无需在节点之间物理复制数据。相反，Keeper 仅用于在计算节点之间共享元数据 (即哪些数据存在于对象存储中的什么位置) 。
 
@@ -92,9 +98,9 @@ ClickHouse Cloud 使用一份存储在 S3 中的数据副本，并配有多个�
 
 虽然在不使用分布式表的情况下，也可以采用包含多个分片和副本的拓扑，但这类高级部署通常都有自己的路由基础设施。因此，我们假定只要部署包含多个分片，就会使用分布式表 (分布式表也可用于单分片部署，但通常没有必要) 。
 
-在这种情况下，你应确保基于某个属性进行一致的节点路由，例如 `session_id` 或 `user_id`。应在[查询中设置](/zh/concepts/features/configuration/settings/settings-query-level) [`prefer_localhost_replica=0`](/zh/reference/settings/session-settings#prefer_localhost_replica) 和 [`load_balancing=in_order`](/zh/reference/settings/session-settings#load_balancing)。这样可以确保优先选择各分片的本地副本；否则，在错误数相同的情况下，会优先按照配置中列出的顺序选择副本——如果错误数更高，则会随机选择并执行故障转移。也可以使用 [`load_balancing=nearest_hostname`](/zh/reference/settings/session-settings#load_balancing) 作为这种确定性分片选择的替代方案。
+在这种情况下，你应确保基于某个属性进行一致的节点路由，例如 `session_id` 或 `user_id`。应在[查询中设置](/zh/concepts/features/configuration/settings/settings-query-level) [`prefer_localhost_replica=0`](/zh/reference/settings/session-settings/prefer#prefer_localhost_replica) 和 [`load_balancing=in_order`](/zh/reference/settings/session-settings/load-balancing#load_balancing)。这样可以确保优先选择各分片的本地副本；否则，在错误数相同的情况下，会优先按照配置中列出的顺序选择副本——如果错误数更高，则会随机选择并执行故障转移。也可以使用 [`load_balancing=nearest_hostname`](/zh/reference/settings/session-settings/load-balancing#load_balancing) 作为这种确定性分片选择的替代方案。
 
-> 创建分布式表时，你需要指定一个 cluster。这个在 config.xml 中定义的 cluster 会列出各个分片 (及其副本) ，从而让用户可以控制每个节点使用它们的顺序。利用这一点，你可以确保选择具有确定性。
+> 创建分布式表时，你需要指定一个集群。这个在 config.xml 中定义的集群会列出各个分片 (及其副本) ，从而让用户可以控制每个节点使用它们的顺序。利用这一点，你可以确保选择具有确定性。
 
 <div id="sequential-consistency">
   ## 顺序一致性
@@ -107,16 +113,16 @@ ClickHouse Cloud 使用一份存储在 S3 中的数据副本，并配有多个�
 从用户角度来看，这通常表现为：需要将数据写入 ClickHouse，并在读取数据时保证返回最新插入的行。
 这可以通过多种方式实现 (按优先顺序排列) ：
 
-1. **在同一节点上读/写** - 如果你使用 native protocol，或者使用 [session 通过 HTTP 执行写入/读取](/zh/concepts/features/interfaces/http#default-database)，那么你应当连接到同一个副本：在这种情况下，你直接从写入所在的节点读取，因此读取结果始终是一致的。
+1. **在同一节点上读/写** - 如果你使用原生协议，或者使用 [session 通过 HTTP 执行写入/读取](/zh/concepts/features/interfaces/http#default-database)，那么你应当连接到同一个副本：在这种情况下，你直接从写入所在的节点读取，因此读取结果始终是一致的。
 2. **手动同步副本** - 如果你写入一个副本，却从另一个副本读取，可以在读取前执行 `SYSTEM SYNC REPLICA LIGHTWEIGHT`。
-3. **启用顺序一致性** - 通过查询设置 [`select_sequential_consistency = 1`](/zh/reference/settings/session-settings#select_sequential_consistency)。在 OSS 中，还必须指定设置 `insert_quorum = 'auto'`。
+3. **启用顺序一致性** - 通过查询设置 [`select_sequential_consistency = 1`](/zh/reference/settings/session-settings/other#select_sequential_consistency)。在 OSS 中，还必须指定设置 `insert_quorum = 'auto'`。
 
 <br />
 
 有关如何启用这些设置的更多详细信息，请参见[此处](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。
 
 > 使用顺序一致性会给 ClickHouse Keeper 带来更高负载。结果可能是
-> 插入和读取速度变慢。作为 ClickHouse Cloud 中主要 table engine 的 SharedMergeTree，顺序一致性[带来的额外开销更低，扩展性也更好](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。在 OSS 中，你应谨慎使用这种方式，并衡量 Keeper 负载。
+> 插入和读取速度变慢。作为 ClickHouse Cloud 中主要表引擎的 SharedMergeTree，顺序一致性[带来的额外开销更低，扩展性也更好](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。在 OSS 中，你应谨慎使用这种方式，并衡量 Keeper 负载。
 
 <div id="transactional-acid-support">
   ## 事务 (ACID) 支持
@@ -180,7 +186,7 @@ GROUP BY `table`
 | Postgres 数据类型        | ClickHouse 类型                                                                                                                                                                          |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATE`               | [Date](/zh/reference/data-types/date)                                                                                                                                                     |
-| `TIMESTAMP`          | [日期时间](/zh/reference/data-types/datetime)                                                                                                                                             |
+| `TIMESTAMP`          | [DateTime](/zh/reference/data-types/datetime)                                                                                                                                             |
 | `REAL`               | [Float32](/zh/reference/data-types/float)                                                                                                                                                 |
 | `DOUBLE`             | [Float64](/zh/reference/data-types/float)                                                                                                                                                 |
 | `DECIMAL, NUMERIC`   | [Decimal](/zh/reference/data-types/decimal)                                                                                                                                               |
@@ -207,6 +213,5 @@ GROUP BY `table`
 | `HSTORE`             | [Map(K, V)](/zh/reference/data-types/map), [Map](/zh/reference/data-types/map)(K,[Variant](/zh/reference/data-types/variant))                                                                   |
 | `UUID`               | [UUID](/zh/reference/data-types/uuid)                                                                                                                                                     |
 | `ARRAY<T>`           | [ARRAY(T)](/zh/reference/data-types/array)                                                                                                                                                |
-| `JSON`               | [String](/zh/reference/data-types/string), [Variant](/zh/reference/data-types/variant), [Nested](/zh/reference/data-types/nested-data-structures/index), [Tuple](/zh/reference/data-types/tuple)   |
 | `JSON`               | [String](/zh/reference/data-types/string), [Variant](/zh/reference/data-types/variant), [Nested](/zh/reference/data-types/nested-data-structures), [Tuple](/zh/reference/data-types/tuple)         |
 | `JSONB`              | [String](/zh/reference/data-types/string)                                                                                                                                                 |

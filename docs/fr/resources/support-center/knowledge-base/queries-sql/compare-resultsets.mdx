@@ -39,7 +39,7 @@ WITH
 SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
 ```
 
-Cet exemple utilise une [CTE](/fr/reference/statements/select/with) pour calculer la somme de la valeur [cityHash](/fr/reference/functions/regular-functions/hash-functions#cityhash64) de chaque ligne dans ces deux requêtes, et renverra `1` si les deux jeux de résultats sont identiques.
+Cet exemple utilise une [CTE](/fr/reference/statements/select/with) pour calculer la somme de la valeur [cityHash](/fr/reference/functions/regular-functions/hash-functions#cityHash64) de chaque ligne dans ces deux requêtes, et renverra `1` si les deux jeux de résultats sont identiques.
 
 En utilisant une séquence de nombres entiers et un formatage Pretty :
 

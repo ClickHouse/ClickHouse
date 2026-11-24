@@ -1,0 +1,5 @@
+MultiPoint	1	[(10,20),(30,40)]
+MultiPoint	2	[(-1.5,2.25)]
+Geometry	MultiPoint	[(1,2),(3,4)]
+Geometry	Point	(5,6)
+Geometry	LineString	[(0,0),(7,8)]

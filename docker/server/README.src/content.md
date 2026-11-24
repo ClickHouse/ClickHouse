@@ -26,7 +26,7 @@ For more information and documentation see https://clickhouse.com/.
 
 -	The amd64 image requires support for the [x86-64-v3 microarchitecture level](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels) (AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, XSAVE). Virtually all x86 CPUs after 2015 support x86-64-v3.
 -	The arm64 image requires support for the [ARMv8.2-A architecture](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A) and additionally the Load-Acquire RCpc register. The register is optional in version ARMv8.2-A and mandatory in [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A). Supported in Graviton >=2, Azure and GCP instances. Examples for unsupported devices are Raspberry Pi 4 (ARMv8.0-A) and Jetson AGX Xavier/Orin (ARMv8.2-A).
--	Since the Clickhouse 24.11 Ubuntu images started using `ubuntu:22.04` as its base image. It requires docker version >= `20.10.10` containing [patch](https://github.com/moby/moby/commit/977283509f75303bc6612665a04abf76ff1d2468). As a workaround you could use `docker run --security-opt seccomp=unconfined` instead, however that has security implications.
+-	Since the ClickHouse 24.11 Ubuntu images started using `ubuntu:22.04` as their base image. It requires docker version >= `20.10.10` containing [patch](https://github.com/moby/moby/commit/977283509f75303bc6612665a04abf76ff1d2468). As a workaround you could use `docker run --security-opt seccomp=unconfined` instead, however that has security implications.
 
 ## How to use this image
 
@@ -38,7 +38,7 @@ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 %%IMAG
 
 By default, ClickHouse will be accessible only via the Docker network. See the **networking** section below.
 
-By default, starting above server instance will be run as the `default` user without password.
+By default, the server instance runs as the `default` user without a password.
 
 ### connect to it from a native client
 
@@ -152,7 +152,9 @@ docker run --rm -e CLICKHOUSE_RUN_AS_ROOT=1 --name clickhouse-server-userns -v "
 
 ### How to create default database and user on starting
 
-Sometimes you may want to create a user (user named `default` is used by default) and database on a container start. You can do it using environment variables `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` and `CLICKHOUSE_PASSWORD`:
+Set `CLICKHOUSE_DB` to create a database when the container first initializes the data directory. Set `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD` to configure a user. If you omit `CLICKHOUSE_USER`, the image uses the `default` user.
+
+`CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1` lets the configured user create users and grant privileges. In the example below, this is `username`. When you set a non-default username or a password, SQL access management is disabled if you omit this variable or set it to `0`.
 
 ```bash
 docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp %%IMAGE%%
@@ -160,9 +162,9 @@ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLIC
 
 #### Managing `default` user
 
-The user `default` has disabled network access by default in the case none of `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, or `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` are set.
+With the stock configuration, if you use the `default` user without a password and leave `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` unset or set it to `0`, the user retains SQL access management and can connect only from localhost.
 
-There's a way to make `default` user insecurely available by setting environment variable `CLICKHOUSE_SKIP_USER_SETUP` to 1:
+`CLICKHOUSE_SKIP_USER_SETUP=1` skips user configuration even if you set a username, password, or access-management flag. With the stock configuration, this allows network connections as the `default` user without a password.
 
 ```bash
 docker run --rm -e CLICKHOUSE_SKIP_USER_SETUP=1 -p 9000:9000/tcp %%IMAGE%%

@@ -3,51 +3,55 @@ title: ClickHouse MySQL Cloud 설정
 ---
 
 <Steps>
-  <Step>
-    #### `Connect your app` 선택
+  <Step title={<> <code>Connect your app</code> 선택</>} id="select-connect-your-app">
+    ClickHouse Cloud 서비스를 생성한 후 `Connect your app` 화면에서 드롭다운 메뉴의 MySQL을 선택합니다.
 
-    ClickHouse Cloud 서비스를 생성한 후 `Connect your app` 화면의 드롭다운에서 MySQL을 선택합니다.
-
-    <Image size="lg" img="/images/_snippets/mysql1.webp" alt="MySQL 인터페이스 선택 드롭다운이 표시된 ClickHouse Cloud 자격 증명 화면" border />
+    <Frame>
+      <img src="/images/_snippets/mysql1.webp" alt="MySQL 인터페이스 선택 드롭다운이 표시된 ClickHouse Cloud 자격 증명 화면" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### MySQL 인터페이스 활성화
+  <Step title="MySQL 인터페이스 활성화" id="enable-mysql-interface">
+    이 서비스에서 MySQL 인터페이스를 활성화하려면 스위치를 켭니다.
+    그러면 이 서비스에 포트 `3306`이 열리고, 고유한 MySQL username이 포함된 MySQL 연결 화면이 표시됩니다.
 
-    이 특정 서비스에서 MySQL 인터페이스를 활성화하려면 스위치를 켭니다.
-    그러면 이 서비스에 포트 `3306`이 노출되고, 고유한 MySQL 사용자 이름이 포함된 MySQL 연결 화면이 표시됩니다.
+    <Frame>
+      <img src="/images/_snippets/mysql2.webp" alt="MySQL 인터페이스 활성화 토글과 connection details가 표시된 ClickHouse Cloud 화면" />
+    </Frame>
 
-    <Image size="lg" img="/images/_snippets/mysql2.webp" alt="MySQL 인터페이스 활성화 토글과 연결 정보가 표시된 ClickHouse Cloud 화면" border />
-
-    또는 기존 서비스에서 MySQL 인터페이스를 활성화하려면 다음과 같이 하십시오.
+    또는 기존 서비스에서 MySQL 인터페이스를 활성화하려면 다음 단계를 수행하십시오:
   </Step>
 
-  <Step>
-    #### `Connect` 선택
-
-    서비스가 `Running` 상태인지 확인한 다음, MySQL 인터페이스를 활성화하려는 서비스를 클릭합니다.
+  <Step title={<> <code>Connect</code> 선택</>} id="select-connect">
+    서비스가 `Running` 상태인지 확인한 다음, MySQL 인터페이스를 활성화할 서비스를 클릭합니다.
     왼쪽 메뉴에서 &quot;Connect&quot;를 선택합니다:
 
-    <Image size="lg" img="/images/_snippets/mysql3.webp" alt="Connect 옵션이 강조 표시된 ClickHouse Cloud 서비스 연결 화면" border />
+    <Frame>
+      <img src="/images/_snippets/mysql3.webp" alt="Connect 옵션이 강조 표시된 ClickHouse Cloud 서비스 연결 화면" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### `MySQL` 선택
-
+  <Step title={<> <code>MySQL</code> 선택</>} id="choose-mysql">
     `Connect With` 드롭다운에서 `MySQL`을 선택합니다.
 
-    <Image size="md" img="/images/_snippets/mysql4.webp" alt="MySQL 옵션 선택이 표시된 ClickHouse Cloud 연결 화면" border />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/_snippets/mysql4.webp" alt="MySQL 옵션 선택이 표시된 ClickHouse Cloud 연결 화면" />
+      </Frame>
+    </div>
   </Step>
 
-  <Step>
-    #### MySQL 인터페이스 활성화
-
-    이 특정 서비스에서 MySQL 인터페이스를 활성화하려면 스위치를 켭니다.
-    그러면 이 서비스에 포트 `3306`이 노출되고, 고유한 MySQL 사용자 이름이 포함된 MySQL 연결 화면이 표시됩니다.
+  <Step title="MySQL 인터페이스 활성화" id="enable-mysql-interface-existing-service">
+    이 서비스에서 MySQL 인터페이스를 활성화하려면 스위치를 켭니다.
+    그러면 이 서비스에 포트 `3306`이 열리고, 고유한 MySQL username이 포함된 MySQL 연결 화면이 표시됩니다.
   </Step>
 </Steps>
 
-<Image size="md" img="/images/_snippets/mysql5.webp" alt="연결 정보가 표시되도록 MySQL 인터페이스가 활성화된 ClickHouse Cloud 연결 화면" border />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/_snippets/mysql5.webp" alt="connection details와 함께 MySQL 인터페이스가 활성화된 ClickHouse Cloud 연결 화면" />
+  </Frame>
+</div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## ClickHouse Cloud에서 읽기 전용 MySQL 사용자 생성하기
@@ -69,9 +73,7 @@ MySQL 콘솔 클라이언트가 이러한 도구의 예입니다.
 </Note>
 
 <Steps>
-  <Step>
-    #### 읽기 전용 설정 프로필 만들기
-
+  <Step title="읽기 전용 설정 프로필 만들기" id="create-a-custom-settings-user">
     읽기 전용 사용자에게 적용할 [설정 프로필](/ko/reference/statements/create/settings-profile)을 만들고
     `readonly` 설정을 `1`로 지정합니다:
 
@@ -80,9 +82,7 @@ MySQL 콘솔 클라이언트가 이러한 도구의 예입니다.
     ```
   </Step>
 
-  <Step>
-    #### 새 읽기 전용 MySQL 사용자 만들기
-
+  <Step title="새 읽기 전용 MySQL 사용자 만들기" id="create-a-readonly-mysql-user">
     다음 형식을 따르는 이름으로 [사용자를 생성](/ko/reference/statements/create/user)합니다:
 
     ```sql
@@ -98,9 +98,7 @@ MySQL 콘솔 클라이언트가 이러한 도구의 예입니다.
     ```
   </Step>
 
-  <Step>
-    #### 새 사용자에게 필요한 권한 부여하기
-
+  <Step title="새 사용자에게 원하는 테이블에 접근할 권한 부여하기" id="grant-the-new-user-the-necessary-permissions">
     원하는 테이블 또는 데이터베이스에 접근할 수 있도록 새 사용자에게 필요한 권한을 [부여](/ko/reference/statements/grant)합니다.
     예를 들어 `system.query_log`에만 접근 권한을 부여하려는 경우 다음과 같습니다:
 

@@ -45,15 +45,17 @@ public:
     static constexpr auto name = "prettyPrintJSON";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPrettyPrintJSON>(); }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return true; }
+    /// An empty string is not a JSON document.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"json", &isString, nullptr, "String"}
@@ -66,7 +68,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!col)
@@ -94,7 +96,7 @@ public:
             /// Since RapidJSON uses '\0' as end-of-stream char in its stream abstraction,
             /// we have to default to this check to prevent silent truncation of the input
             /// unescaped '\0' is not valid in JSON strings anyway
-            if (str_view.find('\0') != std::string_view::npos)
+            if (str_view.contains('\0'))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Invalid JSON string in function {}: embedded NULL byte",
@@ -145,19 +147,14 @@ Returns a pretty-printed version of a JSON string with newlines and indentation 
             "Simple object",
             R"(SELECT prettyPrintJSON('{"a":1,"b":"hello"}');)",
             R"(
-{
-    "a": 1,
-    "b": "hello"
-}
+{\n    "a": 1,\n    "b": "hello"\n}
             )"
         },
         {
             "Custom indent",
             R"(SELECT prettyPrintJSON('{"a":1}', 8);)",
             R"(
-{
-        "a": 1
-}
+{\n        "a": 1\n}
             )"
         }
     };

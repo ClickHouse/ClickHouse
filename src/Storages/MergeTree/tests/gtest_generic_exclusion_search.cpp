@@ -81,7 +81,7 @@ TEST(GenericExclusionSearch, UnlimitedMatchesBruteForce)
 {
     /// The exhaustive search must reproduce the brute-force expectation for arbitrary patterns,
     /// split factors, and seek thresholds.
-    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937 rng(42);
 
     for (size_t coarse_index_granularity : {2, 3, 8})
@@ -313,7 +313,7 @@ TEST(GenericExclusionSearch, StepLimitInvariantsWithMultipleInitialRanges)
     /// The budget and multiple initial input ranges (the query condition cache scenario) interact:
     /// whatever the budget, the invariants of the outputs must hold, and marks outside the initial
     /// ranges must not reappear unless the seek merging deliberately bridges a gap.
-    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937 rng(13);
     auto matching = randomFlags(300, 0.3, rng);
     auto oracle = oracleFromFlags(matching);
@@ -394,7 +394,7 @@ TEST(GenericExclusionSearch, LimitedIsAlwaysCoarserThanUnlimited)
     /// For any budget, truncation may only coarsen the result: everything the exhaustive search
     /// selects stays selected, exact ranges may only shrink, and the limited search never spends
     /// more checks than the exhaustive one, because it visits a subset of the same recursion tree.
-    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937 rng(37);
 
     for (double density : {0.2, 0.7})
@@ -430,7 +430,7 @@ TEST(GenericExclusionSearch, StepLimitProducesSupersetAndValidExactRanges)
 {
     /// Whatever the budget, the outputs must keep their contracts: sorted and non-intersecting, all
     /// matching marks covered, exact ranges contained in the result and fully matching.
-    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937 rng(7);
     auto matching = randomFlags(300, 0.3, rng);
     auto oracle = oracleFromFlags(matching);
@@ -520,7 +520,7 @@ TEST(GenericExclusionSearch, LargestRangeSplitFirst)
 
 TEST(GenericExclusionSearch, HugeLimitEqualsUnlimited)
 {
-    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937 rng(2026);
 
     for (double density : {0.1, 0.6})
@@ -591,7 +591,7 @@ TEST(GenericExclusionSearch, NeverExactOracle)
     /// An oracle that never proves a range fully matching, modelling a key condition that cannot
     /// establish exactness. The result then comes entirely from single-mark accepts: the ranges to
     /// read must still be found, and the exact ranges must stay empty.
-    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937 rng(29);
     auto matching = randomFlags(150, 0.4, rng);
     auto precise = oracleFromFlags(matching);
@@ -624,7 +624,7 @@ TEST(GenericExclusionSearch, ConservativeOracle)
 {
     /// An over-approximating oracle that never allows exclusion, modelling an imprecise key
     /// condition. The output invariants must hold regardless of the oracle's precision.
-    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937 rng(11);
     auto matching = randomFlags(128, 0.4, rng);
     auto precise = oracleFromFlags(matching);
@@ -645,5 +645,79 @@ TEST(GenericExclusionSearch, ConservativeOracle)
         for (const auto & range : result.exact_ranges)
             for (size_t mark = range.begin; mark != range.end; ++mark)
                 EXPECT_TRUE(matching[mark]);
+    }
+}
+
+TEST(GenericExclusionSearch, StopAtFirstMatch)
+{
+    /// The search must find a match exactly when the full search does, keep a superset of the matching
+    /// marks, and make a number of checks bounded by the depth of the split tree.
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) - deterministic test fixture
+    std::mt19937 rng(7);
+    constexpr size_t num_marks = 10000;
+
+    std::vector<std::pair<std::vector<bool>, double>> patterns;
+    for (double density : {0.0, 0.001, 0.05, 0.5, 1.0})
+        patterns.emplace_back(randomFlags(num_marks, density, rng), density);
+    std::vector<bool> last_mark_only(num_marks);
+    last_mark_only.back() = true;
+    patterns.emplace_back(std::move(last_mark_only), -1.0);
+    auto first_half = randomFlags(num_marks, 0.05, rng);
+    for (size_t mark = 0; mark != num_marks / 2; ++mark)
+        first_half[mark] = true;
+    patterns.emplace_back(std::move(first_half), -2.0);
+
+    for (size_t coarse_index_granularity : {2, 8})
+    {
+        size_t depth = 0;
+        for (size_t size = num_marks; size > 1; size = (size - 1) / coarse_index_granularity + 1)
+            ++depth;
+        const size_t max_checks = 1 + 2 * coarse_index_granularity * depth;
+
+        for (size_t max_steps : {0, 1000})
+        {
+            for (const auto & [matching, density] : patterns)
+            {
+                SCOPED_TRACE(testing::Message() << "granularity " << coarse_index_granularity << ", max_steps " << max_steps
+                    << ", density " << density);
+
+                GenericExclusionSearchSettings full_settings{
+                    .coarse_index_granularity = coarse_index_granularity, .max_steps = max_steps, .min_marks_for_seek = 0};
+                GenericExclusionSearchSettings first_match_settings = full_settings;
+                first_match_settings.stop_at_first_match = true;
+
+                const auto initial = makeRanges({{0, num_marks}});
+                auto full = genericExclusionSearch(initial, oracleFromFlags(matching), full_settings, true);
+                auto first_match = genericExclusionSearch(initial, oracleFromFlags(matching), first_match_settings, true);
+
+                EXPECT_EQ(first_match.ranges.empty(), full.ranges.empty());
+
+                for (size_t mark = 0; mark != num_marks; ++mark)
+                    if (matching[mark])
+                        EXPECT_TRUE(covers(first_match.ranges, mark)) << "mark " << mark;
+
+                for (const auto & range : first_match.exact_ranges)
+                {
+                    EXPECT_TRUE(isContained(range, first_match.ranges));
+                    for (size_t mark = range.begin; mark != range.end; ++mark)
+                        EXPECT_TRUE(matching[mark]) << "mark " << mark;
+                }
+
+                if (max_steps == 0)
+                {
+                    EXPECT_LE(first_match.num_steps, max_checks);
+                    EXPECT_FALSE(first_match.reached_step_limit);
+                    if (density == 0.05)
+                        EXPECT_GT(full.num_steps, max_checks);
+                }
+
+                /// An exact range is accepted early here, so the step-limited search stops splitting as well.
+                if (density == -2.0)
+                {
+                    EXPECT_LE(first_match.num_steps, max_checks);
+                    EXPECT_GT(full.num_steps, max_checks);
+                }
+            }
+        }
     }
 }
