@@ -2271,9 +2271,9 @@ Parts in all states are moved to `detached/` folder. Parts active before data lo
 </Note>
 
 The statement also clears the server-wide data caches: the restored parts get new names, which can be the former names and paths of other parts, so cached entries for these names would be stale.
-This affects all tables on the server, not only the restored one, and their next queries start with cold caches. With `ON CLUSTER`, the caches of every server in the cluster are cleared.
-The cleared caches include the [mark](#drop-mark-cache), [uncompressed](#drop-uncompressed-cache), [primary index](#drop-primary-index-cache), [statistics](#drop-statistics-cache), [index mark](#drop-index-mark-cache), [index uncompressed](#drop-index-uncompressed-cache), [vector similarity index](#drop-vector-similarity-index-cache), [text index](#drop-text-index-caches), [mmap](#drop-mmap-cache), [page](#drop-page-cache), [columns](#drop-columns-cache) and [query condition](#drop-query-condition-cache) caches.
-Other caches, such as the [query cache](#drop-query-cache) and the [filesystem cache](#drop-filesystem-cache), are kept.
+This affects all tables on the server, not only the restored one: queries on them have to fill the caches again. With `ON CLUSTER`, the caches are cleared on every server where the replica is restored.
+The cleared caches include the [mark](#drop-mark-cache), [uncompressed](#drop-uncompressed-cache), [primary index](#drop-primary-index-cache), [statistics](#drop-statistics-cache), [index mark](#drop-index-mark-cache), [index uncompressed](#drop-index-uncompressed-cache), [vector similarity index](#drop-vector-similarity-index-cache), [text index](#drop-text-index-caches), [mmap](#drop-mmap-cache), [page](#drop-page-cache), [columns](#drop-columns-cache), [query condition](#drop-query-condition-cache) and [encryption headers](#drop-encryption-headers-cache) caches.
+The [query cache](#drop-query-cache) and the [filesystem cache](#drop-filesystem-cache) are kept.
 
 ### SYSTEM RESTORE DATABASE REPLICA {#restore-database-replica}
 
