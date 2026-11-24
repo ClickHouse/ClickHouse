@@ -556,11 +556,9 @@ A server which processes files holds locks in keeper: a processing node for each
 
 If an owner does not update its node for this number of seconds, it is considered dead: the cleanup removes its node and then releases all the locks which point to it, so that other servers can process these files and buckets. This is how the locks of a server which was killed are released, without waiting for `persistent_processing_node_ttl_seconds`. The locks are released after this timeout plus at most one cleanup interval (see `cleanup_interval_min_ms` and `cleanup_interval_max_ms`).
 
-An owner which was considered dead cannot commit or release anything, because every such request checks that the owner node still exists. A server which was not killed, but was frozen or could not reach keeper for longer than the timeout, finds this out, drops its unfinished work and takes locks again.
+An owner which was considered dead cannot take new locks and cannot commit or release anything, because every such request checks that the owner node still exists. A server which was not killed, but was frozen or could not reach keeper for longer than the timeout, finds this out, drops its unfinished work and takes locks again.
 
-A table which does not consume releases its locks at once, for example after `SYSTEM STOP [db.]table`, or when it has no attached materialized views.
-
-Locks written by older versions have no owner and are released only by `persistent_processing_node_ttl_seconds`. The value `0` disables lock owners. The setting is fixed when the table is created and cannot be changed with `ALTER TABLE ... MODIFY SETTING`.
+`persistent_processing_node_ttl_seconds` still applies to every lock. Locks written by older versions have no owner and are released only by it. The value `0` disables lock owners. The setting is fixed when the table is created and cannot be changed with `ALTER TABLE ... MODIFY SETTING`.
 
 Default value: `120`.
 

@@ -140,6 +140,9 @@ public:
         /// The iterator is also invalid once the lock owner of this server was considered
         /// dead: cleanup releases all the locks which the iterator holds.
         const size_t lock_owner_generation;
+        /// The owner of every lock which the iterator takes. Taken once, after the generation:
+        /// a lock taken later under a newer owner would not be released together with the rest.
+        const ObjectStorageQueueLockOwner lock_owner;
         bool isInvalidated() const;
 
         bool is_path_with_hive_partitioning = false;

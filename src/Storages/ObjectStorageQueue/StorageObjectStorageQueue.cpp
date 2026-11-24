@@ -661,19 +661,6 @@ void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
         task->schedule();
 }
 
-ActionLock StorageObjectStorageQueue::getActionLock(StorageActionBlockType action_type)
-{
-    auto lock = IStreamingStorage::getActionLock(action_type);
-
-    /// A table which does not consume releases its locks in `threadFunc`. The next poll can
-    /// be minutes away, so run the streaming tasks now. A task which is in the middle of
-    /// a cycle runs again right after it.
-    if (action_type == ActionLocks::StreamConsume && !shutdown_called)
-        scheduleStreamingTasksImpl();
-
-    return lock;
-}
-
 void StorageObjectStorageQueue::rebuildObjectStorageClient(ContextPtr rebuild_context)
 {
     /// Force a client rebuild under `rebuild_context` (re-resolving credentials) without detaching the table.
@@ -904,26 +891,6 @@ size_t StorageObjectStorageQueue::getDependencies() const
     return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
-void StorageObjectStorageQueue::releaseStreamingLocks()
-{
-    std::shared_ptr<FileIterator> file_iterator;
-    {
-        std::lock_guard streaming_lock(streaming_mutex);
-        file_iterator = std::move(streaming_file_iterator);
-        streaming_file_iterator.reset();
-    }
-
-    /// The destructor releases the locks. It works with keeper, so it is called without the mutex.
-    try
-    {
-        file_iterator.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-    }
-}
-
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 {
     chassert(streaming_tasks_index < streaming_tasks.size());
@@ -966,8 +933,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             tryLogCurrentException(log);
         }
 
-        releaseStreamingLocks();
-
         std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = paused_reschedule_period;
     }
@@ -976,8 +941,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         static constexpr auto disabled_streaming_reschedule_period = 5000;
 
         LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
-
-        releaseStreamingLocks();
 
         std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
@@ -1008,15 +971,10 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
                 }
 
                 LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
-
-                /// The cycle could be the last one before the table was stopped or paused.
-                if (stream_control.isBlocked())
-                    releaseStreamingLocks();
             }
             else
             {
                 LOG_TEST(log, "No ready attached dependencies");
-                releaseStreamingLocks();
             }
         }
         catch (...)

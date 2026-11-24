@@ -290,12 +290,17 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
         }
 
         /// Rewrite the same data to update mtime of the lock node.
-        /// Version check protects from updating a lock re-created by another server.
-        Coordination::Stat set_stat;
-        auto code = zk_client->trySet(bucket_info->bucket_lock_path, data, stat.version, &set_stat);
+        /// Version check protects from updating a lock re-created by another server. The owner
+        /// check is needed as well: a re-created lock starts from version zero again.
+        Coordination::Requests requests;
+        if (!lock_owner_path.empty())
+            requests.push_back(zkutil::makeCheckRequest(lock_owner_path, -1));
+        requests.push_back(zkutil::makeSetRequest(bucket_info->bucket_lock_path, data, stat.version));
+        Coordination::Responses responses;
+        auto code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
-            bucket_lock_version = set_stat.version;
+            bucket_lock_version = dynamic_cast<const Coordination::SetResponse &>(*responses.back()).stat.version;
             return;
         }
         if (code == Coordination::Error::ZBADVERSION || code == Coordination::Error::ZNONODE)
@@ -743,6 +748,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const auto processor_info = getProcessorInfo(generateProcessingID(), bucket_lock_owner.id);
 
     Coordination::Error code = {};
+    bool lock_owner_is_dead = false;
     zk_retry.resetFailures();
     zk_retry.retryLoop([&]
     {
@@ -760,8 +766,30 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
                 return;
             }
         }
-        code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Persistent);
+
+        if (bucket_lock_owner.path.empty())
+        {
+            code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Persistent);
+            return;
+        }
+
+        /// An owner which was considered dead must not take new locks.
+        Coordination::Requests requests;
+        requests.push_back(zkutil::makeCheckRequest(bucket_lock_owner.path, -1));
+        requests.push_back(zkutil::makeCreateRequest(bucket_lock_path, processor_info, zkutil::CreateMode::Persistent));
+        Coordination::Responses responses;
+        code = zk_client->tryMulti(requests, responses);
+        lock_owner_is_dead = code == Coordination::Error::ZNONODE
+            && !responses.empty()
+            && responses.front()->error == Coordination::Error::ZNONODE;
     });
+
+    /// Not a bug, see the comment in `BucketHolder::refresh`.
+    if (lock_owner_is_dead)
+        throw Exception(
+            ErrorCodes::ABORTED,
+            "Cannot acquire bucket {}: lock owner {} was considered dead",
+            bucket, bucket_lock_owner.id);
 
     if (code == Coordination::Error::ZOK)
     {
@@ -815,6 +843,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         /// 1. check failed node does not exist
         /// 2. create processing node
         /// 3. check max processed path is still the same
+        /// 4. check the lock owner still exists
 
         const auto failed_path_doesnt_exist_idx = 0;
         zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
@@ -832,6 +861,8 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         else
             zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_bucket_path);
         const auto check_max_processed_path_end = requests.size();
+
+        addLockOwnerCheckRequest(requests);
 
         Coordination::Responses responses;
         zk_retry.resetFailures();
@@ -866,6 +897,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         auto failed_idx = zkutil::getFailedOpIndex(code, responses);
         failed_path = requests[failed_idx]->getPath();
         LOG_DEBUG(log, "Code: {}, failed idx: {}, failed path: {}", code, failed_idx, failed_path);
+
+        if (isLockOwnerDead(code, requests, responses))
+            throwLockOwnerIsDead();
 
         if (has_request_failed(failed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Failed};

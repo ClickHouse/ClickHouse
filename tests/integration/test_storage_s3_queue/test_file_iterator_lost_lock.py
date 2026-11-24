@@ -554,66 +554,6 @@ def test_insert_longer_than_lock_owner_timeout_keeps_locks(started_cluster):
     assert not node.contains_in_log(f"Removed lock owner {owner_id} as dead")
 
 
-def test_table_which_does_not_consume_releases_bucket_locks(started_cluster):
-    node = started_cluster.instances["instance"]
-
-    table_name = f"test_release_locks_{uuid.uuid4().hex[:8]}"
-    files_to_generate = 10
-    buckets = 2
-    keeper_path, dst_table_name = create_slow_queue(
-        started_cluster,
-        node,
-        table_name,
-        "ordered",
-        files_to_generate,
-        sleep_per_row=2,
-        settings={
-            "buckets": buckets,
-            "processing_threads_num": 1,
-            # Nothing here may be released by the cleanup.
-            "persistent_processing_node_ttl_seconds": 21600,
-            "lock_owner_timeout_seconds": 3600,
-            "s3queue_loading_retries": 10,
-        },
-    )
-
-    zk = started_cluster.get_kazoo_client("zoo1")
-
-    def has_bucket_locks():
-        return any(
-            zk.exists(f"{keeper_path}/buckets/{bucket}/lock") for bucket in range(buckets)
-        )
-
-    bucket_lock = wait_until(
-        lambda: find_bucket_lock(zk, keeper_path, buckets), timeout=60
-    )
-    assert bucket_lock is not None
-    _, owner_id = bucket_lock
-    owner_path = f"{keeper_path}/owners/{owner_id}"
-
-    # A stopped table gives its locks back, so that other servers can take the buckets.
-    # The server is alive, so its owner node stays.
-    node.query(f"SYSTEM STOP {table_name}")
-    assert wait_until(lambda: not has_bucket_locks(), timeout=30)
-    assert zk.exists(owner_path)
-
-    node.query(f"SYSTEM START {table_name}")
-    assert wait_until(lambda: find_bucket_lock(zk, keeper_path, buckets), timeout=60)
-
-    # A detached table releases its locks before the query returns.
-    node.query(f"DETACH TABLE {table_name}")
-    assert not has_bucket_locks()
-
-    node.query(f"ATTACH TABLE {table_name}")
-
-    def get_processed_count():
-        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
-
-    assert wait_until(
-        lambda: get_processed_count() == files_to_generate, timeout=150, interval=1
-    )
-
-
 def test_lock_owner_considered_dead_cannot_commit(started_cluster):
     node = started_cluster.instances["instance"]
 
@@ -628,6 +568,8 @@ def test_lock_owner_considered_dead_cannot_commit(started_cluster):
         sleep_per_row=3,
         settings={
             "processing_threads_num": 1,
+            # The server takes the next file before it commits the first one.
+            "max_processed_files_before_commit": 10,
             # The cleanup must not remove the owner by itself.
             "lock_owner_timeout_seconds": 3600,
             "cleanup_interval_min_ms": 100,
@@ -651,6 +593,11 @@ def test_lock_owner_considered_dead_cannot_commit(started_cluster):
     assert wait_until(
         lambda: node.contains_in_log(f"Lock owner {owner_id} was removed as dead"),
         timeout=60,
+    )
+
+    # The removed owner also could not take the next file.
+    assert node.contains_in_log(
+        f"as processing: lock owner {owner_id} was considered dead"
     )
 
     def has_new_owner():

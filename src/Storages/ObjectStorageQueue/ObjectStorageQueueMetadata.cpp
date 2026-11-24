@@ -445,7 +445,8 @@ void ObjectStorageQueueMetadata::lockOwnerHeartbeatFunc()
 
 ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileMetadata(
     const std::string & path,
-    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
+    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info,
+    const ObjectStorageQueueLockOwner & lock_owner)
 {
     chassert(metadata_ref_count);
     auto [file_status, _] = local_file_statuses.getOrSet(
@@ -465,7 +466,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
-                getLockOwner(),
+                lock_owner,
                 processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 bucketing_mode,
@@ -480,7 +481,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
-                getLockOwner(),
+                lock_owner,
                 processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
@@ -565,10 +566,10 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
-ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
+ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const ObjectStorageQueueLockOwner & lock_owner)
 {
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
-        zookeeper_path, bucket, getLockOwner(), use_persistent_processing_nodes, persistent_processing_node_ttl_seconds, zookeeper_name, log);
+        zookeeper_path, bucket, lock_owner, use_persistent_processing_nodes, persistent_processing_node_ttl_seconds, zookeeper_name, log);
 }
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
@@ -1781,10 +1782,13 @@ NameSet ObjectStorageQueueMetadata::cleanupLockOwners(Int64 keeper_time_ms)
     if (code != Coordination::Error::ZOK)
         throw zkutil::KeeperException::fromPath(code, owners_path);
 
+    /// Zero means that batching is disabled.
+    const size_t batch_size = keeper_multiread_batch_size ? keeper_multiread_batch_size : owner_ids.size();
+
     NameSet alive_owners;
-    for (size_t batch_begin = 0; batch_begin < owner_ids.size(); batch_begin += keeper_multiread_batch_size)
+    for (size_t batch_begin = 0; batch_begin < owner_ids.size(); batch_begin += batch_size)
     {
-        const size_t batch_end = std::min(owner_ids.size(), batch_begin + keeper_multiread_batch_size);
+        const size_t batch_end = std::min(owner_ids.size(), batch_begin + batch_size);
         Strings owner_paths;
         for (size_t i = batch_begin; i < batch_end; ++i)
             owner_paths.push_back(owners_path / owner_ids[i]);
@@ -1922,18 +1926,16 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::str
                 continue;
             }
 
-            /// A lock with an owner is released together with its owner, no matter how
-            /// old the lock is: an alive owner can hold it for as long as it needs.
+            /// A lock of a dead owner is released at once, no matter how old the lock is.
             const auto owner_id_of_lock = getLockOwnerIDFromLock(response[i].data);
-            if (!owner_id_of_lock.empty())
+            if (!owner_id_of_lock.empty() && alive_lock_owners && !alive_lock_owners->contains(owner_id_of_lock))
             {
-                if (alive_lock_owners && !alive_lock_owners->contains(owner_id_of_lock))
-                    nodes_to_remove.push_back({get_batch[i], response[i].stat.version, owner_id_of_lock});
+                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, owner_id_of_lock});
                 continue;
             }
 
-            /// A lock without an owner was written by an old version.
-            /// The TTL is changeable at runtime and zero disables it.
+            /// The TTL applies to every other lock: one without an owner (written by an old
+            /// version) and one whose owner is alive. It is changeable at runtime, zero disables it.
             const size_t ttl_seconds = persistent_processing_node_ttl_seconds.load();
             LOG_TEST(
                 log, "Node: {}, mtime: {}, ttl sec: {}, current time: {}",

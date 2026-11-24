@@ -199,9 +199,9 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
     void release();
 
-private:
     [[nodiscard]] bool isLockOwnerAlive(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const;
 
+private:
     BucketInfoPtr bucket_info;
     /// Path of the owner node of this lock in keeper, empty if lock owners are not used.
     /// The lock is removed only together with a check that the owner still exists.

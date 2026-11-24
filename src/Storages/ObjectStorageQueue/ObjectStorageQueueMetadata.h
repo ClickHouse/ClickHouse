@@ -133,9 +133,12 @@ public:
     /// for the requested file.
     /// ObjectStorageQueueIFileMetadata (either Ordered or Unordered implementation)
     /// allows to manage metadata of a concrete file.
+    /// `lock_owner` is the owner of the processing node which the object creates,
+    /// see `getLockOwner`. Empty for an object which does not take the file for processing.
     FileMetadataPtr getFileMetadata(
         const std::string & path,
-        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {},
+        const ObjectStorageQueueLockOwner & lock_owner = {});
 
     bool tryAcquireExclusiveProcessing(const std::string & path);
     void releaseExclusiveProcessing(const std::string & path);
@@ -181,7 +184,8 @@ public:
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser);
     /// Acquire (take unique ownership of) bucket for processing.
-    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(
+        const Bucket & bucket, const ObjectStorageQueueLockOwner & lock_owner);
 
     const String & getZooKeeperName() const { return zookeeper_name; }
     std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper() const { return getZooKeeper(log, zookeeper_name); }
@@ -209,8 +213,8 @@ public:
     /// updating for as long as this object exists. Every lock stores the id of its owner.
     /// When an owner does not update its node for `lock_owner_timeout_seconds`, cleanup
     /// removes the node and after that releases the locks which point to it.
-    /// Every request which removes a lock checks that its owner node still exists,
-    /// so an owner which was considered dead cannot commit or release anything.
+    /// Every request which takes, refreshes or removes a lock checks that its owner node
+    /// still exists, so an owner which was considered dead cannot take, commit or release anything.
     ///
     /// Returns the owner and creates its node if needed.
     /// The owner is empty if lock owners are not used.

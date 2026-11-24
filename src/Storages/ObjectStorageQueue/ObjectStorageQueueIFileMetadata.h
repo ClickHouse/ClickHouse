@@ -295,6 +295,10 @@ protected:
     /// only together with a check that the owner still exists: cleanup releases the locks
     /// of an owner which was considered dead, so such an owner must not touch them.
     void addProcessingNodeRemovalRequest(Coordination::Requests & requests) const;
+    /// Add a check that the lock owner still exists, for a request which creates the
+    /// processing node: an owner which was considered dead must not take new locks.
+    void addLockOwnerCheckRequest(Coordination::Requests & requests) const;
+    [[noreturn]] void throwLockOwnerIsDead() const;
     /// Whether the multi request failed because the lock owner was considered dead.
     [[nodiscard]] bool isLockOwnerDead(
         Coordination::Error code,

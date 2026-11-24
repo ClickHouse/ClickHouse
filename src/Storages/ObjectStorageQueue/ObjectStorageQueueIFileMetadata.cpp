@@ -35,6 +35,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -354,6 +355,22 @@ void ObjectStorageQueueIFileMetadata::addProcessingNodeRemovalRequest(Coordinati
     if (!lock_owner.path.empty())
         requests.push_back(zkutil::makeCheckRequest(lock_owner.path, -1));
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+}
+
+void ObjectStorageQueueIFileMetadata::addLockOwnerCheckRequest(Coordination::Requests & requests) const
+{
+    if (!lock_owner.path.empty())
+        requests.push_back(zkutil::makeCheckRequest(lock_owner.path, -1));
+}
+
+void ObjectStorageQueueIFileMetadata::throwLockOwnerIsDead() const
+{
+    /// Not a bug: the server was frozen or could not reach keeper.
+    /// The caller drops what it holds and takes locks again as a new owner.
+    throw Exception(
+        ErrorCodes::ABORTED,
+        "Cannot set file {} as processing: lock owner {} was considered dead",
+        path, lock_owner.id);
 }
 
 bool ObjectStorageQueueIFileMetadata::isLockOwnerDead(

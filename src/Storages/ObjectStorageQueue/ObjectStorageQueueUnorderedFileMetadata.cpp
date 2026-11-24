@@ -76,6 +76,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 {
     Coordination::Requests requests;
     auto result = prepareProcessingRequestsImpl(requests, generateProcessingID());
+    addLockOwnerCheckRequest(requests);
 
     Coordination::Responses responses;
     Coordination::Error code = {};
@@ -118,6 +119,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
     if (has_request_failed(result.create_processing_node_idx))
         return {false, FileStatus::State::Processing};
+
+    if (isLockOwnerDead(code, requests, responses))
+        throwLockOwnerIsDead();
 
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
