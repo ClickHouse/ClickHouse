@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -75,6 +76,17 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 
 
 template <ViewTarget::Kind target_kind>
+void TableFunctionTimeSeriesTarget<target_kind>::checkTimeSeriesAccess(const ContextPtr & context, bool is_insert_query) const
+{
+    /// Accessing a target table of a TimeSeries table requires the same access as accessing the TimeSeries table itself.
+    context->checkAccess(
+        is_insert_query ? AccessType::INSERT : AccessType::SELECT,
+        time_series_storage_id.getDatabaseName(),
+        time_series_storage_id.getTableName());
+}
+
+
+template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const ContextPtr & context) const
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
@@ -94,14 +106,16 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
+    checkTimeSeriesAccess(context, is_insert_query);
     return getTargetTable(context);
 }
 
 template <ViewTarget::Kind target_kind>
-ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
+ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
+    checkTimeSeriesAccess(context, is_insert_query);
     auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
