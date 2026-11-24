@@ -1011,7 +1011,12 @@ private:
         appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
-        storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
+        /// The allocation can shrink after sorting.
+        size_t new_bytes = buffer.data.allocatedBytes();
+        if (new_bytes >= old_bytes)
+            storage.total_writes.bytes += new_bytes - old_bytes;
+        else
+            storage.total_writes.bytes -= old_bytes - new_bytes;
     }
 };
 
@@ -1170,10 +1175,10 @@ bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
     return false;
 }
 
-std::optional<SerializationInfoByName> StorageBuffer::tryGetSerializationHints() const
+std::optional<SerializationInfoByName> StorageBuffer::tryGetSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const
 {
     if (auto destination = getDestinationTable())
-        return destination->tryGetSerializationHints();
+        return destination->tryGetSerializationHints(metadata_snapshot);
     return std::nullopt;
 }
 

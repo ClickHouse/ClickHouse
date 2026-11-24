@@ -473,12 +473,12 @@ bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
 }
 
-std::optional<SerializationInfoByName> StorageMerge::tryGetSerializationHints() const
+std::optional<SerializationInfoByName> StorageMerge::tryGetSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const
 {
     std::optional<SerializationInfoByName> result;
-    traverseTablesUntil([&result](const auto & table)
+    traverseTablesUntil([&result, &metadata_snapshot](const auto & table)
     {
-        if (auto hints = table->tryGetSerializationHints())
+        if (auto hints = table->tryGetSerializationHints(metadata_snapshot))
         {
             if (result)
             {

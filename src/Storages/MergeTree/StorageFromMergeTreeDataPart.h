@@ -60,9 +60,9 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    std::optional<SerializationInfoByName> tryGetSerializationHints() const override
+    std::optional<SerializationInfoByName> tryGetSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override
     {
-        return storage.tryGetSerializationHints();
+        return storage.tryGetSerializationHints(metadata_snapshot);
     }
 
     bool hasAutomaticLowCardinalitySerialization(const String & /*column_name*/, const StorageSnapshotPtr & /*storage_snapshot*/) const override

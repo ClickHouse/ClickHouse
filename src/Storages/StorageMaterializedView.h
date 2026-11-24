@@ -53,7 +53,7 @@ public:
     /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
-    std::optional<SerializationInfoByName> tryGetSerializationHints() const override { return getTargetTable()->tryGetSerializationHints(); }
+    std::optional<SerializationInfoByName> tryGetSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override { return getTargetTable()->tryGetSerializationHints(metadata_snapshot); }
     bool hasAutomaticLowCardinalitySerialization(const String & column_name, const StorageSnapshotPtr & storage_snapshot) const override
     {
         return getTargetTable()->hasAutomaticLowCardinalitySerialization(column_name, storage_snapshot);

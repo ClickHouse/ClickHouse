@@ -106,8 +106,9 @@ public:
     bool supportedPrewhereColumnsIncludeSubcolumns() const override;
     bool supportsSubcolumns() const override;
     bool supportsOptimizationToSubcolumns() const override;
-    std::optional<SerializationInfoByName> tryGetSerializationHints() const override;
+    std::optional<SerializationInfoByName> tryGetSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override;
     bool hasAutomaticLowCardinalitySerialization(const String & column_name, const StorageSnapshotPtr & storage_snapshot) const override;
+    bool supportsSubcolumnOptimizationWithFinal() const override;
     bool hasBucketedMapSerialization() const override;
 
     ColumnSizeByName getColumnSizes() const override;

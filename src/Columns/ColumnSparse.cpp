@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
@@ -234,7 +233,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
             for (size_t i = offset_start + 1; i < offset_end; ++i)
             {
-                size_t current_diff = src_offsets[i] - src_offsets[i - 1];
+                size_t current_diff = src_offsets[i] - src_offsets[static_cast<ssize_t>(i) - 1];
                 insertManyDefaults(current_diff - 1);
                 offsets_data.push_back(_size);
                 ++_size;
@@ -242,7 +241,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
             /// 'end' <= 'src_offsets[offsets_end]', but end is excluded, so index is 'offsets_end' - 1.
             /// Since 'end' is excluded, need to subtract one more row from result.
-            insertManyDefaults(end - src_offsets[offset_end - 1] - 1);
+            insertManyDefaults(end - src_offsets[static_cast<ssize_t>(offset_end) - 1] - 1);
             values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
         }
         else
@@ -897,7 +896,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
         {
             if (!offset_it.isDefault())
             {
-                size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
+                size_t replicate_size = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
                 total_offsets_size += replicate_size;
             }
         }
@@ -909,8 +908,8 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     {
         if (!offset_it.isDefault())
         {
-            size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
-            for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
+            size_t replicate_size = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+            for (size_t row = replicate_offsets[static_cast<ssize_t>(i) - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);
             }
@@ -1143,37 +1142,6 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
         return ColumnTuple::create(columns);
     }
 
-    if (const auto * column_object = typeid_cast<const ColumnObject *>(column.get()))
-    {
-        UnorderedMapWithMemoryTracking<String, ColumnPtr> typed_paths;
-        typed_paths.reserve(column_object->getTypedPaths().size());
-        bool changed = false;
-        for (const auto & [path, path_column] : column_object->getTypedPaths())
-        {
-            auto full_path_column = recursiveRemoveSparse(path_column);
-            changed |= full_path_column.get() != path_column.get();
-            typed_paths[path] = std::move(full_path_column);
-        }
-
-        if (!changed)
-            return column;
-
-        UnorderedMapWithMemoryTracking<String, ColumnPtr> dynamic_paths;
-        dynamic_paths.reserve(column_object->getDynamicPaths().size());
-        for (const auto & [path, path_column] : column_object->getDynamicPaths())
-            dynamic_paths[path] = path_column;
-
-        return ColumnObject::create(
-            typed_paths,
-            dynamic_paths,
-            column_object->getSharedDataPtr(),
-            column_object->getMaxDynamicPaths(),
-            column_object->getMaxDynamicPathsUpperBound(),
-            column_object->getGlobalMaxDynamicPaths(),
-            column_object->getMaxDynamicTypes(),
-            column_object->getStatistics());
-    }
-
     return column->convertToFullColumnIfSparse();
 }
 
@@ -1189,15 +1157,6 @@ bool recursiveHasSparse(const ColumnPtr & column)
     {
         for (const auto & element : column_tuple->getColumns())
             if (recursiveHasSparse(element))
-                return true;
-
-        return false;
-    }
-
-    if (const auto * column_object = typeid_cast<const ColumnObject *>(column.get()))
-    {
-        for (const auto & [_, path_column] : column_object->getTypedPaths())
-            if (recursiveHasSparse(path_column))
                 return true;
 
         return false;

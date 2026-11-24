@@ -3638,7 +3638,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         std::move(writer_settings),
         global_ctx->compression_codec,
         global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension(),
-        *global_ctx->data->getSettings());
+        global_ctx->data->getSettings());
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.
@@ -3896,9 +3896,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        const auto sorting_queue_strategy
-            = !global_ctx->merge_may_reduce_rows
-                && (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
+        const auto sorting_queue_strategy = (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
             ? SortingQueueStrategy::Batch
             : SortingQueueStrategy::Default;
 

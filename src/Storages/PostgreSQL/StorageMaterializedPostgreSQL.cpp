@@ -346,10 +346,10 @@ bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
     return false;
 }
 
-std::optional<SerializationInfoByName> StorageMaterializedPostgreSQL::tryGetSerializationHints() const
+std::optional<SerializationInfoByName> StorageMaterializedPostgreSQL::tryGetSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const
 {
     if (auto nested = tryGetNested())
-        return nested->tryGetSerializationHints();
+        return nested->tryGetSerializationHints(metadata_snapshot);
     return std::nullopt;
 }
 
@@ -360,6 +360,13 @@ bool StorageMaterializedPostgreSQL::hasAutomaticLowCardinalitySerialization(cons
     return false;
 }
 
+
+bool StorageMaterializedPostgreSQL::supportsSubcolumnOptimizationWithFinal() const
+{
+    if (auto nested = tryGetNested())
+        return nested->supportsSubcolumnOptimizationWithFinal();
+    return false;
+}
 
 bool StorageMaterializedPostgreSQL::hasBucketedMapSerialization() const
 {
@@ -746,7 +753,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
         /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
+        auto configuration = StoragePostgreSQL::getConfiguration(
+            args.engine_args, args.getContext(), /*storage_settings=*/ nullptr,
+            globCaller("Table engine 'MaterializedPostgreSQL'"));
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
