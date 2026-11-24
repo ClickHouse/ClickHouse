@@ -347,6 +347,33 @@ struct FloatRoundingLargeScale
         return quotient + (std::fma(-quotient, hi, a) - quotient * lo) / hi;
     }
 
+    /// `k * 10^-N`.
+    static Float64 unscale(Float64 k, const Scales & scales)
+    {
+        if constexpr (scale_mode == ScaleMode::Positive)
+        {
+            const Float64 res = divide(k, scales.hi, scales.lo) * shift_down;
+            /// Shifting a result at or below `DBL_MIN` down can round it a second time.
+            if (std::abs(res) <= std::numeric_limits<Float64>::min())
+                return divide(k * shift_down, scales.hi, scales.lo);
+            return res;
+        }
+        else
+            return std::fma(k, scales.hi, k * scales.lo);
+    }
+
+    /// Returns `x` itself when it is the nearest `Float64` to `k * 10^-N`, with `k` the nearest integer to `scaled`.
+    static Float64 roundScaled(Float64 x, Float64 scaled, Float64 rounded, const Scales & scales)
+    {
+        if constexpr (rounding_mode != RoundingMode::Round)
+        {
+            const Float64 nearest = roundWithMode(scaled, RoundingMode::Round);
+            if (rounded != nearest && unscale(nearest, scales) == x)
+                return x;
+        }
+        return std::copysign(clampToDirection(unscale(rounded, scales), x), x);
+    }
+
     static Float64 compute(Float64 x, const Scales & scales)
     {
         if constexpr (scale_mode == ScaleMode::Positive)
@@ -361,12 +388,7 @@ struct FloatRoundingLargeScale
             if (!(std::abs(scaled) < integer_limit))
                 return x;
 
-            const Float64 rounded = roundWithMode(scaled, rounding_mode);
-            Float64 res = divide(rounded, scales.hi, scales.lo) * shift_down;
-            /// Shifting a result at or below `DBL_MIN` down can round it a second time.
-            if (std::abs(res) <= std::numeric_limits<Float64>::min())
-                res = divide(rounded * shift_down, scales.hi, scales.lo);
-            return std::copysign(clampToDirection(res, x), x);
+            return roundScaled(x, scaled, roundWithMode(scaled, rounding_mode), scales);
         }
         else
         {
@@ -398,7 +420,7 @@ struct FloatRoundingLargeScale
                 res = (quotient == 0 && x > 0) ? 1 : res;
             else if constexpr (rounding_mode == RoundingMode::Floor)
                 res = (quotient == 0 && x < 0) ? -1 : res;
-            return std::copysign(clampToDirection(std::fma(res, scales.hi, res * scales.lo), x), x);
+            return roundScaled(x, quotient, res, scales);
         }
     }
 };
