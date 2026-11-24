@@ -3324,10 +3324,15 @@ def test_archive(started_cluster):
     paths_list_new = node.query(
         f"SELECT distinct(_path) FROM {cluster_function_new} SETTINGS cluster_function_process_archive_on_multiple_nodes = 1"
     )
-    # The worker on that cluster runs with `cluster_function_process_archive_on_multiple_nodes = 0`, so a
-    # per-member task reaches a worker that expects whole archives and it refuses the task explicitly.
-    assert "looks like a per-member one" in node.query_and_get_error(
+    # The workers on that cluster run with `cluster_function_process_archive_on_multiple_nodes = 0`, so a
+    # per-member task reaches a worker that expects whole archives: a current worker refuses the task
+    # explicitly, while an old one (before this version) reads the member path as an object key and fails
+    # with `Failed to get object info` instead. The task lands on either worker, so accept both refusals.
+    old_cluster_error = node.query_and_get_error(
         f"SELECT distinct(_path) FROM {cluster_function_old} SETTINGS max_threads=1"
+    )
+    assert ("looks like a per-member one" in old_cluster_error) or (
+        "Failed to get object info" in old_cluster_error
     )
 
     assert expected_paths == int(node.query(f"SELECT uniqExact(_path) FROM {function}"))
@@ -3350,8 +3355,11 @@ def test_archive(started_cluster):
 
     expected_count = 14
     assert expected_count == int(node.query(f"SELECT count() FROM {function}"))
-    assert "looks like a per-member one" in node.query_and_get_error(
+    old_cluster_count_error = node.query_and_get_error(
         f"SELECT count() FROM {cluster_function_old} SETTINGS max_threads=1"
+    )
+    assert ("looks like a per-member one" in old_cluster_count_error) or (
+        "Failed to get object info" in old_cluster_count_error
     )
 
     query_id = f"query_{uuid.uuid4()}"
