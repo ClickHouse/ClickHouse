@@ -2899,16 +2899,16 @@ Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) failures, labelled by da
 Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) files given up on for good after exhausting retries (or with retries disabled), labelled by database and table. Each of these represents a file whose data will never be processed.
 
 ### `object_storage_queue_newest_seen_object_timestamp_seconds` {#object-storage-queue-newest-seen-object-timestamp-seconds}
-Unix timestamp of the last-modified time of the newest object seen so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+Unix timestamp of the last-modified time of the newest object seen so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
 
 ### `object_storage_queue_newest_committed_object_timestamp_seconds` {#object-storage-queue-newest-committed-object-timestamp-seconds}
-Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
 
 ### `object_storage_queue_processed_files_total` {#object-storage-queue-processed-files-total}
 Number of files committed as processed by this `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server, labelled by database and table.
 
 ### `object_storage_queue_last_poll_timestamp_seconds` {#object-storage-queue-last-poll-timestamp-seconds}
-Unix timestamp of the last time a background streaming thread of an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server started a cycle that looks for files to process, labelled by database and table. It is set after the table registered itself as active in Keeper and before it looks for files, so it advances also when the cycle finds no files or fails, and it does not advance when the registration fails. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is shut down (dropped or detached).
+Unix timestamp of the last time a background streaming thread of an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server started a cycle that looks for files to process, labelled by database and table. It is set after the table registered itself as active in Keeper and before it looks for files, so it advances also when the cycle finds no files or fails, and it does not advance when the registration fails. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
 
 ### `system_log_flushes_total` {#system-log-flushes-total}
 Number of attempts to flush the in-memory buffer of a system log to its table, labelled by the database and the table of the system log and by result (`success`, `failure`).

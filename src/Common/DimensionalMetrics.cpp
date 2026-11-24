@@ -60,13 +60,13 @@ namespace DimensionalMetrics
 
     MetricFamily & ObjectStorageQueueNewestSeenTimestamp = Factory::instance().registerMetric(
         "object_storage_queue_newest_seen_object_timestamp_seconds",
-        "Unix timestamp of the last-modified time of the newest object seen so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_committed_object_timestamp_seconds to estimate pipeline lag.",
+        "Unix timestamp of the last-modified time of the newest object seen so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_committed_object_timestamp_seconds to estimate pipeline lag. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.",
         {"database", "table"}
     );
 
     MetricFamily & ObjectStorageQueueNewestCommittedTimestamp = Factory::instance().registerMetric(
         "object_storage_queue_newest_committed_object_timestamp_seconds",
-        "Unix timestamp of the last-modified time of the newest object fully processed so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_seen_object_timestamp_seconds to estimate pipeline lag.",
+        "Unix timestamp of the last-modified time of the newest object fully processed so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_seen_object_timestamp_seconds to estimate pipeline lag. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.",
         {"database", "table"}
     );
 
@@ -80,7 +80,7 @@ namespace DimensionalMetrics
 
     MetricFamily & ObjectStorageQueueLastPollTimestamp = Factory::instance().registerMetric(
         "object_storage_queue_last_poll_timestamp_seconds",
-        "Unix timestamp of the last time a background streaming thread of an ObjectStorageQueue (S3Queue/AzureQueue) table on this server started a cycle that looks for files to process, labelled by database and table. It is set after the table registered itself as active in Keeper and before it looks for files, so it advances also when the cycle finds no files or fails, and it does not advance when the registration fails. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is shut down (dropped or detached).",
+        "Unix timestamp of the last time a background streaming thread of an ObjectStorageQueue (S3Queue/AzureQueue) table on this server started a cycle that looks for files to process, labelled by database and table. It is set after the table registered itself as active in Keeper and before it looks for files, so it advances also when the cycle finds no files or fails, and it does not advance when the registration fails. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.",
         {"database", "table"}
     );
 

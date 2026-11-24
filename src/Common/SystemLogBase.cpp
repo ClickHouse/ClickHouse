@@ -101,8 +101,8 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
     if (settings.turn_off_logger)
         log->setLevel(0);
 
-    /// Create the counter with the value 0, with the same labels as in `pop`. A counter which appears
-    /// only at its first increment starts from the size of the first batch, and a rate calculated from it misses that batch.
+    /// Create the counter with the value 0, with the same labels as in `pop`.
+    /// Otherwise a rate calculated from it misses the first dropped batch.
     DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {settings.database, settings.table}, 0);
 }
 

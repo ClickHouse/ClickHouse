@@ -374,6 +374,7 @@ static struct InitFiu
     PAUSEABLE(sc_drop_intention_pause) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
+    REGULAR(system_log_flush_throw) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     ONCE(database_replicated_restore_table_created_by_other_replica) \

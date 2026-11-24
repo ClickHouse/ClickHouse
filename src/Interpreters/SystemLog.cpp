@@ -111,6 +111,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char sleep_in_logs_flush[];
+    extern const char system_log_flush_throw[];
 }
 
 namespace ServerSetting
@@ -121,6 +122,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -866,8 +868,8 @@ SystemLog<LogElement>::SystemLog(
         union_create_query = getCreateUnionTableQuery()->formatWithSecretsOneLine();
     chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 
-    /// Create the counters with the value 0, with the same labels as in `flushImpl`. A counter which appears
-    /// only at its first increment starts from 1, and a rate calculated from it misses that first event.
+    /// Create the counters with the value 0, with the same labels as in `flushImpl`.
+    /// Otherwise a rate calculated from them misses the first flush.
     DimensionalMetrics::add(
         DimensionalMetrics::SystemLogFlushes, {table_id.getDatabaseName(), table_id.getTableName(), "success"}, 0);
     DimensionalMetrics::add(
@@ -948,6 +950,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         fiu_do_on(FailPoints::sleep_in_logs_flush,
         {
             sleepForSeconds(30);
+        });
+
+        fiu_do_on(FailPoints::system_log_flush_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to flush system log {}", table_id.getNameForLogs());
         });
 
         /// We check for existence of the table and create it as needed at every

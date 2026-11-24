@@ -59,20 +59,17 @@ namespace DimensionalMetrics
             MetricType type_ = MetricType::Gauge);
 
         /// Returns the metric of the label set, and creates it if it does not exist.
-        /// The reference is used after the lock of the family is released, so it must not be used
-        /// for a label set that can be removed with `remove`.
+        /// Do not use it for a label set that can be removed with `remove`: the reference would dangle.
         Metric & withLabels(LabelValues label_values);
 
         /// Update the metric of the label set, and create it if it does not exist.
-        /// The update is done under the lock of the family, so these methods are safe to call concurrently with `remove`.
+        /// Done under the lock of the family, so it is safe together with `remove`.
         void set(LabelValues label_values, Value value);
         void add(LabelValues label_values, Value amount);
         void sub(LabelValues label_values, Value amount);
 
-        /// Remove the label set, so that it is not exported anymore. Returns false if there was no such label set.
-        /// A later update of the same label set creates it again, starting from zero.
-        /// Only for label sets that are always updated through `set`, `add` and `sub` (or through the functions
-        /// of the same names in the `DimensionalMetrics` namespace), never through a reference from `withLabels`.
+        /// Remove the label set from the export. Returns false if there was no such label set.
+        /// Only for label sets that are updated through `set`, `add` and `sub`, never through `withLabels`.
         bool remove(const LabelValues & label_values);
 
         template <typename Func>

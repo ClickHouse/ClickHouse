@@ -665,9 +665,8 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
     }
 
-    /// The table does not consume anymore, so its gauges would only show stale values until the server restarts.
-    /// This is done on every shutdown and not only on drop: after a detach and attach the gauges are set again by the first
-    /// poll. The streaming tasks are already deactivated, so they cannot set the gauges again.
+    /// The table does not consume anymore: remove its gauges, so they do not show stale values.
+    /// After a detach and attach the first poll sets them again.
     removeGaugeMetrics(getStorageID(), metadata.get());
 
     LOG_TRACE(log, "Shut down storage");
@@ -705,6 +704,8 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
     StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
+    /// The gauges of the old name are not removed here on purpose: they stay until the server restarts.
+    /// A running cycle still uses the old name, so a removal here would not be complete.
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
