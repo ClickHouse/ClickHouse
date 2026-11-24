@@ -76,7 +76,8 @@ void SetLastModifiedOperation::execute()
 
 void SetLastModifiedOperation::undo()
 {
-    disk.setLastModified(path, old_timestamp);
+    if (old_timestamp)
+        disk.setLastModified(path, *old_timestamp);
 }
 
 ChmodOperation::ChmodOperation(std::string path_, mode_t mode_, IDisk & disk_)
@@ -94,7 +95,8 @@ void ChmodOperation::execute()
 
 void ChmodOperation::undo()
 {
-    disk.chmod(path, old_mode);
+    if (old_mode)
+        disk.chmod(path, *old_mode);
 }
 
 WriteFileOperation::WriteFileOperation(std::string path_, std::string data_, IDisk & disk_)
@@ -108,7 +110,6 @@ void WriteFileOperation::execute()
 {
     if (auto buf = disk.readFileIfExists(path, getReadSettings()))
     {
-        file_existed = true;
         fiu_do_on(FailPoints::write_file_operation_fail_on_read,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in WriteFileOperation read");
@@ -118,6 +119,7 @@ void WriteFileOperation::execute()
         prev_data = file_data;
     }
 
+    write_attempted = true;
     auto buf = disk.writeFile(path);
     writeString(data, *buf);
     buf->finalize();
@@ -125,18 +127,19 @@ void WriteFileOperation::execute()
 
 void WriteFileOperation::undo()
 {
+    if (!write_attempted)
+        return;
+
     if (prev_data.has_value())
     {
-        chassert(file_existed);
         auto buf = disk.writeFile(path);
         writeString(prev_data.value(), *buf);
         buf->finalize();
     }
-    else if (!file_existed)
+    else if (disk.existsFile(path))
     {
-        disk.removeFileIfExists(path);
+        disk.removeFile(path);
     }
-    // else: file existed but the file content is unchanged, leave it alone.
 }
 
 UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
@@ -183,7 +186,7 @@ void UnlinkFileOperation::execute()
     /// We need to move file to the random name for the possible undo and to save the fs hardlink count
     auto tmp_path = getRandomASCIIString(32);
     disk.moveFile(path, tmp_path);
-    tmp_file_path = tmp_path;
+    tmp_file_path = std::move(tmp_path);
 }
 
 void UnlinkFileOperation::undo()
@@ -211,12 +214,17 @@ CreateDirectoryOperation::CreateDirectoryOperation(std::string path_, IDisk & di
 
 void CreateDirectoryOperation::execute()
 {
+    if (disk.existsDirectory(path))
+        return;
+
     disk.createDirectory(path);
+    created = true;
 }
 
 void CreateDirectoryOperation::undo()
 {
-    disk.removeDirectory(path);
+    if (created)
+        disk.removeDirectory(path);
 }
 
 CreateDirectoryRecursiveOperation::CreateDirectoryRecursiveOperation(std::string path_, IDisk & disk_)
@@ -339,7 +347,7 @@ void RemoveRecursiveOperation::undo()
     else if (temp_directory_path.has_value())
         disk.moveDirectory(temp_directory_path.value(), path);
 
-    for (auto & write_op : write_operations)
+    for (auto & write_op : write_operations | std::views::reverse)
         write_op->undo();
 }
 
@@ -371,7 +379,9 @@ void CreateHardlinkOperation::execute()
     write_operation = std::make_unique<WriteFileOperation>(path_from, object_metadata->serializeToString(), disk);
     write_operation->execute();
 
+    const bool destination_existed = disk.existsFileOrDirectory(path_to);
     disk.createHardLink(path_from, path_to);
+    link_created = !destination_existed;
 }
 
 void CreateHardlinkOperation::undo()
@@ -379,7 +389,8 @@ void CreateHardlinkOperation::undo()
     if (write_operation)
         write_operation->undo();
 
-    disk.removeFileIfExists(path_to);
+    if (link_created)
+        disk.removeFileIfExists(path_to);
 }
 
 MoveFileOperation::MoveFileOperation(std::string path_from_, std::string path_to_, IDisk & disk_)
@@ -392,11 +403,13 @@ MoveFileOperation::MoveFileOperation(std::string path_from_, std::string path_to
 void MoveFileOperation::execute()
 {
     disk.moveFile(path_from, path_to);
+    moved = true;
 }
 
 void MoveFileOperation::undo()
 {
-    disk.moveFile(path_to, path_from);
+    if (moved)
+        disk.moveFile(path_to, path_from);
 }
 
 MoveDirectoryOperation::MoveDirectoryOperation(std::string path_from_, std::string path_to_, IDisk & disk_)
@@ -409,10 +422,14 @@ MoveDirectoryOperation::MoveDirectoryOperation(std::string path_from_, std::stri
 void MoveDirectoryOperation::execute()
 {
     disk.moveDirectory(path_from, path_to);
+    moved = true;
 }
 
 void MoveDirectoryOperation::undo()
 {
+    if (!moved)
+        return;
+
     disk.moveDirectory(path_to, path_from);
 }
 

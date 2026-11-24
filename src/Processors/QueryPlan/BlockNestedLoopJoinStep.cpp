@@ -30,10 +30,10 @@ bool BlockNestedLoopJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness 
 /// that side's header. Resolved against the headers the columns are actually read from rather than
 /// once and for all, because a position taken from the plan's header says nothing about the header
 /// the pipeline is eventually built on.
-static std::vector<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
+static VectorWithMemoryTracking<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
     const ExpressionActions & actions, const Block & left_header, const Block & right_header)
 {
-    std::vector<BlockNestedLoopPredicate::Source> inputs;
+    VectorWithMemoryTracking<BlockNestedLoopPredicate::Source> inputs;
     for (const auto & required_column : actions.getRequiredColumnsWithTypes())
     {
         const bool in_left = left_header.has(required_column.name);

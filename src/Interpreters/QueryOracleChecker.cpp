@@ -23,11 +23,20 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/FieldVisitorToString.h>
+#include <Interpreters/ApplyWithGlobalVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/IndicesDescription.h>
 #include <functional>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageLog.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageStripeLog.h>
+#include <Common/assert_cast.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
@@ -37,6 +46,8 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Core/Joins.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/FunctionFactory.h>
@@ -83,157 +94,134 @@ namespace
 /// functions are picked up dynamically via `FunctionFactory::tryGet`'s
 /// `isDeterministic` (no list maintenance needed there). This set covers what
 /// `FunctionFactory` does not reach: table functions (registered in
-/// `TableFunctionFactory`), and aggregate functions whose metamorphic
-/// `State`/`Merge` rewrite legitimately produces a different value than direct
-/// evaluation (so they aren't "non-deterministic functions" in the
-/// `system.functions` sense, but they are unsafe for oracle equality).
-const std::unordered_set<String> non_deterministic_functions = {
-    "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
-    "randBernoulli", "randExponential", "randChiSquared", "randStudentT",
-    "randFisherF", "randLogNormal", "randPoisson",
-    "generateUUIDv4", "generateUUIDv7", "generateSnowflakeID",
-    "now", "now64", "today", "yesterday",
-    "rowNumberInBlock", "blockNumber", "blockSize",
-    "runningDifference", "runningDifferenceStartingWithFirstValue",
-    /// `neighbor` and `runningAccumulate` read across rows in physical block
-    /// order (offset neighbours / a running state), so any rewrite that reorders,
-    /// repartitions or reblocks the input (TLP partitions, NoREC, DQP setting
-    /// toggles, multi-thread reads) changes their per-row output legitimately.
-    "neighbor", "runningAccumulate",
-    "currentDatabase", "queryID", "serverUUID",
-    "getSetting", "fuzzBits", "throwIf",
-    /// `indexHint` filters at granule granularity: the rows that survive it
-    /// depend on index layout, not on the predicate value, so any rewrite
-    /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
-    /// the result legitimately.
-    "indexHint",
-    /// These expose the physical storage layout of a `JSON`/`Dynamic` column —
-    /// which paths are stored as dedicated dynamic subcolumns versus spilled into
-    /// the shared-data blob. That split is decided per part/block at write time
-    /// under `max_dynamic_paths`/`max_dynamic_types`, not part of the logical
-    /// value, so a rewrite that re-materialises the column (subquery wrap, DQP
-    /// reblocking) legitimately reports a different dynamic/shared assignment.
-    "JSONDynamicPaths", "JSONDynamicPathsWithTypes",
-    "JSONSharedDataPaths", "JSONSharedDataPathsWithTypes",
-    "isDynamicElementInSharedData",
-    /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
-    /// returns the query plan as rows. The plan text legitimately changes when
-    /// DQP toggles an optimizer setting, so comparing such results is comparing
-    /// plans, not data.
-    "viewExplain",
-    "file", "url", "s3", "hdfs", "input",
-    "numbers", "numbers_mt", "zeros", "zeros_mt", "generateRandom",
-    "generate_series", "generateSeries",
-    "randomPrintableASCII", "randomString", "randomFixedString",
-    "fuzzQuery",
-    "materialize",
-    /// Non-deterministic or approximate aggregate functions.
-    "any", "anyLast", "anyHeavy",
-    "anyRespectNulls", "anyLastRespectNulls",
-    /// `anyRespectNulls` / `anyLastRespectNulls` are aliases; these are the
-    /// names they are registered under and are equally valid in a query.
-    "any_respect_nulls", "anyLast_respect_nulls",
-    "first_value", "last_value",
-    "topK", "topKWeighted",
-    /// `approx_top_k` / `approx_top_sum` (alias `approx_top_count`) use the same
-    /// bounded Filtered-Space-Saving structure as `topK`: merging the partial
-    /// states from the TLP UNION-ALL partition split drops different candidates
-    /// than a single pass over the whole input, so the approximate result
-    /// legitimately differs. `stripAggregateCombinators` maps the `*State`/
-    /// `*Merge` forms back to these base names.
-    "approx_top_k", "approx_top_sum", "approx_top_count",
-    "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
-    /// Approximate quantile/median functions: State/Merge gives different results
-    /// than direct computation due to approximate merging algorithms. Block both
-    /// the singular and plural-result variants (the fuzzer dictionary contains
-    /// `quantiles*` as well, and they share the same approximate merge logic).
-    "median", "quantile", "quantiles",
-    "quantileTDigest", "quantileTDigestWeighted",
-    "quantilesTDigest", "quantilesTDigestWeighted",
-    "quantileGK", "quantilesGK",
-    "quantileBFloat16", "quantileBFloat16Weighted",
-    "quantilesBFloat16", "quantilesBFloat16Weighted",
-    "quantileDD", "quantilesDD",
-    "quantileTiming", "quantileTimingWeighted",
-    "quantilesTiming", "quantilesTimingWeighted",
-    "quantileDeterministic", "quantilesDeterministic",
-    "quantileExact", "quantileExactWeighted",
-    "quantilesExact", "quantilesExactWeighted",
-    "quantileExactLow", "quantileExactHigh",
-    "quantilesExactLow", "quantilesExactHigh",
-    "quantileExactExclusive", "quantileExactInclusive",
-    "quantilesExactExclusive", "quantilesExactInclusive",
-    "quantileInterpolatedWeighted", "quantilesInterpolatedWeighted",
-    /// `quantilePrometheusHistogram` accumulates the cumulative bucket value per
-    /// bucket bound, and that value may be a `Float64` — so the per-bucket sums
-    /// are order-dependent, unlike the `UInt64`-weighted
-    /// `quantileExactWeightedInterpolated`, which stays exact and is therefore
-    /// deliberately NOT listed here.
-    "quantilePrometheusHistogram", "quantilesPrometheusHistogram",
-    /// Order-dependent or floating-point aggregates whose State/Merge path
-    /// can differ from direct computation. `sum` / `sumWithOverflow` are
-    /// blocked because floating-point addition is non-associative — the
-    /// metamorphic `sumState`/`sumMerge` rewrite can legitimately produce a
-    /// different rounded value than direct `sum` over Float32/Float64
-    /// arguments. We don't try to inspect argument types here, so we exclude
-    /// `sum` family unconditionally — that costs some integer-sum coverage
-    /// but eliminates a flaky-mismatch source.
-    "deltaSum", "deltaSumTimestamp",
-    "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
-    "varPop", "varSamp", "varPopStable", "varSampStable",
-    "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
-    "corrMatrix", "covarPopMatrix", "covarSampMatrix",
-    "avg", "avgWeighted",
-    "skewPop", "skewSamp", "kurtPop", "kurtSamp",
-    "sum", "sumWithOverflow", "sumKahan", "sumCount",
-    /// Per-key sums over maps and arrays add the same floating-point values in
-    /// a merge-order-dependent order, exactly like `sum` above.
-    "sumMappedArrays", "sumMapWithOverflow",
-    "sumMapFiltered", "sumMapFilteredWithOverflow",
-    "stochasticLinearRegression", "stochasticLogisticRegression",
-    "initializeAggregation",
-    /// Order-dependent aggregate functions.
-    "groupArray", "groupUniqArray", "groupArrayInsertAt",
-    /// `groupArrayIntersect` emits the surviving set in hash-table iteration
-    /// order, which depends on the insertion history — same reason as
-    /// `groupUniqArray`. The *set* matches, the array order does not.
-    "groupArrayIntersect",
-    "groupArrayMovingSum", "groupArrayMovingAvg",
-    "groupArraySorted", "groupArrayLast",
-    /// `argMin`/`argMax`/`groupConcat` are order-dependent on ties: the
-    /// `State`/`Merge`, DQP and subquery-rewrite paths can legitimately
-    /// pick a different "arg" value or concatenation order than direct
-    /// evaluation, so exact row equality is wrong here.
-    "argMin", "argMax", "groupConcat",
-    /// Approximate/formatting-dependent aggregates.
-    "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
-    "simpleLinearRegression", "sparkBar", "histogram",
-    "retentionState",
-    /// `largestTriangleThreeBuckets` (LTTB) downsamples to a fixed number of
-    /// points; the selection depends on input row order, and with the `Distinct`
-    /// combinator the deduplicated set feeds LTTB in a parallel-merge-dependent
-    /// order, so the result varies run-to-run even at a fixed setting. Any
-    /// plan-changing rewrite (DQP setting toggle, State/Merge, subquery wrap)
-    /// then legitimately differs from direct evaluation.
-    "largestTriangleThreeBuckets",
-    /// `boundingRatio` divides by the gap between the leftmost and rightmost
-    /// points: on ties in the x argument which point wins is merge-order
-    /// dependent, and the ratio is a Float64 either way.
-    "boundingRatio",
-    /// `mergedJSONPatch` keeps the last write per path ordered by the sort key,
-    /// so tied keys resolve differently depending on the merge order.
-    "mergedJSONPatch",
-    /// Depends on physical data layout, not values.
-    "estimateCompressionRatio",
-    /// Statistical hypothesis-test / correlation aggregates: they return
-    /// floating-point statistics or p-values computed with rank/tie handling
-    /// and non-associative summation, so the State/Merge, DQP and
-    /// subquery-rewrite paths legitimately differ from direct evaluation.
-    "mannWhitneyUTest", "studentTTest", "studentTTestOneSample", "welchTTest", "meanZTest",
-    "analysisOfVariance",
-    "kolmogorovSmirnovTest", "rankCorr", "theilsU", "cramersV",
-    "cramersVBiasCorrected", "contingency", "categoricalInformationValue",
-};
+/// `TableFunctionFactory`), and aggregate functions not registered as
+/// `is_order_dependent` whose metamorphic `State`/`Merge` rewrite legitimately
+/// produces a different value than direct evaluation (so they aren't
+/// "non-deterministic functions" in the `system.functions` sense, but they are
+/// unsafe for oracle equality).
+const std::unordered_set<String> & nonDeterministicFunctions()
+{
+    static const std::unordered_set<String> non_deterministic_functions = {
+        "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
+        "randBernoulli", "randExponential", "randChiSquared", "randStudentT",
+        "randFisherF", "randLogNormal", "randPoisson",
+        "generateUUIDv4", "generateUUIDv7", "generateSnowflakeID",
+        "now", "now64", "today", "yesterday",
+        "rowNumberInBlock", "blockNumber", "blockSize",
+        "runningDifference", "runningDifferenceStartingWithFirstValue",
+        /// `neighbor` and `runningAccumulate` read across rows in physical block
+        /// order (offset neighbours / a running state), so any rewrite that reorders,
+        /// repartitions or reblocks the input (TLP partitions, NoREC, DQP setting
+        /// toggles, multi-thread reads) changes their per-row output legitimately.
+        "neighbor", "runningAccumulate",
+        "currentDatabase", "queryID", "serverUUID",
+        "getSetting", "fuzzBits", "throwIf",
+        /// `indexHint` filters at granule granularity: the rows that survive it
+        /// depend on index layout, not on the predicate value, so any rewrite
+        /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
+        /// the result legitimately.
+        "indexHint",
+        /// These report whether a `JSON` path or a `Dynamic` value has its own subcolumn or sits in shared data,
+        /// which depends on the column holding the value (a join or a merge can change it), not on the value.
+        /// `byteSize` measures that representation, so it depends on it too.
+        "JSONDynamicPaths", "JSONDynamicPathsWithTypes", "JSONSharedDataPaths", "JSONSharedDataPathsWithTypes",
+        "isDynamicElementInSharedData", "byteSize",
+        /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
+        /// returns the query plan as rows. The plan text legitimately changes when
+        /// DQP toggles an optimizer setting, so comparing such results is comparing
+        /// plans, not data.
+        "viewExplain",
+        "file", "url", "s3", "hdfs", "input",
+        "numbers", "numbers_mt", "zeros", "zeros_mt", "generateRandom",
+        "generate_series", "generateSeries",
+        "randomPrintableASCII", "randomString", "randomFixedString",
+        "fuzzQuery",
+        "materialize",
+        /// Non-deterministic or approximate aggregate functions.
+        "anyRespectNulls", "anyLastRespectNulls",
+        /// `anyRespectNulls` / `anyLastRespectNulls` are aliases; these are the
+        /// names they are registered under and are equally valid in a query.
+        "any_respect_nulls", "anyLast_respect_nulls",
+        "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
+        /// Approximate quantile/median functions: State/Merge gives different results
+        /// than direct computation due to approximate merging algorithms. Block both
+        /// the singular and plural-result variants (the fuzzer dictionary contains
+        /// `quantiles*` as well, and they share the same approximate merge logic).
+        "median", "quantile", "quantiles",
+        "quantileTDigest", "quantileTDigestWeighted",
+        "quantilesTDigest", "quantilesTDigestWeighted",
+        "quantileGK", "quantilesGK",
+        "quantileBFloat16", "quantileBFloat16Weighted",
+        "quantilesBFloat16", "quantilesBFloat16Weighted",
+        "quantileDD", "quantilesDD",
+        "quantileTiming", "quantileTimingWeighted",
+        "quantilesTiming", "quantilesTimingWeighted",
+        "quantileDeterministic", "quantilesDeterministic",
+        "quantileExact", "quantileExactWeighted",
+        "quantilesExact", "quantilesExactWeighted",
+        "quantileExactLow", "quantileExactHigh",
+        "quantilesExactLow", "quantilesExactHigh",
+        "quantileExactExclusive", "quantileExactInclusive",
+        "quantilesExactExclusive", "quantilesExactInclusive",
+        "quantileInterpolatedWeighted", "quantilesInterpolatedWeighted",
+        /// `quantilePrometheusHistogram` accumulates the cumulative bucket value per
+        /// bucket bound, and that value may be a `Float64` — so the per-bucket sums
+        /// are order-dependent, unlike the `UInt64`-weighted
+        /// `quantileExactWeightedInterpolated`, which stays exact and is therefore
+        /// deliberately NOT listed here.
+        "quantilePrometheusHistogram", "quantilesPrometheusHistogram",
+        /// Floating-point aggregates whose State/Merge path can differ from direct
+        /// computation. `sum` / `sumWithOverflow` are
+        /// blocked because floating-point addition is non-associative — the
+        /// metamorphic `sumState`/`sumMerge` rewrite can legitimately produce a
+        /// different rounded value than direct `sum` over Float32/Float64
+        /// arguments. We don't try to inspect argument types here, so we exclude
+        /// `sum` family unconditionally — that costs some integer-sum coverage
+        /// but eliminates a flaky-mismatch source.
+        "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
+        "varPop", "varSamp", "varPopStable", "varSampStable",
+        "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
+        "corrMatrix", "covarPopMatrix", "covarSampMatrix",
+        "avg", "avgWeighted",
+        "skewPop", "skewSamp", "kurtPop", "kurtSamp",
+        "sum", "sumWithOverflow", "sumKahan", "sumCount",
+        /// Per-key sums over maps and arrays add the same floating-point values in
+        /// a merge-order-dependent order, exactly like `sum` above.
+        "sumMappedArrays", "sumMapWithOverflow",
+        "sumMapFiltered", "sumMapFilteredWithOverflow",
+        "initializeAggregation",
+        /// Order-dependent aggregate functions.
+        "groupArraySorted",
+        /// Events with equal timestamps are matched in arrival order.
+        "sequenceMatch", "sequenceCount", "sequenceMatchEvents", "sequenceNextNode",
+        /// Approximate/formatting-dependent aggregates.
+        "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
+        "simpleLinearRegression", "sparkBar", "histogram",
+        "retentionState",
+        /// `largestTriangleThreeBuckets` (LTTB) downsamples to a fixed number of
+        /// points; the selection depends on input row order, and with the `Distinct`
+        /// combinator the deduplicated set feeds LTTB in a parallel-merge-dependent
+        /// order, so the result varies run-to-run even at a fixed setting. Any
+        /// plan-changing rewrite (DQP setting toggle, State/Merge, subquery wrap)
+        /// then legitimately differs from direct evaluation.
+        "largestTriangleThreeBuckets",
+        /// `boundingRatio` divides by the gap between the leftmost and rightmost
+        /// points: on ties in the x argument which point wins is merge-order
+        /// dependent, and the ratio is a Float64 either way.
+        "boundingRatio",
+        /// Depends on physical data layout, not values.
+        "estimateCompressionRatio",
+        /// Statistical hypothesis-test / correlation aggregates: they return
+        /// floating-point statistics or p-values computed with rank/tie handling
+        /// and non-associative summation, so the State/Merge, DQP and
+        /// subquery-rewrite paths legitimately differ from direct evaluation.
+        "mannWhitneyUTest", "studentTTest", "studentTTestOneSample", "welchTTest", "meanZTest",
+        "analysisOfVariance",
+        "kolmogorovSmirnovTest", "rankCorr", "theilsU", "cramersV",
+        "cramersVBiasCorrected", "contingency", "categoricalInformationValue",
+    };
+    return non_deterministic_functions;
+}
 
 /// Maximum formatted query length for oracle sub-queries.
 constexpr size_t MAX_ORACLE_QUERY_LENGTH = 10000;
@@ -241,18 +229,22 @@ constexpr size_t MAX_ORACLE_QUERY_LENGTH = 10000;
 /// `MAX_ORACLE_OUTPUT_SIZE` and `MAX_ORACLE_RESULT_ROWS` live in QueryOracles/OracleSettings.h
 /// (shared with `oraclePinnedSettings`, which pins the matching result caps).
 
-/// Case-insensitive view of `non_deterministic_functions`. ClickHouse resolves
+/// Case-insensitive view of `nonDeterministicFunctions`. ClickHouse resolves
 /// aggregate (and scalar) function names case-insensitively and the parser
-/// preserves whatever spelling the fuzzer produced, so a query using `SUM`,
-/// `argmax`, or `ANY` must still match the unsafe set. Compare lowercased.
-const std::unordered_set<String> non_deterministic_functions_lower = []
+/// preserves whatever spelling the fuzzer produced, so a query using `SUM` or
+/// `AVG` must still match the unsafe set. Compare lowercased.
+const std::unordered_set<String> & nonDeterministicFunctionsLower()
 {
-    std::unordered_set<String> result;
-    result.reserve(non_deterministic_functions.size());
-    for (const auto & name : non_deterministic_functions)
-        result.insert(Poco::toLower(name));
-    return result;
-}();
+    static const std::unordered_set<String> non_deterministic_functions_lower = []
+    {
+        std::unordered_set<String> result;
+        result.reserve(nonDeterministicFunctions().size());
+        for (const auto & name : nonDeterministicFunctions())
+            result.insert(Poco::toLower(name));
+        return result;
+    }();
+    return non_deterministic_functions_lower;
+}
 
 /// Aggregate-function combinator suffixes — shared with the fuzzer, see
 /// `aggregateCombinatorSuffixes` in `QueryFuzzer.h`.
@@ -316,7 +308,7 @@ bool namesUnsafeFunctionAfterStripping(String name)
 {
     while (true)
     {
-        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+        if (nonDeterministicFunctionsLower().contains(Poco::toLower(name)))
             return true;
         if (!stripLongestCombinatorSuffix(name))
             return false;
@@ -337,7 +329,7 @@ bool isOracleUnsafeFunctionName(String name)
 
     while (true)
     {
-        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+        if (nonDeterministicFunctionsLower().contains(Poco::toLower(name)))
             return true;
         /// The raw spelling is tested first and separately, never replaced by
         /// the canonical one: the set is free to name a function by whichever
@@ -355,6 +347,54 @@ bool isOracleUnsafeFunctionName(String name)
         if (!stripLongestCombinatorSuffix(name))
             return false;
     }
+}
+
+/// Calls `f` on each sub-AST of `ast` until a call returns true, and returns whether one did.
+/// Besides `children`, these are the `lambda` and `parameters` of `ASTColumnsApplyTransformer`:
+/// its `clone` copies them by hand rather than through `cloneChildren`, so neither is a child.
+template <typename F>
+bool anyChild(const ASTPtr & ast, F && f)
+{
+    for (const auto & child : ast->children)
+    {
+        if (f(child))
+            return true;
+    }
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        for (const auto & member : {apply->lambda, apply->parameters})
+        {
+            if (member && f(member))
+                return true;
+        }
+    }
+    return false;
+}
+
+template <typename F>
+void forEachChild(const ASTPtr & ast, F && f)
+{
+    anyChild(ast, [&](const ASTPtr & child) { f(child); return false; });
+}
+
+/// A `{name:Identifier}` placeholder is an empty name part with an `ASTQueryParameter` child, substituted only
+/// when the query text is executed. Returns the name parts after substitution, or nothing if a value is missing.
+std::optional<Strings> substitutedNameParts(const ASTPtr & ast, const NameToNameMap & query_parameters)
+{
+    Strings parts = ast->as<ASTIdentifier &>().name_parts;
+    auto param = ast->children.begin();
+    for (auto & part : parts)
+    {
+        if (!part.empty())
+            continue;
+        if (param == ast->children.end())
+            return std::nullopt;
+        const auto it = query_parameters.find((*param++)->as<ASTQueryParameter &>().name);
+        if (it == query_parameters.end() || it->second.empty())
+            return std::nullopt;
+        part = it->second;
+    }
+    return parts;
 }
 
 /// Walk an AST tree and check whether any `ASTFunction` references something
@@ -1495,8 +1535,6 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-
         String message = fmt::format(
             "TLP WHERE oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -1613,8 +1651,6 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
 
     if (opt_count != unopt_count)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "NoREC oracle mismatch!\n"
             "Optimized query (count={}): {}\n"
@@ -1699,7 +1735,6 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP DISTINCT oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -1781,7 +1816,6 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP GROUP BY oracle mismatch!\n"
             "Reference query ({} unique rows): {}\n"
@@ -1849,7 +1883,6 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP HAVING oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -1930,7 +1963,6 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
 
         if (default_rows != variant_rows)
         {
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
             throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
                 "DQP oracle mismatch! Setting: {}\n"
                 "Default ({} rows): {}\n"
@@ -1993,7 +2025,7 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     /// names that are known to be float-sensitive.
     /// Lowercased: aggregate names resolve case-insensitively (AVG == avg), but the
     /// parser preserves the original spelling, so we must lowercase before the lookup
-    /// (same as `non_deterministic_functions_lower` above). Otherwise `AVG`/`SUM`
+    /// (same as `nonDeterministicFunctionsLower` above). Otherwise `AVG`/`SUM`
     /// bypass this denylist while `AVGState`/`SUMState` still resolve, producing
     /// false State/Merge oracle mismatches on floating-point inputs.
     static const std::unordered_set<String> non_associative_aggregates = {
@@ -2251,8 +2283,6 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
 
     if (ref_rows != meta_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP Aggregate oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -2395,7 +2425,6 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     {
         if (ref_rows != rows)
         {
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
             throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
                 "Identity WHERE ({}) oracle mismatch!\n"
                 "Reference query ({} rows): {}\n"
@@ -2501,7 +2530,6 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
         if (!ref_rows_again_opt || *ref_rows_again_opt != ref_rows)
             return false;
 
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "Subquery wrap oracle mismatch!\n"
             "Reference query ({} rows): {}\n"

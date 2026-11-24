@@ -913,6 +913,7 @@ def test_malformed_create_table(started_cluster):
     duplicate_ids = {"type": "struct", "fields": [{"id": 1, "name": "a", "type": "int"}, {"id": 1, "name": "b", "type": "int"}]}
     bad_spec = {"fields": [{"source-id": 9, "field-id": 1000, "name": "p", "transform": "identity"}]}
     unknown_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": "bogus"}]}
+    unknown_v3_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": False, "type": "unknown"}]}
     numeric_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": 123}]}
     bad_element_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": {"type": "list", "element-id": 2, "element-required": True, "element": "bogus"}}]}
     bad_transform_spec = {"fields": [{"source-id": 1, "name": "p", "transform": "bogus"}]}
@@ -925,6 +926,7 @@ def test_malformed_create_table(started_cluster):
         {"name": "t"},  # no schema
         {"name": "t", "schema": duplicate_ids},
         {"name": "t", "schema": unknown_type},
+        {"name": "t", "schema": unknown_v3_type},
         {"name": "t", "schema": numeric_type},
         {"name": "t", "schema": bad_element_type},
         {"name": "t", "schema": DEFAULT_SCHEMA, "stage-create": True},

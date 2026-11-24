@@ -739,7 +739,7 @@ FileSegments FileCache::getImpl(
     return result;
 }
 
-std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size, size_t aligned_size)
+std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size, size_t aligned_size, size_t max_size)
 {
     chassert(size > 0);
     chassert(size <= aligned_size);
@@ -773,7 +773,6 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     size_t end_pos_non_included = offset + size;
     size_t remaining_size = aligned_size;
 
-    const size_t max_size = max_file_segment_size.load();
     while (current_pos < end_pos_non_included)
     {
         auto current_file_segment_size = std::min(remaining_size, max_size);
@@ -812,7 +811,8 @@ void FileCache::fillHolesWithEmptyFileSegments(
     size_t non_aligned_right_offset,
     size_t file_segments_limit,
     bool fill_with_detached_file_segments,
-    const CreateFileSegmentSettings & create_settings)
+    const CreateFileSegmentSettings & create_settings,
+    size_t max_size)
 {
     /// There are segments [segment1, ..., segmentN]
     /// (non-overlapping, non-empty, ascending-ordered) which (maybe partially)
@@ -876,7 +876,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         }
         else
         {
-            const auto ranges = splitRange(current_pos, hole_size, hole_size);
+            const auto ranges = splitRange(current_pos, hole_size, hole_size, max_size);
             auto hole_segments = createFileSegmentsFromRanges(locked_key, ranges, processed_count, file_segments_limit, create_settings);
             file_segments.splice(it, std::move(hole_segments));
         }
@@ -923,7 +923,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         }
         else
         {
-            const auto ranges = splitRange(current_pos, non_aligned_hole_size, hole_size);
+            const auto ranges = splitRange(current_pos, non_aligned_hole_size, hole_size, max_size);
             auto hole_segments = createFileSegmentsFromRanges(locked_key, ranges, processed_count, file_segments_limit, create_settings);
             file_segments.splice(it, std::move(hole_segments));
 
@@ -960,7 +960,7 @@ FileSegmentsHolderPtr FileCache::trySet(
     }
     else
     {
-        const auto ranges = splitRange(offset, size, size);
+        const auto ranges = splitRange(offset, size, size, max_file_segment_size.load());
         size_t file_segments_count = 0;
         file_segments = createFileSegmentsFromRanges(*locked_key, ranges, file_segments_count, /* file_segments_limit */0, create_settings);
     }
@@ -1003,7 +1003,9 @@ FileCache::getOrSet(
     /// 2. max_file_segments_limit
     FileSegment::Range result_range = initial_range;
 
-    const size_t alignment = boundary_alignment_.value_or(boundary_alignment);
+    /// A file segment is at most `max_size` (reloadable, so read once), a wider window would leave `offset` outside the first segment.
+    const size_t max_size = max_file_segment_size.load();
+    const size_t alignment = std::min(boundary_alignment_.value_or(boundary_alignment), max_size);
     const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
     auto aligned_end_offset = (file_size
         ? std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size)
@@ -1108,7 +1110,7 @@ FileCache::getOrSet(
 
     if (file_segments.empty())
     {
-        auto ranges = splitRange(result_range.left, initial_range.size() + (initial_range.left - result_range.left), result_range.size());
+        auto ranges = splitRange(result_range.left, initial_range.size() + (initial_range.left - result_range.left), result_range.size(), max_size);
         size_t file_segments_count = file_segments.size();
         file_segments.splice(
             file_segments.end(),
@@ -1120,7 +1122,7 @@ FileCache::getOrSet(
         chassert(file_segments.back()->range().left <= result_range.right);
 
         fillHolesWithEmptyFileSegments(
-            *locked_key, file_segments, result_range, offset + size - 1, file_segments_limit, /* fill_with_detached */false, create_settings);
+            *locked_key, file_segments, result_range, offset + size - 1, file_segments_limit, /* fill_with_detached */false, create_settings, max_size);
 
         if (!file_segments.front()->range().contains(result_range.left))
         {
@@ -1179,7 +1181,8 @@ FileSegmentsHolderPtr FileCache::get(
             }
 
             fillHolesWithEmptyFileSegments(
-                *locked_key, file_segments, range, offset + size - 1, file_segments_limit, /* fill_with_detached */true, CreateFileSegmentSettings{});
+                *locked_key, file_segments, range, offset + size - 1, file_segments_limit, /* fill_with_detached */true, CreateFileSegmentSettings{},
+                max_file_segment_size.load());
 
             chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
             holder = std::make_unique<FileSegmentsHolder>(std::move(file_segments));
@@ -1283,15 +1286,14 @@ KeyMetadata::iterator FileCache::addFileSegment(
     return file_segment_metadata_it;
 }
 
-bool FileCache::tryIncreasePriority(FileSegment & file_segment)
+bool FileCache::tryIncreasePriority(Priority::Iterator & iterator, bool is_space_reservation_complete)
 {
     /// Skipped while a dynamic resize holds `dynamic_resize_lock` exclusively
     /// (see the comment on `dynamic_resize_lock`). Policies which cannot resize never take it.
     std::shared_lock lock(dynamic_resize_lock, std::defer_lock);
     if (supports_dynamic_resize && !lock.try_lock())
         return false;
-    return main_priority->tryIncreasePriority(
-        *file_segment.getQueueIterator(), file_segment.isCompleted(), cache_state_guard);
+    return main_priority->tryIncreasePriority(iterator, is_space_reservation_complete, cache_state_guard);
 }
 
 bool FileCache::tryReserve(

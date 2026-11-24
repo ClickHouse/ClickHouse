@@ -1316,6 +1316,10 @@ void LocalServer::setupUsers()
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
     access_control.setUserQueryLogEnabled(config.getBool("query_log.enable_user_query_log", true));
 
+    /// Before the users config is loaded: its settings profiles may set custom settings.
+    if (config.has("custom_settings_prefixes"))
+        access_control.setCustomSettingsPrefixes(config.getString("custom_settings_prefixes"));
+
     /// Apply user-level configuration from the config processed in `initialize`: a config file
     /// auto-discovered via `getLocalConfigPath` (e.g. `~/.clickhouse-local/config.xml`), or the
     /// merge directories of the current directory processed on top of the embedded config.

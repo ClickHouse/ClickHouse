@@ -62,6 +62,30 @@ bool tryConvertAnyColumnToBool(const IColumn & column, IColumnFilter & res)
         tryConvertColumnToBool<Float64>(column, res);
 }
 
+bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
+{
+    if (!column)
+        return true;
+
+    if (filter_column == column)
+        return false;
+
+    if (column->use_count() > 1)
+        return false;
+
+    bool can_inplace = true;
+    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        if (!can_inplace)
+            return;
+
+        if (!canInplaceFilter(subcolumn, filter_column))
+            can_inplace = false;
+    });
+
+    return can_inplace;
+}
+
 ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 {
     if (column.onlyNull())

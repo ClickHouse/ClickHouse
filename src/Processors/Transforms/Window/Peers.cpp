@@ -1,4 +1,5 @@
 #include <Processors/Transforms/Window/Peers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 
@@ -11,7 +12,7 @@ namespace
 /// Moves the end past the rows of the peer group inside the block, up to `rows_end`, and on to the next block when the rows end there; whether the group ends before `rows_end`.
 bool advancePeerGroupEndInBlock(const SlidingBlock & block, int64_t group, int64_t rows_end, RowPoint & end)
 {
-    const std::vector<int64_t> & groups = block.index.peer_group_indexes;
+    const VectorWithMemoryTracking<int64_t> & groups = block.index.peer_group_indexes;
     const int64_t row = groups[end.location.row] != group
         ? end.location.row
         : static_cast<int64_t>(findEqualRangeEndAssumeSorted(end.location.row, rows_end, 16, [&](size_t i) { return groups[i] == group; }));

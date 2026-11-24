@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
 #include <algorithm>
+#include <bit>
 #include <limits>
 
 namespace DB
@@ -223,6 +224,66 @@ inline std::optional<UInt64> estimateJoinCardinality(
 inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
 {
     return left->cost + right->cost + estimateJoinedRows(selectivity, left->estimated_rows, right->estimated_rows);
+}
+
+/// Per-row costs relative to a hash table probe, fitted on `parallel_hash` and `full_sorting_merge` timings of `MergeTree`
+/// tables (release build with jemalloc, 32 threads, x86 and aarch64). One unit is about 0.75 ns.
+constexpr double HASH_BUILD_ROW_COST = 6.8;
+constexpr double HASH_PROBE_ROW_COST = 1.0;
+/// A merge sharded by primary key ranges runs a merge per thread; an unsharded one is a single stream.
+constexpr double MERGE_SHARDED_ROW_COST = 1.4;
+constexpr double MERGE_UNSHARDED_ROW_COST = 25.0;
+/// Paid once per merge join. Fitted at 3.9M on aarch64 (none on x86), with a margin.
+constexpr double MERGE_JOIN_FIXED_COST = 15'000'000;
+/// A sharded merge reads the shards of the probe side its build side overlaps, plus this share at their edges.
+constexpr double MERGE_PROBE_READ_MARGIN = 0.06;
+/// A full sort costs `SORT_ROW_COST * log2(rows)` per row, with the logarithm rounded up to an integer.
+constexpr double SORT_ROW_COST = 0.8;
+
+/// An input of a sort-merge join: the cost of its plan, its rows, and whether it is sorted by the merge key.
+struct MergeJoinInput
+{
+    double cost = 0;
+    UInt64 rows = 0;
+    bool sorted = false;
+    /// Sorted, and a sharded merge can split it by key ranges: a table read in order by its primary key, of a type the
+    /// split supports, or the result of a sharded merge on the key.
+    bool shardable = false;
+    /// For a sorted input of a join on several keys that is sorted by the merge key only: the number of groups of equal
+    /// merge keys the other keys are sorted within. 0 when it is sorted by all of them.
+    double sort_groups = 0;
+};
+
+/// The work of a hash join: building the table from the smaller input, and probing it with the `probe_fraction` of the
+/// larger one that its runtime filter lets it read. DPsub adds it to the cost of a hash join when merge joins compete.
+inline double computeHashJoinWork(UInt64 left_rows, UInt64 right_rows, double probe_fraction)
+{
+    const auto build = static_cast<double>(std::min(left_rows, right_rows));
+    const auto probe = static_cast<double>(std::max(left_rows, right_rows));
+    return HASH_BUILD_ROW_COST * build + HASH_PROBE_ROW_COST * probe_fraction * probe;
+}
+
+/// A sort-merge join charges its own work, on the scale of a hash join with `computeHashJoinWork`, so plans of different
+/// join trees compare, whichever methods they use. A sharded merge reads `probe_fraction` of the larger input, plus a margin.
+inline double computeMergeJoinCost(
+    const MergeJoinInput & left, const MergeJoinInput & right, const SelectivityEstimate & selectivity, bool sharded, double probe_fraction)
+{
+    const double row_cost = sharded ? MERGE_SHARDED_ROW_COST : MERGE_UNSHARDED_ROW_COST;
+    const double probe_read = sharded ? std::min(1.0, probe_fraction + MERGE_PROBE_READ_MARGIN) : 1.0;
+    const bool left_probes = left.rows >= right.rows;
+    auto input_cost = [&](const MergeJoinInput & input, double read)
+    {
+        const auto rows = static_cast<double>(input.rows);
+        double sort = 0;
+        if (!input.sorted)
+            sort = SORT_ROW_COST * rows * static_cast<double>(std::bit_width(input.rows));
+        else if (input.sort_groups > 0)
+            sort = SORT_ROW_COST * rows * static_cast<double>(std::bit_width(static_cast<UInt64>(rows / std::max(input.sort_groups, 1.0))));
+        return sort + row_cost * read * rows;
+    };
+    const double merge_join = MERGE_JOIN_FIXED_COST + input_cost(left, left_probes ? probe_read : 1.0)
+        + input_cost(right, left_probes ? 1.0 : probe_read);
+    return left.cost + right.cost + estimateJoinedRows(selectivity, left.rows, right.rows) + merge_join;
 }
 
 }

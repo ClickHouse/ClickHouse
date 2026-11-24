@@ -109,6 +109,8 @@ public:
     bool limit_with_ties = false;
     bool limit_by_all = false;
     bool limit_after_all = false;
+    /// `SHUFFLE` is used in place of `ORDER BY`: the result rows are returned in a uniformly random order.
+    bool shuffle = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }

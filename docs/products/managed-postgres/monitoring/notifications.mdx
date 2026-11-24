@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/notifications
 sidebarTitle: 'Notifications'
 title: 'ClickHouse Managed Postgres notifications'
 description: 'Cloud console notifications for ClickHouse Managed Postgres services'
-keywords: ['managed postgres', 'notifications', 'alerts', 'storage', 'disk usage', 'replica lag', 'replication']
+keywords: ['managed postgres', 'notifications', 'alerts', 'storage', 'disk usage', 'replica lag', 'replication', 'failover', 'switchover']
 doc_type: 'guide'
 ---
 
@@ -25,6 +25,8 @@ services.
 |---|---|---|---|
 | Postgres storage passed 85% threshold | When storage usage on a Managed Postgres service reaches 85% of capacity. Notification will only trigger once per calendar day. | UI, email | Storage scales automatically when usage reaches 90% (brief cutover downtime). No action is needed unless auto-scaling is already at its limit. |
 | Postgres replica lag passed 5 minute threshold | When replication lag on a high-availability standby or a read replica stays above 5 minutes. Notification will only trigger once per calendar day. | UI, email | For a standby, failover readiness is reduced until it catches up; for a read replica, reads may return stale data. Lag usually clears on its own once write load drops. If it keeps growing, check the replica's CPU, memory, and disk on the monitoring dashboard, or contact support. |
+| Planned switchover completed | When a standby is promoted to primary during maintenance or a configuration change on a Managed Postgres service. | UI | Connections were briefly interrupted. Your connection string is unchanged and no action is required. See [Handling failures](/products/managed-postgres/high-availability#handling-failures). |
+| Unplanned failover completed | When the primary becomes unavailable and a standby is promoted to primary on a Managed Postgres service. | UI, email | Connections were interrupted while a standby was promoted, typically for a few minutes. Your connection string is unchanged and no action is required. See [Handling failures](/products/managed-postgres/high-availability#handling-failures). |
 
 ## Related pages {#related}
 

@@ -6,6 +6,7 @@ import os
 import pathlib
 import re
 import shlex
+import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -184,11 +185,17 @@ def check_yamllint(file_paths):
 def check_xmllint(file_paths):
     if not isinstance(file_paths, list):
         file_paths = [file_paths]
-    file_paths = " ".join([f"'{file}'" for file in file_paths])
-    exit_code, out, err = Shell.get_res_stdout_stderr(
-        f"xmllint --noout --nonet {file_paths}", verbose=False
+    # Pass the files as separate arguments, without a shell. A `sh -c` command line is a
+    # single argument, limited to 128 KiB by the kernel (`MAX_ARG_STRLEN`), and the names
+    # of all XML files under `tests/` and `programs/` are about 260 KB, so with two CPUs
+    # (two chunks) it failed with `[Errno 7] Argument list too long: '/bin/sh'`.
+    proc = subprocess.run(
+        ["xmllint", "--noout", "--nonet", *file_paths],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    return out or err
+    return proc.stdout.strip() or proc.stderr.strip()
 
 
 def check_functional_test_cases(files):

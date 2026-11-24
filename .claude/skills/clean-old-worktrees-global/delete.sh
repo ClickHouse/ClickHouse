@@ -2,9 +2,9 @@
 # Delete the directories listed in a file (paths relative to root, one per line), then prune worktree metadata in the
 # affected main repos.
 # Usage: delete.sh <list_file> [root=$HOME]
-# Entries must be a direct child of root (a worktree) or a build* directory inside one. Right before deletion, every entry
-# is checked again and skipped if it:
-#   - is a main repository (`.git` is a directory) or a symlink;
+# Entries must be a worktree (at any depth, `.git` is a file pointing to `.../worktrees/<name>`) or a build* directory
+# inside a checkout. Right before deletion, every entry is checked again and skipped if it:
+#   - is a main repository (`.git` is a directory), a symlink, or reached through a symlink;
 #   - contains a mount point (e.g. `/dev` or `/proc` bind-mounted into a chroot);
 #   - contains a block device file;
 #   - is in use by a process: its working directory, root, executable, open file or mapped file is inside.
@@ -56,14 +56,17 @@ tr '\n' '\0' < "$list" | xargs -r -0 -P 8 -n1 bash -c '
     case $d in
         /*|*//*|*/) skip "not a relative path" ;;
         ..|../*|*/..|*/../*|.|./*|*/.|*/./*) skip "dot components" ;;
-        */*/*) skip "too deep" ;;
-        */*) case ${d#*/} in build*) ;; *) skip "not a build directory" ;; esac ;;
     esac
     p=$ROOT/$d
     [ -e "$p" ] || [ -L "$p" ] || exit 0
     [ -L "$p" ] && skip "symlink"
     [ -d "$p" ] || skip "not a directory"
     [ -d "$p/.git" ] && skip "main repository"
+    [ "$(realpath "$p")" = "$p" ] || skip "reached through a symlink"
+    if ! grep -qs "^gitdir: .*/worktrees/" "$p/.git"; then
+        case ${d##*/} in build*) ;; *) skip "neither a worktree nor a build directory" ;; esac
+        [ -e "${p%/*}/.git" ] || skip "build directory outside a checkout"
+    fi
     is_under() { P=$p awk "{ if (\$0 == ENVIRON[\"P\"] || index(\$0, ENVIRON[\"P\"] \"/\") == 1) { found = 1; exit } } END { exit !found }" "$1"; }
     is_under "$STATE/mounts" && skip "contains a mount point"
     is_under "$STATE/active" && skip "in use by a process"

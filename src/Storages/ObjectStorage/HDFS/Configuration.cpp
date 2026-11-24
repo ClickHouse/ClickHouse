@@ -55,6 +55,7 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
     assertInitialized();
     const auto & settings = context->getSettingsRef();
     auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(settings[Setting::remote_read_min_bytes_for_seek], settings[Setting::hdfs_replication]);
+    hdfs_settings->read_only = read_only;
     return std::make_shared<HDFSObjectStorage>(
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
@@ -139,7 +140,7 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
         path = '/' + path.path;
 
     url = url_.substr(0, pos);
-    paths = {path};
+    setPaths({path});
 
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path.path);
 }

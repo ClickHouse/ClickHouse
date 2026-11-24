@@ -70,7 +70,7 @@ bool StreamingExchangeSource::connect(const Stopwatch & handshake_watch)
         return false;
     if (int err = socket->impl()->socketError())
         Poco::Net::SocketImpl::error(err);
-    socket->setReceiveBufferSize(10 * 1024 * 1024);
+    StreamingExchangeProtocol::applySocketBufferSizes(*socket);
     return true;
 }
 

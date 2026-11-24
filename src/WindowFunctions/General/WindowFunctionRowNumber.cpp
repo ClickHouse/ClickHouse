@@ -20,16 +20,28 @@ public:
     {
     }
 
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        /// `row_number` does not depend on the window frame. A frame containing only the current
+        /// row lets `WindowTransform` produce results and release blocks without retaining the partition.
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::ROWS;
+        frame.begin_type = WindowFrame::BoundaryType::Current;
+        return frame;
+    }
+
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{};
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnUInt64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
             data.push_back(bounds.row[i] + 1);
+
+        return bounds.row.back() + 1;
     }
 };
 

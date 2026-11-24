@@ -51,11 +51,13 @@ ClickHouse Connect supports lz4, zstd, brotli, gzip, and deflate response compre
 
 To receive compressed data, the ClickHouse server `enable_http_compression` must be set to 1, or the user must have permission to change the setting on a "per query" basis.
 
-Compression is controlled by the `compress` argument to `get_client` and `get_async_client`. The default, `True`, advertises every available response encoding and compresses Native insert blocks with lz4. Set `compress=False` to disable compression or pass one of `"lz4"`, `"zstd"`, `"br"`, or `"gzip"` to request a specific method.
+Compression is controlled by the `compress` argument to `get_client` and `get_async_client`. The default, `True`, advertises every available response encoding and compresses Native insert blocks with lz4, or with zstd when lz4 is not installed. Set `compress=False` to disable compression or pass one of `"lz4"`, `"zstd"`, `"br"`, or `"gzip"` to request a specific method.
 
 The raw client methods don't use the client-level `compress` setting. `raw_query` and `raw_stream` return uncompressed data, and `raw_insert` takes its own `compression` argument describing compression already applied to the payload.
 
-lz4 and zstd support are installed with ClickHouse Connect. On Python 3.14 and later, zstd uses the standard library `compression.zstd` module. Python 3.10 through 3.13 use `backports.zstd`. A custom CPython 3.14+ interpreter built without zstd support still imports; zstd is dropped from the available methods and an error is raised only when zstd is explicitly requested. Brotli is optional and must be installed separately before using `compress="br"`.
+zstd support is installed with ClickHouse Connect. On Python 3.14 and later, zstd uses the standard library `compression.zstd` module. Python 3.10 through 3.13 use `backports.zstd`. A custom CPython 3.14+ interpreter built without zstd support still imports; zstd is dropped from the available methods and an error is raised only when zstd is explicitly requested. Brotli is optional and must be installed separately before using `compress="br"`.
+
+lz4 is installed by default on Python 3.10 through 3.13. On Python 3.14 and later it is optional. Install it with `pip install "clickhouse-connect[lz4]"`. Without it, lz4 is dropped from the available methods and `compress="lz4"` raises an error.
 
 gzip is generally slower than lz4 or zstd for ClickHouse workloads.
 

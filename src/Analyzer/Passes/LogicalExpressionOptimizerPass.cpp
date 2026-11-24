@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -2086,7 +2087,8 @@ private:
             /// share a single value, we do not want pruning, folding (e.g. `rand() % 2 < 1 AND
             /// rand() % 2 >= 1` → false) or merging notEquals into NOT IN to rely on that. Keep such
             /// operands as-is.
-            if (hasNonDeterministicFunction(expression))
+            /// Same for aggregate functions: removing the operand can leave the query without any.
+            if (hasNonDeterministicFunction(expression) || hasAggregateFunctionNodes(expression))
             {
                 all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
@@ -2125,6 +2127,10 @@ private:
 
             /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
             if (isNothing(function_node.getResultType()))
+                return;
+
+            /// The constant would also drop the kept operands, and with them the query's aggregation or `arrayJoin`.
+            if (hasAggregateFunctionNodes(node) || hasFunctionNode(node, "arrayJoin"))
                 return;
 
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());

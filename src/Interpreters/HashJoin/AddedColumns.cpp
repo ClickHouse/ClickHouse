@@ -65,15 +65,6 @@ const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, size_
     });
 }
 
-const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const
-{
-    return buildRowSkipDataImpl(null_map, join_mask_column, buffer, [&](auto && set_at)
-    {
-        for (size_t i : indexes.getData())
-            set_at(i);
-    });
-}
-
 void LazyOutput::addRef(UInt64 ref_word)
 {
     chassert(ref_word != 0);

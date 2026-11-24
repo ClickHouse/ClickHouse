@@ -264,7 +264,11 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         if (!index.index->isTextIndex())
             continue;
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns); !result)
+        /// The set is query-wide, so no per-part type record can relax a type change: pass it as both sets,
+        /// so any on-the-fly change disables the index.
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(
+                index.index, metadata_snapshot, updated_columns, updated_columns, read_from_merge_tree_step->getContext());
+            !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
             continue;
@@ -1076,7 +1080,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
+    LOG_DEBUG(logger, "Text index optimization: {}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
 
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
@@ -1305,7 +1309,9 @@ void processAndOptimizeTextIndexFunctions(
 
             bool removes_filter_column = filter_step->removesFilterColumn();
             auto new_filter_column_name = result_filter_node->result_name;
-            node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+            auto new_filter_step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+            node->step = std::move(new_filter_step);
             continue;
         }
 
@@ -1318,7 +1324,11 @@ void processAndOptimizeTextIndexFunctions(
 
         const SharedHeader & input_header = step->getInputHeaders().front();
         if (filter_step)
-            node->step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+        {
+            auto new_filter_step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+            node->step = std::move(new_filter_step);
+        }
         else
             node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
     }

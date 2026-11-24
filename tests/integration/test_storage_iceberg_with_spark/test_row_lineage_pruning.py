@@ -292,14 +292,21 @@ def test_row_id_pruning_is_skipped_for_orc(
         started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
     )
 
-    # The ORC reader reports no physical row numbers, so `_row_id` is NULL for every row and the
-    # inherited range describes nothing: pruning by it would drop the rows this query asks for.
+    # Rows of ORC data files inherit their row ids, but ORC files are not skipped by `_row_id` bounds.
     assert (
         instance.query(
-            f"SELECT count() FROM {table_expression} WHERE _row_id IS NULL",
+            f"SELECT id, _row_id FROM {table_expression} WHERE _row_id IN (0, 25, 49) ORDER BY id",
             settings=PRUNING_ENABLED,
-        ).strip()
-        == "50"
+        )
+        == "0\t0\n25\t25\n49\t49\n"
+    )
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _row_id = 25 ORDER BY ALL",
+        )
+        == 0
     )
 
     # The sequence number does not depend on row numbers, so it prunes as usual.
@@ -801,13 +808,21 @@ def test_row_id_pruning_is_skipped_for_orc_clickhouse(
             settings=INSERT_SETTINGS,
         )
 
-    # The ORC reader reports no physical row numbers, so `_row_id` is NULL for every row and the
-    # inherited range describes nothing: pruning by it would drop the rows this query asks for.
+    # Rows of ORC data files inherit their row ids, but ORC files are not skipped by `_row_id` bounds.
     assert (
         instance.query(
-            f"SELECT count() FROM {TABLE_NAME} WHERE _row_id IS NULL", settings=PRUNING_ENABLED
-        ).strip()
-        == "50"
+            f"SELECT id, _row_id FROM {TABLE_NAME} WHERE _row_id IN (0, 25, 49) ORDER BY id",
+            settings=PRUNING_ENABLED,
+        )
+        == "0\t0\n25\t25\n49\t49\n"
+    )
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {TABLE_NAME} WHERE _row_id = 25 ORDER BY ALL",
+        )
+        == 0
     )
 
     # The sequence number does not depend on row numbers, so it prunes as usual.

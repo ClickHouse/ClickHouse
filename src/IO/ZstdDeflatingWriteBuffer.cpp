@@ -16,8 +16,8 @@ static void setZstdParameter(ZSTD_CCtx * cctx, ZSTD_cParameter param, int value)
     if (ZSTD_isError(ret))
         throw Exception(
             ErrorCodes::ZSTD_ENCODER_FAILED,
-            "zstd stream encoder option setting failed: error code: {}; zstd version: {}",
-            ret,
+            "zstd stream encoder option setting failed: {}; zstd version: {}",
+            ZSTD_getErrorName(ret),
             ZSTD_VERSION_STRING);
 }
 

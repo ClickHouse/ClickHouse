@@ -235,8 +235,9 @@ public:
 
             if (!num_units)
             {
-                /// Zero units, no need to print. But if it's the last (seconds) and the only unit, print "0 seconds" nevertheless.
-                if (unit_multiplier != 1 || has_output)
+                /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
+                if (unit_multiplier != 1 || has_output
+                    || fractional_str.substr(0, (4 - min_unit) * 3) != std::string((4 - min_unit) * 3, '0'))
                     return;
             }
 

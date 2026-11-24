@@ -177,6 +177,7 @@
                 "reference/statements/select/qualify",
                 "reference/statements/select/replace_modifier",
                 "reference/statements/select/sample",
+                "reference/statements/select/shuffle",
                 "reference/statements/select/union",
                 "reference/statements/select/where",
                 "reference/statements/select/with"

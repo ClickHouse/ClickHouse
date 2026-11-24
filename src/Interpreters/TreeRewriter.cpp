@@ -72,6 +72,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsString count_distinct_implementation;
@@ -99,6 +100,7 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
@@ -1504,6 +1506,17 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (select_query->limit_by_all)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
+    }
+
+    if (select_query->shuffle)
+    {
+        if (!settings[Setting::allow_experimental_shuffle_query])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
+
+        if (!select_options.only_analyze)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "`SHUFFLE` is supported only with the analyzer (turn on setting `allow_experimental_analyzer = 1`)");
     }
 
     /// Remove unneeded columns according to 'required_result_columns'.

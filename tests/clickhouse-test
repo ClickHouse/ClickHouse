@@ -2089,6 +2089,8 @@ class SettingsRandomizer:
         "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
+        # Tables in tests are small, so with a non-zero threshold statistics are mostly not used.
+        "min_marks_per_part_to_load_statistics": lambda: 0 if random.random() < 0.5 else random.choice([1, 16, 64, 256]),
         # Columns cache settings - randomize with 0.5 probability each
         "use_columns_cache": lambda: random.randint(0, 1),
         "enable_reads_from_columns_cache": lambda: random.randint(0, 1),
@@ -5464,13 +5466,14 @@ def run_tests_array(
     # %c enables continuous mode so a client killed mid-write (query timeouts
     # SIGKILL the whole process group) leaves a valid profile instead of a
     # truncated one.
-    # Per-test coverage discards client profiles, and under %c concurrently running
-    # clients store their counters into a shared file-backed mapping of one pool file,
-    # so that lane would pay for a profile nobody reads.
-    profile_pattern = "%2m" if args.collect_per_test_coverage else "%c%2m"
-    os.environ["LLVM_PROFILE_FILE"] = (
-        f"clickhouse-client-proc{process_index}-{profile_pattern}.profraw"
-    )
+    if args.collect_per_test_coverage:
+        # Per-test coverage discards client profiles. A pool file merged at exit is
+        # poisoned by a client killed mid-write, and every later client merging it crashes.
+        os.environ["LLVM_PROFILE_FILE"] = os.devnull
+    else:
+        os.environ["LLVM_PROFILE_FILE"] = (
+            f"clickhouse-client-proc{process_index}-%c%2m.profraw"
+        )
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])

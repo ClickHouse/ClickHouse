@@ -211,7 +211,7 @@ void AggregateFunctionTuple::add(AggregateDataPtr __restrict place, const IColum
     }
 }
 
-template <bool has_null_map, bool all_places_are_non_null, typename GetPlace>
+template <bool has_null_map, bool all_places_are_non_null, typename GetPlace, typename AddNestedBatch>
 void AggregateFunctionTuple::addBatchImpl(
     size_t row_begin,
     size_t row_end,
@@ -219,7 +219,8 @@ void AggregateFunctionTuple::addBatchImpl(
     const UInt8 * null_map,
     ssize_t if_argument_pos,
     Arena * arena,
-    GetPlace && get_place) const
+    GetPlace && get_place,
+    AddNestedBatch && add_nested_batch) const
 {
     /// Batch callers may pass tuples whose element columns are sparse (e.g. window aggregation over
     /// data read from `MergeTree`), while nested aggregate functions require dense columns.
@@ -292,11 +293,49 @@ void AggregateFunctionTuple::addBatchImpl(
         }
     }
 
+    /// The elements without sparse columns are passed to the nested functions for the whole batch.
+    /// Not with a condition: the nested functions don't support it in all batch methods
+    /// (example: `AggregateFunctionNullUnary::addBatchSinglePlace` passes only the argument column further).
+    VectorWithMemoryTracking<size_t> row_elements;
+    ColumnRawPtrs nested_columns(num_tuples);
+
+    for (size_t i = 0; i < nested_functions.size(); ++i)
+    {
+        if (if_argument_pos >= 0)
+        {
+            row_elements.push_back(i);
+            continue;
+        }
+
+        if (num_tuples == 1)
+        {
+            if (elements[i].sparse_iterator)
+            {
+                row_elements.push_back(i);
+                continue;
+            }
+            nested_columns[0] = elements[i].column;
+        }
+        else
+        {
+            if (holders[i * num_tuples])
+            {
+                row_elements.push_back(i);
+                continue;
+            }
+            std::copy_n(&zipped_columns[i * num_tuples], num_tuples, nested_columns.begin());
+        }
+        add_nested_batch(*nested_functions[i], state_offsets[i], nested_columns.data());
+    }
+
+    if (row_elements.empty())
+        return;
+
     auto add_row = [&](AggregateDataPtr place, size_t row)
     {
         if (num_tuples == 1)
         {
-            for (size_t i = 0; i < nested_functions.size(); ++i)
+            for (size_t i : row_elements)
             {
                 auto & element = elements[i];
                 size_t nested_row = row;
@@ -310,7 +349,7 @@ void AggregateFunctionTuple::addBatchImpl(
         }
         else
         {
-            for (size_t i = 0; i < nested_functions.size(); ++i)
+            for (size_t i : row_elements)
                 nested_functions[i]->add(place + state_offsets[i], &zipped_columns[i * num_tuples], row - row_bases[i], arena);
         }
     };
@@ -360,7 +399,9 @@ void AggregateFunctionTuple::addBatch( /// NOLINT
     ssize_t if_argument_pos) const
 {
     addBatchImpl<false, false>(row_begin, row_end, columns, nullptr, if_argument_pos, arena,
-        [&](size_t i) { return places[i] ? places[i] + place_offset : nullptr; });
+        [&](size_t i) { return places[i] ? places[i] + place_offset : nullptr; },
+        [&](const IAggregateFunction & nested, size_t state_offset, const IColumn ** nested_columns)
+        { nested.addBatch(row_begin, row_end, places, place_offset + state_offset, nested_columns, arena, -1); });
 }
 
 void AggregateFunctionTuple::addBatchWithNonNullPlaces( /// NOLINT
@@ -373,7 +414,9 @@ void AggregateFunctionTuple::addBatchWithNonNullPlaces( /// NOLINT
     ssize_t if_argument_pos) const
 {
     addBatchImpl<false, true>(row_begin, row_end, columns, nullptr, if_argument_pos, arena,
-        [&](size_t i) { return places[i] + place_offset; });
+        [&](size_t i) { return places[i] + place_offset; },
+        [&](const IAggregateFunction & nested, size_t state_offset, const IColumn ** nested_columns)
+        { nested.addBatchWithNonNullPlaces(row_begin, row_end, places, place_offset + state_offset, nested_columns, arena, -1); });
 }
 
 void AggregateFunctionTuple::addBatchSinglePlace( /// NOLINT
@@ -385,7 +428,9 @@ void AggregateFunctionTuple::addBatchSinglePlace( /// NOLINT
     ssize_t if_argument_pos) const
 {
     addBatchImpl<false, true>(row_begin, row_end, columns, nullptr, if_argument_pos, arena,
-        [&](size_t) { return place; });
+        [&](size_t) { return place; },
+        [&](const IAggregateFunction & nested, size_t state_offset, const IColumn ** nested_columns)
+        { nested.addBatchSinglePlace(row_begin, row_end, place + state_offset, nested_columns, arena, -1); });
 }
 
 void AggregateFunctionTuple::addBatchSinglePlaceNotNull( /// NOLINT
@@ -400,7 +445,32 @@ void AggregateFunctionTuple::addBatchSinglePlaceNotNull( /// NOLINT
     /// Reached from `AggregateFunctionNullUnary` for `Nullable(Tuple(...))` inputs: rows whose tuple
     /// is NULL are skipped via the null map.
     addBatchImpl<true, true>(row_begin, row_end, columns, null_map, if_argument_pos, arena,
-        [&](size_t) { return place; });
+        [&](size_t) { return place; },
+        [&](const IAggregateFunction & nested, size_t state_offset, const IColumn ** nested_columns)
+        { nested.addBatchSinglePlaceNotNull(row_begin, row_end, place + state_offset, nested_columns, null_map, arena, -1); });
+}
+
+void AggregateFunctionTuple::addBatchLookupTable8(
+    size_t row_begin,
+    size_t row_end,
+    AggregateDataPtr * map,
+    size_t place_offset,
+    std::function<void(AggregateDataPtr &)> init,
+    const UInt8 * key,
+    const IColumn ** columns,
+    Arena * arena) const
+{
+    /// The states are created by the first nested function that sees the key, the next ones find them in `map`.
+    addBatchImpl<false, true>(row_begin, row_end, columns, nullptr, -1, arena,
+        [&](size_t i)
+        {
+            AggregateDataPtr & place = map[key[i]];
+            if (unlikely(!place))
+                init(place);
+            return place + place_offset;
+        },
+        [&](const IAggregateFunction & nested, size_t state_offset, const IColumn ** nested_columns)
+        { nested.addBatchLookupTable8(row_begin, row_end, map, place_offset + state_offset, init, key, nested_columns, arena); });
 }
 
 void AggregateFunctionTuple::mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
@@ -708,6 +778,27 @@ public:
     bool transformsArgumentTypes() const override { return true; }
 
     bool transformsMultipleNestedFunctions() const override { return true; }
+
+    /// The elements of the tuples are passed to the nested functions row by row, so the tuples are converted around.
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
+    void convertVariantArgumentsAroundMultipleNestedFunctions(
+        DataTypes & arguments, const VectorWithMemoryTracking<DataTypes> & converted_nested_arguments_list) const override
+    {
+        /// The i-th nested function receives the i-th element of every Tuple argument, see `transformArgumentsForMultipleNestedFunctions`.
+        for (size_t k = 0; k < arguments.size(); ++k)
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*arguments[k]);
+            DataTypes elements = tuple_type.getElements();
+            chassert(elements.size() == converted_nested_arguments_list.size());
+            for (size_t i = 0; i < elements.size(); ++i)
+                elements[i] = converted_nested_arguments_list[i][k];
+
+            arguments[k] = tuple_type.hasExplicitNames()
+                ? std::make_shared<DataTypeTuple>(elements, tuple_type.getElementNames())
+                : std::make_shared<DataTypeTuple>(elements);
+        }
+    }
 
     VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & arguments) const override
     {

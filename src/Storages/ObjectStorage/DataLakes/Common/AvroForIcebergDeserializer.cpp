@@ -316,6 +316,18 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             content_size_in_bytes = content_size_field.safeGet<Int64>();
     }
 
+    std::optional<std::vector<Int64>> split_offsets;
+    if (hasPath(c_data_file_split_offsets))
+    {
+        Field split_offsets_field = getValueFromRowByName(row_index, c_data_file_split_offsets);
+        if (!split_offsets_field.isNull())
+        {
+            split_offsets.emplace();
+            for (const Field & offset : split_offsets_field.safeGet<Array>())
+                split_offsets->push_back(offset.safeGet<Int64>());
+        }
+    }
+
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -340,7 +352,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*equality_ids*/ std::nullopt,
                 sort_order_id,
                 record_count,
-                file_size_in_bytes);
+                file_size_in_bytes,
+                split_offsets);
         }
         case FileContentType::POSITION_DELETE: {
             /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests

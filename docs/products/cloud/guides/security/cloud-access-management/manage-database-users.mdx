@@ -88,7 +88,7 @@ Configure the following within the services and databases using the SQL [GRANT](
 | Default               | Full administrative access to services                                        |
 | Custom                | Configure using the SQL [`GRANT`](/reference/statements/grant) statement |
 
-- Database roles are additive. This means if a user is a member of two roles, the user has the most access granted to the two roles. They don't lose access by adding roles.
+- Database roles are additive. This means if a user is a member of two roles, the user has the most access granted to the two roles. They don't lose access by adding roles. This applies to SQL roles granted inside a service. A console custom role with a `Data` policy using `Custom` access replaces the built-in SQL console database access instead. See [Manage database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
 - Database roles can be granted to other roles, resulting in a hierarchical structure. Roles inherit all permissions of the roles for which it is a member.
 - Database roles are unique per service and may be applied across multiple databases within the same service.
 

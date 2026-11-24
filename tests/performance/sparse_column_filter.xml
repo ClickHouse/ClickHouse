@@ -36,6 +36,7 @@
     <query>SELECT str, COUNT(DISTINCT id) as i FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY i DESC LIMIT 10</query>
     <query>SELECT str, COUNT(DISTINCT u8) as u FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY u DESC LIMIT 10</query>
     <query>SELECT str, COUNT(DISTINCT u64) as u FROM test_{serialization}_{ratio} WHERE notEmpty(str) GROUP BY str ORDER BY u DESC LIMIT 10</query>
+    <query>SELECT sum(u64) FROM test_{serialization}_{ratio} PREWHERE u8 = 0 SETTINGS max_threads = 1</query>
 
 
     <drop_query>DROP TABLE IF EXISTS test_{serialization}_{ratio}</drop_query>

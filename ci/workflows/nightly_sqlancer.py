@@ -10,7 +10,8 @@ from ci.defs.defs import (
 )
 from ci.defs.job_configs import JobConfigs
 
-# Both fuzzers run against two builds, so this workflow builds both:
+# SQLancer, SQLancer++ and the data lake fuzzer (`tests/datalake_fuzzer`) run against two builds,
+# so this workflow builds both:
 #   * arm_release      - the wrong-result hunt. A sanitizer binary executes SQL
 #                        2-3x slower, so a release build explores several times
 #                        more generated SQL per hour.
@@ -32,6 +33,7 @@ workflow = Workflow.Config(
         asan_ubsan_build_job,
         *JobConfigs.sqlancer_master_jobs,
         *JobConfigs.sqlancer_pp_jobs,
+        *JobConfigs.datalake_fuzzer_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,

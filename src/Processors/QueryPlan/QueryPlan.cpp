@@ -435,7 +435,6 @@ static void explainStep(
 {
 
     settings.out << settings.header_prefix << step.getName();
-    const auto & prefix = settings.detail_prefix;
 
     auto description = step.getStepDescription();
 
@@ -466,6 +465,17 @@ static void explainStep(
     }
 
     settings.out.write('\n');
+
+    explainStepDetails(step, settings, options, steps_to_stats);
+}
+
+void explainStepDetails(
+    IQueryPlanStep & step,
+    ExplainFormatSettings & settings,
+    const ExplainPlanOptions & options,
+    const AnalyzeStepsStats * steps_to_stats)
+{
+    const auto & prefix = settings.detail_prefix;
 
     const auto dump_column = [&out = settings.out, dump_structure = options.column_structure](const ColumnWithTypeAndName & column)
     {

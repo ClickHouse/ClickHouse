@@ -337,9 +337,14 @@ UInt32 CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_
     return uncompressed_size;
 }
 
+static bool isApplicableToType(const IDataType & column_type)
+{
+    return WhichDataType(column_type).isNativeFloat();
+}
+
 static UInt8 getFloatByteWidth(const IDataType & column_type)
 {
-    if (!WhichDataType(column_type).isNativeFloat())
+    if (!isApplicableToType(column_type))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Codec 'SZ3' is not applicable for {} because the data type is not Float*", column_type.getName());
 
@@ -448,7 +453,7 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS, "Codec SZ3 must have 0 or 3 arguments but {} arguments are given", arguments->children.size());
         }
     };
-    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
 }
 
 CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size)
