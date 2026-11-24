@@ -542,6 +542,8 @@ def main():
         pr_replica = ET.SubElement(pr_shard, "replica")
         ET.SubElement(pr_replica, "host").text = host
         ET.SubElement(pr_replica, "port").text = "9000"
+    # Lets BuzzHouse enable `parallel_replicas_plan_based`, as the functional tests do
+    ET.SubElement(croot, "process_query_plan_packet").text = "true"
     ET.indent(ctree, space="    ", level=0)  # indent tree
     ctree.write(config_xml, encoding="utf-8", xml_declaration=True)
 

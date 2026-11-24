@@ -186,7 +186,6 @@ std::vector<std::pair<String, String>> StatementGenerator::parallelReplicasSetti
         {"parallel_replicas_support_projection", {"0", "1"}},
         {"parallel_replicas_allow_merge_tables", {"0", "1"}},
         {"parallel_replicas_allow_view_over_mergetree", {"0", "1"}},
-        {"parallel_replicas_prefer_local_replica", {"0", "1"}},
         {"parallel_replicas_mark_segment_size", {"0", "1", "2", "16", "128", "16384"}},
         {"max_threads", {"1", "2", "3", "4", "16"}},
         {"max_block_size", {"1", "7", "64", "1024", "65409"}},
@@ -220,6 +219,11 @@ std::vector<std::pair<String, String>> StatementGenerator::parallelReplicasSetti
         {
             add(name, rg.pickRandomly(values));
         }
+    }
+    /// Without the local replica the automatic mode has no local branch to match with the single-node plan
+    if (!automatic && rg.nextMediumNumber() < 16)
+    {
+        add("parallel_replicas_prefer_local_replica", rg.nextBool() ? "0" : "1");
     }
     return res;
 }
@@ -788,9 +792,11 @@ static String createShapeTable(RandomGenerator & rg, const uint32_t i)
 
     return fmt::format(
         "CREATE TABLE IF NOT EXISTS `default`.`shape{}` (`k` UInt64, `g` UInt8, `s` String, `n` Nullable(Int64), `a` Array(UInt16), `d` DateTime, "
-        "INDEX `ix` `s` TYPE bloom_filter GRANULARITY 1, PROJECTION `p` (SELECT `g`, count() GROUP BY `g`)) ENGINE = {}(){} ORDER BY ({}) "
+        "INDEX `ix` `s` TYPE bloom_filter GRANULARITY 1{}) ENGINE = {}(){} ORDER BY ({}) "
         "SETTINGS index_granularity = {}, min_bytes_for_wide_part = {}, deduplicate_merge_projection_mode = 'rebuild';",
         i,
+        /// Not always: automatic parallel replicas declines the aggregates a projection answers
+        rg.nextBool() ? ", PROJECTION `p` (SELECT `g`, count() GROUP BY `g`)" : "",
         rg.pickRandomly(engines),
         rg.nextBool() ? rg.pickRandomly(partitions) : "",
         shape_sorting_keys[i],
