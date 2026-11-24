@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 ## studentTTest {#studentTTest}
 
-Introduit dans : v21.1.0
+Introduit dans : v21.1.0
 
 Applique le test t de Student à des échantillons provenant de deux populations.
 
@@ -39,7 +39,7 @@ studentTTest([confidence_level])(sample_data, sample_index)
 
 **Valeur renvoyée**
 
-Renvoie un tuple de deux ou quatre éléments (si le paramètre facultatif `confidence_level` est spécifié) : statistique t calculée, p-value calculée, [borne inférieure calculée de l’intervalle de confiance], [borne supérieure calculée de l’intervalle de confiance]. [`Tuple(Float64, Float64)`](/fr/reference/data-types/tuple) or [`Tuple(Float64, Float64, Float64, Float64)`](/fr/reference/data-types/tuple)
+Renvoie un tuple de deux ou quatre éléments (si le paramètre facultatif `confidence_level` est spécifié) : statistique t calculée, p-value calculée, [borne inférieure calculée de l’intervalle de confiance], [borne supérieure calculée de l’intervalle de confiance]. [`Tuple(Float64, Float64)`](/fr/reference/data-types/tuple) or [`Tuple(Float64, Float64, Float64, Float64)`](/fr/reference/data-types/tuple)
 
 **Exemples**
 
@@ -55,7 +55,7 @@ SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
 ```response title=Response
 ┌─studentTTest(sample_data, sample_index)───┐
 ├──────────t_statistic─┬────────────p_value─┤
-│ -0.21739130434783777 │ 0.8385421208415734 │
+│ -0.21739130434783777 │ 0.8385421208415735 │
 └──────────────────────┴────────────────────┘
 ```
 

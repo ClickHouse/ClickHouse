@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 이 설정은 ClickHouse 서버 구성에 사용되며 ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블 엔진과 `cluster` 테이블 함수에서 사용하는 클러스터 구성입니다.
 
@@ -30,13 +28,11 @@ doc_type: 'reference'
 * [클러스터 디스커버리](/ko/guides/oss/deployment-and-scaling/cluster-discovery)
 * [복제된 데이터베이스 엔진](/ko/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 URL 관련 저장 엔진과 테이블 함수에서 사용할 수 있도록 허용된 호스트 목록입니다.
 
-`\<<host\>` XML 태그로 호스트를 추가할 때:
+`\<host\>` XML 태그로 호스트를 추가할 때:
 
 * 이름은 DNS 해석 전에 확인되므로 URL에 있는 그대로 정확히 지정해야 합니다. 예시: `<host>clickhouse.com</host>`
 * URL에 포트가 명시적으로 지정된 경우에는 `host:port` 전체를 확인합니다. 예시: `<host>clickhouse.com:80</host>`
@@ -44,11 +40,23 @@ URL 관련 저장 엔진과 테이블 함수에서 사용할 수 있도록 허�
 * 호스트를 IP 주소로 지정한 경우에는 URL에 지정된 그대로 확인합니다. 예시: `[2a02:6b8:a::a]`.
 * 리디렉션이 있고 리디렉션 지원이 활성화되어 있으면 각 리디렉션의 `location` field를 확인합니다.
 
+`\<host_regexp\>` XML 태그로 정규식을 추가하면 RE2 엔진이 사용되며, 호스트 전체가 일치하는지 확인합니다. 예시: `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+`\<s3_bucket\>` XML 태그로 단일 S3 버킷을 `host/bucket` 또는 `host:port/bucket` 형식으로 추가할 때:
+
+* 경로 방식(path-style) AWS 엔드포인트 `s3.us-west-2.amazonaws.com`처럼 여러 주체가 하나의 엔드포인트를 공유하는 경우에 유용합니다. 이런 경우 호스트 전체를 허용하면 해당 호스트의 모든 버킷이 허용되기 때문입니다.
+* 버킷은 파싱된 S3 URL에서 추출하므로, 해당 엔트리는 `https://s3.us-west-2.amazonaws.com/my-bucket/...`와 `https://my-bucket.s3.us-west-2.amazonaws.com/...` 모두와 일치합니다.
+* S3 URL에만 적용됩니다. 즉, `s3` 테이블 함수와 엔진, `S3` 데이터베이스 엔진, `S3`로의 `BACKUP`/`RESTORE`, 그리고 `disk` 함수를 사용해 SQL로 생성한 S3 디스크가 대상입니다.
+* SQL로 생성한 S3 디스크는 쿼리가 디스크를 생성하는 시점에 확인합니다. 목록이 설정되기 전부터 존재했거나 이 검사가 없는 버전에서 생성된 디스크는 서버 시작 시 그대로 로드됩니다. 삭제되었지만 아직 완전히 제거되지 않은 테이블도 마찬가지이므로 `UNDROP TABLE`은 계속 동작합니다. 이 경우 서버는 로그와 `system.warnings`에 이를 기록합니다.
+* S3가 반환한 영구(301) 리디렉션도 버킷 엔트리와 대조해 확인하지만, 임시(307) 리디렉션은 호스트만 확인하므로 목록에 `\<s3_bucket\>` 엔트리만 있으면 거부됩니다.
+
 예시:
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 
