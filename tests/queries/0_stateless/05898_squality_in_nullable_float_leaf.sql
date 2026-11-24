@@ -17,7 +17,7 @@ CREATE TABLE squality_nullable_float_constraint
 (
     a Array(Float64),
     b Array(Nullable(Float64)),
-    CONSTRAINT c CHECK a IN b
+    CONSTRAINT c CHECK a IN (b, NULL)
 ) ENGINE = Memory;
 INSERT INTO squality_nullable_float_constraint
 SELECT [toFloat64('nan')], [toNullable(toFloat64('nan'))]; -- { serverError VIOLATED_CONSTRAINT }
