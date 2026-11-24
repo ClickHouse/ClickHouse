@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessType.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -94,8 +95,11 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
+    /// The target table is written through the `TimeSeries` table, so INSERT is required on the named table.
+    if (is_insert_query)
+        context->checkAccess(AccessType::INSERT, time_series_storage_id);
     return getTargetTable(context);
 }
 
