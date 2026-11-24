@@ -2054,6 +2054,8 @@ def test_reserve_granularity_reclaims_surplus_after_read(cluster):
         "SELECT value FROM test_reserve_granularity WHERE key = 0 SETTINGS max_read_buffer_size = 65536"
     )
 
+    node.query("SYSTEM WAIT BLOBS CLEANUP 'reserve_granularity_cache'")
+
     # The read buffer is destroyed and no background download is configured, so the touched
     # segment is completed and shrunk. `size` is the (boundary-aligned) segment range, while
     # `downloaded_size` is what was actually written; the segment must be partially downloaded
