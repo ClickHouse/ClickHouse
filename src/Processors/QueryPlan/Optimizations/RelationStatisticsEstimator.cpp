@@ -70,7 +70,12 @@ estimateAggregatingStepStats(const Aggregator::Params & aggregator_params, bool 
     for (const auto & key : aggregator_params.keys)
     {
         auto key_stats = input_stats.column_stats.find(key);
-        if (key_stats == input_stats.column_stats.end())
+        /// A number of distinct values estimated from the metadata of the data is an effective one, for the selectivity
+        /// of an equality: a column with one frequent value and 10000 rare ones has about 1, and still 10001 groups.
+        /// It is not the number of groups, so the key is taken as one without statistics, also in the output, where
+        /// every key value takes one row whatever its frequency in the input.
+        if (key_stats == input_stats.column_stats.end()
+            || key_stats->second.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata)
         {
             /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns.
             /// The estimate then falls back to the input row count (an over-count of groups), so it is no longer

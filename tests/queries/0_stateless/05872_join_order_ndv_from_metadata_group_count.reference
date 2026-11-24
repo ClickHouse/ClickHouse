@@ -1,0 +1,7 @@
+The column has an estimate from its compressed size, far below its 10001 values
+1
+The grouped subquery is not estimated at fewer rows than its 10001 groups
+1
+The same with the Cascades optimizer: the aggregation and the DISTINCT
+1
+1

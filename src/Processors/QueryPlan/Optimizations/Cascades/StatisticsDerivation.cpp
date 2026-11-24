@@ -717,10 +717,14 @@ static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
 /// NDV of a group key in the input; without stats, fall back to `DEFAULT_DISTINCT_VALUES_RATIO`.
 /// A read records NDV 0 for a column without statistics; taken as known, it would estimate a single
 /// group for any input and make a merge of all groups on one node look free.
+/// So would an NDV estimated from the metadata of the data (`ColumnStatsOrigin::EstimatedFromMetadata`): it is an
+/// effective one, for the selectivity of an equality, about 1 for a column with one frequent value and 10000 rare
+/// ones, which still has 10001 groups. It is taken as a column without statistics.
 static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
 {
     auto column_stats = input_statistics.column_statistics.find(column);
-    if (column_stats != input_statistics.column_statistics.end() && column_stats->second.num_distinct_values > 0)
+    if (column_stats != input_statistics.column_statistics.end() && column_stats->second.num_distinct_values > 0
+        && column_stats->second.ndv_provenance.origin != ColumnStatsOrigin::EstimatedFromMetadata)
         return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
     return DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count;
 }
@@ -749,11 +753,9 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     for (const auto & key : aggregator_params.keys)
     {
         auto & key_statistics = aggregation_statistics.column_statistics[key];
+        /// A key with an NDV estimated from metadata gets the one of a column without statistics, see
+        /// `keyDistinctValues`: every key value takes one row of the output whatever its frequency in the input.
         key_statistics.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(keyDistinctValues(key, input_statistics));
-        if (auto input_key_statistics = input_statistics.column_statistics.find(key);
-            input_key_statistics != input_statistics.column_statistics.end() && input_key_statistics->second.num_distinct_values > 0
-            && input_key_statistics->second.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata)
-            key_statistics.ndv_provenance.origin = ColumnStatsOrigin::EstimatedFromMetadata;
     }
 
     aggregation_statistics.min_row_count = 0;
