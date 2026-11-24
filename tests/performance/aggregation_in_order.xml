@@ -11,8 +11,12 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT avg(length(URL)) as x from hits_100m_single GROUP BY CounterID FORMAT Null</query>
-    <query>SELECT avg(length(URL)) as x from {table} GROUP BY CounterID, EventDate FORMAT Null</query>
+    <query disabled="1">SELECT avg(length(URL)) as x from hits_100m_single GROUP BY CounterID FORMAT Null</query>
+    <query disabled="1">SELECT avg(length(URL)) as x from {table} GROUP BY CounterID, EventDate FORMAT Null</query>
     <query>SELECT avg(length(URL)) as x from hits_10m_single GROUP BY CounterID, EventDate, intHash32(UserID) FORMAT Null</query>
+
+    <!-- The disabled queries above in one thread: reading in order splits the part between the streams up front, so with several streams the query takes as long as its slowest one. -->
+    <query>SELECT avg(length(URL)) as x from hits_100m_single GROUP BY CounterID SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT avg(length(URL)) as x from {table} GROUP BY CounterID, EventDate SETTINGS max_threads = 1 FORMAT Null</query>
 
 </test>

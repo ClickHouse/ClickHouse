@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/RegexpUtils.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
@@ -29,6 +30,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -129,7 +131,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
 
             for (size_t i = 0; i < rows_read; ++i)
             {
-                size_t element_start_row = column_offsets[current_position - 1];
+                size_t element_start_row = column_offsets[static_cast<ssize_t>(current_position) - 1];
                 size_t elements_size = column_offsets[current_position] - element_start_row;
 
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
@@ -505,6 +507,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                  function_name == "mapContainsValue" ||
                  function_name == "mapContainsValueLike" ||
                  function_name == "match" ||
+                 function_name == "fullMatch" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name.starts_with("hasToken") ||
@@ -558,7 +561,7 @@ Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & t
     if (isFixedString(inner_type) && field.getType() == Field::Types::String)
     {
         String value = field.safeGet<String>();
-        value.resize(value.find_last_not_of('\0') + 1);
+        trimRight(value, '\0');
         return Field(std::move(value));
     }
 
@@ -914,13 +917,17 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.set_bloom_filters = std::move(bloom_filters);
         return true;
     }
-    if (function_name == "match")
+    if (function_name == "match" || function_name == "fullMatch")
     {
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_MATCH;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
-        auto & value = const_value.safeGet<String>();
+        /// `fullMatch` is `match` with the pattern anchored at both ends, so its substrings come from the anchored form.
+        String value = const_value.safeGet<String>();
+        if (function_name == "fullMatch")
+            value = anchorRegexpToMatchWholeString(value);
+
         /// Validate the regexp before using its required substring to build
         /// the skip-index condition.
         Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
@@ -1041,7 +1048,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
                 /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
                 element = column->getDataAt(row);
                 if (is_fixed_string_element)
-                    element = element.substr(0, element.find_last_not_of('\0') + 1);
+                    trimRight(element, '\0');
             }
 
             forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());
