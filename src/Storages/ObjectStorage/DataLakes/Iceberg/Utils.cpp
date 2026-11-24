@@ -212,14 +212,15 @@ static bool isVersionNumberedCommitScheme(const String & file_name)
     return std::all_of(file_name.begin() + 1, file_name.begin() + end_pos, isdigit);
 }
 
-bool isUuidNamedMetadataFile(const String & file_name)
+bool isRandomUuidNamedMetadataFile(const String & file_name)
 {
     const auto dash_pos = file_name.find('-');
     const auto dot_pos = file_name.find('.');
     if (dash_pos == String::npos || dot_pos == String::npos || dot_pos < dash_pos)
         return false;
     const String name_uuid = file_name.substr(dash_pos + 1, dot_pos - dash_pos - 1);
-    return name_uuid.size() == 36 && Poco::UUID{}.tryParse(name_uuid);
+    Poco::UUID parsed_uuid;
+    return name_uuid.size() == 36 && parsed_uuid.tryParse(name_uuid) && parsed_uuid.version() == Poco::UUID::UUID_RANDOM;
 }
 
 /// The file name a configured pointer addresses, resolved the way the reader resolves it: a bare

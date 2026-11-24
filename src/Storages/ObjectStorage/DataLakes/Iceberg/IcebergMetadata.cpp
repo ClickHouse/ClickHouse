@@ -299,7 +299,7 @@ bool IcebergMetadata::isMetadataFileOfThisTable(const String & path, ContextPtr 
         /// Without a table uuid only an unchanged metadata file whose name no other table reuses proves the same table.
         const auto current_path = explicit_metadata_file_path.get();
         return path == (current_path ? *current_path : (*data_lake_settings)[DataLakeStorageSetting::iceberg_metadata_file_path].value)
-            && isUuidNamedMetadataFile(std::filesystem::path(path).filename());
+            && isRandomUuidNamedMetadataFile(std::filesystem::path(path).filename());
     }
     DataLakeStorageSettings lookup_settings = *data_lake_settings;
     lookup_settings[DataLakeStorageSetting::iceberg_metadata_file_path] = path;
@@ -312,8 +312,8 @@ bool IcebergMetadata::isMetadataFileOfThisTable(const String & path, ContextPtr 
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method);
-    /// A recreated table can reuse a metadata file name without a uuid, so a cached copy of such a file can be the old table's.
-    const bool name_is_unique = isUuidNamedMetadataFile(std::filesystem::path(metadata_file_path).filename());
+    /// A recreated table can reuse a metadata file name without a random uuid, so a cached copy of such a file can be the old table's.
+    const bool name_is_unique = isRandomUuidNamedMetadataFile(std::filesystem::path(metadata_file_path).filename());
     auto metadata_object = getMetadataJSONObject(
         metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method,
         name_is_unique ? persistent_components.table_uuid : std::optional<String>{});

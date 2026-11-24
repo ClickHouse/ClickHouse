@@ -2823,7 +2823,8 @@ def test_recreated_clickhouse_table_with_compaction_enabled(started_cluster):
     """
     A table created and written by ClickHouse, dropped and recreated in Glue under the same name and location with
     another schema, is read as the new table, also through a database with `allow_experimental_iceberg_compaction`.
-    ClickHouse names the metadata files of such a table by version only, so the new table reuses the old one's file names.
+    ClickHouse derives the metadata file names of such a table from its versions, so the new table reuses the old one's
+    file names.
     """
     node = started_cluster.instances["node1"]
     test_ref = f"test_recreated_ch_table_{uuid.uuid4().hex}"
@@ -2847,7 +2848,7 @@ def test_recreated_clickhouse_table_with_compaction_enabled(started_cluster):
     check("1.5\n2.5\n")
 
     # The compaction database keeps the table it opened, so an unchanged read through it opens no storage, while each
-    # read through the plain database opens one. Request counts cannot show this: a version-named metadata file is
+    # read through the plain database opens one. Request counts cannot show this: a metadata file named by ClickHouse is
     # read again on every lookup.
     assert opened_storages(node, f"{compaction_db}.`{identifier}`") == "0\n"
     assert opened_storages(node, f"{CATALOG_NAME}.`{identifier}`") == "1\n"
@@ -2875,7 +2876,7 @@ def test_table_without_uuid_with_compaction_enabled(started_cluster):
     A format-version 1 table whose metadata has no `table-uuid` is kept by a database with
     `allow_experimental_iceberg_compaction` while Glue points at the same metadata file, and is read as the new table
     after a drop and recreate under the same name and location. So is a table registered with a metadata file name
-    that has no uuid, also when its metadata has a `table-uuid`.
+    that has no random uuid, also when its metadata has a `table-uuid`.
     """
     node = started_cluster.instances["node1"]
     test_ref = f"test_table_without_uuid_{uuid.uuid4().hex}"
@@ -2929,12 +2930,16 @@ def test_table_without_uuid_with_compaction_enabled(started_cluster):
     create_registered_table(*string_table, f"00002-{uuid.uuid4()}.metadata.json")
     check("x\ny\n")
 
-    # Also when the new table's metadata file has the same name as the old one's and the name has no uuid: a
-    # version-only name, or one registered by hand, also with a `table-uuid` in the metadata.
+    # Also when the new table's metadata file has the same name as the old one's and the name has no random uuid: a
+    # version-only name, one registered by hand, or one with a name-based uuid as ClickHouse writes, also with a
+    # `table-uuid` in the metadata.
+    name_based_uuid_file_name = f"00001-{uuid.uuid3(uuid.NAMESPACE_OID, test_ref)}.metadata.json"
     for metadata_file_name, keep_uuid in [
         ("v1.metadata.json", False),
         ("00001-manual.metadata.json", False),
         ("00001-manual.metadata.json", True),
+        (name_based_uuid_file_name, False),
+        (name_based_uuid_file_name, True),
     ]:
         catalog.drop_table(identifier)
         create_registered_table(*double_table, metadata_file_name, keep_uuid)

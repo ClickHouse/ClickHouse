@@ -107,8 +107,9 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
-/// True for `[v]N-<uuid>[.<codec>].metadata.json`: writers pick a new uuid for each file, so no other table reuses the name.
-bool isUuidNamedMetadataFile(const String & file_name);
+/// True for `[v]N-<uuid>[.<codec>].metadata.json` with a random uuid, a name no other table reuses. A name-based uuid,
+/// which ClickHouse derives from the base metadata file, repeats when a table is recreated at the same location.
+bool isRandomUuidNamedMetadataFile(const String & file_name);
 
 /// The metadata file of the table, checked with validateTableMetadata and IcebergSchemaProcessor::checkTableSchemas.
 Poco::JSON::Object::Ptr getMetadataJSONObject(
