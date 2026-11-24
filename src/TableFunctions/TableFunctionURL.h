@@ -100,6 +100,12 @@ public:
     }
 
 protected:
+    /// Whether the caller's `READ ON URL` bounds what the workers of `cluster_name` fetch after a redirect: they run as
+    /// the cluster user unless an interserver secret carries the caller's identity, so a filter bounds nothing there.
+    static bool callerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name);
+    /// Throws `ACCESS_DENIED` when `callerGrantAppliesOnWorkers` is false.
+    static void checkCallerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name);
+
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override;
 
@@ -162,7 +168,7 @@ private:
 
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
+        const std::string & table_name, const String & compression_method_, bool is_insert_query, bool is_table_definition) const override;
 
     const char * getStorageEngineName() const override { return delegate_engine_name; }
     std::string_view getFunctionURI() const override;

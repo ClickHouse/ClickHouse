@@ -1,5 +1,8 @@
 #include <TableFunctions/TableFunctionURL.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
+
 #include <TableFunctions/registerTableFunctions.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -40,12 +43,20 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
+    /// The web object storage behind the index pages follows redirects without the per-hop check of `StorageURL`,
+    /// so a filtered `READ ON URL` cannot bound them: the path needs the grant on the whole source.
+    void checkWholeSourceAccessForURLWildcard(const ContextPtr & context)
+    {
+        context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::URL));
+    }
+
     ASTs makeWebObjectStorageEngineArgs(
         const String & source,
         const String & format,
@@ -405,9 +416,24 @@ bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
     return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
 }
 
+bool TableFunctionURL::callerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name)
+{
+    return context->getAccess()->isGranted(AccessType::READ, toStringSource(AccessTypeObjects::Source::URL))
+        || !context->getCluster(cluster_name)->getSecret().empty();
+}
+
+void TableFunctionURL::checkCallerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name)
+{
+    if (!callerGrantAppliesOnWorkers(context, cluster_name))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges. To execute this query, it's necessary to have the grant READ ON URL without a filter: "
+            "the cluster workers follow redirects as the cluster user");
+}
+
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & compression_method_, bool is_insert_query) const
+    const std::string & table_name, const String & compression_method_, bool is_insert_query, bool is_table_definition) const
 {
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -433,7 +459,8 @@ StoragePtr TableFunctionURL::getStorage(
     const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && !is_secondary_query
         && !is_insert_query
-        && !use_web_object_storage;
+        && !use_web_object_storage
+        && callerGrantAppliesOnWorkers(context, parallel_replicas_cluster_name);
 
     if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
     {
@@ -457,6 +484,13 @@ StoragePtr TableFunctionURL::getStorage(
         /// the server default and the table would disappear from the catalog.
         if (!skip_experimental_gate && configuration.http_method.empty() && urlPathNeedsIndexPageListing(url))
             checkExperimentalURLWildcardFromIndexPages();
+        /// The web object storage follows redirects without the per-hop check of `StorageURL`, so a filtered
+        /// `READ ON URL` cannot bound a wildcard read: that path needs the grant on the whole source, as in
+        /// master. A stored definition is exempt the same way as the gate above: it was written under the
+        /// grants of the table, and a replay cannot demand a fresh source grant without dropping the table.
+        /// A literal archive URL is not a wildcard read: its access subject stays the archive, as documented.
+        if (!is_replayed_table_definition && !archive_pattern.has_value())
+            checkWholeSourceAccessForURLWildcard(context);
         auto object_storage_configuration
             = createWebObjectStorageConfiguration(source, format_, structure, compression_method_, context);
 
@@ -497,7 +531,10 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/false);
+        /*distributed_processing=*/ false,
+        globCaller(),
+        /*is_replayed_definition=*/ false,
+        /*check_redirect_access=*/ !is_table_definition);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
@@ -539,6 +576,10 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         {
             if (needs_index_page_listing && !skip_experimental_gate)
                 checkExperimentalURLWildcardFromIndexPages();
+            /// Same whole-source grant as `getStorage`, for the wildcard listing path only: the structure
+            /// inference reads the source too, and an ad-hoc call has no table grants to fall back on.
+            if (needs_index_page_listing)
+                checkWholeSourceAccessForURLWildcard(context);
 
             auto object_storage_configuration
                 = createWebObjectStorageConfiguration(filename, format, structure, compression_method, context);
@@ -565,7 +606,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 configuration.headers,
                 std::nullopt,
                 context,
-                globCaller()).first;
+                globCaller(),
+                /*check_redirect_access=*/ true).first;
         }
         else
         {
@@ -575,7 +617,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 configuration.headers,
                 std::nullopt,
                 context,
-                globCaller());
+                globCaller(),
+                /*check_redirect_access=*/ true);
         }
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(

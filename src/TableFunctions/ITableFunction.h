@@ -206,6 +206,10 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
+/// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
+    /// them only for such a table definition, including its replay, and never for a call in a query.
+    static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
+
     /// See `setIsReplayedDefinition`.
     mutable bool is_replayed_table_definition = false;
     /// See `setSkipExperimentalGate`.
