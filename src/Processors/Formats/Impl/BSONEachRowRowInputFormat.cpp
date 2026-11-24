@@ -523,7 +523,10 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
                             "Cannot insert BSON Null value into non-nullable column with type {}",
                             data_type->getName());
 
-        column.insertDefault();
+        if (!data_type->isDefaultInsertTrivial())
+            data_type->insertDefaultInto(column);
+        else
+            column.insertDefault();
         return false;
     }
 
@@ -836,11 +839,18 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             current_key_name.assign(name.data(), name.size());
             skipUnknownField(BSONType(type), current_key_name);
         }
+        else if (seen_columns[index])
+        {
+            if (!format_settings.skip_duplicated_fields)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Duplicate field found while parsing BSONEachRow format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                    name);
+
+            skipBSONField(*in, BSONType(type));
+        }
         else
         {
-            if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
-
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
         }
@@ -1036,11 +1046,18 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
     BSONSizeT document_size = 0;
     readBinaryLittleEndian(document_size, in);
     NamesAndTypesList names_and_types;
+    NameSet row_field_names;
     while (in.count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto bson_type = getBSONType(readBSONType(in));
         String name;
         readNullTerminated(name, in);
+        if (depth == 1 && format_settings.skip_duplicated_fields
+            && !row_field_names.insert(getColumnMatchingKeyForSchemaInference(name, format_settings)).second)
+        {
+            skipBSONField(in, bson_type);
+            continue;
+        }
         bool skip = false;
         auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip, depth);
         if (!skip)
@@ -1085,7 +1102,8 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
         if (document_size < sizeof(document_size))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
-        if (min_bytes != 0 && document_size > 10 * min_bytes)
+        /// Same as `document_size > 10 * min_bytes`, but without overflow for huge `min_bytes`.
+        if (min_bytes != 0 && (document_size + 9ULL) / 10 > min_bytes)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
@@ -1096,7 +1114,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
             throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
-        memory.resize(old_size + document_size);
+        memory.resizeAmortized(old_size + document_size);
         unalignedStoreLittleEndian<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;
@@ -1111,7 +1129,8 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerInputFormat(
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
-        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); },
+        /*supports_reset_parser=*/ true);
     factory.registerFileExtension("bson", "BSONEachRow");
 
     factory.setDocumentation("BSONEachRow", Documentation{
@@ -1131,61 +1150,61 @@ For output it uses the following correspondence between ClickHouse types and BSO
 
 | ClickHouse type                                                                                                       | BSON Type                                                                                                     |
 |-----------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
-| [Bool](/sql-reference/data-types/boolean.md)                                                                  | `\x08` boolean                                                                                                |
-| [Int8/UInt8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)        | `\x10` int32                                                                                                  |
-| [Int16/UInt16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md)      | `\x10` int32                                                                                                  |
-| [Int32](/sql-reference/data-types/int-uint.md)                                                                | `\x10` int32                                                                                                  |
-| [UInt32](/sql-reference/data-types/int-uint.md)                                                               | `\x12` int64                                                                                                  |
-| [Int64/UInt64](/sql-reference/data-types/int-uint.md)                                                         | `\x12` int64                                                                                                  |
-| [Float32/Float64](/sql-reference/data-types/float.md)                                                         | `\x01` double                                                                                                 |
-| [Date](/sql-reference/data-types/date.md)/[Date32](/sql-reference/data-types/date32.md)               | `\x10` int32                                                                                                  |
-| [DateTime](/sql-reference/data-types/datetime.md)                                                             | `\x12` int64                                                                                                  |
-| [DateTime64](/sql-reference/data-types/datetime64.md)                                                         | `\x09` datetime                                                                                               |
-| [Decimal32](/sql-reference/data-types/decimal.md)                                                             | `\x10` int32                                                                                                  |
-| [Decimal64](/sql-reference/data-types/decimal.md)                                                             | `\x12` int64                                                                                                  |
-| [Decimal128](/sql-reference/data-types/decimal.md)                                                            | `\x05` binary, `\x00` binary subtype, size = 16                                                               |
-| [Decimal256](/sql-reference/data-types/decimal.md)                                                            | `\x05` binary, `\x00` binary subtype, size = 32                                                               |
-| [Int128/UInt128](/sql-reference/data-types/int-uint.md)                                                       | `\x05` binary, `\x00` binary subtype, size = 16                                                               |
-| [Int256/UInt256](/sql-reference/data-types/int-uint.md)                                                       | `\x05` binary, `\x00` binary subtype, size = 32                                                               |
-| [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md) | `\x05` binary, `\x00` binary subtype or \x02 string if setting output_format_bson_string_as_string is enabled |
-| [UUID](/sql-reference/data-types/uuid.md)                                                                     | `\x05` binary, `\x04` uuid subtype, size = 16                                                                 |
-| [Array](/sql-reference/data-types/array.md)                                                                   | `\x04` array                                                                                                  |
-| [Tuple](/sql-reference/data-types/tuple.md)                                                                   | `\x04` array                                                                                                  |
-| [Named Tuple](/sql-reference/data-types/tuple.md)                                                             | `\x03` document                                                                                               |
-| [Map](/sql-reference/data-types/map.md)                                                                       | `\x03` document                                                                                               |
-| [IPv4](/sql-reference/data-types/ipv4.md)                                                                     | `\x10` int32                                                                                                  |
-| [IPv6](/sql-reference/data-types/ipv6.md)                                                                     | `\x05` binary, `\x00` binary subtype                                                                          |
+| [Bool](/reference/data-types/boolean)                                                                  | `\x08` boolean                                                                                                |
+| [Int8/UInt8](/reference/data-types/int-uint)/[Enum8](/reference/data-types/enum)        | `\x10` int32                                                                                                  |
+| [Int16/UInt16](/reference/data-types/int-uint)/[Enum16](/reference/data-types/enum)      | `\x10` int32                                                                                                  |
+| [Int32](/reference/data-types/int-uint)                                                                | `\x10` int32                                                                                                  |
+| [UInt32](/reference/data-types/int-uint)                                                               | `\x12` int64                                                                                                  |
+| [Int64/UInt64](/reference/data-types/int-uint)                                                         | `\x12` int64                                                                                                  |
+| [Float32/Float64](/reference/data-types/float)                                                         | `\x01` double                                                                                                 |
+| [Date](/reference/data-types/date)/[Date32](/reference/data-types/date32)               | `\x10` int32                                                                                                  |
+| [DateTime](/reference/data-types/datetime)                                                             | `\x12` int64                                                                                                  |
+| [DateTime64](/reference/data-types/datetime64)                                                         | `\x09` datetime                                                                                               |
+| [Decimal32](/reference/data-types/decimal)                                                             | `\x10` int32                                                                                                  |
+| [Decimal64](/reference/data-types/decimal)                                                             | `\x12` int64                                                                                                  |
+| [Decimal128](/reference/data-types/decimal)                                                            | `\x05` binary, `\x00` binary subtype, size = 16                                                               |
+| [Decimal256](/reference/data-types/decimal)                                                            | `\x05` binary, `\x00` binary subtype, size = 32                                                               |
+| [Int128/UInt128](/reference/data-types/int-uint)                                                       | `\x05` binary, `\x00` binary subtype, size = 16                                                               |
+| [Int256/UInt256](/reference/data-types/int-uint)                                                       | `\x05` binary, `\x00` binary subtype, size = 32                                                               |
+| [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring) | `\x05` binary, `\x00` binary subtype or \x02 string if setting output_format_bson_string_as_string is enabled |
+| [UUID](/reference/data-types/uuid)                                                                     | `\x05` binary, `\x04` uuid subtype, size = 16                                                                 |
+| [Array](/reference/data-types/array)                                                                   | `\x04` array                                                                                                  |
+| [Tuple](/reference/data-types/tuple)                                                                   | `\x04` array                                                                                                  |
+| [Named Tuple](/reference/data-types/tuple)                                                             | `\x03` document                                                                                               |
+| [Map](/reference/data-types/map)                                                                       | `\x03` document                                                                                               |
+| [IPv4](/reference/data-types/ipv4)                                                                     | `\x10` int32                                                                                                  |
+| [IPv6](/reference/data-types/ipv6)                                                                     | `\x05` binary, `\x00` binary subtype                                                                          |
 
 For input it uses the following correspondence between BSON types and ClickHouse types:
 
 | BSON Type                                | ClickHouse Type                                                                                                                                                                                                                             |
 |------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `\x01` double                            | [Float32/Float64](/sql-reference/data-types/float.md)                                                                                                                                                                               |
-| `\x02` string                            | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x03` document                          | [Map](/sql-reference/data-types/map.md)/[Named Tuple](/sql-reference/data-types/tuple.md)                                                                                                                                   |
-| `\x04` array                             | [Array](/sql-reference/data-types/array.md)/[Tuple](/sql-reference/data-types/tuple.md)                                                                                                                                     |
-| `\x05` binary, `\x00` binary subtype     | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)/[IPv6](/sql-reference/data-types/ipv6.md)                                                             |
-| `\x05` binary, `\x02` old binary subtype | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x05` binary, `\x03` old uuid subtype   | [UUID](/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
-| `\x05` binary, `\x04` uuid subtype       | [UUID](/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
-| `\x07` ObjectId                          | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x08` boolean                           | [Bool](/sql-reference/data-types/boolean.md)                                                                                                                                                                                        |
-| `\x09` datetime                          | [DateTime64](/sql-reference/data-types/datetime64.md)                                                                                                                                                                               |
-| `\x0A` null value                        | [NULL](/sql-reference/data-types/nullable.md)                                                                                                                                                                                       |
-| `\x0D` JavaScript code                   | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x0E` symbol                            | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x10` int32                             | [Int32/UInt32](/sql-reference/data-types/int-uint.md)/[Decimal32](/sql-reference/data-types/decimal.md)/[IPv4](/sql-reference/data-types/ipv4.md)/[Enum8/Enum16](/sql-reference/data-types/enum.md) |
-| `\x12` int64                             | [Int64/UInt64](/sql-reference/data-types/int-uint.md)/[Decimal64](/sql-reference/data-types/decimal.md)/[DateTime64](/sql-reference/data-types/datetime64.md)                                                       |
+| `\x01` double                            | [Float32/Float64](/reference/data-types/float)                                                                                                                                                                               |
+| `\x02` string                            | [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring)                                                                                                                       |
+| `\x03` document                          | [Map](/reference/data-types/map)/[Named Tuple](/reference/data-types/tuple)                                                                                                                                   |
+| `\x04` array                             | [Array](/reference/data-types/array)/[Tuple](/reference/data-types/tuple)                                                                                                                                     |
+| `\x05` binary, `\x00` binary subtype     | [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring)/[IPv6](/reference/data-types/ipv6)                                                             |
+| `\x05` binary, `\x02` old binary subtype | [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring)                                                                                                                       |
+| `\x05` binary, `\x03` old uuid subtype   | [UUID](/reference/data-types/uuid)                                                                                                                                                                                           |
+| `\x05` binary, `\x04` uuid subtype       | [UUID](/reference/data-types/uuid)                                                                                                                                                                                           |
+| `\x07` ObjectId                          | [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring)                                                                                                                       |
+| `\x08` boolean                           | [Bool](/reference/data-types/boolean)                                                                                                                                                                                        |
+| `\x09` datetime                          | [DateTime64](/reference/data-types/datetime64)                                                                                                                                                                               |
+| `\x0A` null value                        | [NULL](/reference/data-types/nullable)                                                                                                                                                                                       |
+| `\x0D` JavaScript code                   | [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring)                                                                                                                       |
+| `\x0E` symbol                            | [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring)                                                                                                                       |
+| `\x10` int32                             | [Int32/UInt32](/reference/data-types/int-uint)/[Decimal32](/reference/data-types/decimal)/[IPv4](/reference/data-types/ipv4)/[Enum8/Enum16](/reference/data-types/enum) |
+| `\x12` int64                             | [Int64/UInt64](/reference/data-types/int-uint)/[Decimal64](/reference/data-types/decimal)/[DateTime64](/reference/data-types/datetime64)                                                       |
 
 Other BSON types are not supported. Additionally, it performs conversion between different integer types. 
-For example, it is possible to insert a BSON `int32` value into ClickHouse as [`UInt8`](../../sql-reference/data-types/int-uint.md).
+For example, it is possible to insert a BSON `int32` value into ClickHouse as [`UInt8`](/reference/data-types/int-uint).
 
 Big integers and decimals such as `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` can be parsed from a BSON Binary value with the `\x00` binary subtype. 
 In this case, the format will validate that the size of the binary data equals the size of the expected value.
 
-:::note
+<Note>
 This format does not work properly on Big-Endian platforms.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -1231,16 +1250,16 @@ FROM football INTO OUTFILE 'docs_data/bson/football.bson'
 FORMAT BSONEachRow
 ```
 
-:::tip
+<Tip>
 BSON is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output BSON files.
-:::
+</Tip>
 
 ## Format settings {#format-settings}
 
 | Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|
-| [`output_format_bson_string_as_string`](../../operations/settings/settings-formats.md/#output_format_bson_string_as_string)                                                                           | Use BSON String type instead of Binary for String columns.                                   | `false`  |
-| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](../../operations/settings/settings-formats.md/#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for format BSONEachRow. | `false`  |
+| [`output_format_bson_string_as_string`](/reference/settings/formats/output-format#output_format_bson_string_as_string)                                                                           | Use BSON String type instead of Binary for String columns.                                   | `false`  |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](/reference/settings/formats/input-format#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for format BSONEachRow. | `false`  |
 )DOCS_MD"});
 }
 

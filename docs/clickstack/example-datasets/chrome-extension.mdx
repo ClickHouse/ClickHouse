@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'chrome extension', 'session replay', 'browser sdk', 'rum', 'observability', 'hyperdx']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <Info>
 **TL;DR**
 
@@ -35,16 +33,14 @@ For background on session replay and how it fits into ClickStack, see the [Sessi
 ## Running the demo {#running-the-demo}
 
 <Steps>
-<Step>
-### Clone the extension repository {#clone-extension}
+<Step title="Clone the extension repository" id="clone-extension">
 
 ```shell
 git clone https://github.com/kyreddie/hyperdx-chrome-extension
 cd hyperdx-chrome-extension
 ```
 </Step>
-<Step>
-### Install the extension {#install-extension}
+<Step title="Install the extension" id="install-extension">
 
 1. Open Chrome and go to `chrome://extensions`.
 2. Enable **Developer mode** (top right).
@@ -53,8 +49,7 @@ cd hyperdx-chrome-extension
 
 The extension appears in your toolbar as **HyperDX Browser Extension**.
 </Step>
-<Step>
-### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 If you already have a ClickStack or HyperDX ingestion endpoint, skip to [Configure the extension](#configure-extension).
 
@@ -74,19 +69,17 @@ docker run \
   clickhouse/clickstack-otel-collector:latest
 ```
 
-Open HyperDX at [http://localhost:8080](http://localhost:8080) to confirm the UI is running.
+Open ClickStack UI at [http://localhost:8080](http://localhost:8080) to confirm the UI is running.
 
-For a full local deployment with ClickHouse and HyperDX UI, see [Getting started with ClickStack](/clickstack/getting-started/oss).
+For a full local deployment with ClickHouse and ClickStack UI, see [Getting started with ClickStack](/clickstack/getting-started/oss).
 </Step>
-<Step>
-### Get your API key {#get-api-key}
+<Step title="Get your API key" id="get-api-key">
 
 For local ClickStack, an API key may not be required — leave the field empty in the extension when sending telemetry to a self-hosted collector on `http://localhost:4318`.
 
-For ClickStack Cloud or HyperDX Cloud ingestion, open HyperDX, go to **Team Settings → API Keys**, and copy your **Ingestion API Key**.
+For ClickStack Cloud or HyperDX Cloud ingestion, open ClickStack UI, go to **Team Settings → API Keys**, and copy your **Ingestion API Key**.
 </Step>
-<Step>
-### Configure the extension {#configure-extension}
+<Step title="Configure the extension" id="configure-extension">
 
 Click the **HyperDX Browser Extension** icon in the Chrome toolbar and fill in the settings:
 
@@ -104,21 +97,27 @@ Click the **HyperDX Browser Extension** icon in the Chrome toolbar and fill in t
 
 Click **Save Configuration**, then reload any tabs you want to instrument.
 
-<Image img="/images/clickstack/chrome-extension/extension-config.png" alt="HyperDX Chrome extension configuration popup with local ClickStack settings" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![HyperDX Chrome extension configuration popup with local ClickStack settings](/images/clickstack/chrome-extension/extension-config.png)
+
+</Frame>
+
+</div>
 
 The screenshot above shows a typical local setup: monitoring enabled, service name set, collector pointed at `http://localhost:4318`, and trace propagation limited to API and localhost URLs.
 </Step>
-<Step>
-### Browse a site and generate a session {#browse-site}
+<Step title="Browse a site and generate a session" id="browse-site">
 
 Open any website or local application in Chrome — for example, [http://localhost:3000](http://localhost:3000) for a frontend dev server.
 
 Interact with the page normally: click links, submit forms, trigger errors, and navigate between views. The extension injects the Browser SDK automatically on each page load when configuration is valid.
 </Step>
-<Step>
-### View your session replay {#view-session-replay}
+<Step title="View your session replay" id="view-session-replay">
 
-Return to HyperDX at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
+Return to ClickStack UI at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
 
 You should see your session listed with its duration and event count. Click the ▶️ button to replay it.
 
@@ -153,7 +152,7 @@ If extension-origin scripts are blocked by CSP, the extension logs a fallback me
 
 ## Troubleshooting {#troubleshooting}
 
-<Accordion title="Sessions not appearing in HyperDX">
+<Accordion title="Sessions not appearing in ClickStack UI">
 1. Check the browser console for `[HyperDX Extension]` log messages or errors
 2. Confirm **Enable HyperDX Monitoring** is on and **Service Name** is set
 3. Verify ClickStack is running and the collector URL is correct (e.g. `http://localhost:4318`)
@@ -172,8 +171,8 @@ Reload the extension at `chrome://extensions`, then hard-refresh the tab. This h
 4. 
 </Accordion>
 
-<Accordion title="HyperDX: Missing apiKey in console">
-Expected when the API key field is empty. Add an ingestion API key from HyperDX for cloud endpoints, or ignore if your self-hosted collector accepts unauthenticated local traffic.
+<Accordion title="ClickStack UI: Missing apiKey in console">
+Expected when the API key field is empty. Add an ingestion API key from ClickStack UI for cloud endpoints, or ignore if your self-hosted collector accepts unauthenticated local traffic.
 </Accordion>
 
 ## Privacy {#privacy}
@@ -185,5 +184,5 @@ The extension injects observability code into pages you visit. Use it only on si
 - [Session Replay](/clickstack/features/session-replay) — feature overview, SDK options, and privacy controls
 - [Browser SDK Reference](/clickstack/ingesting-data/sdks/browser) — full SDK options and advanced configuration
 - [Session Replay Demo](/clickstack/example-datasets/session-replay) — instrument a demo application from source code
-- [ClickStack Getting Started](/clickstack/getting-started/index) — deploy ClickStack and ingest your first data
+- [ClickStack Getting Started](/clickstack/getting-started/oss) — deploy ClickStack and ingest your first data
 - [HyperDX Chrome extension on GitHub](https://github.com/kyreddie/hyperdx-chrome-extension) — source code and issue tracker

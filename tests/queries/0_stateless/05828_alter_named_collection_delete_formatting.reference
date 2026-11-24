@@ -1,0 +1,4 @@
+ALTER NAMED COLLECTION c DELETE `kafka.ssl_key_location`	1
+ALTER NAMED COLLECTION c DELETE a, `b.c`, `d e`, `f.g h`, `i\\`j`	1
+ALTER NAMED COLLECTION IF EXISTS c ON CLUSTER test_shard_localhost DELETE `a.b`, c	1
+ALTER NAMED COLLECTION c SET a.b = 1, c.d = 2 DELETE `e.f`	1

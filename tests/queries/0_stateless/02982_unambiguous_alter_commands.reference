@@ -4,3 +4,5 @@ ALTER TABLE a\n    (MODIFY TTL expr TO VOLUME \'vol1\', expr2 + toIntervalYear(2
 --- Check only consistent parens around alter commands are accepted
 ALTER TABLE a\n    (DROP COLUMN b),\n    (DROP COLUMN c)
 ALTER TABLE a\n    (DROP COLUMN b),\n    (DROP COLUMN c)
+--- MOVE PARTITION TO TABLE is wrapped in parens like any other alter command
+ALTER TABLE a\n    (MOVE PARTITION tuple() TO TABLE b)

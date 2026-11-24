@@ -48,10 +48,15 @@ public:
       * Input column names initialized using actions dag nodes with INPUT type.
       * If use_actions_nodes_as_output_columns = true output columns are initialized using actions dag nodes.
       * If additional output columns are specified they are added to output columns.
+      * If additional input columns are specified they are required from the child step in addition to the
+      * inputs of the actions dag. A correlated subquery of this step is not part of the dag - it is planned
+      * as a join over the step's input - so the columns it correlates on have to be named here, otherwise
+      * the child step prunes them and the subquery cannot be planned.
       */
     explicit ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
         bool use_actions_nodes_as_output_columns = true,
-        ColumnsWithTypeAndName additional_output_columns_ = {});
+        ColumnsWithTypeAndName additional_output_columns_ = {},
+        NameSet additional_input_columns_ = {});
 
     /// Get actions
     ActionsAndProjectInputsFlagPtr & getActions()
@@ -60,19 +65,19 @@ public:
     }
 
     /// Get actions
-    const ActionsAndProjectInputsFlagPtr & getActions() const
+    [[nodiscard]] const ActionsAndProjectInputsFlagPtr & getActions() const
     {
         return actions;
     }
 
     /// Get available output columns
-    const ColumnsWithTypeAndName & getAvailableOutputColumns() const
+    [[nodiscard]] const ColumnsWithTypeAndName & getAvailableOutputColumns() const
     {
         return available_output_columns;
     }
 
     /// Get input column names
-    const NameSet & getInputColumnNames() const
+    [[nodiscard]] const NameSet & getInputColumnNames() const
     {
         return input_columns_names;
     }
@@ -80,7 +85,7 @@ public:
     /** Get child required output columns names.
       * Initialized during finalizeOutputColumns method call.
       */
-    const NameSet & getChildRequiredOutputColumnsNames() const
+    [[nodiscard]] const NameSet & getChildRequiredOutputColumnsNames() const
     {
         return child_required_output_columns_names;
     }
@@ -98,7 +103,7 @@ public:
     void dump(WriteBuffer & buffer) const;
 
     /// Dump step
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
 private:
     void initialize();
@@ -114,6 +119,8 @@ private:
     ColumnsWithTypeAndName available_output_columns;
 
     ColumnsWithTypeAndName additional_output_columns;
+
+    NameSet additional_input_columns;
 };
 
 /// Query actions chain
@@ -127,18 +134,18 @@ public:
     }
 
     /// Get steps
-    const ActionsChainSteps & getSteps() const
+    [[nodiscard]] const ActionsChainSteps & getSteps() const
     {
         return steps;
     }
 
     /// Get steps size
-    size_t getStepsSize() const
+    [[nodiscard]] size_t getStepsSize() const
     {
         return steps.size();
     }
 
-    const ActionsChainStepPtr & at(size_t index) const
+    [[nodiscard]] const ActionsChainStepPtr & at(size_t index) const
     {
         if (index >= steps.size())
             throw std::out_of_range("actions chain access is out of range");
@@ -195,13 +202,13 @@ public:
     }
 
     /// Get last step available output columns
-    const ColumnsWithTypeAndName & getLastStepAvailableOutputColumns() const
+    [[nodiscard]] const ColumnsWithTypeAndName & getLastStepAvailableOutputColumns() const
     {
         return steps.back()->getAvailableOutputColumns();
     }
 
     /// Get last step available output columns or throw exception if chain is empty
-    const ColumnsWithTypeAndName & getLastStepAvailableOutputColumnsOrThrow() const
+    [[nodiscard]] const ColumnsWithTypeAndName & getLastStepAvailableOutputColumnsOrThrow() const
     {
         if (steps.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsChain is empty");
@@ -210,7 +217,7 @@ public:
     }
 
     /// Get last step available output columns or null if chain is empty
-    const ColumnsWithTypeAndName * getLastStepAvailableOutputColumnsOrNull() const
+    [[nodiscard]] const ColumnsWithTypeAndName * getLastStepAvailableOutputColumnsOrNull() const
     {
         if (steps.empty())
             return nullptr;
@@ -225,7 +232,7 @@ public:
     void dump(WriteBuffer & buffer) const;
 
     /// Dump chain
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
 private:
     ActionsChainSteps steps;

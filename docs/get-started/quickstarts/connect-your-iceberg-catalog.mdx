@@ -1,5 +1,6 @@
 ---
-sidebarTitle: 'Connect your Iceberg catalog'
+sidebarTitle: 'How to connect your Iceberg catalog in ClickHouse Cloud'
+searchable: true
 title: 'How to connect your Iceberg catalog in ClickHouse Cloud'
 useCases: ['Data warehousing']
 products: ['Cloud']
@@ -33,7 +34,7 @@ If you do not have data already in your Iceberg catalog, you can upload this dat
 ## What you'll build {#what-youll-build}
 In this Quickstart, you will:
 
-- Connect to a Iceberg REST Catalog in ClickHouse Cloud
+- Connect to an Iceberg REST Catalog in ClickHouse Cloud
 - Create a ClickHouse database backed by that catalog
 - Query an existing Iceberg table directly from ClickHouse
 - Verify that ClickHouse is reading data from your data lake
@@ -42,8 +43,7 @@ By the end, you'll have ClickHouse Cloud connected to your Iceberg catalog and b
 
 <Steps titleSize="h3">
 
-    <Step>
-        ### Create a DataLakeCatalog connection
+    <Step title="Create a DataLakeCatalog connection" id="create-a-datalakecatalog-connection">
 
         In this step, you will connect to your Data Lake Catalog in ClickHouse Cloud.
 
@@ -65,8 +65,7 @@ By the end, you'll have ClickHouse Cloud connected to your Iceberg catalog and b
 
     </Step>
 
-    <Step>
-        ### Query Iceberg Table
+    <Step title="Query Iceberg Table" id="query-iceberg-table">
 
         In this step, you will query an Iceberg table from your Data Catalog.
 

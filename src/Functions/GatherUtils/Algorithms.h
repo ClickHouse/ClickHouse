@@ -2,6 +2,7 @@
 
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -274,6 +275,7 @@ void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink,
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
@@ -302,6 +304,7 @@ void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
@@ -319,6 +322,7 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
@@ -339,7 +343,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1);
             else
-                slice = src.getSliceFromRight(-static_cast<UInt64>(offset));
+                slice = src.getSliceFromRight(common::negateIgnoreOverflow(static_cast<UInt64>(offset)));
 
             writeSlice(slice, sink);
         }
@@ -351,6 +355,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 
 
 template <bool inverse, typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
     const bool is_offset_null = !offset_column || offset_column->onlyNull();
@@ -556,6 +561,9 @@ bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & se
     if (second.size == 0)
         return true;
 
+    if (first.size < second.size)
+        return false;
+
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
 
@@ -649,38 +657,23 @@ bool sliceHas(const NumericArraySlice<T> & /*first*/, const GenericArraySlice & 
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const FirstArraySlice & first, NullableSlice<SecondArraySlice> & second)
+bool sliceHas(const FirstArraySlice & first, const NullableSlice<SecondArraySlice> & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, nullptr, second.null_map);
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const NullableSlice<FirstArraySlice> & first, SecondArraySlice & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, const SecondArraySlice & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, first.null_map, nullptr);
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<SecondArraySlice> & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, const NullableSlice<SecondArraySlice> & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, first.null_map, second.null_map);
 }
 
@@ -696,6 +689,7 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, UInt8 *
 }
 
 template <typename ArraySource, typename ValueSource, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
 {
     const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);
@@ -730,7 +724,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             }
             else
             {
-                size_t length = -static_cast<size_t>(size);
+                size_t length = common::negateIgnoreOverflow(static_cast<size_t>(size));
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -779,7 +773,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         }
         else
         {
-            size_t length = -static_cast<size_t>(size);
+            size_t length = common::negateIgnoreOverflow(static_cast<size_t>(size));
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);

@@ -32,14 +32,14 @@ public:
     static constexpr auto name = "geoToUTM";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeoToUTM>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"longitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
@@ -57,7 +57,7 @@ public:
             Strings{"easting", "northing", "zone", "band"});
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * lon_column = arguments[0].column.get();
         const IColumn * lat_column = arguments[1].column.get();
@@ -131,7 +131,7 @@ The zone is selected automatically from the longitude, applying the standard exc
         {"Tuple(Float64, Float64, UInt8, FixedString(1))"}};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", "SELECT geoToUTM(2.294497, 48.858222)", "(448251.5978370684,5411935.125629659,31,'U')"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

@@ -10,24 +10,27 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
 In November of 2021, YouTube removed the public ***dislike*** count from all of its videos. While creators can still see the number of dislikes, viewers can only see how many ***likes*** a video has received.
 
 <Warning>
-The dataset has over 4.55 billion records, so be careful just copying-and-pasting the commands below unless your resources can handle that type of volume. The commands below were executed on a **Production** instance of [ClickHouse Cloud](https://clickhouse.cloud).
+The dataset has over 4.55 billion records, so be careful just copying-and-pasting the commands below unless your resources can handle that type of volume. These commands were run on a suitably sized [ClickHouse Cloud](/products/cloud/getting-started/intro) service.
 </Warning>
+
+<Tip>
+To try these commands yourself, you can sign up for a free [ClickHouse Cloud trial](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-youtube-dislikes) or set up [self-hosted ClickHouse](/get-started/setup/install).
+</Tip>
 
 The data is in a JSON format and can be downloaded from [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files). We have made this same data available in S3 so that it can be downloaded more efficiently into a ClickHouse Cloud instance.
 
 Here are the steps to create a table in ClickHouse Cloud and insert the data.
 
 <Note>
-The steps below will easily work on a local install of ClickHouse too. The only change would be to use the `s3` function instead of `s3cluster` (unless you have a cluster configured - in which case change `default` to the name of your cluster).
+The steps below work on a local install of ClickHouse too.
 </Note>
 
 ## Step-by-step instructions {#step-by-step-instructions}
 
 <Steps>
-<Step>
-### Data exploration {#data-exploration}
+<Step title="Data exploration" id="data-exploration">
 
-Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the result:
+Let's see what the data looks like. The `s3` table function returns a table, so we can `DESCRIBE` the result:
 
 ```sql
 DESCRIBE s3(
@@ -64,8 +67,7 @@ ClickHouse infers the following schema from the JSON file:
 └─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 </Step>
-<Step>
-### Create the table {#create-the-table}
+<Step title="Create the table" id="create-the-table">
 
 Based on the inferred schema, we cleaned up the data types and added a primary key.
 Define the following table:
@@ -99,8 +101,7 @@ ENGINE = MergeTree
 ORDER BY (uploader, upload_date)
 ```
 </Step>
-<Step>
-### Insert data {#insert-data}
+<Step title="Insert data" id="insert-data">
 
 The following command streams the records from the S3 files into the `youtube` table.
 
@@ -145,8 +146,7 @@ Some comments about our `INSERT` command:
 - The `upload_date` column contains valid dates, but it also contains strings like "4 hours ago" - which is certainly not a valid date. We decided to store the original value in `upload_date_str` and attempt to parse it with `toDate(parseDateTimeBestEffortUSOrZero(upload_date::String))`. If the parsing fails we just get `0`
 - We used `ifNull` to avoid getting `NULL` values in our table. If an incoming value is `NULL`, the `ifNull` function is setting the value to an empty string
 </Step>
-<Step>
-### Count the number of rows {#count-row-numbers}
+<Step title="Count the number of rows" id="count-row-numbers">
 
 Open a new tab in the SQL Console of ClickHouse Cloud (or a new `clickhouse-client` window) and watch the count increase.
 It will take a while to insert 4.56B rows, depending on your server resources. (Without any tweaking of settings, it takes about 4.5 hours.)
@@ -162,8 +162,7 @@ FROM youtube
 └─────────────────────────────────┘
 ```
 </Step>
-<Step>
-### Explore the data {#explore-the-data}
+<Step title="Explore the data" id="explore-the-data">
 
 Once the data is inserted, go ahead and count the number of dislikes of your favorite videos or channels. Let's see how many videos were uploaded by ClickHouse:
 

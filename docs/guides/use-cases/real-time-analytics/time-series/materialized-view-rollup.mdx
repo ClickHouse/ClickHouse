@@ -16,8 +16,7 @@ Use this pattern when:
 - You want **consistent sub-second reads** without re-scanning all raw rows.
 
 <Steps>
-<Step>
-## Create the raw events table {#create-raw-events-table}
+<Step title="Create the raw events table" id="create-raw-events-table">
 ```sql
 CREATE TABLE events_raw
 (
@@ -40,8 +39,7 @@ TTL event_time + INTERVAL 90 DAY DELETE
 - `LowCardinality(String)` saves memory for categorical dimensions.
 - `TTL` cleans up raw data after 90 days (tune to your retention requirements).
 </Step>
-<Step>
-## Design the rollup (aggregated) table {#design-rollup}
+<Step title="Design the rollup (aggregated) table" id="design-rollup">
 We’ll pre-aggregate to **hourly** granularity.
 Choose your grain to match the most common analysis window.
 
@@ -63,8 +61,7 @@ ORDER BY (bucket_start, country, event_type)
 
 We store **aggregate states** (e.g., `AggregateFunction(sum, ...)`) which compactly represent partial aggregates and can be merged or finalized later.
 </Step>
-<Step>
-## Create a materialized view that populates the rollup {#create-materialized-view-to-populate-rollup}
+<Step title="Create a materialized view that populates the rollup" id="create-materialized-view-to-populate-rollup">
 This materialized view fires automatically on inserts into `events_raw` and writes **aggregate states** into the rollup.
 
 ```sql
@@ -83,8 +80,7 @@ FROM events_raw
 GROUP BY bucket_start, country, event_type;
 ```
 </Step>
-<Step>
-## Insert some sample data {#insert-some-sample-data}
+<Step title="Insert some sample data" id="insert-some-sample-data">
 Insert some sample data:
 
 ```sql
@@ -95,8 +91,7 @@ INSERT INTO events_raw VALUES
     (now() - INTERVAL 1 SECOND, 101, 'US', 'view', 1);
 ```
 </Step>
-<Step>
-## Querying the rollup {#querying-the-rollup}
+<Step title="Querying the rollup" id="querying-the-rollup">
 You can either **merge** states at read time, or **finalize** them:
 
 <Tabs>
@@ -145,8 +140,7 @@ If you expect reads to always hit the rollup, you can create a **second material
 States give more flexibility while finalized numbers give slightly simpler reads.
 </Tip>
 </Step>
-<Step>
-## Filter on fields in the primary key for best performance {#filtering-performance}
+<Step title="Filter on fields in the primary key for best performance" id="filtering-performance">
 You can use the `EXPLAIN` command to see how the index is used to prune data:
 
 ```sql title="Query"
@@ -190,8 +184,7 @@ a MinMax index, a partition index, and a primary key Index.
 Each index makes use of fields specified in our primary key: `(bucket_start, country, event_type)`.
 For best filtering performance you will want to make sure that your queries are making use of primary key fields to prune data.
 </Step>
-<Step>
-## Common variations {#common-variations}
+<Step title="Common variations" id="common-variations">
 - **Different grains**: add a daily rollup:
 
 ```sql
@@ -232,13 +225,11 @@ GROUP BY ALL;
 - **Cost control**: push heavy retention to the raw table and keep long-lived roll-ups.
 - **Backfilling**: when loading historical data, insert into `events_raw` and let the materialized view build roll-ups automatically. For existing rows, use `POPULATE` on materialized view creation if suitable, or `INSERT SELECT`.
 </Step>
-<Step>
-## Clean-up and retention {#clean-up-and-retention}
+<Step title="Clean-up and retention" id="clean-up-and-retention">
 - Increase raw TTL (e.g., 30/90 days) but keep roll-ups for longer (e.g., 1 year).
 - You can also use **TTL to move** old parts to cheaper storage if tiering is enabled.
 </Step>
-<Step>
-## Troubleshooting {#troubleshooting}
+<Step title="Troubleshooting" id="troubleshooting">
 - Materialized view not updating? Check that inserts go to the **events_raw** (not the roll-up table), and that the materialized view target is correct (`TO events_rollup_1h`).
 - Slow queries? Confirm they hit the rollup (query the rollup table directly) and that the time filters align to the rollup grain.
 - Backfill mismatches? Use `SYSTEM FLUSH LOGS` and check `system.query_log` / `system.parts` to confirm inserts and merges.

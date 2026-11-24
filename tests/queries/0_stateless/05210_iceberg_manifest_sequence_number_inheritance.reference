@@ -1,0 +1,15 @@
+--- Check that the correct values were written to manifest files ---
+1	1	\N	\N
+1	1	\N	\N
+1	1	\N	\N
+1	1	\N	\N
+--- Check that on read, we still resolve id and seq numbers correctly ---
+{1}	1
+{2}	1
+{1}	2
+{3}	2
+--- Verify correct data ---
+1	10
+1	11
+2	20
+3	30

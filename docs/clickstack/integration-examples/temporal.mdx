@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Temporal', 'metrics', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -36,8 +34,7 @@ This section covers configuring ClickStack by configuring the ClickStack OTel co
 - HTTP network access from ClickStack to your Temporal Cloud
 
 <Steps>
-<Step>
-#### Create Temporal Cloud key {#create-temporal-cloud-key}
+<Step title="Create Temporal Cloud key" id="create-temporal-cloud-key">
 
 Ensure you have a Temporal Cloud API key. This can be created by following the [Authentication guide](https://docs.temporal.io/production-deployment/cloud/metrics/openmetrics/api-reference#authentication) in the Temporal documentation.
 
@@ -47,10 +44,9 @@ Ensure you have a Temporal Cloud API key. This can be created by following the [
 Ensure these credentials are stored in a file `temporal.key` in the same directory as the config file created below. This key should just be stored as text with no preceding or following spaces.
 </Warning>
 </Step>
-<Step>
-#### Create custom OTel collector configuration {#custom-otel}
+<Step title="Create custom OTel collector configuration" id="custom-otel">
 
-ClickStack allows you to extend the base OpenTelemetry collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
+ClickStack allows you to extend the base OpenTelemetry collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by ClickStack UI via OpAMP.
 
 Create a file named `temporal-metrics.yaml` with the following configuration:
 ```yaml title="temporal-metrics.yaml"
@@ -104,8 +100,7 @@ This configuration:
 - For multiple Temporal cloud accounts, customize `service.name` to distinguish them (e.g., `"temporal-prod"`, `"temporal-dev"`)
 </Note>
 </Step>
-<Step>
-#### Configure ClickStack to load custom configuration {#load-custom}
+<Step title="Configure ClickStack to load custom configuration" id="load-custom">
 
 To enable custom collector configuration in your existing ClickStack deployment, you must:
 
@@ -145,16 +140,23 @@ docker run --name clickstack \
   clickhouse/clickstack-all-in-one:latest
 ```
 </Step>
-<Step>
-#### Verify metrics in HyperDX {#verifying-metrics}
+<Step title="Verify metrics in ClickStack UI" id="verifying-metrics">
 
-Once configured, log into HyperDX and verify metrics are flowing:
+Once configured, log into ClickStack UI and verify metrics are flowing:
 
 1. Navigate to the Metrics explorer
 2. Search for metrics starting with `temporal` (e.g., `temporal_cloud_v1_workflow_success_count`, `temporal_cloud_v1_poll_timeout_count`)
 3. You should see metric data points appearing at your configured collection interval
 
-<Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Temporal Metrics" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Temporal Metrics](/images/clickstack/temporal/temporal-metrics.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -163,27 +165,50 @@ Once configured, log into HyperDX and verify metrics are flowing:
 To help you get started monitoring Temporal Cloud with ClickStack, we provide some example visualizations for Temporal Metrics.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
-</Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Download the dashboard configuration" id="download">
 
-1. Open HyperDX and navigate to the Dashboards section
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
+</Step>
+<Step title="Import the pre-built dashboard" id="import-dashboard">
+
+1. Open ClickStack UI and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</Frame>
+
+</div>
 
 3. Upload the `temporal-metrics-dashboard.json` file and click **Finish Import**
 
-<Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="Finish import dialog"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Finish import dialog](/images/clickstack/temporal/import-temporal-metrics-dashboard.webp)
+
+</Frame>
+
+</div>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
-<Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Temporal Metrics dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Temporal Metrics dashboard](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -216,7 +241,7 @@ docker exec <container-name> cat /etc/otelcol-contrib/temporal.key
 # This should output your temporal.key
 ```
 
-### No metrics appearing in HyperDX {#no-metrics}
+### No metrics appearing in ClickStack UI {#no-metrics}
 
 Verify Temporal Cloud is accessible from the collector:
 

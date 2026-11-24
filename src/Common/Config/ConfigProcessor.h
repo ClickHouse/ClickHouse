@@ -61,10 +61,10 @@ public:
     ///    * If an element has a "replace" attribute, replace the matching element with it.
     ///    * If an element has a "remove" attribute, remove the matching element.
     ///    * Else, recursively merge child elements.
-    /// 2) Determine the includes file from the config: <include_from>/path2/metrika.xml</include_from>
-    ///    If this path is not configured, use /etc/metrika.xml
+    /// 2) Determine the includes file from the config: <include_from>/path2/substitutions.xml</include_from>
+    ///    If this path is not configured, no substitutions file is used.
     /// 3) Replace elements matching the "<foo incl="bar"/>" pattern with
-    ///    "<foo>contents of the clickhouse/bar element in metrika.xml</foo>"
+    ///    "<foo>contents of the clickhouse/bar element in the includes file</foo>"
     /// 4) If zk_node_cache is non-NULL, replace elements matching the "<foo from_zk="/bar">" pattern with
     ///    "<foo>contents of the /bar ZooKeeper node</foo>".
     ///    If has_zk_includes is non-NULL and there are such elements, set has_zk_includes to true.
@@ -144,7 +144,7 @@ public:
     static std::string encryptValue(const std::string & codec_name, const std::string & value);
 
     /// Decrypt value
-    static std::string decryptValue(const std::string & codec_name, const std::string & value);
+    static Poco::XML::XMLString decryptValue(std::string_view codec_name, std::string_view value);
 #endif
 
     static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
@@ -173,11 +173,11 @@ private:
     static void decryptEncryptedElements(LoadedConfig & loaded_config);
 
     /// Determine if there is a node starting inside config_root which has a descendant with a given attribute
-    static bool hasNodeWithAttribute(Poco::XML::Node * config_root, const std::string & attribute_name);
+    static bool hasNodeWithAttribute(Poco::XML::Node * config_root, const Poco::XML::XMLString & attribute_name);
     /// Determine if there is a node starting inside config_root with a given node_name which has a descendant with a given attribute
-    static bool hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, const std::string & node_name, const std::string & attribute_name);
+    static bool hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, std::string_view node_name, const Poco::XML::XMLString & attribute_name);
     /// Determine if there is a node in loaded_config with a given node_name which has a descendant with a given attribute
-    static bool hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name);
+    static bool hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, std::string_view node_name, const Poco::XML::XMLString & attribute_name);
 #endif
 
     void hideRecursive(Poco::XML::Node * config_root);

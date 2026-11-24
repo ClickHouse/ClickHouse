@@ -18,8 +18,6 @@ namespace Poco::Util { class AbstractConfiguration; }
 namespace DB
 {
 
-using ObjectAttributes = std::map<std::string, std::string>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-
 struct Settings;
 
 struct S3Settings
@@ -49,6 +47,10 @@ struct S3Settings
         bool validate_settings);
 
     void updateIfChanged(const S3Settings & settings);
+
+    /// Returns true if applying `settings` via `updateIfChanged` changes anything the S3 client is built from
+    /// (see `getClient`): any auth setting or a request setting marked with `AFFECTS_CLIENT`.
+    [[nodiscard]] bool hasChangesAffectingClient(const S3Settings & settings) const;
 
     void serialize(WriteBuffer & os, ContextPtr) const;
     static S3Settings deserialize(ReadBuffer & is, ContextPtr context);

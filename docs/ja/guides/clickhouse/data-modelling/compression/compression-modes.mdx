@@ -6,14 +6,12 @@ keywords: ['圧縮', 'codec', '符号化', 'モード']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouseプロトコルは、チェックサム付きの**データブロック**圧縮をサポートしています。
 どのモードを選べばよいかわからない場合は、`LZ4` を使用してください。
 &#96;&#96;
 
 <Tip>
-  利用可能な[カラム圧縮コーデック](/ja/reference/statements/create/table#column_compression_codec)の詳細を確認し、テーブルの作成時または作成後に指定してください。
+  利用可能な[カラム圧縮コーデック](/ja/reference/statements/create/table/codec)の詳細を確認し、テーブルの作成時または作成後に指定してください。
 </Tip>
 
 <div id="modes">
@@ -38,17 +36,25 @@ LZ4 と ZSTD はどちらも同じ著者によるものですが、トレード�
   ## ブロック
 </div>
 
-| フィールド               | 型       | 説明                                                                                      |
-| ------------------- | ------- | --------------------------------------------------------------------------------------- |
+| フィールド               | 型       | 説明                                                                                         |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------ |
 | checksum            | uint128 | (header + compressed data) の [ハッシュ](/ja/resources/develop-contribute/native-protocol/hash) |
-| raw&#95;size        | uint32  | ヘッダーを除いた元のサイズ                                                                           |
-| data&#95;size       | uint32  | 非圧縮データサイズ                                                                               |
-| mode                | byte    | 圧縮モード                                                                                   |
-| compressed&#95;data | binary  | 圧縮データのブロック                                                                              |
+| raw&#95;size        | uint32  | ヘッダーを除いた元のサイズ                                                                              |
+| data&#95;size       | uint32  | 非圧縮データサイズ                                                                                  |
+| mode                | byte    | 圧縮モード                                                                                      |
+| compressed&#95;data | binary  | 圧縮データのブロック                                                                                 |
 
-<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="ClickHouse の圧縮ブロック構造を示す図" />
+<div className="ch-image-md">
 
-ヘッダーは (raw&#95;size + data&#95;size + mode) で、raw size は len(header + compressed&#95;data) に相当します。
+<Frame>
+
+![ClickHouse の圧縮ブロック構造を示す図](/images/data-compression/ch_compression_block.webp)
+
+</Frame>
+
+</div>
+
+ヘッダーは (raw&#95;size + data&#95;size + mode) で、元のサイズは len(header + compressed&#95;data) に相当します。
 
 Checksum は [ClickHouse CityHash](/ja/resources/develop-contribute/native-protocol/hash) を使用した `hash(header + compressed_data)` です。
 

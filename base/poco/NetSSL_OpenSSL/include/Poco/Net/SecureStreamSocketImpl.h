@@ -40,6 +40,9 @@ namespace Net
         SecureStreamSocketImpl(StreamSocketImpl * pStreamSocket, Context::Ptr pContext);
         /// Creates the SecureStreamSocketImpl.
 
+        SecureStreamSocketImpl(Poco::AutoPtr<StreamSocketImpl> pStreamSocket, Context::Ptr pContext);
+        /// Creates the SecureStreamSocketImpl.
+
         void setSendTimeout(const Poco::Timespan & timeout);
         void setReceiveTimeout(const Poco::Timespan & timeout);
 
@@ -170,6 +173,10 @@ namespace Net
         /// Returns true iff the peer has presented a
         /// certificate.
 
+        bool needHandshake() const;
+        /// Returns true while the handshake is still owed, so that a caller
+        /// can tell that any I/O it starts would run the handshake first.
+
         X509 * peerCertificate() const;
         /// Returns the peer's X509 certificate.
         ///
@@ -178,6 +185,13 @@ namespace Net
 
         Context::Ptr context() const;
         /// Returns the SSL context used by this socket.
+
+        SSL * ssl() const;
+        /// Returns the underlying OpenSSL SSL object, or null if the SSL handshake
+        /// has not been performed yet.
+
+        void markFatalError();
+        /// Records that an external operation on the underlying `SSL` object failed fatally.
 
         void setLazyHandshake(bool flag = true);
         /// Enable lazy SSL handshake. If enabled, the SSL handshake
@@ -288,6 +302,18 @@ namespace Net
     inline Context::Ptr SecureStreamSocketImpl::context() const
     {
         return _impl.context();
+    }
+
+
+    inline SSL * SecureStreamSocketImpl::ssl() const
+    {
+        return _impl.ssl();
+    }
+
+
+    inline void SecureStreamSocketImpl::markFatalError()
+    {
+        _impl.markFatalError();
     }
 
 

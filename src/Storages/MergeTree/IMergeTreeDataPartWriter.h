@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -15,6 +16,9 @@
 
 namespace DB
 {
+
+/// The same alias as in DataTypes/Serializations/ISerialization.h, which this header does not otherwise need.
+using SerializationByName = std::unordered_map<String, SerializationPtr>;
 
 using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
@@ -65,24 +69,22 @@ public:
     virtual void finish(bool sync) = 0;
     virtual void cancel() noexcept = 0;
 
-    virtual size_t getNumberOfOpenStreams() const = 0;
+    [[nodiscard]] virtual size_t getNumberOfOpenStreams() const = 0;
 
     std::optional<Columns> releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
     PlainMarksByName releaseCachedIndexMarks();
 
-    MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
-    MergeTreeWriterSettings getWriterSettings() const { return settings; }
+    [[nodiscard]] MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
+    [[nodiscard]] MergeTreeWriterSettings getWriterSettings() const { return settings; }
 
-    virtual const Block & getColumnsSample() const = 0;
+    [[nodiscard]] virtual const Block & getColumnsSample() const = 0;
 
-    virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
+    [[nodiscard]] virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
 protected:
-    SerializationPtr getSerialization(const String & column_name) const;
-
-    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    [[nodiscard]] SerializationPtr getSerialization(const String & column_name) const;
 
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
@@ -106,7 +108,9 @@ protected:
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
-using ColumnPositions = std::unordered_map<std::string, size_t>;
+/// The same map as `SharedPartColumns::NameToNumber`: the keys view into the column names of the
+/// data part's shared metadata bundle, which outlives the writer.
+using ColumnPositions = std::unordered_map<std::string_view, size_t>;
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,

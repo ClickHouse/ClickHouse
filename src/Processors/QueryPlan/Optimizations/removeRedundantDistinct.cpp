@@ -1,4 +1,6 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -48,13 +50,13 @@ namespace
             LOG_DEBUG(getLogger("redundantDistinct"), "{} :\n{}", prefix, actions.dumpDAG());
     }
 
-    using DistinctColumns = std::set<std::string_view>;
+    using DistinctColumns = SetWithMemoryTracking<std::string_view>;
     DistinctColumns getDistinctColumns(const DistinctStep * distinct)
     {
         /// find non-const columns in DISTINCT
         const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputHeader()->getColumnsWithTypeAndName();
-        std::set<std::string_view> non_const_columns;
-        std::unordered_set<std::string_view> column_names(cbegin(distinct->getColumnNames()), cend(distinct->getColumnNames()));
+        SetWithMemoryTracking<std::string_view> non_const_columns;
+        UnorderedSetWithMemoryTracking<std::string_view> column_names(cbegin(distinct->getColumnNames()), cend(distinct->getColumnNames()));
         for (const auto & column : distinct_columns)
         {
             if (!isColumnConst(*column.column) && column_names.contains(column.name))
@@ -64,7 +66,7 @@ namespace
     }
 
     /// build actions DAG from stack of steps
-    std::optional<ActionsDAG> buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
+    std::optional<ActionsDAG> buildActionsForPlanPath(VectorWithMemoryTracking<const ActionsDAG *> & dag_stack)
     {
         if (dag_stack.empty())
             return {};
@@ -82,14 +84,14 @@ namespace
     }
 
     bool compareAggregationKeysWithDistinctColumns(
-        const Names & aggregation_keys, const DistinctColumns & distinct_columns, std::vector<std::vector<const ActionsDAG *>> actions_chain)
+        const Names & aggregation_keys, const DistinctColumns & distinct_columns, VectorWithMemoryTracking<VectorWithMemoryTracking<const ActionsDAG *>> actions_chain)
     {
         logDebug("aggregation_keys", aggregation_keys);
         logDebug("aggregation_keys size", aggregation_keys.size());
         logDebug("distinct_columns size", distinct_columns.size());
 
-        std::set<String> current_columns(begin(distinct_columns), end(distinct_columns));
-        std::set<String> source_columns;
+        SetWithMemoryTracking<String> current_columns(begin(distinct_columns), end(distinct_columns));
+        SetWithMemoryTracking<String> source_columns;
         for (auto & actions : actions_chain)
         {
             auto tmp_actions = buildActionsForPlanPath(actions);
@@ -152,10 +154,11 @@ namespace
         const DistinctStep * distinct_step = typeid_cast<DistinctStep *>(distinct_node->step.get());
         chassert(distinct_step);
 
-        std::vector<const ActionsDAG *> dag_stack;
-        std::vector<std::vector<const ActionsDAG *>> actions_chain;
+        VectorWithMemoryTracking<const ActionsDAG *> dag_stack;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<const ActionsDAG *>> actions_chain;
         const DistinctStep * inner_distinct_step = nullptr;
         const IQueryPlanStep * aggregation_before_distinct = nullptr;
+        bool has_cube_or_rollup = false;
         const QueryPlan::Node * node = distinct_node;
         while (!node->children.empty())
         {
@@ -170,6 +173,9 @@ namespace
                 logDebug("aggregation pass: stopped by allow check on step", current_step->getName());
                 break;
             }
+
+            if (typeid_cast<const CubeStep *>(current_step) || typeid_cast<const RollupStep *>(current_step))
+                has_cube_or_rollup = true;
 
             if (typeid_cast<const WindowStep *>(current_step))
             {
@@ -195,6 +201,12 @@ namespace
 
         if (aggregation_before_distinct)
         {
+            /// CUBE/ROLLUP/GROUPING SETS emit extra rows with key columns defaulted, which can
+            /// collide with real group values, so the output is not distinct on the keys: keep DISTINCT.
+            /// CUBE/ROLLUP are a separate step above Aggregating; GROUPING SETS lives inside it.
+            if (has_cube_or_rollup)
+                return false;
+
             if (actions_chain.empty())
                 actions_chain.push_back(std::move(dag_stack));
 
@@ -202,12 +214,16 @@ namespace
 
             if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(aggregation_before_distinct); aggregating_step)
             {
+                if (aggregating_step->isGroupingSets())
+                    return false;
                 return compareAggregationKeysWithDistinctColumns(
                     aggregating_step->getParams().keys, distinct_columns, std::move(actions_chain));
             }
             if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(aggregation_before_distinct);
                 merging_aggregated_step)
             {
+                if (merging_aggregated_step->isGroupingSets())
+                    return false;
                 return compareAggregationKeysWithDistinctColumns(
                     merging_aggregated_step->getParams().keys, distinct_columns, std::move(actions_chain));
             }
@@ -222,7 +238,7 @@ namespace
         chassert(distinct_step);
         const auto distinct_columns = getDistinctColumns(distinct_step);
 
-        std::vector<const ActionsDAG *> dag_stack;
+        VectorWithMemoryTracking<const ActionsDAG *> dag_stack;
         const DistinctStep * inner_distinct_step = nullptr;
         const QueryPlan::Node * node = distinct_node;
         while (!node->children.empty())

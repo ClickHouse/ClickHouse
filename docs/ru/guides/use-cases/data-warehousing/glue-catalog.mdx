@@ -8,13 +8,13 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 ClickHouse поддерживает интеграцию с несколькими каталогами (Unity, Glue, Polaris,
 и т. д.). В этом руководстве мы покажем, как выполнять запросы к данным в
-S3 бакетах с помощью ClickHouse и Glue Data Catalog.
+S3 бакетах с помощью ClickHouse и каталогом AWS Glue.
 
 <Note>
   Glue поддерживает множество различных форматов таблиц, но эта интеграция работает только с таблицами Iceberg.

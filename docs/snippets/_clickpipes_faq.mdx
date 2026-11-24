@@ -8,14 +8,19 @@ The diagrams below show a simplified architecture.
 For streaming ClickPipes, ClickPipes replicas access the remote data sources (e.g., a Kafka broker),
 pull the data, process and ingest it into the destination ClickHouse service.
 
-<Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="ClickPipes Replicas - Streaming ClickPipes" border force/>
+<Frame>
+  <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" alt="ClickPipes Replicas - Streaming ClickPipes" />
+</Frame>
 
 In the case of object storage ClickPipes,
 the ClickPipes replica orchestrates the data loading task
 (identifying files to copy, maintaining the state, and moving partitions),
 while the data is pulled directly from the ClickHouse service.
 
-<Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="ClickPipes Replicas - Object Storage ClickPipes" border force/>
+<Frame>
+  <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" alt="ClickPipes Replicas - Object Storage ClickPipes" />
+</Frame>
+
 </Accordion>
 
 <Accordion title="What's the default number of replicas and their size?">
@@ -35,7 +40,10 @@ We recommend starting with the default value of 1 replica, measuring your latenc
 Keep in mind that for Kafka ClickPipes, you also have to scale the Kafka broker partitions accordingly.
 The scaling controls are available under "settings" for each streaming ClickPipe.
 
-<Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="ClickPipes Replicas - How many ClickPipes replicas do I need?" border force/>
+<Frame>
+  <img src="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" alt="ClickPipes Replicas - How many ClickPipes replicas do I need?" />
+</Frame>
+
 </Accordion>
 
 <Accordion title="What does the ClickPipes pricing structure look like?">

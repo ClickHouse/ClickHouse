@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'logs', 'OTEL', 'ClickStack', 'database monitoring']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -30,8 +28,7 @@ If you would like to test the PostgreSQL logs integration before configuring you
 - Sufficient disk space for log files
 
 <Steps>
-<Step>
-#### Configure PostgreSQL logging {#configure-postgres}
+<Step title="Configure PostgreSQL logging" id="configure-postgres">
 
 PostgreSQL supports multiple log formats. For structured parsing with OpenTelemetry, we recommend CSV format which provides consistent, parseable output.
 
@@ -82,10 +79,9 @@ tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
 tail -f /usr/local/var/postgres/log/postgresql-*.log
 ```
 </Step>
-<Step>
-#### Create custom OTel collector configuration {#custom-otel}
+<Step title="Create custom OTel collector configuration" id="custom-otel">
 
-ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
+ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by ClickStack UI via OpAMP.
 
 Create a file named `postgres-logs-monitoring.yaml` with the following configuration:
 
@@ -133,7 +129,7 @@ This configuration:
 - Handles multi-line log entries (errors often span multiple lines)
 - Parses CSV format with all standard PostgreSQL log fields
 - Extracts timestamps to preserve original log timing
-- Adds `source: postgresql` attribute for filtering in HyperDX
+- Adds `source: postgresql` attribute for filtering in ClickStack UI
 - Routes logs to the ClickHouse exporter via a dedicated pipeline
 
 <Note>
@@ -144,8 +140,7 @@ This configuration:
 - Adjust the `include` path to match your PostgreSQL log directory location
 </Note>
 </Step>
-<Step>
-#### Configure ClickStack to load custom configuration {#load-custom}
+<Step title="Configure ClickStack to load custom configuration" id="load-custom">
 
 To enable custom collector configuration in your existing ClickStack deployment, you must:
 
@@ -185,19 +180,34 @@ docker run --name clickstack \
 Ensure the ClickStack collector has appropriate permissions to read the PostgreSQL log files. In production, use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step>
-#### Verifying Logs in HyperDX {#verifying-logs}
+<Step title="Verifying Logs in ClickStack UI" id="verifying-logs">
 
-Once configured, log into HyperDX and verify logs are flowing:
+Once configured, log into ClickStack UI and verify logs are flowing:
 
 1. Navigate to the search view
 2. Set source to Logs
 3. Filter by `source:postgresql` to see PostgreSQL-specific logs
 4. You should see structured log entries with fields like `user_name`, `database_name`, `error_severity`, `message`, `query`, etc.
 
-<Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="Logs search view"/>
+<div className="ch-image-lg">
 
-<Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="Log view"/>
+<Frame>
+
+![Logs search view](/images/clickstack/postgres/postgres-logs-search-view.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Log view](/images/clickstack/postgres/postgres-log-view.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -206,8 +216,7 @@ Once configured, log into HyperDX and verify logs are flowing:
 For users who want to test the PostgreSQL logs integration before configuring their production systems, we provide a sample dataset of pre-generated PostgreSQL logs with realistic patterns.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 Download the sample log file:
 
@@ -215,8 +224,7 @@ Download the sample log file:
 curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/postgres/postgresql.log
 ```
 </Step>
-<Step>
-#### Create test collector configuration {#test-config}
+<Step title="Create test collector configuration" id="test-config">
 
 Create a file named `postgres-logs-demo.yaml` with the following configuration:
 
@@ -261,8 +269,7 @@ service:
 EOF
 ```
 </Step>
-<Step>
-#### Run ClickStack with demo configuration {#run-demo}
+<Step title="Run ClickStack with demo configuration" id="run-demo">
 
 Run ClickStack with the demo logs and configuration:
 
@@ -275,24 +282,39 @@ docker run --name clickstack-demo \
   clickhouse/clickstack-all-in-one:latest
 ```
 </Step>
-<Step>
-#### Verify logs in HyperDX {#verify-demo-logs}
+<Step title="Verify logs in ClickStack UI" id="verify-demo-logs">
 
 Once ClickStack is running:
 
-1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
+1. Open [ClickStack UI](http://localhost:8080/) and log in to your account (you may need to create an account first)
 2. Navigate to the Search view and set the source to `Logs`
 3. Set the time range to **2025-11-09 00:00:00 - 2025-11-12 00:00:00**
 
 <Info>
 **Timezone Display**
 
-HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
+ClickStack UI displays timestamps in your browser's local timezone. The demo data spans **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 
-<Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="Logs search view"/>
+<div className="ch-image-lg">
 
-<Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="Log view"/>
+<Frame>
+
+![Logs search view](/images/clickstack/postgres/postgres-logs-search-view.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Log view](/images/clickstack/postgres/postgres-log-view.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -301,27 +323,50 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring PostgreSQL with ClickStack, we provide essential visualizations for PostgreSQL logs.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
-</Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Download the dashboard configuration" id="download">
 
-1. Open HyperDX and navigate to the Dashboards section
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
+</Step>
+<Step title="Import the pre-built dashboard" id="import-dashboard">
+
+1. Open ClickStack UI and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</Frame>
+
+</div>
 
 3. Upload the `postgresql-logs-dashboard.json` file and click **Finish Import**
 
-<Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="Finish import"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Finish import](/images/clickstack/postgres/import-logs-dashboard.webp)
+
+</Frame>
+
+</div>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
-<Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="Logs dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Logs dashboard](/images/clickstack/postgres/postgres-logs-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
 For the demo dataset, set the time range to **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.
@@ -343,7 +388,7 @@ Check the custom config file is mounted and readable:
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-### No logs appearing in HyperDX {#no-logs}
+### No logs appearing in ClickStack UI {#no-logs}
 
 Check the effective config includes your filelog receiver:
 ```bash

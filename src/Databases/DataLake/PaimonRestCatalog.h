@@ -56,18 +56,17 @@ static constexpr auto NEW_LINE = "\n";
 struct PaimonToken
 {
     const String token_provider;
-    const String bearer_token;
+    const DB::SecretString bearer_token;
     const String dlf_access_key_id;
-    const String dlf_access_key_secret;
-    mutable String dlf_generated_authorization;
+    const DB::SecretString dlf_access_key_secret;
 
-    explicit PaimonToken(const String & bearer_token_)
+    explicit PaimonToken(std::string_view bearer_token_)
         : token_provider("bearer")
         , bearer_token(bearer_token_)
     {
     }
 
-    PaimonToken(const String & access_key_id_, const String & access_key_secret_)
+    PaimonToken(const String & access_key_id_, std::string_view access_key_secret_)
         : token_provider("dlf")
         , dlf_access_key_id(access_key_id_)
         , dlf_access_key_secret(access_key_secret_)
@@ -83,21 +82,23 @@ public:
 
     ~PaimonRestCatalog() override = default;
 
-    bool empty() const override;
+    [[nodiscard]] bool empty() const override;
 
-    DB::Names getTables() const override;
+    [[nodiscard]] CatalogTables getTables() const override;
 
-    Namespaces getNamespaces() const override;
+    [[nodiscard]] Namespaces getNamespaces() const override;
 
-    bool existsTable(const String & database_name, const String & table_name) const override;
+    [[nodiscard]] bool existsTable(const String & database_name, const String & table_name) const override;
 
     void getTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
 
     bool tryGetTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
 
-    std::optional<StorageType> getStorageType() const override { return storage_type; }
+    [[nodiscard]] std::optional<StorageType> getStorageType() const override { return storage_type; }
 
-    DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
+    [[nodiscard]] DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
+
+    [[nodiscard]] DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::PAIMON; }
 
 private:
     using StopCondition = std::function<bool(const String &)>;
@@ -110,17 +111,20 @@ private:
     String warehouse_root_path;
     std::optional<StorageType> storage_type;
     const LoggerPtr log;
-    Poco::Net::HTTPBasicCredentials credentials{};
 
     // void listDatabases();
-    void createAuthHeaders(
+    /// Adds provider-specific auth material for the request. For the `dlf` provider this appends the
+    /// signed headers to `current_headers` and returns an empty string; for the `bearer` provider it
+    /// returns the bearer token (to pass to `create`) without adding a header. Returns an empty
+    /// string when no token is configured.
+    std::string_view createAuthHeaders(
         DB::HTTPHeaderEntries & current_headers,
         const String & resource_path,
         const std::unordered_map<String, String> & query_params,
         const String & method,
         const std::optional<String> & data = std::nullopt) const;
 
-    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+    [[nodiscard]] DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const String & endpoint,
         const String & method,
         const Poco::URI::QueryParameters & params = {},
@@ -132,9 +136,9 @@ private:
 
     void forEachTables(const String & database, DB::Names & tables, StopCondition stop_condition = {}, ExecuteFunc execute_func = {}) const;
 
-    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    [[nodiscard]] CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
-    Poco::JSON::Object::Ptr requestRest(
+    [[nodiscard]] Poco::JSON::Object::Ptr requestRest(
         const String & endpoint,
         const String & method,
         const Poco::URI::QueryParameters & params = {},

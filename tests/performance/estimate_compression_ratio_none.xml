@@ -1,0 +1,7 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT estimateCompressionRatio('NONE')(number) FROM numbers(4000000000) FORMAT Null</query>
+</test>

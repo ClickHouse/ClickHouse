@@ -1,13 +1,11 @@
 ---
-sidebar_title: 'Query API endpoints'
+sidebar_title: 'Set up query API endpoints'
 slug: /cloud/get-started/query-endpoints
 description: 'Easily spin up REST API endpoints from your saved queries'
 keywords: ['api', 'query api endpoints', 'query endpoints', 'query rest api']
 title: 'Setting up query API endpoints'
 doc_type: 'guide'
 ---
-
-import { Image } from "/snippets/components/Image.jsx";
 
 The **Query API Endpoints** feature allows you to create an API endpoint directly from any saved SQL query in the ClickHouse Cloud console. You'll be able to access API endpoints via HTTP to execute your saved queries without needing to connect to your ClickHouse Cloud service via a native driver.
 
@@ -26,8 +24,7 @@ To query an API endpoint, the API key needs `Member` organization role with `Que
 </Info>
 
 <Steps>
-<Step>
-### Create a saved query {#creating-a-saved-query}
+<Step title="Create a saved query" id="creating-a-saved-query">
 
 If you have a saved query, you can skip this step.
 
@@ -67,21 +64,44 @@ The SQL console query editor automatically detects ClickHouse query parameter ex
 
 Let's quickly run this query to make sure that it works by specifying the year `2010` in the query variables input box on the right side of the SQL editor:
 
-<Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Test the example query" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Test the example query](/images/cloud/sqlconsole/endpoints-testquery.webp)
+
+</Frame>
+
+</div>
 
 Next, save the query:
 
-<Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Save example query" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Save example query](/images/cloud/sqlconsole/endpoints-savequery.webp)
+
+</Frame>
+
+</div>
 
 More documentation around saved queries can be found in section ["Saving a query"](/products/cloud/features/sql-console-features/sql-console#saving-a-query).
 </Step>
-<Step>
-### Configuring the query API endpoint {#configuring-the-query-api-endpoint}
+<Step title="Configuring the query API endpoint" id="configuring-the-query-api-endpoint">
 
 Query API endpoints can be configured directly from query view by clicking the **Share** button and selecting `API Endpoint`.
 You'll be prompted to specify which API keys should be able to access the endpoint:
 
-<Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configure query endpoint" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configure query endpoint](/images/cloud/sqlconsole/endpoints-configure.webp)
+
+</Frame>
+
+</div>
 
 After selecting an API key, you will be asked to:
 - Select the Database role that will be used to run the query (`Full access`, `Read only` or `Create a custom role`)
@@ -91,7 +111,15 @@ After selecting these options, the query API endpoint will automatically be prov
 
 An example `curl` command will be displayed so you can send a test request:
 
-<Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Endpoint curl command" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Endpoint curl command](/images/cloud/sqlconsole/endpoints-completed.webp)
+
+</Frame>
+
+</div>
 
 The curl command displayed in the interface is given below for convenience:
 
@@ -99,21 +127,35 @@ The curl command displayed in the interface is given below for convenience:
 curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
 ```
 </Step>
-<Step>
-### Query API parameters {#query-api-parameters}
+<Step title="Query API parameters" id="query-api-parameters">
 
 Query parameters in a query can be specified with the syntax `{parameter_name: type}`. These parameters will be automatically detected and the example request payload will contain a `queryVariables` object through which you can pass these parameters.
 </Step>
-<Step>
-### Testing and monitoring {#testing-and-monitoring}
+<Step title="Testing and monitoring" id="testing-and-monitoring">
 
 Once a Query API endpoint is created, you can test that it works by using `curl` or any other HTTP client:
 
-<Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="endpoint curl test" />
+<div className="ch-image-md">
+
+<Frame>
+
+![endpoint curl test](/images/cloud/sqlconsole/endpoints-curltest.webp)
+
+</Frame>
+
+</div>
 
 After you've sent your first request, a new button should appear immediately to the right of the **Share** button. Clicking it will open a flyout containing monitoring data about the query:
 
-<Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Endpoint monitoring" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Endpoint monitoring](/images/cloud/sqlconsole/endpoints-monitoring.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

@@ -7,7 +7,7 @@ title: 'Spark connector'
 doc_type: 'guide'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
 
@@ -95,17 +95,7 @@ Both approaches ensure the ClickHouse connector is available in your Spark envir
 </dependency>
 ```
 
-Add the following repository if you want to use SNAPSHOT version.
-
-```maven
-<repositories>
-  <repository>
-    <id>sonatype-oss-snapshots</id>
-    <name>Sonatype OSS Snapshots Repository</name>
-    <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-  </repository>
-</repositories>
-```
+To use a SNAPSHOT version, follow Sonatype's [instructions for consuming SNAPSHOT releases](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) with Maven.
 
 </Tab>
 <Tab title="Gradle">
@@ -117,13 +107,7 @@ dependencies {
 }
 ```
 
-Add the following repository if you want to use the SNAPSHOT version:
-
-```gradle
-repositries {
-  maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-}
-```
+To use a SNAPSHOT version, follow Sonatype's [instructions for consuming SNAPSHOT releases](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) with Gradle.
 
 </Tab>
 <Tab title="SBT">
@@ -166,8 +150,8 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 ```
 
 You can find all available released JAR files
-in the [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)
-and all daily build SNAPSHOT JAR files in the [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/).
+in the [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/).
+Daily build SNAPSHOT JAR files are available through the Sonatype snapshots repository configured above.
 
 <Warning>
 It's essential to include the [clickhouse-jdbc JAR](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)
@@ -852,7 +836,7 @@ object NativeSparkWrite extends App {
 from pyspark.sql import SparkSession
 from pyspark.sql import Row
 
-# Feel free to use any other packages combination satesfying the compatibility matrix provided above.
+# Feel free to use any other packages combination satisfying the compatibility matrix provided above.
 packages = [
     "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.8.0",
     "com.clickhouse:clickhouse-client:0.7.0",
@@ -933,7 +917,7 @@ PySpark, or shell.
 ## Working with VariantType {#working-with-varianttype}
 
 <Note>
-VariantType support is available in Spark 4.0+ and requires ClickHouse 25.3+ with experimental JSON/Variant types enabled.
+VariantType support is available in Spark 4.0+ and requires ClickHouse 25.3+, where the `JSON` and `Variant` types are production-ready and enabled by default.
 </Note>
 
 The connector supports Spark's `VariantType` for working with semi-structured data. VariantType maps to ClickHouse's `JSON` and `Variant` types, allowing you to store and query flexible schema data efficiently.
@@ -1279,10 +1263,9 @@ If you need to write to a ClickHouse `Variant` type, use JSON format. Arrow form
 
 1. **Use JSON type for JSON-only data**: If you only store JSON objects, use the default JSON type (no `variant_types` property)
 2. **Specify types explicitly**: When using `Variant()`, explicitly list all types you plan to store
-3. **Enable experimental features**: Ensure ClickHouse has `allow_experimental_json_type = 1` enabled
-4. **Use JSON format for writes**: JSON format is recommended for VariantType data for better compatibility
-5. **Consider query patterns**: JSON/Variant types support ClickHouse's JSON path queries for efficient filtering
-6. **Column hints for performance**: When using JSON fields in ClickHouse, adding column hints improves query performance. Currently, adding column hints via Spark isn't supported. See [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) for tracking this feature.
+3. **Use JSON format for writes**: JSON format is recommended for VariantType data for better compatibility
+4. **Consider query patterns**: JSON/Variant types support ClickHouse's JSON path queries for efficient filtering
+5. **Column hints for performance**: When using JSON fields in ClickHouse, adding column hints improves query performance. Currently, adding column hints via Spark isn't supported. See [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) for tracking this feature.
 
 ### Example: Complete Workflow {#varianttype-example-workflow}
 
@@ -1291,9 +1274,6 @@ If you need to write to a ClickHouse `Variant` type, use JSON format. Arrow form
 
 ```scala
 import org.apache.spark.sql.functions._
-
-// Enable experimental JSON type in ClickHouse
-spark.sql("SET allow_experimental_json_type = 1")
 
 // Create table with Variant column
 spark.sql("""
@@ -1342,9 +1322,6 @@ result.show(false)
 ```python
 from pyspark.sql.functions import parse_json, to_timestamp
 
-# Enable experimental JSON type in ClickHouse
-spark.sql("SET allow_experimental_json_type = 1")
-
 # Create table with Variant column
 spark.sql("""
   CREATE TABLE clickhouse.default.events (
@@ -1392,9 +1369,6 @@ result.show(truncate=False)
 
 ```java
 import static org.apache.spark.sql.functions.*;
-
-// Enable experimental JSON type in ClickHouse
-spark.sql("SET allow_experimental_json_type = 1");
 
 // Create table with Variant column
 spark.sql("CREATE TABLE clickhouse.default.events (" +

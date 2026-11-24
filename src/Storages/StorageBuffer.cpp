@@ -1,23 +1,27 @@
 #include <Storages/StorageBuffer.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -33,11 +37,15 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/ColumnDefault.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <base/getThreadId.h>
@@ -55,6 +63,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -86,7 +95,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 readonly;
@@ -94,7 +102,9 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
@@ -175,14 +185,9 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    if (columns_.empty())
-    {
-        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
-        storage_metadata.setColumns(dest_table_metadata->getColumns());
-    }
-    else
-        storage_metadata.setColumns(columns_);
+    /// Columns are always resolved by `registerStorageBuffer` under the user's context, so the
+    /// destination's structure is never read here under the long-lived context this storage holds.
+    storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -195,7 +200,7 @@ StorageBuffer::StorageBuffer(
             CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
             num_shards, 0, num_shards);
     }
-    flush_handle = bg_pool.createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
+    flush_handle = bg_pool->createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
 
     LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
@@ -281,8 +286,15 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
+        /// `read` unites the destination with the buffers, so anything past `FetchColumns` has to be merged above both.
+        const bool merged_above = to_stage > QueryProcessingStage::FetchColumns;
+        if (merged_above)
+            to_stage = QueryProcessingStage::WithMergeableState;
+
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        const auto stage = destination->getQueryProcessingStage(
+            local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        return merged_above ? std::min(stage, QueryProcessingStage::WithMergeableState) : stage;
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -292,6 +304,12 @@ bool StorageBuffer::isRemote() const
 {
     auto destination = getDestinationTable();
     return destination && destination->isRemote();
+}
+
+bool StorageBuffer::readRequiresAnalyzedQuery() const
+{
+    auto destination = getDestinationTable();
+    return destination && destination->readRequiresAnalyzedQuery();
 }
 
 void StorageBuffer::read(
@@ -306,8 +324,7 @@ void StorageBuffer::read(
 {
     storage_snapshot->check(column_names);
 
-    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
-    if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
+    if (processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
           * For example: SELECT * FROM buffer t1 JOIN buffer t2 USING (column)
@@ -332,26 +349,62 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
-        local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), column_names);
+        /// Any grant on the destination implies `SHOW_TABLES` on it, so this denies a user with no access to the
+        /// destination before the refresh below, which could otherwise cost them remote I/O or show them its errors.
+        /// The column-level check needs the destination's metadata, so it is done once the snapshot is taken.
+        local_context->checkAccess(AccessType::SHOW_TABLES, destination->getStorageID());
+
+        /// The analyzer refreshes only the `Buffer`, so a data lake destination would keep the snapshot of its last direct query.
+        resolveStorageProxy(destination)->updateExternalDynamicMetadataIfExists(local_context);
+
+        /// Resolve subcolumns against the destination's metadata snapshot, which the read below uses too.
+        /// It may differ from the Buffer table's layout, so the same dotted identifier can resolve differently there.
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
+        local_context->checkAccess(
+            AccessType::SELECT,
+            destination->getStorageID(),
+            destination_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, local_context, destination->getStorageID()));
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
-        auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
-        auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+        const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        auto destination_columns = destination_snapshot->getColumns(get_columns_options);
+        auto our_columns = storage_snapshot->getColumns(get_columns_options);
+
+        /** A requested column can be a dynamic subcolumn - a path inside a `JSON` or a `Dynamic` column.
+          * Such subcolumns cannot be enumerated, so they are missing in the lists of columns above,
+          * and have to be resolved by name in the corresponding storage snapshot.
+          */
+        auto get_column = [&](const StorageSnapshotPtr & snapshot, const NamesAndTypesList & columns, const String & column_name)
+        {
+            if (auto column = columns.tryGetByName(column_name))
+                return column;
+            return snapshot->tryGetColumn(get_columns_options, column_name);
+        };
+
+        auto get_our_column = [&](const String & column_name)
+        {
+            return get_column(storage_snapshot, our_columns, column_name);
+        };
+
+        auto get_destination_column = [&](const String & column_name)
+        {
+            return get_column(destination_snapshot, destination_columns, column_name);
+        };
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [&](const String & column_name)
         {
-            auto dest_column = destination_columns.tryGetByName(column_name);
-            return dest_column && dest_column->type->equals(*our_columns.tryGetByName(column_name)->type);
+            auto dest_column = get_destination_column(column_name);
+            if (!dest_column)
+                return false;
+            auto our_column = get_our_column(column_name);
+            return our_column && dest_column->type->equals(*our_column->type);
         });
 
         if (dst_has_same_structure)
         {
-            if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot, local_context);
-
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             destination->read(
                 query_plan, column_names, destination_snapshot, query_info,
@@ -360,20 +413,30 @@ void StorageBuffer::read(
         else
         {
             /// There is a struct mismatch and we need to convert read blocks from the destination table.
-            const Block header = metadata_snapshot->getSampleBlock();
+            Block header = metadata_snapshot->getSampleBlock();
+
+            /// Dynamic subcolumns are not present in the sample block of the table - add the requested ones explicitly.
+            for (const String & column_name : column_names)
+            {
+                if (header.has(column_name))
+                    continue;
+                if (auto our_column = get_our_column(column_name))
+                    header.insert(ColumnWithTypeAndName(our_column->type, column_name));
+            }
+
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
             for (const String & column_name : column_names)
             {
-                auto dest_column = destination_columns.tryGetByName(column_name);
+                auto dest_column = get_destination_column(column_name);
                 if (!dest_column)
                 {
                     LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
                     std::erase(columns_intersection, column_name);
                     continue;
                 }
-                auto our_column = our_columns.tryGetByName(column_name);
-                if (!dest_column->type->equals(*our_column->type))
+                auto our_column = get_our_column(column_name);
+                if (our_column && !dest_column->type->equals(*our_column->type))
                 {
                     LOG_WARNING(log, "Destination table {} has different type of column {} ({} != {}). Data from destination table are converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name), dest_column->type->getName(), our_column->type->getName());
                     header_after_adding_defaults.getByName(column_name) = ColumnWithTypeAndName(dest_column->type, column_name);
@@ -397,30 +460,104 @@ void StorageBuffer::read(
                         local_context);
                 }
 
+                /// The prefix converts the whole sample block, but the filter runs inside the
+                /// destination read, where only its own columns are known to have the declared
+                /// types. Keep just the filter's outputs; the rest converts after the read as usual.
+                /// Only the predicate is converted: an output that merely passes a destination
+                /// column through must keep the type the destination will actually produce.
+                auto merge_converting_prefix = [&](ActionsDAG filter_dag, String & filter_column_name, bool & remove_filter_column)
+                {
+                    /// A bare predicate ("USING f", "PREWHERE f") is the very node it carries as data,
+                    /// so one name would have to hold both types at once. An alias separates the two
+                    /// roles; a computed predicate is already distinct and needs nothing.
+                    const auto & predicate = filter_dag.findInOutputs(filter_column_name);
+                    if (predicate.type == ActionsDAG::ActionType::INPUT)
+                    {
+                        /// The destination may have a column of this name, and on SELECT * both reach
+                        /// one block, where Block::insert throws.
+                        String alias_name = "__buffer_converted_filter";
+                        for (size_t i = 0; filter_dag.tryFindInOutputs(alias_name) != nullptr
+                                        || header_after_adding_defaults.has(alias_name); ++i)
+                            alias_name = "__buffer_converted_filter_" + std::to_string(i);
+                        const auto & alias = filter_dag.addAlias(predicate, alias_name);
+
+                        /// The predicate's first occurrence becomes the alias; the node returns once as
+                        /// data where it has that role.
+                        size_t occurrences = 0;
+                        ActionsDAG::NodeRawConstPtrs new_outputs;
+                        new_outputs.reserve(filter_dag.getOutputs().size() + 1);
+                        for (const auto * output : filter_dag.getOutputs())
+                        {
+                            if (output != &predicate)
+                                new_outputs.push_back(output);
+                            else if (++occurrences == 1)
+                                new_outputs.push_back(&alias);
+                        }
+                        if (occurrences > 1 || !remove_filter_column)
+                            new_outputs.push_back(&predicate);
+                        filter_dag.getOutputs() = std::move(new_outputs);
+
+                        /// The alias is internal to the destination read, so it goes after filtering.
+                        filter_column_name = alias_name;
+                        remove_filter_column = true;
+                    }
+
+                    Names filter_outputs;
+                    std::vector<size_t> passthrough_positions;
+                    filter_outputs.reserve(filter_dag.getOutputs().size());
+                    for (const auto * output : filter_dag.getOutputs())
+                    {
+                        if (output->type == ActionsDAG::ActionType::INPUT)
+                            passthrough_positions.push_back(filter_outputs.size());
+                        filter_outputs.push_back(output->result_name);
+                    }
+
+                    auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
+                    merged.removeUnusedActions(filter_outputs);
+
+                    /// merge() maps the filter's inputs onto the prefix's outputs, so these inputs are
+                    /// the destination-typed columns and restoring a pass-through adds no actions.
+                    std::unordered_map<std::string_view, const ActionsDAG::Node *> destination_inputs;
+                    for (const auto * input : merged.getInputs())
+                        destination_inputs.emplace(input->result_name, input);
+
+                    auto & merged_outputs = merged.getOutputs();
+                    for (size_t position : passthrough_positions)
+                    {
+                        auto it = destination_inputs.find(filter_outputs[position]);
+                        if (it != destination_inputs.end() && merged_outputs[position]->result_name == filter_outputs[position])
+                            merged_outputs[position] = it->second;
+                    }
+
+                    /// The replaced conversions are no longer reachable, but `ExpressionActions` executes every
+                    /// node of the DAG. Drop them, so a column that only passes through is not cast to the
+                    /// `Buffer` type at all: that costs time and can throw for a value the type cannot hold.
+                    merged.removeUnusedActions(/* allow_remove_inputs = */ false);
+
+                    return merged;
+                };
+
                 if (src_table_query_info.row_level_filter)
                 {
                     auto row_level_filter = std::make_shared<FilterDAGInfo>();
                     row_level_filter->column_name = src_table_query_info.row_level_filter->column_name;
                     row_level_filter->do_remove_column = src_table_query_info.row_level_filter->do_remove_column;
-
-                    row_level_filter->actions = ActionsDAG::merge(
-                        converting_dag.clone(),
-                        src_table_query_info.row_level_filter->actions.clone());
-
-                    row_level_filter->actions.removeUnusedActions();
+                    row_level_filter->actions = merge_converting_prefix(
+                        src_table_query_info.row_level_filter->actions.clone(),
+                        row_level_filter->column_name,
+                        row_level_filter->do_remove_column);
                     src_table_query_info.row_level_filter = std::move(row_level_filter);
                 }
 
                 if (src_table_query_info.prewhere_info)
                 {
-                    src_table_query_info.prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
-                    {
-                        src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
-                            converting_dag.clone(),
-                            std::move(src_table_query_info.prewhere_info->prewhere_actions));
-
-                        src_table_query_info.prewhere_info->prewhere_actions.removeUnusedActions();
-                    }
+                    auto prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
+                    auto merged_prewhere = merge_converting_prefix(
+                        std::move(prewhere_info->prewhere_actions),
+                        prewhere_info->prewhere_column_name,
+                        prewhere_info->remove_prewhere_column);
+                    prewhere_info->prewhere_actions = std::move(merged_prewhere);
+                    src_table_query_info.prewhere_info = std::move(prewhere_info);
                 }
 
                 src_table_query_info.initial_storage_snapshot = storage_snapshot;
@@ -497,27 +634,28 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        if (enable_analyzer)
-        {
-            auto storage = std::make_shared<StorageValues>(
-                    getStorageID(),
-                    storage_snapshot->getAllColumnsDescription(),
-                    std::move(pipe_from_buffers),
-                    storage_snapshot->metadata->virtuals);
+        /// The buffers plan is united with the table plan in the same process, where nothing
+        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+        auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
+        buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.view_source_in_subqueries
+            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
-            auto interpreter
-                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
-            interpreter.addStorageLimits(*query_info.storage_limits);
-            buffers_plan = std::move(interpreter).extractQueryPlan();
-        }
-        else
-        {
-            auto interpreter = InterpreterSelectQuery(
-                    query_info.query, local_context, std::move(pipe_from_buffers),
-                    SelectQueryOptions(processed_stage));
-            interpreter.addStorageLimits(*query_info.storage_limits);
-            interpreter.buildQueryPlan(buffers_plan);
-        }
+        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
+        auto storage = std::make_shared<StorageValues>(
+                getStorageID(),
+                storage_snapshot->metadata->getColumns(),
+                std::move(pipe_from_buffers),
+                storage_snapshot->metadata->virtuals);
+
+        /// The buffers' analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
+        auto query_tree = query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree, /*keep_ordinary=*/ true);
+
+        auto interpreter
+            = InterpreterSelectQueryAnalyzer(queryNodeToSelectQuery(query_tree), local_context, buffers_select_query_options, storage);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        buffers_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
@@ -565,6 +703,44 @@ void StorageBuffer::read(
 
     auto result_header = buffers_plan.getCurrentHeader();
 
+    /// Reading the destination table can return a full column where the plan over the buffers keeps
+    /// it constant (e.g. constants come back materialized from a `Distributed` destination), and a
+    /// full column cannot be converted back to a constant. Materialize such constants in the buffers
+    /// branch and unite the branches on the materialized header.
+    {
+        const auto & destination_header = *query_plan.getCurrentHeader();
+        ColumnsWithTypeAndName materialized_columns;
+        materialized_columns.reserve(result_header->columns());
+        bool buffers_header_changed = false;
+        for (const auto & column : *result_header)
+        {
+            auto materialized_column = column;
+            if (column.column && isColumnConst(*column.column))
+            {
+                const auto * destination_column = destination_header.findByName(column.name);
+                if (destination_column && (!destination_column->column || !isColumnConst(*destination_column->column)))
+                {
+                    materialized_column.column = column.column->convertToFullColumnIfConst();
+                    buffers_header_changed = true;
+                }
+            }
+            materialized_columns.push_back(std::move(materialized_column));
+        }
+
+        if (buffers_header_changed)
+        {
+            auto materialize_actions_dag = ActionsDAG::makeConvertingActions(
+                    result_header->getColumnsWithTypeAndName(),
+                    materialized_columns,
+                    ActionsDAG::MatchColumnsMode::Name,
+                    local_context);
+
+            auto materializing = std::make_unique<ExpressionStep>(result_header, std::move(materialize_actions_dag));
+            buffers_plan.addStep(std::move(materializing));
+            result_header = buffers_plan.getCurrentHeader();
+        }
+    }
+
     /// Convert structure from table to structure from buffer.
     if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
     {
@@ -582,7 +758,7 @@ void StorageBuffer::read(
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
@@ -750,7 +926,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination);
+                storage.writeBlockToDestination(block, destination, getContext().get());
             }
             return;
         }
@@ -827,7 +1003,12 @@ private:
         appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
-        storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
+        /// The allocation can shrink after sorting.
+        size_t new_bytes = buffer.data.allocatedBytes();
+        if (new_bytes >= old_bytes)
+            storage.total_writes.bytes += new_bytes - old_bytes;
+        else
+            storage.total_writes.bytes -= old_bytes - new_bytes;
     }
 };
 
@@ -846,6 +1027,21 @@ void StorageBuffer::startup()
     }
 
     flush_handle->activateAndSchedule();
+}
+
+
+size_t StorageBuffer::flushBufferedRowsBeforeShutdown()
+{
+    /// Sequential and without the threshold check: this runs once per shutdown, before any database
+    /// is gone, and every buffer that holds anything has to move now. The destination may be another
+    /// `Buffer` that is drained by a later pass of the caller's loop.
+    size_t buffers_flushed = 0;
+    for (auto & buffer : buffers)
+    {
+        if (flushBuffer(buffer, /*check_thresholds=*/ false, /*locked=*/ false))
+            ++buffers_flushed;
+    }
+    return buffers_flushed;
 }
 
 
@@ -912,10 +1108,69 @@ bool StorageBuffer::supportsPrewhere() const
     return false;
 }
 
+std::optional<NameSet> StorageBuffer::supportedPrewhereColumns() const
+{
+    auto destination = getDestinationTable();
+    if (!destination)
+        return NameSet{};
+
+    /// A type declared differently than in the destination is fine: read() prepends a converting
+    /// prefix to the filter. But the filter is forwarded into the raw destination read, so the
+    /// column must be physical there just like here: an ALIAS twin has no input the filter binds to.
+    auto own_metadata = getInMemoryMetadataPtr(getContext(), false);
+    const auto & own_columns_description = own_metadata->getColumns();
+    auto destination_metadata = destination->getInMemoryMetadataPtr(getContext(), false);
+    const auto & destination_columns = destination_metadata->getColumns();
+    NameSet supported_columns;
+    for (const auto & column : own_columns_description.getAll())
+    {
+        if (!destination_columns.tryGetColumn(GetColumnsOptions::All, column.name))
+            continue;
+        const auto own_kind = own_columns_description.getDefault(column.name).value_or(ColumnDefault{}).kind;
+        const auto destination_kind = destination_columns.getDefault(column.name).value_or(ColumnDefault{}).kind;
+        if (columnDefaultKindHasSameType(own_kind, destination_kind))
+            supported_columns.insert(column.name);
+    }
+
+    /// And only if the destination itself allows them, so the constraint holds transitively.
+    if (const auto destination_supported_columns = destination->supportedPrewhereColumns())
+        std::erase_if(supported_columns, [&](const auto & name) { return !destination_supported_columns->contains(name); });
+
+    return supported_columns;
+}
+
+bool StorageBuffer::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
+}
+
+bool StorageBuffer::canMoveConditionsToPrewhere() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->canMoveConditionsToPrewhere();
+    return false;
+}
+
 bool StorageBuffer::supportsOptimizationToSubcolumns() const
 {
     if (auto destination = getDestinationTable())
         return destination->supportsOptimizationToSubcolumns();
+    return false;
+}
+
+bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToTupleElementSubcolumns();
+    return false;
+}
+
+bool StorageBuffer::hasBucketedMapSerialization() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->hasBucketedMapSerialization();
     return false;
 }
 
@@ -1089,7 +1344,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const Context * query_context)
 {
     if (!destination_id || block.empty())
         return;
@@ -1116,17 +1371,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     {
         const auto & dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
-        {
-            auto column = block.getByName(dst_col.name);
-            if (!column.type->equals(*dst_col.type))
-            {
-                LOG_WARNING(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), dst_col.type->getName(), column.type->getName());
-                column.column = castColumn(column, dst_col.type);
-                column.type = dst_col.type;
-            }
-
-            block_to_write.insert(column);
-        }
+            block_to_write.insert(block.getByName(dst_col.name));
     }
 
     if (block_to_write.columns() == 0)
@@ -1146,6 +1391,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
+    if (query_context)
+        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -1157,8 +1404,23 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);
+
+    /// The interpreter takes its own (possibly refreshed) snapshot of the destination, so convert to its header.
+    Block block_to_push;
+    for (const auto & header_column : executor.getHeader())
+    {
+        auto column = block_to_write.getByName(header_column.name);
+        if (!column.type->equals(*header_column.type))
+        {
+            LOG_WARNING(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), header_column.type->getName(), column.type->getName());
+            column.column = castColumn(column, header_column.type);
+            column.type = header_column.type;
+        }
+        block_to_push.insert(std::move(column));
+    }
+
     executor.start();
-    executor.push(std::move(block_to_write));
+    executor.push(std::move(block_to_push));
     executor.finish();
 }
 
@@ -1253,6 +1515,10 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
+        if (!command.ignore && tryExtractQuantizedCodecParams(command.codec))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
+                getName(), backQuote(command.column_name));
+
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             if (!name_deps)
@@ -1271,8 +1537,13 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 std::optional<UInt64> StorageBuffer::totalRows(ContextPtr query_context) const
 {
     std::optional<UInt64> underlying_rows;
-    if (auto destination = getDestinationTable())
-        underlying_rows = destination->totalRows(query_context);
+    /// A destination the user cannot see contributes nothing, as a missing one does.
+    if (destination_id && query_context
+        && query_context->getAccess()->isGranted(AccessType::SHOW_TABLES, destination_id.database_name, destination_id.table_name))
+    {
+        if (auto destination = getDestinationTable())
+            underlying_rows = destination->totalRows(query_context);
+    }
 
     return total_writes.rows + underlying_rows.value_or(0);
 }
@@ -1282,18 +1553,23 @@ std::optional<UInt64> StorageBuffer::totalBytes(ContextPtr) const
     return total_writes.bytes;
 }
 
-void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
-    /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
-
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     new_metadata.metadata_version += 1;
+
+    /// Check that the resulting metadata does not exceed max_query_size before flushing buffers.
+    /// Otherwise a rejected ALTER would still flush rows into the destination table, mutating user-visible data.
+    checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
+
+    /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
+
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, true);
     setInMemoryMetadata(new_metadata);
 }
@@ -1338,7 +1614,7 @@ void registerStorageBuffer(StorageFactory & factory)
         if (engine_args.size() < 9 || engine_args.size() > 12)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage Buffer requires from 9 to 12 parameters: "
-                            " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
+                            "destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
                             "max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].");
 
         // Table and database name arguments accept expressions, evaluate them.
@@ -1394,9 +1670,40 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
+        /// Infer an omitted structure here, so the constructor never reads the destination under
+        /// the long-lived context it holds. A definition restored from metadata (including a short
+        /// `ATTACH`) has no user, so it is neither access-checked nor resolved under one.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !destination_id.empty())
+        {
+            const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+            const ContextPtr & structure_context = from_existing_metadata ? args.getContext() : args.getLocalContext();
+            if (!from_existing_metadata)
+                args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+
+            auto destination = DatabaseCatalog::instance().getTable(destination_id, structure_context);
+
+            /// An `Alias` reports its target's columns, so a structure inferred from one needs the
+            /// privilege on the target that describing the target requires.
+            if (const auto * alias = destination->as<StorageAlias>();
+                !from_existing_metadata && alias
+                && !alias->isTargetTableGranted(structure_context, AccessType::SHOW_COLUMNS, {}))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Not enough privileges to describe metadata exposed by {}",
+                    destination_id.getNameForLogs());
+
+            auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
+            columns = destination_metadata->getColumns();
+            columns.clearColumnTTLs();
+        }
+
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            checkNoQuantizedCodec(columns.getAll(), args.engine_name);
+
         return std::make_shared<StorageBuffer>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             args.getContext(),
@@ -1407,6 +1714,7 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id,
             static_cast<bool>(args.getLocalContext()->getSettingsRef()[Setting::insert_allow_materialized_columns]));
     },
+    SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
@@ -1415,9 +1723,9 @@ void registerStorageBuffer(StorageFactory & factory)
         .description = R"DOCS_MD(
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
-:::note
-A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/guides/best-practices/asyncinserts.md).
-:::
+<Note>
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/concepts/features/operations/insert/asyncinserts).
+</Note>
 
 ```sql
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
@@ -1492,10 +1800,6 @@ If the set of columns in the Buffer table does not match the set of columns in a
 
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
-
-:::note
-Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-:::
 
 If the server is restarted abnormally, the data in the buffer is lost.
 

@@ -6,10 +6,6 @@ tags: ['데이터 적재', '모범 사례']
 keywords: ['원자적 삽입', '스테이징 테이블', 'MOVE PARTITION', 'ATTACH PARTITION', 'REPLACE PARTITION', '다중 테이블 일관성']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <div id="problem">
   ## 문제
 </div>
@@ -41,9 +37,7 @@ ClickHouse는 단일 삽입, 단일 파티션 수준에서 원자성(atomicity)�
 </div>
 
 <Steps>
-  <Step>
-    ### 스테이징 테이블 생성
-
+  <Step title="스테이징 테이블 생성" id="create-staging-table">
     프로덕션 테이블과 동일한 스키마(schema), 파티션 키, `ORDER BY`, 스토리지 정책을 사용합니다.
 
     ```sql
@@ -51,9 +45,7 @@ ClickHouse는 단일 삽입, 단일 파티션 수준에서 원자성(atomicity)�
     ```
   </Step>
 
-  <Step>
-    ### 스테이징 테이블에 데이터 삽입
-
+  <Step title="스테이징 테이블에 데이터 삽입" id="insert-into-staging">
     프로덕션 테이블 대신 스테이징 테이블에 데이터를 삽입합니다.
 
     ```sql
@@ -61,9 +53,7 @@ ClickHouse는 단일 삽입, 단일 파티션 수준에서 원자성(atomicity)�
     ```
   </Step>
 
-  <Step>
-    ### 삽입이 실패하면 테이블을 비우고 재시도
-
+  <Step title="삽입이 실패하면 테이블을 비우고 재시도" id="on-failure">
     스테이징 테이블을 비우고 적재를 다시 실행합니다. 프로덕션 데이터에는 영향이 없습니다.
 
     ```sql
@@ -71,9 +61,7 @@ ClickHouse는 단일 삽입, 단일 파티션 수준에서 원자성(atomicity)�
     ```
   </Step>
 
-  <Step>
-    ### 삽입이 성공하면 파티션을 프로덕션으로 이동
-
+  <Step title="삽입이 성공하면 파티션을 프로덕션으로 이동" id="on-success">
     데이터를 프로덕션으로 이동하고 스테이징 테이블에서 제거하려면 `MOVE PARTITION`을 사용합니다.
 
     ```sql
@@ -89,9 +77,7 @@ ClickHouse는 단일 삽입, 단일 파티션 수준에서 원자성(atomicity)�
     두 작업 모두 동일한 스토리지 정책에서 수행되는 메타데이터 수준의 변경이므로 거의 즉시 완료됩니다.
   </Step>
 
-  <Step>
-    ### 스테이징 테이블 정리
-
+  <Step title="스테이징 테이블 정리" id="clean-up">
     모든 파티션이 이동되면 다음 적재를 위해 스테이징 테이블이 비어 있도록 테이블을 비웁니다.
 
     ```sql

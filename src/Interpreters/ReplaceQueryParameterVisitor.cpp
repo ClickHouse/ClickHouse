@@ -1,22 +1,32 @@
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/FieldFromAST.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
+#include <Common/SettingsChanges.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -45,18 +55,63 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
+    else if (auto * set_query = ast->as<ASTSetQuery>())
+        visitSetQuery(*set_query);
+    else if (const auto settings_clauses = [&]
+             {
+                 /// The query-level `SETTINGS` clauses of this node, in the order they are applied.
+                 std::vector<const ASTSetQuery *> clauses;
+                 auto add_clause = [&](const ASTPtr & settings_ast)
+                 {
+                     if (const auto * clause = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
+                         clause && !clause->query_parameters.empty())
+                         clauses.push_back(clause);
+                 };
+
+                 if (const auto * select_query = ast->as<ASTSelectQuery>())
+                 {
+                     add_clause(select_query->settings());
+                     return clauses;
+                 }
+
+                 if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+                     add_clause(query_with_output->settings_ast);
+
+                 /// A trailing `SETTINGS` clause of a set operation is query-level - it applies to every
+                 /// operand - but the grammar leaves it on the LAST operand, possibly nested into
+                 /// `INTERSECT` / `EXCEPT` nodes (`ASTQueryWithOutput::settings_ast` is filled only for the
+                 /// top-level query, after `FORMAT`). Scope its `param_*` bindings over every operand, after
+                 /// the ones of `settings_ast`, in the same order as `QueryTreeBuilder` applies both clauses
+                 /// to the whole union; otherwise a placeholder in another operand would be substituted
+                 /// with a different value or reported as an unknown query parameter.
+                 if (const auto * select_with_union = ast->as<ASTSelectWithUnionQuery>();
+                     select_with_union && select_with_union->list_of_selects && !select_with_union->list_of_selects->children.empty())
+                     add_clause(ASTSelectIntersectExceptQuery::getTrailingSettings(select_with_union->list_of_selects->children.back()));
+                 else if (const auto * intersect_except = ast->as<ASTSelectIntersectExceptQuery>(); intersect_except && !intersect_except->children.empty())
+                     add_clause(ASTSelectIntersectExceptQuery::getTrailingSettings(intersect_except->children.back()));
+
+                 return clauses;
+             }();
+             !settings_clauses.empty())
+    {
+        NameToNameMap scoped_parameters = query_parameters;
+        for (const auto * settings : settings_clauses)
+            for (const auto & [name, value] : settings->query_parameters)
+                scoped_parameters.insert_or_assign(name, value);
+
+        ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters);
+        scoped_visitor.visitChildren(ast);
+        num_replaced_parameters += scoped_visitor.getNumberOfReplacedParameters();
+    }
     else
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
-        else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
+        else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
         {
-            if (create_user_query->names)
-            {
-                ASTPtr names = create_user_query->names;
-                visitChildren(names);
-            }
-            visitChildren(ast);
+            /// The handler's query (the AS clause) is the parameterizable interface of the handler;
+            /// its placeholders are substituted at handler-invocation time and must be preserved at
+            /// create/alter time. There is nothing else in the statement that needs substitution.
         }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get()))
         {
@@ -85,12 +140,30 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
                 visit(to_table_ast);
 
                 create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
-                create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
+                create_query->targets->setTableASTWithQueryParams(ViewTarget::To, nullptr);
 
                 visitChildren(ast);
             }
             else
                 visitChildren(ast);
+        }
+        else if (auto * create_row_policy_query = dynamic_cast<ASTCreateRowPolicyQuery *>(ast.get()))
+        {
+            /// The filters are not children, see ASTCreateRowPolicyQuery::filters.
+            for (auto & [_, filter] : create_row_policy_query->filters)
+            {
+                if (filter)
+                    visit(filter);
+            }
+            visitChildren(ast);
+        }
+        else if (auto * create_masking_policy_query = dynamic_cast<ASTCreateMaskingPolicyQuery *>(ast.get()))
+        {
+            if (create_masking_policy_query->update_assignments)
+                visit(create_masking_policy_query->update_assignments);
+            if (create_masking_policy_query->where_condition)
+                visit(create_masking_policy_query->where_condition);
+            visitChildren(ast);
         }
         else
             visitChildren(ast);
@@ -131,15 +204,14 @@ bool needCastFromString(const DataTypePtr & type)
     if (type->getCustomSerialization())
         return true;
 
-    bool result = false;
-    auto check = [&](const IDataType & t)
-    {
-        result |= isVariant(t) || isDynamic(t) || isObject(t);
-    };
+    return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t); });
+}
 
-    check(*type);
-    type->forEachChild(check);
-    return result;
+/// Return true if the text of a `Field` of this type is not cast back from `String` to the same value:
+/// a `DateTime64` / `Time64` value is printed as a decimal, which a cast from `String` parses as date-time text.
+bool needExactLiteral(const DataTypePtr & type)
+{
+    return !needCastFromString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isDateTime64(t) || isTime64(t); });
 }
 
 /// Build an AST literal for a query parameter, optionally wrapping it in a CAST.
@@ -149,30 +221,43 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
 {
     if (typeid_cast<const DataTypeString *>(data_type.get()))
         return make_intrusive<ASTLiteral>(literal);
+    if (needExactLiteral(data_type))
+    {
+        /// The printed decimal of each `DateTime64` / `Time64` is cast back exactly through `Decimal128` of the same scale.
+        auto carrier_type = rewriteTypeTree(
+            data_type,
+            [](const DataTypePtr & type) -> DataTypePtr
+            {
+                if (isDateTime64(type) || isTime64(type))
+                    return std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, getDecimalScale(*type));
+                /// Parsing the name checks the aggregate function's argument types, which may reject the decimals,
+                /// e.g. `SimpleAggregateFunction(timeSeriesGroupArray, ...)`.
+                if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+                    return type->cloneWithChildren(type->getChildren());
+                return type;
+            },
+            CustomizationPolicy::Refuse);
+        if (carrier_type)
+            return addTypeConversionToAST(addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), carrier_type->getName()), type_name);
+    }
     return addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
 }
 
 }
 
-void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
+Field ReplaceQueryParameterVisitor::resolveParameterValueAsField(const String & name, const String & type_name)
 {
-    const auto & ast_param = ast->as<ASTQueryParameter &>();
-    const String & type_name = ast_param.type;
-    String alias = ast_param.alias;
-
     const auto data_type = DataTypeFactory::instance().get(type_name);
 
-    auto it = query_parameters.find(ast_param.name);
+    auto it = query_parameters.find(name);
     if (it == query_parameters.end())
     {
         /// If a parameter has Nullable type and is not specified, assume its value is NULL.
         if (!isNullableOrLowCardinalityNullable(data_type))
-            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(ast_param.name));
+            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
 
-        ast = makeASTForQueryParameter(Field(), type_name, data_type);
-        ast->setAlias(alias);
         ++num_replaced_parameters;
-        return;
+        return Field();
     }
 
     const String & value = it->second;
@@ -185,14 +270,14 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     const SerializationPtr & serialization = data_type->getDefaultSerialization();
     try
     {
-        if (ast_param.name == "_request_body")
+        if (name == "_request_body")
             serialization->deserializeWholeText(temp_column, read_buffer, format_settings);
         else
             serialization->deserializeTextEscaped(temp_column, read_buffer, format_settings);
     }
     catch (Exception & e)
     {
-        e.addMessage("value {} cannot be parsed as {} for query parameter '{}'", value, type_name, ast_param.name);
+        e.addMessage("value {} cannot be parsed as {} for query parameter '{}'", value, type_name, name);
         throw;
     }
 
@@ -200,7 +285,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
             "Value {} cannot be parsed as {} for query parameter '{}'"
             " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
-            value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
+            value, type_name, name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
     Field literal;
 
@@ -217,11 +302,54 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
         literal = temp_column[0];
     }
 
+    ++num_replaced_parameters;
+    return literal;
+}
+
+void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
+{
+    const auto & ast_param = ast->as<ASTQueryParameter &>();
+    const String & type_name = ast_param.type;
+    String alias = ast_param.alias;
+
+    const auto data_type = DataTypeFactory::instance().get(type_name);
+    Field literal = resolveParameterValueAsField(ast_param.name, type_name);
+
     ast = makeASTForQueryParameter(literal, type_name, data_type);
 
     /// Keep the original alias.
     ast->setAlias(alias);
-    ++num_replaced_parameters;
+}
+
+void ReplaceQueryParameterVisitor::visitSettingsChanges(SettingsChanges & changes)
+{
+    /// A setting value can be a query parameter, e.g. `SET max_threads = {threads:UInt64}`
+    /// or `SELECT ... SETTINGS max_threads = {threads:UInt64}`. The parser stores such a value
+    /// as an ASTQueryParameter wrapped into a Field (see ParserSetQuery); resolve it into the
+    /// concrete value here, before the settings are applied.
+    for (auto & change : changes)
+    {
+        CustomType custom;
+        if (!change.value.tryGet<CustomType>(custom) || std::string_view(custom.getTypeName()) != FieldFromASTImpl::name)
+            continue;
+
+        const auto & ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+        const auto * param = ast->as<ASTQueryParameter>();
+        if (!param)
+            continue; /// Some other AST-valued setting, e.g. `disk = disk(...)`; leave it untouched.
+
+        change.value = resolveParameterValueAsField(param->name, param->type);
+    }
+}
+
+void ReplaceQueryParameterVisitor::visitSetQuery(ASTSetQuery & set_query)
+{
+    visitSettingsChanges(set_query.changes);
+}
+
+void replaceQueryParametersInSettingsChanges(SettingsChanges & changes, const NameToNameMap & parameters)
+{
+    ReplaceQueryParameterVisitor(parameters).visitSettingsChanges(changes);
 }
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)

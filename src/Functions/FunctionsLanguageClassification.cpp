@@ -30,7 +30,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 extern const int SUPPORT_IS_DISABLED;
 }
@@ -81,8 +80,8 @@ struct FunctionDetectLanguageImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * str = data.data() + offsets[i - 1];
-            const size_t str_len = offsets[i] - offsets[i - 1];
+            const UInt8 * str = data.data() + offsets[static_cast<ssize_t>(i) - 1];
+            const size_t str_len = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
 
             std::string_view res;
 
@@ -126,25 +125,17 @@ public:
         return std::make_shared<FunctionDetectLanguageMixed>();
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Must be String.",
-                arguments[0]->getName(), getName());
+    [[nodiscard]] String getSignatureString() const override { return "(String) -> Map(String, Float32)"; }
 
-        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeFloat32>());
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & column = arguments[0].column;
         const ColumnString * col = checkAndGetColumn<ColumnString>(column.get());
@@ -179,8 +170,8 @@ public:
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * str = input_data.data() + input_offsets[i - 1];
-            const size_t str_len = input_offsets[i] - input_offsets[i - 1];
+            const UInt8 * str = input_data.data() + input_offsets[static_cast<ssize_t>(i) - 1];
+            const size_t str_len = input_offsets[i] - input_offsets[static_cast<ssize_t>(i) - 1];
 
             if (UTF8::isValidUTF8(str, str_len))
             {
@@ -233,15 +224,18 @@ using FunctionDetectLanguage = FunctionTextClassificationString<FunctionDetectLa
 REGISTER_FUNCTION(DetectLanguage)
 {
     FunctionDocumentation::Description description_detect = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Warning>
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+</Warning>
+
 Detects the language of the UTF8-encoded input string.
 The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
 
 The longer the input, the more precise the language detection will be.
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
 )";
     FunctionDocumentation::Syntax syntax_detect = "detectLanguage(s)";
     FunctionDocumentation::Arguments arguments_detect = {
@@ -249,7 +243,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value_detect = {"Returns the 2-letter ISO code of the detected language. Other possible results: `un` = unknown, can not detect any language, `other` = the detected language does not have 2 letter code.", {"String"}};
     FunctionDocumentation::Examples examples_detect = {
-        {"Mixed language text", "SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there\\'s a will, there\\'s a way.')", "fr"}
+        {"Basic usage", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif.')", "fr"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_detect = {22, 2};
     FunctionDocumentation::Category category_detect = FunctionDocumentation::Category::NLP;
@@ -258,12 +252,15 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     factory.registerFunction<FunctionDetectLanguage>(documentation_detect);
 
     FunctionDocumentation::Description description_mixed = R"(
-Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
+
+Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 )";
     FunctionDocumentation::Syntax syntax_mixed = "detectLanguageMixed(s)";
     FunctionDocumentation::Arguments arguments_mixed = {
@@ -271,7 +268,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value_mixed = {"Returns a map with keys which are 2-letter ISO codes and corresponding values which are a percentage of the text found for that language", {"Map(String, Float32)"}};
     FunctionDocumentation::Examples examples_mixed = {
-        {"Mixed languages", "SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
+        {"Mixed languages", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mixed = {22, 2};
     FunctionDocumentation::Category category_mixed = FunctionDocumentation::Category::NLP;

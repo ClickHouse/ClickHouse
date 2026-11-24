@@ -71,24 +71,23 @@ void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 Calculates the approximate number of different argument values.
 It provides the result deterministically (it does not depend on the query processing order).
 
-:::note
+<Note>
 Since it uses a 32-bit hash for non-String types, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (the error will raise quickly after a few tens of billions of distinct values).
-In the case cardinalities are larger than `UINT_MAX`, you should use [`uniqCombined64`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined64) instead.
-:::
+In the case cardinalities are larger than `UINT_MAX`, you should use [`uniqCombined64`](/reference/functions/aggregate-functions/uniqCombined64) instead.
+</Note>
 
 Compared to the uniq function, the uniqCombined function:
 - Consumes several times less memory
 - Calculates with several times higher accuracy
 - Usually has slightly lower performance. In some scenarios, uniqCombined can perform better than uniq, for example, with distributed queries that transmit a large number of aggregation states over the network
 
-<details>
-<summary>Implementation details</summary>
+<Accordion title="Implementation details">
 This function calculates a hash (64-bit hash for String and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
 It uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table:
 - For a small number of distinct elements, an array is used
 - When the set size is larger, a hash table is used
 - For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory
-</details>
+</Accordion>
     )";
     FunctionDocumentation::Syntax syntax_uniqCombined = R"(
 uniqCombined(HLL_precision)(x[, ...])
@@ -140,26 +139,25 @@ SELECT uniqCombined(15)(number) FROM numbers(1e5);
     /// uniqCombined64 documentation
     FunctionDocumentation::Description description_uniqCombined64 = R"(
 Calculates the approximate number of different argument values.
-It is the same as [`uniqCombined`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined), but uses a 64-bit hash for all data types rather than just for the String data type.
+It is the same as [`uniqCombined`](/reference/functions/aggregate-functions/uniqCombined), but uses a 64-bit hash for all data types rather than just for the String data type.
 
 This function provides the result deterministically (it does not depend on the query processing order).
 
-:::note
-Since it uses 64-bit hash for all types, the result does not suffer from very high error for cardinalities significantly larger than `UINT_MAX` like [`uniqCombined`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined) does, which uses a 32-bit hash for non-String types.
-:::
+<Note>
+Since it uses 64-bit hash for all types, the result does not suffer from very high error for cardinalities significantly larger than `UINT_MAX` like [`uniqCombined`](/reference/functions/aggregate-functions/uniqCombined) does, which uses a 32-bit hash for non-String types.
+</Note>
 
-Compared to the [uniq](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniq) function, the uniqCombined64 function:
+Compared to the [uniq](/reference/functions/aggregate-functions/uniq) function, the uniqCombined64 function:
 - Consumes several times less memory
 - Calculates with several times higher accuracy
 
-<details>
-<summary>Implementation details</summary>
+<Accordion title="Implementation details">
 This function calculates a 64-bit hash for all data types for all parameters in the aggregate, then uses it in calculations.
 It uses a combination of three algorithms: array, hash table, and [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) with an error correction table:
 - For a small number of distinct elements, an array is used
 - When the set size is larger, a hash table is used
 - For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory
-</details>
+</Accordion>
     )";
     FunctionDocumentation::Syntax syntax_uniqCombined64 = R"(
 uniqCombined64(HLL_precision)(x[, ...])
@@ -195,10 +193,10 @@ SELECT uniqCombined(number) FROM numbers(1e10);
         )",
         R"(
 ┌─uniqCombined64(number)─┐
-│             9998568925 │ -- 10.00 billion
+│             9998568925 │
 └────────────────────────┘
 ┌─uniqCombined(number)─┐
-│           5545308725 │ -- 5.55 billion
+│           5545308725 │
 └──────────────────────┘
         )"
     }

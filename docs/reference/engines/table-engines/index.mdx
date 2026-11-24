@@ -5,6 +5,7 @@ toc_folder_title: 'Table Engines'
 toc_priority: 26
 toc_title: 'Introduction'
 title: 'Table Engines'
+sidebarTitle: 'Overview'
 doc_type: 'reference'
 ---
 
@@ -27,6 +28,7 @@ Engines in the family:
 
 | MergeTree Engines                                                                                                                         |
 |-------------------------------------------------------------------------------------------------------------------------------------------|
+| [MergeTree family overview](/reference/engines/table-engines/mergetree-family/index)                                                     |
 | [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)                                                          |
 | [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree)                               |
 | [SummingMergeTree](/reference/engines/table-engines/mergetree-family/summingmergetree)                                     |
@@ -35,6 +37,10 @@ Engines in the family:
 | [VersionedCollapsingMergeTree](/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
 | [GraphiteMergeTree](/reference/engines/table-engines/mergetree-family/graphitemergetree)                                  |
 | [CoalescingMergeTree](/reference/engines/table-engines/mergetree-family/coalescingmergetree)                                     |
+| [Exact and Approximate Vector Search](/reference/engines/table-engines/mergetree-family/annindexes) |
+| [Custom Partitioning Key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key) |
+| [Replicated* table engines](/reference/engines/table-engines/mergetree-family/replication) |
+| [Full-text Search with Text Indexes](/reference/engines/table-engines/mergetree-family/textindexes) |
 
 ### Log {#log}
 
@@ -44,6 +50,7 @@ Engines in the family:
 
 | Log Engines                                                                |
 |----------------------------------------------------------------------------|
+| [Log engine family](/reference/engines/table-engines/log-family/index) |
 | [TinyLog](/reference/engines/table-engines/log-family/tinylog)       |
 | [StripeLog](/reference/engines/table-engines/log-family/stripelog) |
 | [Log](/reference/engines/table-engines/log-family/log)                   |
@@ -56,6 +63,7 @@ Engines in the family:
 
 | Integration Engines                                                             |
 |---------------------------------------------------------------------------------|
+| [Table Engines for Integrations](/reference/engines/table-engines/integrations/index) |
 | [ODBC](/reference/engines/table-engines/integrations/odbc)                        |
 | [JDBC](/reference/engines/table-engines/integrations/jdbc)                        |
 | [MySQL](/reference/engines/table-engines/integrations/mysql)                      |
@@ -69,6 +77,19 @@ Engines in the family:
 | [PostgreSQL](/reference/engines/table-engines/integrations/postgresql)            |
 | [S3Queue](/reference/engines/table-engines/integrations/s3queue)                  |
 | [TimeSeries](/reference/engines/table-engines/integrations/time-series)           |
+| [ArrowFlight](/reference/engines/table-engines/integrations/arrowflight)           |
+| [AzureQueue](/reference/engines/table-engines/integrations/azure-queue)             |
+| [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage)  |
+| [DeltaLake](/reference/engines/table-engines/integrations/deltalake)                |
+| [ExternalDistributed](/reference/engines/table-engines/integrations/ExternalDistributed) |
+| [Hive](/reference/engines/table-engines/integrations/hive)                          |
+| [Hudi](/reference/engines/table-engines/integrations/hudi)                          |
+| [Iceberg](/reference/engines/table-engines/integrations/iceberg)                    |
+| [MaterializedPostgreSQL](/reference/engines/table-engines/integrations/materialized-postgresql) |
+| [NATS](/reference/engines/table-engines/integrations/nats)                          |
+| [Paimon](/reference/engines/table-engines/integrations/paimon)                      |
+| [SQLite](/reference/engines/table-engines/integrations/sqlite)                      |
+| [YTsaurus](/reference/engines/table-engines/integrations/ytsaurus)                  |
 
 ### Special engines {#special-engines}
 
@@ -76,6 +97,8 @@ Engines in the family:
 
 | Special Engines                                               |
 |---------------------------------------------------------------|
+| [Special table engines](/reference/engines/table-engines/special/index)     |
+| [Alias](/reference/engines/table-engines/special/alias)                     |
 | [Distributed](/reference/engines/table-engines/special/distributed)     |
 | [Dictionary](/reference/engines/table-engines/special/dictionary)       |
 | [Merge](/reference/engines/table-engines/special/merge)                 |
@@ -101,7 +124,7 @@ You shouldn't specify virtual columns in the `CREATE TABLE` query, and you can't
 
 To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` does not return values from virtual columns.
 
-If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
+If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore. For tables of the `MergeTree` family such a column is rejected, unless the `allow_reserved_column_names` setting is enabled.
 
 - `_table` — Contains the name of the table from which data was read. Type: [String](/reference/data-types/string).
 

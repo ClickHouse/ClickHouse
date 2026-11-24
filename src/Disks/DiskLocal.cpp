@@ -15,6 +15,7 @@
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <system_error>
@@ -59,8 +60,30 @@ namespace ErrorCodes
     extern const int CANNOT_STAT;
 }
 
-std::mutex DiskLocal::reservation_mutex;
+namespace
+{
 
+std::atomic<UInt64> unsettled_file_reads{0};
+
+bool errnoIndicatesReadOnlyDisk(int err)
+{
+    return err == EROFS || err == EACCES || err == EPERM || err == ENOSPC || err == EDQUOT;
+}
+
+UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
+{
+    struct statvfs fs{};
+    if (name == "default") /// for default disk we get space from path/data/
+        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+    else
+        fs = getStatVFS(disk_path);
+    UInt64 total_size = fs.f_blocks * fs.f_frsize;
+    if (total_size < keep_free_space_bytes)
+        return 0;
+    return total_size - keep_free_space_bytes;
+}
+
+}
 
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
 
@@ -74,21 +97,21 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    UInt64 getSize() const override { return size; }
-    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    [[nodiscard]] UInt64 getSize() const override { return size; }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    DiskPtr getDisk(size_t i) const override
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use i != 0 with single disk reservation. It's a bug");
         return disk;
     }
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override
     {
-        std::lock_guard lock(DiskLocal::reservation_mutex);
+        std::lock_guard lock(disk->reservation_mutex);
         disk->reserved_bytes -= size;
         size = new_size;
         disk->reserved_bytes += size;
@@ -98,7 +121,7 @@ public:
     {
         try
         {
-            std::lock_guard lock(DiskLocal::reservation_mutex);
+            std::lock_guard lock(disk->reservation_mutex);
             if (disk->reserved_bytes < size)
             {
                 disk->reserved_bytes = 0;
@@ -139,16 +162,16 @@ public:
 
     void next() override { ++entry; }
 
-    bool isValid() const override { return entry != fs::directory_iterator(); }
+    [[nodiscard]] bool isValid() const override { return entry != fs::directory_iterator(); }
 
-    String path() const override
+    [[nodiscard]] String path() const override
     {
         if (entry->is_directory())
             return dir_path / entry->path().filename() / "";
         return dir_path / entry->path().filename();
     }
 
-    String name() const override { return entry->path().filename(); }
+    [[nodiscard]] String name() const override { return entry->path().filename(); }
 
 private:
     fs::path dir_path;
@@ -158,31 +181,34 @@ private:
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
-    auto unreserved_space = tryReserve(bytes, std::nullopt);
-    if (!unreserved_space.has_value())
-        return {};
-    return std::make_unique<DiskLocalReservation>(
-        std::static_pointer_cast<DiskLocal>(shared_from_this()),
-        bytes, unreserved_space.value());
+    std::optional<UInt64> unreserved_space;
+    return reserveAndGetUnreservedSpace(bytes, std::nullopt, unreserved_space);
 }
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes, const ReservationConstraints & constraints)
 {
-    auto unreserved_space = tryReserve(bytes, constraints);
-    if (!unreserved_space.has_value())
-        return {};
-    return std::make_unique<DiskLocalReservation>(
-        std::static_pointer_cast<DiskLocal>(shared_from_this()),
-        bytes, unreserved_space.value());
+    std::optional<UInt64> unreserved_space;
+    return reserveAndGetUnreservedSpace(bytes, constraints, unreserved_space);
 }
 
-std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints)
+ReservationPtr DiskLocal::reserveAndGetUnreservedSpace(
+    UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space)
 {
-    std::lock_guard lock(DiskLocal::reservation_mutex);
+    UInt64 space = 0;
+    const bool reserved = tryReserve(bytes, constraints, space);
+    unreserved_space = space;
+    if (!reserved)
+        return {};
+    return std::make_unique<DiskLocalReservation>(std::static_pointer_cast<DiskLocal>(shared_from_this()), bytes, space);
+}
+
+bool DiskLocal::tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints, UInt64 & unreserved_space)
+{
+    std::lock_guard lock(reservation_mutex);
 
     auto available_space = getAvailableSpace();
 
-    UInt64 unreserved_space = available_space
+    unreserved_space = available_space
         ? *available_space - std::min(*available_space, reserved_bytes)
         : std::numeric_limits<UInt64>::max();
 
@@ -195,7 +221,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
         {
             /// Not enough space for reservation itself
             if (bytes > unreserved_space)
-                return {};
+                return false;
 
             UInt64 free_bytes_after = unreserved_space - bytes;
 
@@ -204,7 +230,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
             {
                 LOG_TRACE(logger, "Could not reserve {} ({} bytes) on disk {}. Free space after reservation {} bytes ({}) would be less than min_bytes {} bytes ({})",
                     ReadableSize(bytes), bytes, backQuote(name), free_bytes_after, ReadableSize(free_bytes_after), constraints->min_bytes, ReadableSize(constraints->min_bytes));
-                return {};
+                return false;
             }
 
             /// Check min_ratio constraint
@@ -215,7 +241,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
                 {
                     LOG_TRACE(logger, "Could not reserve {} ({} bytes) on disk {}. Free space after reservation {} bytes ({}) would be less than min_ratio requirement {} bytes ({}) (ratio: {}, total: {} bytes)",
                         ReadableSize(bytes), bytes, backQuote(name), free_bytes_after, ReadableSize(free_bytes_after), min_bytes_from_ratio, ReadableSize(min_bytes_from_ratio), constraints->min_ratio, *total_space);
-                    return {};
+                    return false;
                 }
             }
         }
@@ -225,7 +251,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
     {
         LOG_TRACE(logger, "Reserved 0 bytes on local disk {}", backQuote(name));
         ++reservation_count;
-        return {unreserved_space};
+        return true;
     }
 
     if (unreserved_space >= bytes)
@@ -250,25 +276,13 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
 
         ++reservation_count;
         reserved_bytes += bytes;
-        return {unreserved_space - bytes};
+        unreserved_space -= bytes;
+        return true;
     }
 
     LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
 
-    return {};
-}
-
-static UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
-{
-    struct statvfs fs{};
-    if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
-    else
-        fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_blocks * fs.f_frsize;
-    if (total_size < keep_free_space_bytes)
-        return 0;
-    return total_size - keep_free_space_bytes;
+    return false;
 }
 
 std::optional<UInt64> DiskLocal::getTotalSpace() const
@@ -297,7 +311,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
 
 std::optional<UInt64> DiskLocal::getUnreservedSpace() const
 {
-    std::lock_guard lock(DiskLocal::reservation_mutex);
+    std::lock_guard lock(reservation_mutex);
     auto available_space = *getAvailableSpace();
     available_space -= std::min(available_space, reserved_bytes);
     return available_space;
@@ -305,17 +319,17 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
 
 bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
-    return fs::exists(fs::path(disk_path) / path);
+    return existsOrFileNameTooLong([&] { return fs::exists(fs::path(disk_path) / path); });
 }
 
 bool DiskLocal::existsFile(const String & path) const
 {
-    return fs::is_regular_file(fs::path(disk_path) / path);
+    return existsOrFileNameTooLong([&] { return fs::is_regular_file(fs::path(disk_path) / path); });
 }
 
 bool DiskLocal::existsDirectory(const String & path) const
 {
-    return fs::is_directory(fs::path(disk_path) / path);
+    return existsOrFileNameTooLong([&] { return fs::is_directory(fs::path(disk_path) / path); });
 }
 
 size_t DiskLocal::getFileSize(const String & path) const
@@ -382,10 +396,11 @@ void DiskLocal::prepareRead(
     /// (e.g. FILE_DOESNT_EXIST for broken projections). Mark the size unknown in
     /// that case so the reader opens the file rather than treating a zero size as
     /// an empty file.
-    std::error_code ec;
-    auto file_size = fs::file_size(full_path, ec);
+    struct stat file_stat{};
+    const bool is_regular_file = 0 == ::stat(full_path.c_str(), &file_stat) && S_ISREG(file_stat.st_mode);
+    const size_t file_size = is_regular_file ? static_cast<size_t>(file_stat.st_size) : StoredObject::UnknownSize;
 
-    StoredObject obj(full_path.string(), full_path.string(), ec ? StoredObject::UnknownSize : file_size);
+    StoredObject obj(full_path.string(), full_path.string(), file_size);
 
     /// No gather for local disk — the source buffer is returned directly.
     pipeline.setLocalFileSource(
@@ -411,9 +426,12 @@ void DiskLocal::prepareRead(
         && settings.local_fs_settings.method != LocalFSReadMethod::mmap;
 
     {
-        /// Use the same estimated size basis as createReadBufferFromFileBase:
-        /// read_hint first, then file_size. A large file with a small read_hint
-        /// won't trigger O_DIRECT, so page cache remains safe.
+        /// Legacy pipeline: selection is read_hint-based (0 when absent), so falling back to
+        /// file_size is a conservative upper bound when there is no hint. The optional reader
+        /// executor is different: LocalSourceReader selects by file_size and ignores read_hint,
+        /// so this expression is not an upper bound for that path (a small hint can hide a large
+        /// file). This check predates the current change; it only decides whether the userspace
+        /// page cache may coexist with an unaligned page-cache block size.
         size_t estimated_size = read_hint.value_or(file_size);
         if (use_page_cache && settings.local_fs_settings.direct_io_threshold
             && estimated_size >= settings.local_fs_settings.direct_io_threshold
@@ -422,7 +440,17 @@ void DiskLocal::prepareRead(
     }
 
     if (use_page_cache)
-        pipeline.needMemoryCache("local:", settings.page_cache_settings);
+    {
+        String file_version;
+        if (is_regular_file)
+        {
+            file_version = computeFileCacheVersionToken(file_stat);
+            /// Until the file settles, a file rewritten at the same path in the same tick can get the same token.
+            if (!isFileCacheVersionTokenSettled(file_stat))
+                file_version += fmt::format("#{}", unsettled_file_reads.fetch_add(1, std::memory_order_relaxed));
+        }
+        pipeline.needMemoryCache("local:" + full_path.string(), std::move(file_version), settings.page_cache_settings);
+    }
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -630,7 +658,7 @@ DiskLocal::DiskLocal(
 {
     auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 0);
     if (local_disk_check_period_ms > 0)
-        disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
+        disk_checker.emplace(this, context, local_disk_check_period_ms);
 }
 
 DiskLocal::DiskLocal(const String & name_, const String & path_)
@@ -667,172 +695,59 @@ void DiskLocal::shutdown()
         disk_checker->shutdown();
 }
 
-std::optional<UInt32> DiskLocal::readDiskCheckerMagicNumber() const noexcept
-try
-{
-    ReadSettings read_settings;
-    /// Proper disk read checking requires direct io
-    read_settings.local_fs_settings.direct_io_threshold = 1;
-    auto buf = readFile(disk_checker_path, read_settings, {});
-    UInt32 magic_number = 0;
-    readIntBinary(magic_number, *buf);
-    if (buf->eof())
-        return magic_number;
-    LOG_WARNING(logger, "The size of disk check magic number is more than 4 bytes. Mark it as read failure");
-    return {};
-}
-catch (...)
-{
-    tryLogCurrentException(logger, fmt::format("Cannot read correct disk check magic number from from {}{}", disk_path, disk_checker_path));
-    return {};
-}
-
-bool DiskLocal::canRead() const noexcept
-try
-{
-    if (FS::canRead(fs::path(disk_path) / disk_checker_path))
-    {
-        auto magic_number = readDiskCheckerMagicNumber();
-        if (magic_number && *magic_number == disk_checker_magic_number)
-            return true;
-    }
-    return false;
-}
-catch (...)
-{
-    LOG_WARNING(logger, "Cannot achieve read over the disk directory: {}", disk_path);
-    return false;
-}
-
-struct DiskWriteCheckData
-{
-    constexpr static size_t PAGE_SIZE_IN_BYTES = 4096;
-    char data[PAGE_SIZE_IN_BYTES]{};
-    DiskWriteCheckData()
-    {
-        static const char * magic_string = "ClickHouse disk local write check";
-        static size_t magic_string_len = strlen(magic_string);
-        memcpy(data, magic_string, magic_string_len);
-        memcpy(data + PAGE_SIZE_IN_BYTES - magic_string_len, magic_string, magic_string_len);
-    }
-};
-
-bool DiskLocal::canWrite() noexcept
-try
-{
-    static DiskWriteCheckData data;
-    {
-        auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
-        auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
-        auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
-        buf->write(data.data, DiskWriteCheckData::PAGE_SIZE_IN_BYTES);
-        buf->finalize();
-        buf->sync();
-    }
-    return true;
-}
-catch (...)
-{
-    LOG_WARNING(logger, "Cannot achieve write over the disk directory: {}", disk_path);
-    return false;
-}
-
 void DiskLocal::checkAccessImpl(const String & path)
 {
-    try
+    if (!FS::canRead(disk_path, /*allow_throw=*/false))
     {
-        fs::create_directories(disk_path);
-        if (!FS::canWrite(disk_path))
-        {
-            LOG_ERROR(logger, "Cannot write to the root directory of disk {} ({}).", name, disk_path);
-            readonly = true;
-            return;
-        }
+        broken = true;
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "There is no read access to disk {} ({}).", name, disk_path);
     }
-    catch (...)
+
+    if (!FS::canWrite(disk_path, /*allow_throw=*/false))
     {
-        LOG_ERROR(logger, "Cannot create the root directory of disk {} ({}).", name, disk_path);
-        readonly = true;
+        if (!readonly.exchange(true))
+            LOG_INFO(logger, "Cannot write to the root directory of disk {} ({}).", name, disk_path);
+
+        broken = false;
         return;
     }
 
-    IDisk::checkAccessImpl(path);
+    try
+    {
+        IDisk::checkAccessImpl(path);
+    }
+    catch (const ErrnoException & e)
+    {
+        if (errnoIndicatesReadOnlyDisk(e.getErrno()))
+        {
+            if (!readonly.exchange(true))
+                LOG_INFO(logger, "Cannot write to disk {} ({}): {}", name, disk_path, getCurrentExceptionMessage(/* with_stacktrace = */ false));
+
+            broken = false;
+            return;
+        }
+
+        broken = true;
+        throw;
+    }
+    catch (...)
+    {
+        broken = true;
+        throw;
+    }
+
+    broken = false;
+    readonly = false;
 }
 
 void DiskLocal::setup()
 {
     fs::create_directories(disk_path);
-    try
-    {
-        if (!FS::canRead(disk_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "There is no read access to disk {} ({}).", name, disk_path);
-    }
-    catch (...)
-    {
-        LOG_ERROR(logger, "Cannot gain read access of the disk directory: {}", disk_path);
-        throw;
-    }
-
-    /// If disk checker is disabled, just assume RW by default.
-    if (!disk_checker)
-        return;
-
-    try
-    {
-        if (existsFile(disk_checker_path))
-        {
-            auto magic_number = readDiskCheckerMagicNumber();
-            if (magic_number)
-                disk_checker_magic_number = *magic_number;
-            else
-            {
-                /// The checker file is incorrect. Mark the magic number to uninitialized and try to generate a new checker file.
-                disk_checker_magic_number = -1;
-            }
-        }
-    }
-    catch (...)
-    {
-        LOG_ERROR(logger, "We cannot tell if {} exists anymore, or read from it. Most likely disk {} is broken", disk_checker_path, name);
-        throw;
-    }
-
-    /// Try to create a new checker file. The disk status can be either broken or readonly.
-    if (disk_checker_magic_number == -1)
-    {
-        try
-        {
-            pcg32_fast rng(randomSeed());
-            UInt32 magic_number = rng();
-            {
-                auto buf = writeFile(disk_checker_path, 32, WriteMode::Rewrite, {});
-                writeIntBinary(magic_number, *buf);
-                buf->finalize();
-            }
-            disk_checker_magic_number = magic_number;
-        }
-        catch (...)
-        {
-            LOG_WARNING(
-                logger,
-                "Cannot create/write to {0}. Disk {1} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
-                "will not be started. Disk is assumed to be RW. Try manually fix the disk and do `SYSTEM RESTART DISK {1}`",
-                disk_checker_path,
-                name);
-            disk_checker_can_check_read = false;
-            return;
-        }
-    }
-
-    if (disk_checker_magic_number == -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "disk_checker_magic_number is not initialized. It's a bug");
 }
 
 void DiskLocal::startupImpl()
 {
     broken = false;
-    disk_checker_magic_number = -1;
-    disk_checker_can_check_read = true;
 
     try
     {
@@ -842,10 +757,9 @@ void DiskLocal::startupImpl()
     {
         tryLogCurrentException(logger, fmt::format("Disk {} is marked as broken during startup", name));
         broken = true;
-        /// Disk checker is disabled when failing to start up.
-        disk_checker_can_check_read = false;
     }
-    if (disk_checker && disk_checker_can_check_read)
+
+    if (disk_checker)
         disk_checker->startup();
 }
 
@@ -856,14 +770,6 @@ struct stat DiskLocal::stat(const String & path) const
     if (::stat(full_path.string().c_str(), &st) == 0)
         return st;
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot stat file: {}", path);
-}
-
-void DiskLocal::chmod(const String & path, mode_t mode)
-{
-    auto full_path = fs::path(disk_path) / path;
-    if (::chmod(full_path.string().c_str(), mode) == 0)
-        return;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
 }
 
 ObjectStoragePtr DiskLocal::getObjectStorage()
@@ -881,17 +787,21 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         const String & config_prefix,
         ContextPtr context,
         const DisksMap & map,
-        bool, bool) -> DiskPtr
+        bool attach,
+        bool custom_disk) -> DiskPtr
     {
         String path;
         UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
 
+        if (custom_disk && !attach)
+            checkCustomLocalDiskPath(path, context);
+
         for (const auto & [disk_name, disk_ptr] : map)
             if (path == disk_ptr->getPath())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
         disk->startup(skip_access_check);

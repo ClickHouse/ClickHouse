@@ -43,34 +43,25 @@ public:
         return std::make_shared<FunctionS2CapUnion>();
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// `0` is not a valid S2 cell id.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"center1", &isUInt64, nullptr, "UInt64"},
-            {"radius1", &isFloat, nullptr, "Float64"},
-            {"center2", &isUInt64, nullptr, "UInt64"},
-            {"radius2", &isFloat, nullptr, "Float64"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        DataTypePtr center = std::make_shared<DataTypeUInt64>();
-        DataTypePtr radius = std::make_shared<DataTypeFloat64>();
-
-        return std::make_shared<DataTypeTuple>(DataTypes{center, radius});
+        return "(UInt64, Float, UInt64, Float) -> Tuple(UInt64, Float64)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -172,7 +163,7 @@ Returns the smallest cap that contains both of the input S2 caps. A cap represen
         {"radius2", "Radius of the second cap in degrees.", {"Float64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (center, radius) representing the smallest cap containing both input caps.", {"Tuple(UInt64, Float64)"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2CapUnion(1157339245694594829, 1.0, 1157347770437378819, 1.0)", "(1157339245694594829,1.0049841409301968)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2CapUnion(1157339245694594829, 1.0, 1157347770437378819, 1.0)", "(1157337948443372697,1.0706880308631295)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

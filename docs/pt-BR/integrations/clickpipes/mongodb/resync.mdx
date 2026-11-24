@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="what-mongodb-resync-do">
   ### O que o Resync faz?
 </div>
@@ -25,14 +23,10 @@ O Resync envolve as seguintes operações, nesta ordem:
 
 Todas as configurações do ClickPipe original são mantidas no ClickPipe de resync. As estatísticas do ClickPipe original são limpas na UI.
 
-<div id="use-cases-mongodb-resync">
-  ### Casos de uso para Resync de um ClickPipe
-</div>
-
-Aqui estão alguns cenários:
-
-1. Talvez você precise fazer alterações significativas de schema nas tabelas de origem que invalidem o ClickPipe existente e exijam que ele seja reiniciado. Você pode simplesmente clicar em Resync após fazer as alterações.
-2. No caso específico do ClickHouse, talvez você tenha precisado alterar a chave `ORDER BY` nas tabelas de destino. Você pode usar o Resync para repopular os dados na nova tabela com a chave de ordenação correta.
+<Note>
+  Você pode fazer o resync várias vezes; no entanto, leve em consideração a carga no banco de dados de origem ao fazer o resync,
+  pois a carga inicial com threads paralelas é executada todas as vezes.
+</Note>
 
 <div id="guide-mongodb-resync">
   ### Guia de Resync do ClickPipe
@@ -42,7 +36,15 @@ Aqui estão alguns cenários:
 2. Acesse a aba **Configurações**.
 3. Clique no botão **Resync**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
+
+</Frame>
+
+</div>
 
 4. Uma caixa de diálogo de confirmação será exibida. Clique em **Resync** novamente.
 5. Acesse a aba **Métricas**.

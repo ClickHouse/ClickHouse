@@ -14,27 +14,23 @@ integration:
 
 ボタンをクリックするだけで個別のテーブルを再同期する機能は現在開発中ですが、このガイドでは、現時点で Postgres ClickPipe でこれを実現する手順を紹介します。
 
-<div id="removing-table">
-  ### 1. パイプからテーブルを削除する
-</div>
+<Steps>
+  <Step title="パイプからテーブルを削除する" id="removing-table">
+    この手順は、[テーブル削除ガイド](/ja/integrations/clickpipes/postgres/remove-table)に従って実施できます。
+  </Step>
 
-これを行うには、[テーブルの削除ガイド](/ja/integrations/clickpipes/postgres/remove-table)を参照してください。
+  <Step title="ClickHouse 上のテーブルを truncate または drop する" id="truncate-drop-table">
+    この手順は、次の手順でこのテーブルを再度追加した際にデータが重複するのを防ぐためのものです。ClickHouse Cloud の **SQL Console** タブに移動し、クエリを実行してください。
+    テーブルがすでに ClickHouse に存在し、かつ空でない場合は、追加できないように検証が行われる点に注意してください。
 
-<div id="truncate-drop-table">
-  ### 2. ClickHouse 上のテーブルを TRUNCATE または DROP する
-</div>
+    また、古いテーブルを残しておく必要がある場合は、単にリネームすることもできます。これは、テーブルが非常に大きく、drop 操作に時間がかかる可能性がある場合にも有効です。
 
-この手順は、次のステップでこのテーブルを再度追加する際のデータ重複を防ぐためのものです。これを行うには、ClickHouse Cloud の **SQL Console** タブに移動してクエリを実行します。
-なお、テーブルがすでに ClickHouse に存在し、空でない場合は、そのテーブルを追加できないようにする検証が行われます。
+    ```sql
+    RENAME TABLE table_A TO table_A_bak;
+    ```
+  </Step>
 
-あるいは、古いテーブルを残しておく必要がある場合は、単に名前を変更することもできます。テーブルが非常に大きく、DROP に時間がかかる可能性がある場合にも有効です。
-
-```sql
-RENAME TABLE table_A TO table_A_bak;
-```
-
-<div id="add-table-again">
-  ### 3. テーブルを ClickPipe に再度追加する
-</div>
-
-これを行うには、[テーブルを追加するガイド](/ja/integrations/clickpipes/postgres/add-table)に従ってください。
+  <Step title="テーブルを ClickPipe に再度追加する" id="add-table-again">
+    この手順は、[テーブル追加ガイド](/ja/integrations/clickpipes/postgres/add-table)に従って実施できます。
+  </Step>
+</Steps>

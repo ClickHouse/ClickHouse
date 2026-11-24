@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['EC2', 'AWS', 'журналы хоста', 'systemd', 'syslog', 'OTEL', 'ClickStack', 'системный мониторинг', 'метаданные облака']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -41,16 +39,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Есть доступ к службе метаданных экземпляра EC2 (по умолчанию включена)
 
 <Steps>
-  <Step>
-    #### Убедитесь, что метаданные EC2 доступны
-
+  <Step title="Убедитесь, что метаданные EC2 доступны" id="verify-metadata">
     На экземпляре EC2 убедитесь, что служба метаданных доступна:
 
     ```bash
-    # Получить токен метаданных (IMDSv2)
+    # Get metadata token (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # Проверить метаданные инстанса
+    # Verify instance metadata
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -67,46 +63,40 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Убедитесь, что файлы syslog присутствуют
-
+  <Step title="Убедитесь, что файлы syslog присутствуют" id="verify-syslog">
     Убедитесь, что ваш инстанс EC2 записывает файлы syslog:
 
     ```bash
-    # Экземпляры Ubuntu
+    # Ubuntu instances
     ls -la /var/log/syslog
 
-    # Экземпляры Amazon Linux / RHEL
+    # Amazon Linux / RHEL instances
     ls -la /var/log/messages
 
-    # Просмотр последних записей
+    # View recent entries
     tail -20 /var/log/syslog
-    # или
+    # or
     tail -20 /var/log/messages
     ```
   </Step>
 
-  <Step>
-    #### Установите OpenTelemetry Collector
-
+  <Step title="Установите OpenTelemetry Collector" id="install-collector">
     Установите дистрибутив OpenTelemetry Collector Contrib на своем экземпляре EC2:
 
     ```bash
-    # Скачать последний релиз
+    # Download the latest release
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # Распаковать и установить
+    # Extract and install
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # Проверить установку
+    # Verify installation
     otelcol-contrib --version
     ```
   </Step>
 
-  <Step>
-    #### Создание конфигурации коллектора
-
+  <Step title="Создание конфигурации коллектора" id="create-config">
     Создайте файл конфигурации для OpenTelemetry Collector по пути `/etc/otelcol-contrib/config.yaml`:
 
     ```bash
@@ -257,9 +247,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step>
-    #### Задайте API-ключ ClickStack
-
+  <Step title="Задайте API-ключ ClickStack" id="set-api-key">
     Экспортируйте API-ключ ClickStack в переменную окружения:
 
     ```bash
@@ -274,9 +262,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Запустите коллектор
-
+  <Step title="Запустите коллектор" id="run-collector">
     Запустите OpenTelemetry Collector:
 
     ```bash
@@ -290,9 +276,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step>
-    #### Проверка журналов в HyperDX
-
+  <Step title="Проверка журналов в HyperDX" id="verifying-logs">
     После запуска коллектора войдите в HyperDX и убедитесь, что журналы поступают вместе с метаданными EC2:
 
     1. Перейдите в представление Search
@@ -306,9 +290,25 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
        * `host.type` (тип инстанса)
        * `cloud.availability_zone`
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="Представление Search для журналов EC2" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="Подробная информация о журнале EC2 с метаданными" />
+    <Frame>
+
+    ![Представление Search для журналов EC2](/images/clickstack/host-logs/ec2/search-view.webp)
+
+    </Frame>
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Подробная информация о журнале EC2 с метаданными](/images/clickstack/host-logs/ec2/log-view.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -319,9 +319,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию журналов хоста EC2 перед настройкой рабочих экземпляров, мы предоставляем демо-набор данных с имитированными метаданными EC2.
 
 <Steps>
-  <Step>
-    #### Скачайте пример набора данных
-
+  <Step title="Скачайте пример набора данных" id="download-sample">
     Скачайте пример файла журнала:
 
     ```bash
@@ -339,9 +337,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Сочетание штатных операций и примечательных событий
   </Step>
 
-  <Step>
-    #### Создайте тестовую конфигурацию коллектора
-
+  <Step title="Создайте тестовую конфигурацию коллектора" id="test-config">
     Создайте файл `ec2-host-logs-demo.yaml` со следующей конфигурацией:
 
     ```yaml
@@ -366,7 +362,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
             value: "ec2-demo"
 
     processors:
-      # Имитация метаданных EC2 для демонстрации (реальный инстанс EC2 не нужен)
+      # Simulate EC2 metadata for demo (no real EC2 instance required)
       resource:
         attributes:
           - key: service.name
@@ -413,9 +409,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### Запустите ClickStack с демонстрационной конфигурацией
-
+  <Step title="Запустите ClickStack с демонстрационной конфигурацией" id="run-demo">
     Запустите ClickStack с демонстрационными журналами и демонстрационной конфигурацией:
 
     ```bash
@@ -428,9 +422,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Проверьте журналы в HyperDX
-
+  <Step title="Проверьте журналы в HyperDX" id="verify-demo-logs">
     После запуска collector:
 
     1. Откройте [HyperDX](http://localhost:8080/) и войдите в свою учетную запись (возможно, сначала потребуется создать ее)
@@ -439,9 +431,25 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     4. Отфильтруйте по `source:ec2-demo`
     5. Разверните запись в журнале, чтобы просмотреть метаданные EC2 в атрибутах ресурса
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="Представление поиска журналов EC2" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="Подробная информация о журнале EC2 с метаданными" />
+    <Frame>
+
+    ![Представление поиска журналов EC2](/images/clickstack/host-logs/ec2/search-view-demo.webp)
+
+    </Frame>
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Подробная информация о журнале EC2 с метаданными](/images/clickstack/host-logs/ec2/log-view-demo.webp)
+
+    </Frame>
+
+    </div>
 
     <Info>
       **Отображение часового пояса**
@@ -465,34 +473,54 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы вам было проще начать мониторинг журналов хоста EC2 в ClickStack, мы предоставляем базовые визуализации с облачным контекстом.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачать конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импортируйте преднастроенную панель мониторинга
-
+  <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Кнопка импорта панели мониторинга" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     3. Загрузите файл `host-logs-dashboard.json` и нажмите **Finish Import**
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Завершение импорта" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Завершение импорта](/images/clickstack/host-logs/import-dashboard.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### Просмотрите панель мониторинга
-
+  <Step title="Просмотрите панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="Панель мониторинга журналов EC2" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Панель мониторинга журналов EC2](/images/clickstack/host-logs/host-logs-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     Вы можете фильтровать визуализации на панели мониторинга по контексту EC2:
 
     * `cloud.region:us-east-1` - показать журналы из конкретного региона
-    * `host.type:t3.medium` - фильтрация по типу инстанса
+    * `host.type:t3.medium` - фильтровать по типу инстанса
     * `host.id:i-0abc123def456` - журналы с конкретного инстанса
 
     <Note>
@@ -624,7 +652,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * Создавайте пользовательские панели мониторинга для мониторинга безопасности (попытки SSH, использование sudo, блокировки межсетевым экраном)
 
 <div id="going-to-production">
-  ## Переход в промышленную эксплуатацию
+  ## Переход в продакшн
 </div>
 
-В этом руководстве OpenTelemetry Collector устанавливается непосредственно на экземпляры EC2, что является рекомендуемым для продакшена вариантом мониторинга на уровне хоста. Для управления коллекторами на множестве экземпляров рассмотрите возможность использования инструментов управления конфигурацией (Ansible, Chef, Puppet) или OpenTelemetry Operator в средах Kubernetes. Сведения о конфигурации для продакшена см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве OpenTelemetry Collector устанавливается непосредственно на экземпляры EC2, что является рекомендуемым вариантом для мониторинга на уровне хоста в продакшн-среде. Для управления коллекторами на множестве экземпляров рассмотрите возможность использования инструментов управления конфигурацией (Ansible, Chef, Puppet) или OpenTelemetry Operator в средах Kubernetes. См. раздел [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) с конфигурацией для продакшн-среды.

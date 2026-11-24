@@ -1,6 +1,5 @@
 {
   "item": "Kubernetes Operator",
-  "icon": "/images/icons/icon-kubernetes-operator.svg",
   "pages": [
     "products/kubernetes-operator/overview",
     {
@@ -22,7 +21,8 @@
         "products/kubernetes-operator/guides/monitoring",
         "products/kubernetes-operator/guides/scaling",
         "products/kubernetes-operator/guides/tls",
-        "products/kubernetes-operator/guides/network-policies"
+        "products/kubernetes-operator/guides/network-policies",
+        "products/kubernetes-operator/guides/kubernetes-events"
       ]
     },
     {

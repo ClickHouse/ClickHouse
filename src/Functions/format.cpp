@@ -1,4 +1,5 @@
 #include <Columns/ColumnFixedString.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -7,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
 #include <string>
@@ -18,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -31,35 +32,28 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FormatFunction>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.size() < 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
-                getName(),
-                arguments.size());
-
-        return std::make_shared<DataTypeString>();
+        return "(const String, Any, ...) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & c0 = arguments[0].column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
@@ -86,7 +80,7 @@ public:
             {
                 has_column_string = true;
                 data[i - 1] = &col->getChars();
-                offsets[i - 1] = &col->getOffsets();
+                offsets[static_cast<ssize_t>(i) - 1] = &col->getOffsets();
             }
             else if (const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(column.get()))
             {
@@ -101,11 +95,7 @@ public:
             else
             {
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String.
-                /// Only strip top-level wrappers (Const, Sparse, LowCardinality) without recursing into subcolumns.
-                /// Using the recursive convertToFullIfNeeded would strip LowCardinality from inside
-                /// compound types like Variant while the type is not updated, creating a type/column mismatch.
-                auto full_column
-                    = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
+                auto full_column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
                 ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
@@ -124,7 +114,7 @@ public:
                 /// Same as the normal `ColumnString` branch
                 has_column_string = true;
                 data[i - 1] = &converted_col_ptrs[i - 1]->getChars();
-                offsets[i - 1] = &converted_col_ptrs[i - 1]->getOffsets();
+                offsets[static_cast<ssize_t>(i) - 1] = &converted_col_ptrs[i - 1]->getOffsets();
             }
         }
 

@@ -7,8 +7,7 @@ doc_type: 'guide'
 keywords: ['clickstack', 'observabilidad', 'vistas materializadas', 'rendimiento', 'optimización', 'visualizaciones', 'agregaciones']
 ---
 
-import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -36,7 +35,15 @@ La principal razón para usar vistas materializadas es que los datos escritos en
 
 Las vistas materializadas en ClickHouse se actualizan continuamente a medida que los datos fluyen hacia la tabla de origen, comportándose más como índices siempre actualizados. Esto difiere de muchas otras bases de datos, donde las vistas materializadas son instantáneas estáticas que deben actualizarse periódicamente, de forma similar a las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) de ClickHouse.
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de vista materializada" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Diagrama de vista materializada](/images/materialized-view/materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 Las vistas materializadas incrementales calculan solo los cambios en la vista a medida que llegan nuevos datos, desplazando el cómputo al tiempo de inserción. Como ClickHouse está altamente optimizado para la ingestión, el costo incremental de mantener la vista para cada bloque insertado es pequeño en relación con el ahorro obtenido durante la ejecución de las consultas. El costo de calcular la agregación se amortiza entre las inserciones, en lugar de pagarse repetidamente en cada lectura. Por lo tanto, consultar los resultados preagregados es mucho menos costoso que volver a calcularlos, lo que se traduce en un menor costo operativo y un rendimiento casi en tiempo real para las visualizaciones posteriores, incluso a escala de petabytes.
 
@@ -124,7 +131,15 @@ En esta etapa, **concéntrate en las consultas** que ejecutarán las visualizaci
 
 Una vez que hayas identificado una visualización, o un conjunto de visualizaciones, que quieras acelerar, el siguiente paso es identificar las consultas subyacentes. En la práctica, esto implica inspeccionar la configuración de la visualización y revisar el SQL generado, prestando especial atención a las métricas de agregación utilizadas y a las funciones aplicadas.
 
-<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="SQL generado" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![SQL generado](/images/clickstack/materialized_views/generated_sql.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   En los casos en que no haya un panel de depuración disponible dentro de HyperDX para un componente, los usuarios pueden inspeccionar la consola del navegador, donde se registran todas las consultas.
@@ -226,25 +241,35 @@ Una vez creadas las vistas materializadas en ClickHouse, deben registrarse en Cl
 Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corresponda a la **tabla de origen original** de la que se derivó la vista.
 
 <Steps>
-  <Step>
-    #### Editar la fuente
-
+  <Step title="Editar la fuente" id="edit-the-source">
     Vaya a la **fuente** correspondiente en HyperDX y abra el cuadro de diálogo **Edit configuration**. Desplácese hasta la sección de vistas materializadas.
 
-    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Editar fuentes" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Editar fuentes](/images/clickstack/materialized_views/edit_source.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### Agregar la vista materializada
-
+  <Step title="Agregar la vista materializada" id="add-the-materialized-view">
     Seleccione **Add materialized view** y, a continuación, elija la base de datos y la tabla de destino que sustentan la vista materializada.
 
-    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Editar fuentes" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Editar fuentes](/images/clickstack/materialized_views/add_view.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### Seleccionar métricas
-
+  <Step title="Seleccionar métricas" id="select-metrics">
     En la mayoría de los casos, las columnas de timestamp, dimensión y métrica se inferirán automáticamente. Si no es así, especifíquelas manualmente.
 
     Para las métricas, debe mapear:
@@ -254,20 +279,32 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
 
     Para las dimensiones, especifique todas las columnas, aparte del timestamp, por las que agrupa la vista.
 
-    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Seleccionar métricas" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Seleccionar métricas](/images/clickstack/materialized_views/select_metrics.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### Seleccionar la granularidad temporal
-
+  <Step title="Seleccionar la granularidad temporal" id="select-time-granularity">
     Seleccione la **granularidad temporal** de la vista materializada, por ejemplo, un minuto.
 
-    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Seleccionar granularidad temporal" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Seleccionar granularidad temporal](/images/clickstack/materialized_views/select_time_granularity.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### Seleccionar la fecha mínima
-
+  <Step title="Seleccionar la fecha mínima" id="specify-the-minimum-date">
     Especifique la fecha mínima para la que la vista materializada contiene datos. Esto representa el timestamp más antiguo disponible en la vista y, por lo general, es el momento en que se creó, suponiendo que la ingestión haya sido continua.
 
     <Note>
@@ -275,7 +312,15 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
       Puede encontrar una guía completa sobre la carga de datos históricos en vistas materializadas en [&quot;Carga de datos históricos.&quot;](/es/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
-    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="Seleccionar tiempo mínimo" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Seleccionar tiempo mínimo](/images/clickstack/materialized_views/select_min_time.webp)
+
+    </Frame>
+
+    </div>
 
     Si la hora de inicio exacta no está clara, puede determinarla consultando el timestamp mínimo de la tabla de destino, por ejemplo:
 
@@ -284,12 +329,18 @@ Las vistas materializadas deben registrarse en la **fuente** de HyperDX que corr
     ```
   </Step>
 
-  <Step>
-    #### Guardar la fuente
-
+  <Step title="Guardar la fuente" id="save-the-source">
     Guarde la configuración de la fuente.
 
-    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="Guardar fuente" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Guardar fuente](/images/clickstack/materialized_views/save_source.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -309,10 +360,18 @@ ClickStack proporciona indicadores visuales claros para confirmar si se está us
 
 1. **Compruebe el estado de la optimización** Al ver un dashboard o una visualización, busque el rayo o el icono `Accelerated`:
 
-* **Rayo verde**: indica que la consulta está acelerada mediante una vista materializada.
-* **Rayo naranja**: indica que la consulta se ejecuta sobre la tabla de origen.
+* **Rayo verde** indica que la consulta está acelerada mediante una vista materializada.
+* **Rayo naranja** indica que la consulta se ejecuta sobre la tabla de origen.
 
-<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="Visualización acelerada" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Visualización acelerada](/images/clickstack/materialized_views/accelerated_visual.webp)
+
+</Frame>
+
+</div>
 
 2. **Inspeccione los detalles de la optimización**  Haga clic en el icono del rayo para abrir un panel de detalles que muestra:
 
@@ -481,9 +540,7 @@ Como se explicó antes, las vistas materializadas incrementales no se rellenan a
 Este enfoque es más adecuado para **conjuntos de datos pequeños** o **consultas de agregación relativamente ligeras** en las que el relleno histórico completo puede completarse en un tiempo razonable sin agotar los recursos del clúster. Suele ser apropiado cuando la consulta de relleno histórico puede ejecutarse en minutos, o como mucho en unas pocas horas, y cuando son aceptables aumentos temporales en el uso de CPU y de E/S. Para conjuntos de datos más grandes o agregaciones más costosas, considere en su lugar los enfoques de relleno histórico incremental o basado en bloques que se describen a continuación.
 
 <Steps>
-  <Step>
-    ##### Determinar la cobertura actual de la vista
-
+  <Step title="Determinar la cobertura actual de la vista" id="determine-current-coverage-of-view">
     Antes de intentar cualquier relleno histórico, determine primero qué datos contiene ya la vista materializada. Esto se hace consultando la marca de tiempo mínima presente en la tabla de destino:
 
     ```sql
@@ -494,9 +551,7 @@ Este enfoque es más adecuado para **conjuntos de datos pequeños** o **consulta
     Esta marca de tiempo representa el punto más antiguo a partir del cual la vista puede responder consultas. Cualquier consulta de ClickStack que solicite datos anteriores a esta marca de tiempo recurrirá a la tabla base.
   </Step>
 
-  <Step>
-    ##### Decidir si es necesario el relleno histórico
-
+  <Step title="Decidir si es necesario el relleno histórico" id="decide-whether-backfilling-is-neccessary">
     En la mayoría de las implementaciones de ClickStack, las consultas se centran en datos recientes, como las últimas 24 horas. En estos casos, las vistas recién creadas pasan a ser totalmente utilizables poco después de su creación, y el relleno histórico no es necesario.
 
     Si la marca de tiempo devuelta en el paso anterior es lo bastante antigua para sus casos de uso, no es necesario realizar ningún relleno histórico. El relleno histórico solo debe considerarse cuando:
@@ -506,9 +561,7 @@ Este enfoque es más adecuado para **conjuntos de datos pequeños** o **consulta
     * El tamaño del conjunto de datos y el coste de la agregación hacen viable el relleno histórico.
   </Step>
 
-  <Step>
-    ##### Rellenar los datos históricos faltantes
-
+  <Step title="Rellenar los datos históricos faltantes" id="backfill-missing-historical-data">
     Si se requiere relleno histórico, complete la tabla de destino de la vista materializada para las marcas de tiempo anteriores al mínimo actual usando la consulta de la vista, modificada para leer únicamente datos anteriores a la marca de tiempo registrada arriba. Como la tabla de destino usa AggregatingMergeTree, la consulta de relleno histórico **debe insertar estados de agregación, no valores finales**.
 
     <Warning>
@@ -557,9 +610,7 @@ Este enfoque es adecuado cuando:
 La idea clave es usar una [**tabla Null**](/es/reference/engines/table-engines/special/null) como búfer de ingestión. Aunque la tabla Null no almacena datos, cualquier vista materializada asociada a ella seguirá ejecutándose, lo que permite calcular los estados de agregación de forma incremental a medida que los datos pasan por ella.
 
 <Steps>
-  <Step>
-    ##### Crear una tabla Null para el relleno histórico
-
+  <Step title="Crear una tabla Null para el relleno histórico" id="create-null-table">
     Cree una tabla Null ligera que contenga solo las columnas necesarias para la agregación de la vista materializada. Esto minimiza el uso de E/S y memoria.
 
     ```sql
@@ -574,9 +625,7 @@ La idea clave es usar una [**tabla Null**](/es/reference/engines/table-engines/s
     ```
   </Step>
 
-  <Step>
-    ##### Asociar una vista materializada a la tabla Null
-
+  <Step title="Asociar una vista materializada a la tabla Null" id="attach-mv-to-null-table">
     A continuación, cree una vista materializada sobre la tabla Null que apunte a la misma tabla de agregación que usa su vista materializada principal.
 
     ```sql
@@ -601,9 +650,7 @@ La idea clave es usar una [**tabla Null**](/es/reference/engines/table-engines/s
     Esta vista materializada se ejecutará de forma incremental a medida que se inserten filas en la tabla Null, generando estados de agregación en bloques pequeños.
   </Step>
 
-  <Step>
-    ##### Hacer relleno histórico de los datos de forma incremental
-
+  <Step title="Hacer relleno histórico de los datos de forma incremental" id="incremental-backfill">
     Por último, inserte los datos históricos en la tabla Null. La vista materializada procesará los datos bloque por bloque, emitiendo estados de agregación en la tabla de destino sin persistir las filas originales.
 
     ```sql

@@ -1,14 +1,19 @@
 #pragma once
 
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/IAST.h>
 
-#include <Core/Streaming/CursorTree_fwd.h>
+#include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/Settings.h>
 
 namespace DB
 {
 
 class ReadBuffer;
 class WriteBuffer;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Modifiers that can be used for table, table function and subquery in JOIN TREE.
   *
@@ -18,12 +23,6 @@ class TableExpressionModifiers
 {
 public:
     using Rational = ASTSampleRatio::Rational;
-
-    struct StreamSettings
-    {
-        /// Null means "no cursor" (read from the beginning of the table).
-        CursorTreeNodePtr cursor_tree;
-    };
 
     TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
@@ -37,7 +36,7 @@ public:
     {}
 
     /// Returns true if final is specified, false otherwise
-    bool hasFinal() const
+    [[nodiscard]] bool hasFinal() const
     {
         return has_final;
     }
@@ -49,37 +48,37 @@ public:
     }
 
     /// Returns true if sample size ratio is specified, false otherwise
-    bool hasSampleSizeRatio() const
+    [[nodiscard]] bool hasSampleSizeRatio() const
     {
         return sample_size_ratio.has_value();
     }
 
     /// Get sample size ratio
-    std::optional<Rational> getSampleSizeRatio() const
+    [[nodiscard]] std::optional<Rational> getSampleSizeRatio() const
     {
         return sample_size_ratio;
     }
 
     /// Returns true if sample offset ratio is specified, false otherwise
-    bool hasSampleOffsetRatio() const
+    [[nodiscard]] bool hasSampleOffsetRatio() const
     {
         return sample_offset_ratio.has_value();
     }
 
     /// Get sample offset ratio
-    std::optional<Rational> getSampleOffsetRatio() const
+    [[nodiscard]] std::optional<Rational> getSampleOffsetRatio() const
     {
         return sample_offset_ratio;
     }
 
     /// Returns true if STREAM modifier is specified
-    bool hasStream() const
+    [[nodiscard]] bool hasStream() const
     {
         return stream_settings.has_value();
     }
 
     /// Get stream settings
-    const std::optional<StreamSettings> & getStreamSettings() const
+    [[nodiscard]] const std::optional<StreamSettings> & getStreamSettings() const
     {
         return stream_settings;
     }
@@ -91,7 +90,7 @@ public:
     void updateTreeHash(SipHash & hash_state) const;
 
     /// Format for error message
-    String formatForErrorMessage() const;
+    [[nodiscard]] String formatForErrorMessage() const;
 
 private:
     bool has_final = false;
@@ -103,16 +102,8 @@ private:
 void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out);
 TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in);
 
-inline bool operator==(const TableExpressionModifiers::StreamSettings & lhs, const TableExpressionModifiers::StreamSettings & rhs)
-{
-    if ((lhs.cursor_tree == nullptr) != (rhs.cursor_tree == nullptr))
-        return false;
-
-    if (lhs.cursor_tree == nullptr)
-        return true;
-
-    return cursorTreeToMap(lhs.cursor_tree) == cursorTreeToMap(rhs.cursor_tree);
-}
+/// Returns metadata extended according to table expression modifiers.
+StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers);
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {

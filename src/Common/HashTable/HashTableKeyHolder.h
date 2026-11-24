@@ -3,6 +3,10 @@
 #include <functional>
 
 #include <Common/Arena.h>
+#include <Common/CacheLine.h>
+#include <Common/Concepts.h>
+#include <Common/HashTable/KeysAndPackedString.h>
+#include <base/PackedStringRef.h>
 
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we
@@ -139,9 +143,87 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     holder.key = std::string_view();
 }
 
+namespace DB
+{
+
+/// Copies the out-of-line payload of a packed string into `pool` and rebases the packed pointer onto the copy.
+/// The strings kept inline are self-contained and need no copy.
+template <is_any_of<PackedStringRef, UnhashedPackedStringRef> PackedString>
+inline void ALWAYS_INLINE persistPackedStringRef(PackedString & key, Arena & pool)
+{
+    if (const size_t size = key.heapSize())
+        key.setHeapPointer(pool.insert(key.getHeapPtr(), size));
+}
+
+/** ArenaPackedStringHolder is a key holder for a PackedStringRef key. Persisting copies
+  * the out-of-line payload (medium / large encodings) into the arena and rebases the
+  * packed pointer; small and empty keys are self-contained and need no persistence.
+  */
+struct ArenaPackedStringHolder
+{
+    PackedStringRef key;
+    Arena & pool;
+};
+
+/** ArenaKeysAndPackedStringHolder is the key holder for a `KeysAndPackedString` key. Persisting copies
+  * the out-of-line payload of its string into the arena, as `ArenaPackedStringHolder` does; the
+  * fixed-width part is a value.
+  */
+template <typename Keys>
+struct ArenaKeysAndPackedStringHolder
+{
+    KeysAndPackedString<Keys> key;
+    Arena & pool;
+};
+
+/// Whether the key of a holder stores the hash computed while building it: a packed string, alone or with
+/// fixed-width values. A caller that builds such keys ahead, for example to prefetch their cells, can insert them
+/// through the holder instead of building and hashing them again.
+template <typename KeyHolder>
+inline constexpr bool key_holder_key_stores_hash = false;
+
+template <>
+inline constexpr bool key_holder_key_stores_hash<ArenaPackedStringHolder> = true;
+
+template <typename Keys>
+inline constexpr bool key_holder_key_stores_hash<ArenaKeysAndPackedStringHolder<Keys>> = true;
+
+}
+
+inline PackedStringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaPackedStringHolder & holder)
+{
+    return holder.key;
+}
+
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaPackedStringHolder & holder)
+{
+    DB::persistPackedStringRef(holder.key, holder.pool);
+}
+
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaPackedStringHolder &)
+{
+}
+
+template <typename Keys>
+inline KeysAndPackedString<Keys> & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeysAndPackedStringHolder<Keys> & holder)
+{
+    return holder.key;
+}
+
+template <typename Keys>
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeysAndPackedStringHolder<Keys> & holder)
+{
+    DB::persistPackedStringRef(holder.key.str, holder.pool);
+}
+
+template <typename Keys>
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeysAndPackedStringHolder<Keys> &)
+{
+}
+
 inline void keyPrefetch(const std::string_view key)
 {
-    const size_t cache_line_size = 64;
+    const size_t cache_line_size = DB::CH_CACHE_LINE_SIZE;
     // Prefetch up to 4 cache lines.
     const size_t max_prefetch = cache_line_size * 4;
     const size_t n = std::min(key.size(), max_prefetch);

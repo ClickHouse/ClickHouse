@@ -30,11 +30,11 @@ If the haystack or the pattern are not valid UTF-8, the behavior is undefined.
 
 Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
 
-The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`.
+The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`, or use the [`fullMatch`](#fullMatch) function.
 
 If you just want to search for substrings, you can use functions [`like`](#like) or [`position`](#position) instead, which work much faster than this function.
 
-Alternative operator syntax: `haystack REGEXP pattern`.
+Alternative operator syntax: `haystack REGEXP pattern` or `haystack ~ pattern` (PostgreSQL-style).
     )";
     FunctionDocumentation::Syntax syntax = "match(haystack, pattern)";
     FunctionDocumentation::Arguments arguments = {
@@ -66,8 +66,8 @@ Alternative operator syntax: `haystack REGEXP pattern`.
         "SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')",
         R"(
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
-│                       1 │                         0 │
-└─────────────────────────┴───────────────────────────┘
+│                      1 │                        0 │
+└────────────────────────┴──────────────────────────┘
         )"
     }
     };
@@ -77,6 +77,7 @@ Alternative operator syntax: `haystack REGEXP pattern`.
 
     factory.registerFunction<FunctionMatch>(documentation);
     factory.registerAlias("REGEXP_MATCHES", NameMatch::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("REGEXP_LIKE", NameMatch::name, FunctionFactory::Case::Insensitive);
 }
 
 }

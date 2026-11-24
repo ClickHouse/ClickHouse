@@ -19,14 +19,17 @@ public:
 
     /// Get primary key name that supports key-value requests.
     /// Primary key can constist of multiple columns.
-    virtual Names getPrimaryKey() const = 0;
+    [[nodiscard]] virtual Names getPrimaryKey() const = 0;
 
     /*
      * Get data from storage directly by keys.
      *
      * @param keys - keys to get data for. Key can be compound and represented by several columns.
+     *              Implementations must tolerate `Nullable`/`LowCardinality` wrapper mismatches
+     *              between `keys[i].type` and the storage's primary-key column type — the lookup
+     *              must produce bytes that match what the storage's sink wrote at INSERT.
      * @param required_columns - if we don't need all attributes, implementation can use it to benefit from reading a subset of them.
-     * @param out_null_map - output parameter indicating which keys were not found.
+     * @param out_null_map - output parameter. Set to 0 for rows whose key was not found in storage
      * @param out_offsets - output parameter for ALL join semantics. If provided (non-empty after call),
      *                      contains the cumulative count of result rows for each input key.
      *
@@ -42,7 +45,7 @@ public:
         IColumn::Offsets & out_offsets) const = 0;
 
     /// Header for getByKeys result
-    virtual Block getSampleBlock(const Names & required_columns) const = 0;
+    [[nodiscard]] virtual Block getSampleBlock(const Names & required_columns) const = 0;
 
 protected:
     /// Names of result columns. If empty then all columns are required.

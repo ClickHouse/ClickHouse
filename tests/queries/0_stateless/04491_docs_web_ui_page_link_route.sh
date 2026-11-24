@@ -4,14 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Some embedded documentation links point to a standalone docs page that is neither a documented entity nor a
-# section directory, with a source-relative path: `toWeek`/`toYearWeek` link to
-# `type-conversion-functions.md#parseDateTime64BestEffort` and `like` links to `../syntax.md#string`.
-# `candidateTerm` cannot map such a link to an entity (the link text is not a bare identifier and the path's
-# last segment is not a documented name), and the page's docs section is not derivable from the relative path
-# (the entity's embedded `source` is a code path, not a docs path). `toDocsURL` therefore used to fall back to
-# the bare `https://clickhouse.com/docs` root, losing the target page and its `#anchor`. `DOCS_PAGE_ROUTE` maps
-# each such page to its canonical docs route so the link resolves to the intended page instead.
+# The built-in `/docs` page retains `DOCS_PAGE_ROUTE` for legacy relative links to standalone pages
+# whose route cannot be inferred from a documented entity. Current embedded documentation uses
+# site-root absolute routes instead, so it preserves the intended page and anchor without depending on
+# this compatibility mapping.
 
 URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 
@@ -25,17 +21,22 @@ echo "$PAGE" | grep -oF 'const DOCS_PAGE_ROUTE = {' | head -n1
 echo "$PAGE" | grep -oF "'syntax': '/sql-reference/syntax'," | head -n1
 echo "$PAGE" | grep -oF "'type-conversion-functions': '/sql-reference/functions/type-conversion-functions'," | head -n1
 echo "$PAGE" | grep -oF 'if (DOCS_PAGE_ROUTE[head]) return base + DOCS_PAGE_ROUTE[head] + tail + suffix;' | head -n1
+# The page-load compatibility assertion feeds both original standalone-page links to `toDocsURL`.
+echo "$PAGE" | grep -oF "'type-conversion-functions.md#parseDateTime64BestEffort': 'https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#parseDateTime64BestEffort'," | head -n1
+echo "$PAGE" | grep -oF "'../syntax.md#string': 'https://clickhouse.com/docs/sql-reference/syntax#string'," | head -n1
 
-# The regression targets exist in the corpus: core functions whose embedded documentation links to a standalone
-# docs page with a source-relative path that names neither an entity nor a known section. `toWeek` and `like`
-# are core functions, present even in the minimal `Fast test` build (`ENABLE_LIBRARIES=0`).
+# `toWeek` and `like` are core functions, present even in the minimal `Fast test` build
+# (`ENABLE_LIBRARIES=0`). Their embedded documentation uses current site-root absolute routes and no
+# longer contains the legacy relative forms.
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0
+    SELECT
+        position(description, '/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort') > 0
+            AND position(description, 'type-conversion-functions.md#parseDateTime64BestEffort') = 0
     FROM system.documentation
-    WHERE type = 'Function' AND name = 'toWeek'
-      AND position(description, 'type-conversion-functions.md#parseDateTime64BestEffort') > 0"
+    WHERE type = 'Function' AND name = 'toWeek'"
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0
+    SELECT
+        position(description, '/reference/syntax#string') > 0
+            AND position(description, '../syntax.md#string') = 0
     FROM system.documentation
-    WHERE type = 'Function' AND name = 'like'
-      AND position(description, '../syntax.md#string') > 0"
+    WHERE type = 'Function' AND name = 'like'"

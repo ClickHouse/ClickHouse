@@ -1,8 +1,9 @@
 #include <Access/RowPolicy.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
+#include <Interpreters/ExpressionContainsColumnMatcher.h>
+#include <Parsers/IAST.h>
 #include <boost/range/algorithm/equal.hpp>
 
 
@@ -12,30 +13,25 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_PREWHERE;
-}
-
-namespace
-{
-    /// `arrayJoin` inside a nested subquery has its own scope and does not multiply the outer rows.
-    bool expressionContainsArrayJoin(const ASTPtr & ast)
-    {
-        if (!ast)
-            return false;
-        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "arrayJoin")
-            return true;
-        for (const auto & child : ast->children)
-        {
-            if (!child->as<ASTSelectQuery>() && expressionContainsArrayJoin(child))
-                return true;
-        }
-        return false;
-    }
+    extern const int BAD_ARGUMENTS;
 }
 
 void checkRowPolicyFilterExpression(const ASTPtr & expression)
 {
+    /// `arrayJoin` changes the number of rows, while a row policy filter must yield one verdict per row.
     if (expressionContainsArrayJoin(expression))
         throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "arrayJoin is not allowed in a row policy filter expression");
+
+    /// A row policy filter is a predicate over the rows of one table, so a column matcher has no meaning in it.
+    /// Reject it here, when the policy is created or altered, rather than only on the next read of the table.
+    if (expression)
+    {
+        if (const auto * matcher = findColumnMatcherInExpression(*expression))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column matcher {} is not allowed in a row policy filter expression; list the columns explicitly. In filter {}",
+                matcher->formatForErrorMessage(),
+                expression->formatForErrorMessage());
+    }
 }
 
 

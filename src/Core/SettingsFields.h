@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
+#include <Common/SecretString.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
@@ -27,6 +28,8 @@ struct SettingFieldOps
     void (*set_changed)(void * setting, bool);
     String (*to_string)(const void * setting);
     void (*parse_from_string)(void * setting, const String & str);
+    /// Binary serialization is only implemented by the types used in settings which are serialized
+    /// with `BaseSettings::writeChangedBinary` (object storage settings); null for the other types.
     void (*write_binary)(const void * setting, WriteBuffer & out);
     void (*read_binary)(void * setting, ReadBuffer & in);
     /// Typed copy, used to reset a setting to its declared default by copying from a canonical
@@ -56,6 +59,31 @@ template <typename T> Field settingFieldCastValue(const Field & f) { T temp; tem
 template <typename T> String settingFieldValueToString(const Field & f) { T temp; temp = f; return temp.toString(); }
 template <typename T> Field settingFieldStringToValue(const String & s) { T temp; temp.parseFromString(s); return static_cast<Field>(temp); }
 
+template <typename T>
+concept SettingFieldWithBinarySerialization = requires(const T & c, T & m, WriteBuffer & out, ReadBuffer & in)
+{
+    c.writeBinary(out);
+    m.readBinary(in);
+};
+
+template <typename T>
+constexpr auto settingFieldWriteBinaryOp()
+{
+    if constexpr (SettingFieldWithBinarySerialization<T>)
+        return &settingFieldWriteBinary<T>;
+    else
+        return static_cast<void (*)(const void *, WriteBuffer &)>(nullptr);
+}
+
+template <typename T>
+constexpr auto settingFieldReadBinaryOp()
+{
+    if constexpr (SettingFieldWithBinarySerialization<T>)
+        return &settingFieldReadBinary<T>;
+    else
+        return static_cast<void (*)(void *, ReadBuffer &)>(nullptr);
+}
+
 /// Generate a SettingFieldOps instance for a concrete SettingField type.
 /// Instantiated once per type (not per setting) — the static local is shared.
 template <typename T>
@@ -64,7 +92,7 @@ const SettingFieldOps & settingFieldOps()
     static const SettingFieldOps ops =
     {
         &settingFieldAssignFromField<T>, &settingFieldToField<T>, &settingFieldIsChanged<T>, &settingFieldSetChanged<T>,
-        &settingFieldToString<T>, &settingFieldParseFromString<T>, &settingFieldWriteBinary<T>, &settingFieldReadBinary<T>,
+        &settingFieldToString<T>, &settingFieldParseFromString<T>, settingFieldWriteBinaryOp<T>(), settingFieldReadBinaryOp<T>(),
         &settingFieldTypedCopy<T>,
         &settingFieldCastValue<T>, &settingFieldValueToString<T>, &settingFieldStringToValue<T>,
     };
@@ -94,7 +122,7 @@ struct SettingFieldNumber
     SettingFieldNumber(const SettingFieldNumber &) = default;
     SettingFieldNumber & operator=(const SettingFieldNumber &) = default;
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     SettingFieldNumber & operator=(Type x);
@@ -103,7 +131,7 @@ struct SettingFieldNumber
     operator Type() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -119,11 +147,6 @@ using SettingFieldDouble = SettingFieldNumber<double>;
 using SettingFieldBool = SettingFieldNumber<bool>;
 
 /** Wraps any SettingField to support special value 'auto' that can be checked with `is_auto` flag.
-  * Note about serialization:
-  * The new versions with `SettingsWriteFormat::STRINGS_WITH_FLAGS` serialize values as a string.
-  * In legacy SettingsWriteFormat mode, functions `read/writeBinary` would serialize values as a binary, and 'is_auto' would be ignored.
-  * It's possible to upgrade settings from regular type to wrapped ones and keep compatibility with old versions,
-  * but when serializing 'auto' old version will see binary representation of the default value.
   */
 template <typename Base>
 struct SettingAutoWrapper final
@@ -158,12 +181,12 @@ struct SettingAutoWrapper final
         return *this;
     }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     explicit operator Field() const { return is_auto ? Field(keyword) : Field(base); }
 
-    String toString() const { return is_auto ? keyword : base.toString(); }
+    [[nodiscard]] String toString() const { return is_auto ? keyword : base.toString(); }
 
     void parseFromString(const String & str)
     {
@@ -180,16 +203,11 @@ struct SettingAutoWrapper final
             base.writeBinary(out);
     }
 
-    /*
-     * That it is fine to reset `is_auto` here and to use default value in case `is_auto`
-     * because settings will be serialized only if changed.
-     * If they were changed they were requested to use explicit value instead of `auto`.
-     * And so interactions between client-server, and server-server (distributed queries), should be OK.
-     */
+    /// Settings are serialized only if changed, and a changed setting holds an explicit value instead of `auto`.
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
-    Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
-    std::optional<Type> valueOrNullopt() const { return is_auto ? std::optional<Type>(std::nullopt) : base.value; }
+    [[nodiscard]] Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
+    [[nodiscard]] std::optional<Type> valueOrNullopt() const { return is_auto ? std::optional<Type>(std::nullopt) : base.value; }
 };
 
 using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;
@@ -199,6 +217,39 @@ using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;
 using SettingFieldUInt32Auto = SettingAutoWrapper<SettingFieldUInt32>;
 using SettingFieldInt32Auto = SettingAutoWrapper<SettingFieldInt32>;
 using SettingFieldDoubleAuto = SettingAutoWrapper<SettingFieldDouble>;
+
+/// A Bool setting with a third, named value: accepts everything a Bool accepts plus `Keyword::value`.
+/// Mirrors `SettingAutoWrapper`: `base` holds the Bool, `is_keyword` tells that the third value is set.
+/// The members are defined in SettingsFields.cpp, which instantiates the struct for every keyword.
+template <typename Keyword>
+struct SettingFieldTriBool
+{
+    constexpr static std::string_view keyword = Keyword::value;
+
+    SettingFieldBool base;
+    bool is_keyword = false;
+    bool changed = false;
+
+    explicit SettingFieldTriBool(bool x = false) : base(x) {}
+    explicit SettingFieldTriBool(const Field & f);
+    SettingFieldTriBool(const SettingFieldTriBool &) = default;
+    SettingFieldTriBool & operator=(const SettingFieldTriBool &) = default;
+    SettingFieldTriBool & operator=(const Field & f);
+
+    [[nodiscard]] bool isChanged() const { return changed; }
+    void setChanged(bool changed_) { changed = changed_; }
+
+    explicit operator Field() const;
+    [[nodiscard]] String toString() const;
+    void parseFromString(const String & str);
+};
+
+struct SettingFieldKeywordForce
+{
+    constexpr static std::string_view value = "force";
+};
+
+using SettingFieldBoolForce = SettingFieldTriBool<SettingFieldKeywordForce>;
 
 /* Similar to SettingFieldUInt64Auto with small differences to behave like regular UInt64, supported to compatibility.
  * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
@@ -220,18 +271,15 @@ struct SettingFieldMaxThreads final
     SettingFieldMaxThreads & operator=(UInt64 x) { is_auto = !x; value = is_auto ? getAuto() : x; changed = true; return *this; }
     SettingFieldMaxThreads & operator=(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
     /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto == true`.
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
 
 private:
     static UInt64 getAuto();
@@ -253,20 +301,22 @@ struct SettingFieldTimespan final
     Int64 microseconds = 0;
     bool changed = false;
 
+    static Int64 microsecondsFromUnits(UInt64 units);
+
     explicit SettingFieldTimespan() = default;
     explicit SettingFieldTimespan(const Poco::Timespan & x) : microseconds(x.totalMicroseconds()) {}
     SettingFieldTimespan(const SettingFieldTimespan &) = default;
     SettingFieldTimespan & operator=(const SettingFieldTimespan &) = default;
 
-    explicit SettingFieldTimespan(UInt64 x) : microseconds(static_cast<Int64>(x * microseconds_per_unit)) {}
+    explicit SettingFieldTimespan(UInt64 x) : microseconds(microsecondsFromUnits(x)) {}
     explicit SettingFieldTimespan(const Field & f);
 
     SettingFieldTimespan & operator =(const Poco::Timespan & x) { microseconds = x.totalMicroseconds(); changed = true; return *this; }
 
-    SettingFieldTimespan & operator =(UInt64 x) { microseconds = static_cast<Int64>(x * microseconds_per_unit); changed = true; return *this; }
+    SettingFieldTimespan & operator =(UInt64 x) { microseconds = microsecondsFromUnits(x); changed = true; return *this; }
     SettingFieldTimespan & operator =(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator Poco::Timespan() const { return Poco::Timespan(microseconds); } /// NOLINT
@@ -274,11 +324,11 @@ struct SettingFieldTimespan final
     explicit operator UInt64() const { return microseconds / static_cast<Int64>(microseconds_per_unit); }
     explicit operator Field() const;
 
-    Int64 totalMicroseconds() const { return microseconds; }
-    Int64 totalMilliseconds() const { return microseconds / 1000; }
-    Int64 totalSeconds() const { return microseconds / 1000000; }
+    [[nodiscard]] Int64 totalMicroseconds() const { return microseconds; }
+    [[nodiscard]] Int64 totalMilliseconds() const { return microseconds / 1000; }
+    [[nodiscard]] Int64 totalSeconds() const { return microseconds / 1000000; }
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -309,13 +359,45 @@ struct SettingFieldString final
     SettingFieldString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
     SettingFieldString & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const { return value; }
+    [[nodiscard]] String toString() const { return value; }
+    void parseFromString(const String & str) { *this = str; }
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+};
+
+struct SettingFieldSecretString final
+{
+    SecretString value;
+    bool changed = false;
+    using ValueType = SecretString;
+
+    explicit SettingFieldSecretString(std::string_view str = {}) : value(str) {}
+    explicit SettingFieldSecretString(const String & str) : SettingFieldSecretString(std::string_view{str}) {}
+    explicit SettingFieldSecretString(const char * str) : SettingFieldSecretString(std::string_view{str}) {}
+    explicit SettingFieldSecretString(const Field & f) : SettingFieldSecretString(f.safeGet<String>()) {}
+    SettingFieldSecretString(const SettingFieldSecretString &) = default;
+    SettingFieldSecretString & operator=(const SettingFieldSecretString &) = default;
+
+    SettingFieldSecretString & operator =(const SecretString & str) { value = str; changed = true; return *this; }
+    SettingFieldSecretString & operator =(std::string_view str) { value = str; changed = true; return *this; }
+    SettingFieldSecretString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
+    SettingFieldSecretString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
+    SettingFieldSecretString & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
+
+    [[nodiscard]] bool isChanged() const { return changed; }
+    void setChanged(bool changed_) { changed = changed_; }
+
+    operator const SecretString &() const { return value; } /// NOLINT
+    explicit operator Field() const { return String(value); }
+
+    [[nodiscard]] String toString() const { return String(value); }
     void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
@@ -337,17 +419,14 @@ public:
     SettingFieldMap & operator =(const Map & map) { value = map; changed = true; return *this; }
     SettingFieldMap & operator =(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const Map &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
 };
 
 struct SettingFieldChar final
@@ -364,13 +443,13 @@ public:
     SettingFieldChar & operator =(char c) { value = c; changed = true; return *this; }
     SettingFieldChar & operator =(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator char() const { return value; } /// NOLINT
     explicit operator Field() const { return toString(); }
 
-    String toString() const { return String(&value, 1); }
+    [[nodiscard]] String toString() const { return String(&value, 1); }
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -384,29 +463,34 @@ struct SettingFieldURI final
     bool changed = false;
 
     explicit SettingFieldURI(const Poco::URI & uri = {}) : value(uri) {}
-    explicit SettingFieldURI(const String & str) : SettingFieldURI(Poco::URI{str}) {}
-    explicit SettingFieldURI(const char * str) : SettingFieldURI(Poco::URI{str}) {}
+    explicit SettingFieldURI(const String & str) : SettingFieldURI(parseURI(str)) {}
+    explicit SettingFieldURI(const char * str) : SettingFieldURI(parseURI(str)) {}
     explicit SettingFieldURI(const Field & f) : SettingFieldURI(f.safeGet<String>()) {}
     SettingFieldURI(const SettingFieldURI &) = default;
     SettingFieldURI & operator=(const SettingFieldURI &) = default;
 
     SettingFieldURI & operator =(const Poco::URI & x) { value = x; changed = true; return *this; }
-    SettingFieldURI & operator =(const String & str) { *this = Poco::URI{str}; return *this; }
-    SettingFieldURI & operator =(const char * str) { *this = Poco::URI{str}; return *this; }
+    SettingFieldURI & operator =(const String & str) { *this = parseURI(str); return *this; }
+    SettingFieldURI & operator =(const char * str) { *this = parseURI(str); return *this; }
     SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const Poco::URI &() const { return value; } /// NOLINT
     explicit operator String() const { return toString(); }
     explicit operator Field() const { return toString(); }
 
-    String toString() const { return value.toString(); }
+    [[nodiscard]] String toString() const { return value.toString(); }
     void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
+
+    /// `Poco::URI` reports a malformed string with a `Poco::SyntaxException`, which is not a `DB::Exception`, so
+    /// the name of the setting could not be added to it and the user would see a bare "Syntax error: ...".
+    /// Convert it here so that a rejected URI is reported like any other rejected setting value.
+    static Poco::URI parseURI(const String & str);
 };
 
 
@@ -438,13 +522,13 @@ struct SettingFieldEnum final
     SettingFieldEnum & operator =(EnumType x) { value = x; changed = true; return *this; }
     SettingFieldEnum & operator =(const Field & f) { *this = Traits::fromString(f.safeGet<String>()); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator EnumType() const { return value; } /// NOLINT
     explicit operator Field() const { return toString(); }
 
-    String toString() const { return Traits::toString(value); }
+    [[nodiscard]] String toString() const { return Traits::toString(value); }
     void parseFromString(const String & str) { *this = Traits::fromString(str); }
 
     void writeBinary(WriteBuffer & out) const;
@@ -488,7 +572,7 @@ struct SettingFieldMultiEnum final
     SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<String>()); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator ValueType() const { return value; } /// NOLINT
@@ -501,7 +585,7 @@ struct SettingFieldMultiEnum final
         return res;
     }
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         constexpr String separator = ",";
         String result;
@@ -517,9 +601,6 @@ struct SettingFieldMultiEnum final
         return result;
     }
     void parseFromString(const String & str) { *this = parseValueFromString(str); }
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
 
 private:
     static ValueType parseValueFromString(const std::string_view str)
@@ -552,18 +633,6 @@ private:
     }
 };
 
-template <typename EnumT, typename Traits>
-void SettingFieldMultiEnum<EnumT, Traits>::writeBinary(WriteBuffer & out) const
-{
-    SettingFieldEnumHelpers::writeBinary(toString(), out);
-}
-
-template <typename EnumT, typename Traits>
-void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
-{
-    parseFromString(SettingFieldEnumHelpers::readBinary(in));
-}
-
 /// Setting field for specifying user-defined timezone. It is basically a string, but it needs validation.
 struct SettingFieldTimezone final
 {
@@ -584,13 +653,13 @@ struct SettingFieldTimezone final
     SettingFieldTimezone & operator =(const char * str) { *this = std::string_view{str}; return *this; }
     SettingFieldTimezone & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const { return value; }
+    [[nodiscard]] String toString() const { return value; }
     void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
@@ -612,16 +681,13 @@ struct SettingFieldCustom final
 
     SettingFieldCustom & operator =(const Field & f) { value = f; changed = true; return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     explicit operator Field() const { return value; }
 
-    String toString() const;
+    [[nodiscard]] String toString(bool show_secrets = true) const;
     void parseFromString(const String & str);
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
 };
 
 struct SettingFieldNonZeroUInt64 : public SettingFieldUInt64
@@ -634,11 +700,30 @@ public:
     SettingFieldNonZeroUInt64 & operator=(const Field & f);
 
     void parseFromString(const String & str);
+    void readBinary(ReadBuffer & in);
 
 private:
     void checkValueNonZero() const;
 };
 
-bool stringToBool(const String & str);
+/// For quantities that are bounded by a 32-bit counter, where a wider value could only ever be
+/// narrowed on use. Unlike `SettingFieldUInt32`, an out-of-range value is rejected rather than
+/// silently wrapped: `readIntText` defaults to `DO_NOT_CHECK_OVERFLOW`, so `SettingFieldUInt32`
+/// turns "10000000000" into 1410065408, which is exactly the wrap this type exists to prevent.
+struct SettingFieldNonZeroUInt32 : public SettingFieldUInt32
+{
+public:
+    explicit SettingFieldNonZeroUInt32(UInt32 x = 1);
+    explicit SettingFieldNonZeroUInt32(const Field & f);
+
+    SettingFieldNonZeroUInt32 & operator=(UInt32 x);
+    SettingFieldNonZeroUInt32 & operator=(const Field & f);
+
+    void parseFromString(const String & str);
+    void readBinary(ReadBuffer & in);
+
+private:
+    void checkValueNonZero() const;
+};
 
 }

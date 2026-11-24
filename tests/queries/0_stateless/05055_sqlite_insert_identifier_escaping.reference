@@ -1,0 +1,20 @@
+--- A1 control: the boundary the injection bypasses is enforced when the path is named directly
+PATH_ACCESS_DENIED
+--- A2 injection through the remote table name
+no such table
+objects created in the anchor: none
+canary read from outside user_files: none
+objects written outside user_files: none
+--- A3 injection through a column name
+no column named
+objects created in the anchor: none
+canary read from outside user_files: none
+objects written outside user_files: none
+--- A4 control: a table and column name that legitimately contain a double quote round-trip
+NO_ERROR
+11
+--- A5 control: a table name that legitimately contains a backslash round-trips
+NO_ERROR
+22
+--- A6 a NUL in the remote table name fails loudly, it is never silently truncated
+unrecognized token

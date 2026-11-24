@@ -5,7 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageMySQL.h>
 
-namespace mysqlxx { class PoolWithFailover; }
+namespace mysqlxx { class PoolWithFailover; struct SSLParams; }
 
 namespace DB
 {
@@ -18,9 +18,7 @@ mysqlxx::PoolWithFailover createMySQLPoolWithFailover(
     const StorageMySQL::Configuration::Addresses & addresses,
     const std::string & username,
     const std::string & password,
-    const std::string & ssl_ca,
-    const std::string & ssl_cert,
-    const std::string & ssl_key,
+    const mysqlxx::SSLParams & ssl_params,
     const MySQLSettings & mysql_settings);
 }
 

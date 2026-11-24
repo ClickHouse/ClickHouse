@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['IP フィルタ', 'IP Access List']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="setting-ip-filters">
   ## IP フィルタの設定
 </div>
@@ -30,20 +28,20 @@ IP Access List は、接続を許可する送信元アドレスを指定して�
 Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラス A、B、C (8、6、または 24) のサブネットマスクサイズよりも小さい IP アドレス範囲を指定できます。[ARIN](https://account.arin.net/public/cidrCalculator) などの組織では、必要に応じて使える CIDR 計算ツールを提供しています。CIDR 表記の詳細については、[Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html) RFC を参照してください。
 
 <div id="create-or-modify-an-ip-access-list">
-  ## IP アクセスリスト を作成または変更する
+  ## IP Access List を作成または変更する
 </div>
 
 <Info>
   **PrivateLink 外からの接続にのみ適用されます**
 
-  IP アクセスリスト は、[PrivateLink](/ja/products/cloud/guides/security/connectivity/private-networking/index) の外側にあるパブリックインターネットからの接続にのみ適用されます。
+  IP Access List は、[PrivateLink](/ja/products/cloud/guides/security/connectivity/private-networking/index) の外側にあるパブリックインターネットからの接続にのみ適用されます。
   PrivateLink からのトラフィックのみを許可する場合は、IP Allow list で `DenyAll` を設定してください。
 </Info>
 
-<Accordion title="ClickHouse サービス の IP アクセスリスト">
+<Accordion title="ClickHouse サービス の IP Access List">
   ClickHouse サービス を作成すると、IP allow list のデフォルト設定は「Allow from anywhere」です。
 
-  ClickHouse Cloud services の一覧から サービス を選択し、**Settings** を選択します。**Security** セクションに IP アクセスリスト があります。Add IPs ボタンをクリックします。
+  ClickHouse Cloud services の一覧から サービス を選択し、**Settings** を選択します。**Security** セクションに IP Access List があります。Add IPs ボタンをクリックします。
 
   設定オプションを選べるサイドバーが表示されます。
 
@@ -52,10 +50,10 @@ Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラ
   * サービス へのすべてのアクセスを拒否する
 </Accordion>
 
-<Accordion title="API キー の IP アクセスリスト">
+<Accordion title="API キー の IP Access List">
   API キー を作成すると、IP allow list のデフォルト設定は「Allow from anywhere」です。
 
-  API キー の一覧で、**Actions** カラムの API キー の横にある 3 点メニューをクリックし、**Edit** を選択します。画面下部に IP アクセスリスト と、その設定オプションがあります。
+  API キー の一覧で、**Actions** カラムの API キー の横にある 3 点メニューをクリックし、**Edit** を選択します。画面下部に IP Access List と、その設定オプションがあります。
 
   * すべての場所から サービス への受信トラフィックを許可する
   * 特定の場所から サービス へのアクセスを許可する
@@ -64,7 +62,15 @@ Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラ
 
 このスクリーンショットは、「NY Office range」と記載された IP アドレス範囲からのトラフィックを許可する アクセスリスト を示しています。
 
-<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="ClickHouse Cloud の既存の アクセスリスト" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud の既存の アクセスリスト](/images/cloud/security/ip-filtering-after-provisioning.webp)
+
+</Frame>
+
+</div>
 
 <div id="possible-actions">
   ### 実行できる操作
@@ -74,7 +80,15 @@ Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラ
 
 この例では、`London server` という説明を付けて 1 つの IP アドレスを追加しています。
 
-<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="ClickHouse Cloud のアクセスリストに 1 つの IP を追加する" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud のアクセスリストに 1 つの IP を追加する](/images/cloud/security/ip-filter-add-single-ip.webp)
+
+</Frame>
+
+</div>
 
 2. 既存のエントリを削除する
 

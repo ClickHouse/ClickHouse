@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'observabilidade', 'API', 'REST API', 'dashboards', 'alertas', 'HyperDX']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickStack disponibiliza uma API REST para gerenciar dashboards, alertas e fontes de dados de forma programática. A API está disponível tanto em implantações do **Managed ClickStack** (ClickHouse Cloud) quanto do **ClickStack open source**, embora os endpoints e a autenticação sejam diferentes em cada caso.
 
 <div id="api-docs">
@@ -16,7 +14,7 @@ O ClickStack disponibiliza uma API REST para gerenciar dashboards, alertas e fon
 
 <Tabs>
   <Tab title="Managed ClickStack">
-    Para o Managed ClickStack, a API é acessada por meio da **ClickHouse Cloud API**. Os endpoints do ClickStack estão disponíveis na [especificação da Cloud API](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/ClickStack).
+    Para o Managed ClickStack, a API é acessada por meio da **ClickHouse Cloud API**. Os endpoints do ClickStack estão disponíveis na [referência da Cloud API](/pt-BR/products/cloud/api-reference/clickstack/click-stack-list-dashboards).
 
     Os seguintes endpoints estão disponíveis:
 
@@ -51,7 +49,7 @@ O ClickStack disponibiliza uma API REST para gerenciar dashboards, alertas e fon
 
 <Tabs>
   <Tab title="Managed ClickStack">
-    O Managed ClickStack usa a **API key do ClickHouse Cloud** para autenticação por meio de [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). Para criar e gerenciar API keys, consulte [Gerenciar API keys](/pt-BR/products/cloud/features/admin-features/api/openapi).
+    O Managed ClickStack usa a **API key do ClickHouse Cloud** para autenticação por meio de [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). Para criar e gerenciar API keys, consulte [Managing API keys](/pt-BR/products/cloud/features/admin-features/api/openapi).
 
     Inclua o ID da chave e o segredo usando HTTP Basic Authentication:
 
@@ -65,7 +63,7 @@ O ClickStack disponibiliza uma API REST para gerenciar dashboards, alertas e fon
   </Tab>
 
   <Tab title="Open Source ClickStack">
-    O Open Source ClickStack usa um **Bearer token** para autenticação por meio de uma **Personal API Access Key**.
+    O ClickStack Open Source usa um **Bearer token** para autenticação por meio de uma **Personal API Access Key**.
 
     Para obter uma API key:
 
@@ -74,7 +72,15 @@ O ClickStack disponibiliza uma API REST para gerenciar dashboards, alertas e fon
     3. Vá para **Team Settings → API Keys**
     4. Copie sua **Personal API Access Key**
 
-    <Image img="/images/clickstack/api-key-personal.webp" alt="API key do ClickStack" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![API key do ClickStack](/images/clickstack/api-key-personal.webp)
+
+    </Frame>
+
+    </div>
 
     <Note>
       Isso é diferente da **API key de ingestão** encontrada em Team Settings, que é usada para autenticar dados de telemetria enviados ao collector do OpenTelemetry.

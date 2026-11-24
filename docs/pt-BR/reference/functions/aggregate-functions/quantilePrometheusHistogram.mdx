@@ -35,12 +35,12 @@ quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 
 **Argumentos**
 
-* `bucket_upper_bound` — Limites superiores dos buckets do histograma. O bucket mais alto deve ter um limite superior de `+Inf`. [`Float64`](/pt-BR/reference/data-types/float)
-* `cumulative_bucket_value` — Valores cumulativos dos buckets do histograma. Os valores devem aumentar monotonicamente à medida que o limite superior do bucket aumenta. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float64`](/pt-BR/reference/data-types/float)
+* `bucket_upper_bound` — Limites superiores dos buckets do histograma. O bucket mais alto deve ter um limite superior de `+Inf`. [`Float*`](/pt-BR/reference/data-types/float)
+* `cumulative_bucket_value` — Valores cumulativos dos buckets do histograma. Os valores devem aumentar monotonicamente à medida que o limite superior do bucket aumenta. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
 
-Retorna o quantil do nível especificado. [`Float64`](/pt-BR/reference/data-types/float)
+Retorna o quantil do nível especificado. O tipo de ponto flutuante do resultado corresponde ao tipo de `bucket_upper_bound`. [`Float32`](/pt-BR/reference/data-types/float) ou [`Float64`](/pt-BR/reference/data-types/float)
 
 **Exemplos**
 

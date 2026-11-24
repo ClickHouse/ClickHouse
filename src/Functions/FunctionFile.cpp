@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Functions/FunctionAccessCheck.h>
 #include <Functions/FunctionFactory.h>
 #include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
@@ -10,6 +11,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -26,15 +28,6 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
 }
 
-namespace
-{
-
-bool isStringOrNull(const IDataType & type)
-{
-    return isString(type) || type.onlyNull();
-}
-
-}
 
 /// A function to read file as a string.
 class FunctionFile final : public IFunction
@@ -43,48 +36,46 @@ public:
     static constexpr auto name = "file";
     static FunctionPtr create(ContextPtr context)
     {
-        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
-            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
-
-        return std::make_shared<FunctionFile>();
+        return std::make_shared<FunctionFile>(context);
     }
 
-    bool isVariadic() const override { return true; }
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    explicit FunctionFile(const ContextPtr & context)
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"path", &isString, nullptr, "String"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"default", &isStringOrNull, nullptr, "String or Null"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        auto ret = std::make_shared<DataTypeString>();
-        if (arguments.size() == 2 && arguments[1].type->onlyNull())
-            return makeNullable(ret);
-        return ret;
+        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            access_check.emplace(context);
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+
+    void checkAccessOnBuild() const override
+    {
+        if (access_check)
+            access_check->check(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+    }
+
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(String, NULL) -> Nullable(String) OR (String, [const String]) -> String";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnString * column_src = checkAndGetColumn<ColumnString>(column.get());
@@ -144,7 +135,7 @@ public:
 
             try
             {
-                if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
+                if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path_string))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
@@ -170,6 +161,10 @@ public:
 
         return result;
     }
+
+private:
+    /// Not set for `clickhouse-local` and for the creation without a context.
+    std::optional<FunctionAccessCheck> access_check;
 };
 
 
@@ -179,7 +174,7 @@ REGISTER_FUNCTION(File)
 Reads a file as a string and loads the data into the specified column.
 The file content is not interpreted.
 
-Also see the [`file`](../table-functions/file.md) table function.
+Also see the [`file`](/reference/functions/table-functions/file) table function.
         )";
     FunctionDocumentation::Syntax syntax = "file(path[, default])";
     FunctionDocumentation::Arguments arguments = {
@@ -191,9 +186,18 @@ Also see the [`file`](../table-functions/file.md) table function.
         {
             "Insert files into a table",
             R"(
-INSERT INTO table SELECT file('a.txt'), file('b.txt');
+INSERT INTO FUNCTION file('a.txt', 'RawBLOB') SELECT 'Hello' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file('b.txt', 'RawBLOB') SELECT 'World!' SETTINGS engine_file_truncate_on_insert = 1;
+
+CREATE TABLE data (a String, b String) ENGINE = Memory;
+INSERT INTO data SELECT file('a.txt'), file('b.txt');
+
+SELECT * FROM data;
             )",
             R"(
+┌─a─────┬─b──────┐
+│ Hello │ World! │
+└───────┴────────┘
             )"
         }
     };

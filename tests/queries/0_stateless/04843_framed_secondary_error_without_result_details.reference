@@ -1,0 +1,9 @@
+--- a failure while delivering the framed exception appends nothing
+the client observes an aborted connection: OK
+no generic __exception__ block: OK
+the secondary failure is not in the body: OK
+--- a failure while closing the response appends nothing after the exception packet
+the client observes an aborted connection: OK
+the framed exception packet was received: OK
+no generic __exception__ block: OK
+exactly one exception packet: OK

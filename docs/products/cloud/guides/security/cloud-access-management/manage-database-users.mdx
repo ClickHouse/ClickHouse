@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['database users', 'access management', 'security', 'permissions', 'user management']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This guide demonstrates two ways to manage database users, within SQL console and directly within the database.
 
 ### SQL console passwordless authentication {#sql-console-passwordless-authentication}
@@ -16,13 +14,16 @@ SQL console users are created for each session and authenticated using X.509 cer
 
 ## SQL console users and roles {#sql-console-users-and-roles}
 
-Basic SQL console roles can be assigned to users with Service Read Only and Service Admin permissions. For more information, refer to [Manage SQL Console Role Assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). This guide demonstrates how to create a custom role for a SQL console user.
+Basic SQL console roles can be assigned to users with Service Read Only and Service Admin permissions. For more information, refer to [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). This guide demonstrates how to create a custom role for a SQL console user.
+
+<Tip>
+Prefer [cloud-managed database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) to manage database access from the console. `sql-console-role:<email>` roles are not compatible with JWT sessions within the SQL console.
+</Tip>
 
 To create a custom role for a SQL console user and grant it a general role, run the following commands. The email address must match the user's email address in the console. 
 
 <Steps>
-<Step>
-#### Create `database_developer` and grant permissions {#create-role-grant-permissions}
+<Step title={<>Create <code>database_developer</code> and grant permissions</>} id="create-role-grant-permissions">
 
 Create the `database_developer` role and grant `SHOW`, `CREATE`, `ALTER`, and `DELETE` permissions.
     
@@ -34,8 +35,7 @@ GRANT ALTER ON * TO database_developer;
 GRANT DELETE ON * TO database_developer;
 ```
 </Step>
-<Step>
-#### Create SQL console user role {#create-sql-console-user-role}
+<Step title="Create SQL console user role" id="create-sql-console-user-role">
 
 Create a role for the SQL console user my.user@domain.com and assign it the database_developer role.
     
@@ -44,8 +44,7 @@ CREATE ROLE OR REPLACE `sql-console-role:my.user@domain.com`;
 GRANT database_developer TO `sql-console-role:my.user@domain.com`;
 ```
 </Step>
-<Step>
-#### The user is assigned the new role when they use SQL console {#use-assigned-new-role}
+<Step title="The user is assigned the new role when they use SQL console" id="use-assigned-new-role">
 
 The user will be assigned the role associated with their email address whenever they use SQL console. 
 </Step>
@@ -87,13 +86,21 @@ Configure the following within the services and databases using the SQL [GRANT](
 | Default               | Full administrative access to services                                        |
 | Custom                | Configure using the SQL [`GRANT`](/reference/statements/grant) statement |
 
-- Database roles are additive. This means if a user is a member of two roles, the user has the most access granted to the two roles. They don't lose access by adding roles.
+- Database roles are additive. This means if a user is a member of two roles, the user has the most access granted to the two roles. They don't lose access by adding roles. This applies to SQL roles granted inside a service. A console custom role with a `Data` policy using `Custom` access replaces the built-in SQL console database access instead. See [Manage database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
 - Database roles can be granted to other roles, resulting in a hierarchical structure. Roles inherit all permissions of the roles for which it is a member.
 - Database roles are unique per service and may be applied across multiple databases within the same service.
 
 The illustration below shows the different ways a user could be granted permissions.
 
-<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt='An illustration showing the different ways a user could be granted permissions' size="md" background="black"/>
+<div className="ch-image-md ch-image-background-black">
+
+<Frame>
+
+![An illustration showing the different ways a user could be granted permissions](/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp)
+
+</Frame>
+
+</div>
 
 ### Initial settings {#initial-settings}
 Databases have an account named `default` that is added automatically and granted the default_role upon service creation. The user that creates the service is presented with the automatically generated, random password that is assigned to the `default` account when the service is created. The password isn't shown after initial setup, but may be changed by any user with Service Admin permissions in the console at a later time. This account or an account with Service Admin privileges within the console may set up additional database users and roles at any time.
@@ -115,8 +122,7 @@ You can use a SHA256 hash generator or code function such as `hashlib` in Python
 The following process can be used to generate a complete access listing across the SQL console and databases in your organization.
 
 <Steps>
-<Step>
-#### Get a list of all database grants {#get-a-list-of-all-database-grants}
+<Step title="Get a list of all database grants" id="get-a-list-of-all-database-grants">
 
 Run the following queries to get a list of all grants in the database. 
 
@@ -142,8 +148,7 @@ FROM system.role_grants LEFT OUTER JOIN system.grants ON role_grants.granted_rol
 WHERE role_grants.user_name is null;
 ```
 </Step>
-<Step>
-#### Associate grant list to Console users with access to SQL console {#associate-grant-list-to-console-users-with-access-to-sql-console}
+<Step title="Associate grant list to Console users with access to SQL console" id="associate-grant-list-to-console-users-with-access-to-sql-console">
 
 Associate this list with Console users that have access to SQL console.
    

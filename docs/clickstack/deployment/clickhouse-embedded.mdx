@@ -6,9 +6,8 @@ doc_type: 'guide'
 keywords: ['ClickStack embedded', 'ClickHouse embedded', 'ClickStack ClickHouse server', 'built-in observability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
-ClickStack is bundled directly into the ClickHouse server binary. This means you can access the ClickStack UI (HyperDX) from your ClickHouse instance without deploying any additional components. This deployment is similar to the public demo at [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), but running against your own ClickHouse instance and data.
+ClickStack is bundled directly into the ClickHouse server binary. This means you can access the ClickStack UI from your ClickHouse instance without deploying any additional components. This deployment is similar to the public demo at [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), but running against your own ClickHouse instance and data.
 
 ### Suitable for {#suitable-for}
 
@@ -31,8 +30,7 @@ This embedded version is **not designed for production use**. The following feat
 <Tab title="Docker">
 
 <Steps>
-<Step>
-### Start ClickHouse {#start-clickhouse-docker}
+<Step title="Start ClickHouse" id="start-clickhouse-docker">
 
 Pull and run the ClickHouse server image with a password set:
 
@@ -50,25 +48,39 @@ docker run --rm -it -p 8123:8123 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 click
 ```
 </Tip>
 </Step>
-<Step>
-### Open the ClickStack UI {#open-clickstack-ui-docker}
+<Step title="Open the ClickStack UI" id="open-clickstack-ui-docker">
 
 Open [http://localhost:8123](http://localhost:8123) in your browser and click **ClickStack**.
 
 Enter the username `default` and the password `password` to connect to the local instance.
 
-<Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="Authenticate" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Authenticate](/images/clickstack/deployment/embedded/authenticate.webp)
+
+</Frame>
+
+</div>
 </Step>
-<Step>
-### Create a source {#create-a-source-docker}
+<Step title="Create a source" id="create-a-source-docker">
 
 If you have existing OpenTelemetry tables, ClickStack will detect them and create sources automatically.
 
 On a fresh installation, you will be prompted to create a source. Complete the **Table** field with the appropriate table name (e.g. `otel_logs`) and click **Save New Source**.
 
-<Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Create Source" size="lg"/>
+<div className="ch-image-lg">
 
-If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/index) for available options.
+<Frame>
+
+![Create Source](/images/clickstack/deployment/embedded/inferred-source.webp)
+
+</Frame>
+
+</div>
+
+If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/overview) for available options.
 </Step>
 </Steps>
 
@@ -76,8 +88,7 @@ If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/inde
 <Tab title="Binary">
 
 <Steps>
-<Step>
-### Start ClickHouse {#start-clickhouse-binary}
+<Step title="Start ClickHouse" id="start-clickhouse-binary">
 
 Download and start ClickHouse:
 
@@ -132,19 +143,25 @@ Start the server:
 ./clickhouse server
 ```
 </Step>
-<Step>
-### Open the ClickStack UI {#open-clickstack-ui-binary}
+<Step title="Open the ClickStack UI" id="open-clickstack-ui-binary">
 
 Open [http://localhost:8123](http://localhost:8123) in your browser and click **ClickStack**. A connection to the local instance is created automatically.
 </Step>
-<Step>
-### Create a source {#create-a-source-binary}
+<Step title="Create a source" id="create-a-source-binary">
 
 If you have existing OpenTelemetry tables, ClickStack will detect them and create sources automatically.
 
-If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/index) for available options.
+If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/overview) for available options.
 
-<Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Create Source" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Create Source](/images/clickstack/deployment/embedded/inferred-source.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -158,4 +175,4 @@ If you're ready to move beyond evaluation, consider a production-ready deploymen
 - [All-in-One](/clickstack/deployment/all-in-one) — single container with all components, including persistence and authentication
 - [Docker Compose](/clickstack/deployment/docker-compose) — individual components for more control
 - [Helm](/clickstack/deployment/helm) — recommended for production Kubernetes deployments
-- [Managed ClickStack](/clickstack/getting-started/managed) — fully managed on ClickHouse Cloud
+- [Self-managed ClickHouse Observability](/clickstack/self-configured/getting-started/managed) — manage your ingestion and schemas on ClickHouse Cloud

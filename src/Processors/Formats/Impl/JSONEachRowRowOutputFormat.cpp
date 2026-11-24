@@ -3,6 +3,7 @@
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -31,32 +32,45 @@ void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISeria
 }
 
 
+/// The delimiters are written with one `write` each: then the slow path of the buffer is a tail call, and the
+/// function needs no stack frame (with pointer authentication, no signed return address for every row).
+
 void JSONEachRowRowOutputFormat::writeFieldDelimiter()
 {
-    writeChar(',', *ostr);
     if (pretty_json)
-        writeChar('\n', *ostr);
+        writeCString(",\n", *ostr);
+    else
+        writeChar(',', *ostr);
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    writeChar('{', *ostr);
     if (pretty_json)
-        writeChar('\n', *ostr);
+        writeCString("{\n", *ostr);
+    else
+        writeChar('{', *ostr);
 }
 
 
 void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    if (pretty_json)
-        writeChar('\n', *ostr);
-
-    if (settings.json.array_of_rows)
-        writeChar('}', *ostr);
-    else
-        writeCString("}\n", *ostr);
     field_number = 0;
+
+    if (pretty_json)
+    {
+        if (settings.json.array_of_rows)
+            writeCString("\n}", *ostr);
+        else
+            writeCString("\n}\n", *ostr);
+    }
+    else
+    {
+        if (settings.json.array_of_rows)
+            writeChar('}', *ostr);
+        else
+            writeCString("}\n", *ostr);
+    }
 }
 
 
@@ -113,10 +127,32 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
             return std::make_shared<JSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, pretty_json);
         });
         factory.markOutputFormatSupportsParallelFormatting(format);
+        /// With output_format_json_array_of_rows all rows form one JSON array.
+        factory.registerAppendSupportChecker(format, [](const FormatSettings & settings) { return !settings.json.array_of_rows; });
         factory.setContentType(format, [](const std::optional<FormatSettings> & settings)
         {
             return settings && settings->json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8";
         });
+        /// The field names are emitted as JSON object keys every row via `makeNamesValidJSONStrings`
+        /// with `output_format_json_validate_utf8`. When validation is off, a name that is not valid
+        /// UTF-8 (a quoted alias with arbitrary bytes) makes the keys, and hence the output, non-textual.
+        /// The row values can synthesize further object keys from named `Tuple` element names (see
+        /// `tupleElementNamesMayProduceRawBytesInJSON`) - except when the values are serialized as
+        /// strings (`JSONStringsEachRow`), where a `Tuple` value is written in its plain text form,
+        /// which carries no element names - but that plain text form writes the `Bool`
+        /// representations verbatim (see `boolRepresentationsMayProduceRawBytesInJSONStrings`).
+        /// All of this is knowable from the header and the settings, so the text framings reject or
+        /// base64-encode accordingly.
+        factory.registerOutputFormatMayProduceRawBytesChecker(
+            format,
+            [serialize_as_strings](const FormatSettings & settings, const Block & header)
+            {
+                return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8)
+                    || (!serialize_as_strings
+                        && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8))
+                    || (serialize_as_strings
+                        && JSONUtils::boolRepresentationsMayProduceRawBytesInJSONStrings(header, settings, settings.json.validate_utf8));
+            });
     };
 
     register_function("JSONEachRow", false, false);
@@ -143,7 +179,7 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from [JSONEachRow](./JSONEachRow.md) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
+Differs from [JSONEachRow](/reference/formats/JSON/JSONEachRow) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
 
 ## Example usage {#example-usage}
 ### Reading data {#reading-data}
