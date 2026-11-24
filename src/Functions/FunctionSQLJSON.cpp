@@ -12,10 +12,13 @@ REGISTER_FUNCTION(SQLJSON)
         FunctionDocumentation::Description description = R"(
 If the value exists in the JSON document, `1` will be returned.
 If the value does not exist, `0` will be returned.
+
+For the `JSON` type, the path is evaluated on its typed paths, dynamic paths and shared data.
+The result is the same as for the value cast to `String`.
         )";
         FunctionDocumentation::Syntax syntax = "JSON_EXISTS(json, path)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "A string with valid JSON.", {"String"}},
+            {"json", "A string with valid JSON, or a value of the `JSON` type.", {"String", "JSON"}},
             {"path", "A string representing the path.", {"String"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in the JSON document, otherwise `0`.", {"UInt8"}};
@@ -55,10 +58,13 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
         FunctionDocumentation::Description description = R"(
 Parses a JSON and extract a value as a JSON array or JSON object.
 If the value does not exist, an empty string will be returned.
+
+For the `JSON` type, the path is evaluated on its typed paths, dynamic paths and shared data.
+The result is the same as for the value cast to `String`.
         )";
         FunctionDocumentation::Syntax syntax = "JSON_QUERY(json, path)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "A string with valid JSON.", {"String"}},
+            {"json", "A string with valid JSON, or a value of the `JSON` type.", {"String", "JSON"}},
             {"path", "A string representing the path.", {"String"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted JSON array or JSON object as a string, or an empty string if the value does not exist.", {"String"}};
@@ -93,10 +99,13 @@ Parses a JSON and extract a value as a JSON scalar. If the value does not exist,
 This function is controlled by the following settings:
 - by SET `function_json_value_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default.
 - by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
+
+For the `JSON` type, the path is evaluated on its typed paths, dynamic paths and shared data.
+The result is the same as for the value cast to `String`.
         )";
         FunctionDocumentation::Syntax syntax = "JSON_VALUE(json, path)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "A string with valid JSON.", {"String"}},
+            {"json", "A string with valid JSON, or a value of the `JSON` type.", {"String", "JSON"}},
             {"path", "A string representing the path.", {"String"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted JSON scalar as a string, or an empty string if the value does not exist.", {"String"}};

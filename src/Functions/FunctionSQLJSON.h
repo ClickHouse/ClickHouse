@@ -16,11 +16,14 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/SipHash.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
+#include <Functions/ObjectColumnJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
 #include <base/range.h>
@@ -44,6 +47,7 @@ namespace ErrorCodes
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 /// Have implemented the operator << for json elements. So we could use stringstream to serialize json elements.
@@ -127,12 +131,53 @@ private:
 class FunctionSQLJSONHelpers
 {
 public:
+    /// Reads the first argument row by row: a `String` is parsed, a `JSON` is read by `ObjectColumnJSONParser`.
+    template <class JSONParser>
+    class DocumentReader
+    {
+    public:
+        using Element = typename JSONParser::Element;
+        static constexpr bool reads_json_type = requires(JSONParser & parser, size_t row) { parser.getDocument(row); };
+
+        DocumentReader(const ColumnWithTypeAndName & json, const FormatSettings & format_settings) : column(*json.column)
+        {
+            if (!(reads_json_type ? isObject(json.type) : isString(json.type)))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The first argument of JSONPath functions must be a String or JSON, illegal type: {}", json.type->getName());
+
+            if constexpr (reads_json_type)
+                parser.prepare(json, format_settings);
+        }
+
+        bool read(size_t row, Element & document)
+        {
+            if constexpr (reads_json_type)
+            {
+                document = parser.getDocument(row);
+                return true;
+            }
+            else
+                return parser.parse(column.getDataAt(row), document);
+        }
+
+    private:
+        const IColumn & column;
+        JSONParser parser;
+    };
+
     /// Single-path executor: parses one JSONPath, applies Impl per row.
     template <typename Name, typename Impl, class JSONParser>
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex)
+        static ColumnPtr run(
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            uint32_t parse_depth,
+            uint32_t parse_backtracks,
+            bool function_json_value_return_type_allow_complex,
+            const FormatSettings & format_settings)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -142,14 +187,7 @@ public:
                 throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "JSONPath functions require at least 2 arguments");
             }
 
-            const auto & json_column = arguments[0];
-
-            if (!isString(json_column.type))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "JSONPath functions require first argument to be JSON of string, illegal type: {}",
-                                json_column.type->getName());
-            }
+            DocumentReader<JSONParser> reader(arguments[0], format_settings);
 
             const auto & json_path_column = arguments[1];
 
@@ -185,7 +223,6 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
             }
 
-            JSONParser json_parser;
             using Element = typename JSONParser::Element;
             Element document;
             bool document_ok = false;
@@ -195,8 +232,7 @@ public:
             GeneratorJSONPath<JSONParser> generator_json_path(res);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view json = json_column.column->getDataAt(i);
-                document_ok = json_parser.parse(json, document);
+                document_ok = reader.read(i, document);
 
                 bool added_to_column = false;
                 if (document_ok)
@@ -234,14 +270,12 @@ public:
             size_t input_rows_count,
             uint32_t parse_depth,
             uint32_t parse_backtracks,
-            bool function_json_value_return_type_allow_complex)
+            bool function_json_value_return_type_allow_complex,
+            const FormatSettings & format_settings)
         {
-            const auto & json_column = arguments[0];
             const auto & path_column = arguments[1];
 
-            if (!isString(json_column.type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument of JSONPath functions must be a String, got: {}", json_column.type->getName());
+            DocumentReader<JSONParser> reader(arguments[0], format_settings);
 
             if (!isColumnConst(*path_column.column))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -258,14 +292,12 @@ public:
             VectorWithMemoryTracking<std::shared_ptr<GeneratorJSONPath<JSONParser>>> generators;
             PlanNode plan = buildPlan(*to, const_data, path_column.type, 0, parse_depth, parse_backtracks, generators);
 
-            JSONParser json_parser;
             Element document;
             Impl impl;
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view json = json_column.column->getDataAt(i);
-                bool document_ok = json_parser.parse(json, document);
+                bool document_ok = reader.read(i, document);
 
                 size_t gen_idx = 0;
                 executePlan(plan, document, generators, gen_idx, document_ok, impl, function_json_value_return_type_allow_complex);
@@ -481,9 +513,21 @@ public:
           max_parser_backtracks(context_->getSettingsRef()[Setting::max_parser_backtracks]),
           allow_simdjson(context_->getSettingsRef()[Setting::allow_simdjson]),
           function_json_value_return_type_allow_complex(context_->getSettingsRef()[Setting::function_json_value_return_type_allow_complex]),
-          function_json_value_return_type_allow_nullable(context_->getSettingsRef()[Setting::function_json_value_return_type_allow_nullable])
+          function_json_value_return_type_allow_nullable(context_->getSettingsRef()[Setting::function_json_value_return_type_allow_nullable]),
+          format_settings(getFormatSettings(context_))
     {
+        SipHash hash;
+        hash.update(max_parser_depth);
+        hash.update(max_parser_backtracks);
+        hash.update(allow_simdjson);
+        hash.update(function_json_value_return_type_allow_complex);
+        hash.update(function_json_value_return_type_allow_nullable);
+        hash.update(getFormatSettingsHash(context_->getSettingsRef()));
+        settings_hash = hash.get64();
     }
+
+    /// The captured settings decide the result, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(settings_hash); }
 
     static constexpr auto name = Name::name;
     [[nodiscard]] String getName() const override { return Name::name; }
@@ -539,13 +583,24 @@ public:
         /// 4. Execute functions: call getNextItem on generator and handle each item
         unsigned parse_depth = static_cast<unsigned>(max_parser_depth);
         unsigned parse_backtracks = static_cast<unsigned>(max_parser_backtracks);
+        if (isObject(arguments[0].type))
+        {
+#if USE_SIMDJSON
+            if (allow_simdjson)
+                return Impl<ObjectColumnJSONParser, JSONStringSerializer<ObjectColumnJSONParser::Element, ObjectColumnJSONParser::Formatter>>::execute(
+                    arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
+#endif
+            if (input_rows_count)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Functions JSON* are not supported");
+            return result_type->createColumn();
+        }
 #if USE_SIMDJSON
         if (allow_simdjson)
             return Impl<SimdJSONParser, JSONStringSerializer<SimdJSONParser::Element, SimdJSONElementFormatter>>::execute(
-                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
 #endif
         return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::execute(
-            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
     }
 private:
     const size_t max_parser_depth;
@@ -553,6 +608,8 @@ private:
     const bool allow_simdjson;
     const bool function_json_value_return_type_allow_complex;
     const bool function_json_value_return_type_allow_nullable;
+    const FormatSettings format_settings;
+    UInt64 settings_hash;
 };
 
 struct NameJSONExists
@@ -632,14 +689,15 @@ public:
     }
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
-                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex)
+                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex,
+                             const FormatSettings & format_settings)
     {
         if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
             return FunctionSQLJSONHelpers::MultiPathExecutor<JSONExistsImpl, JSONParser>::run(
-                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
 
         return FunctionSQLJSONHelpers::Executor<NameJSONExists, JSONExistsImpl, JSONParser>::run(
-            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
     }
 };
 
@@ -748,14 +806,15 @@ public:
     }
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
-                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex)
+                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex,
+                             const FormatSettings & format_settings)
     {
         if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
             return FunctionSQLJSONHelpers::MultiPathExecutor<JSONValueImpl, JSONParser>::run(
-                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
 
         return FunctionSQLJSONHelpers::Executor<NameJSONValue, JSONValueImpl, JSONParser>::run(
-            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
     }
 };
 
@@ -840,14 +899,15 @@ public:
     }
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
-                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex)
+                             uint32_t parse_depth, uint32_t parse_backtracks, bool function_json_value_return_type_allow_complex,
+                             const FormatSettings & format_settings)
     {
         if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
             return FunctionSQLJSONHelpers::MultiPathExecutor<JSONQueryImpl, JSONParser>::run(
-                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
 
         return FunctionSQLJSONHelpers::Executor<NameJSONQuery, JSONQueryImpl, JSONParser>::run(
-            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex);
+            arguments, result_type, input_rows_count, parse_depth, parse_backtracks, function_json_value_return_type_allow_complex, format_settings);
     }
 };
 

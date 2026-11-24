@@ -116,7 +116,8 @@ void writeJSONKey(std::string_view key, WriteBuffer & ostr, const FormatSettings
 }
 
 template <typename Parser>
-void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent) const
+void SerializationJSON<Parser>::serializeTextImpl(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent, std::string_view prefix) const
 {
     const auto & column_object = assert_cast<const ColumnObject &>(column);
 
@@ -135,6 +136,8 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
         auto path_info = it.getCurrentPathInfo(/*materialize_shared_data_value=*/ false);
+        if (!path_info.path.starts_with(prefix))
+            continue;
 
         /// When type_json_skip_null_typed_paths is enabled, treat NULL in typed paths
         /// as absence of the path, matching the behavior of dynamic paths.
@@ -143,7 +146,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
             && path_info.column->isNullAt(path_info.row))
             continue;
 
-        PathElements path_elements(path_info.path);
+        PathElements path_elements(path_info.path.substr(prefix.size()));
         /// Change prefix to common prefix between current prefix and current path.
         /// If prefix changed (it can only decrease), close all finished objects.
         /// For example:
@@ -384,6 +387,13 @@ template <typename Parser>
 void SerializationJSON<Parser>::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
     serializeTextImpl(column, row_num, ostr, settings, true, indent);
+}
+
+template <typename Parser>
+void SerializationJSON<Parser>::serializeTextJSONSubObject(
+    const IColumn & column, size_t row_num, std::string_view prefix, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeTextImpl(column, row_num, ostr, settings, false, 0, prefix);
 }
 
 template <typename Parser>
