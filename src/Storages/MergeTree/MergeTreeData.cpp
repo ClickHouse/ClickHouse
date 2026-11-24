@@ -6728,6 +6728,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 "ALTER TABLE commands are not supported on immutable disk '{}', except for setting and comment alteration",
                 disk->getName());
 
+    /// A `Replicated` database re-executes the ALTER per replica here, so a restriction newer than the
+    /// initiator must judge only the initial execution: a secondary refusing what the initiator committed
+    /// would retry its queue entry forever.
+    const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
+
     /// We use columns_in_indices to prevent alters that change column data type in a way that requires
     /// reindexing secondary indices (respecting alter_column_secondary_index_mode). But only care about explicit indices
     std::unordered_map<String, String> columns_in_explicit_indices;
@@ -6737,8 +6742,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         {
             /// An index may read a subcolumn (e.g. `t.a`) or an ALIAS column; resolve its expression to
             /// the columns it is stored in so an ALTER of such a column is matched against
-            /// alter_column_secondary_index_mode, just like an index on a whole column.
-            for (const String & col : expressionSourceColumnsInStorage(index.expression_list_ast, old_metadata.getColumns(), local_context))
+            /// alter_column_secondary_index_mode, just like an index on a whole column. A replay keeps
+            /// the raw names, as an initiator without this resolution judged it.
+            const Names index_columns = is_secondary_replay
+                ? index.expression->getRequiredColumns()
+                : expressionSourceColumnsInStorage(index.expression_list_ast, old_metadata.getColumns(), local_context);
+            for (const String & col : index_columns)
                 columns_in_explicit_indices.emplace(col, index.name);
         }
     }
@@ -6807,12 +6816,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 const auto & identifier_name = identifier->name();
                 if (bound.contains(identifier->compound() ? identifier->name_parts.front() : identifier_name))
                     return false;
-                if (identifier_name == alias_name || identifier_name.starts_with(alias_name + "."))
+                if (identifier_name == alias_name)
                     return true;
 
-                /// A subcolumn (`m.v`) is defined by the column it belongs to.
-                auto resolved = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier_name);
-                return column_reads(resolved ? resolved->getNameInStorage() : identifier_name);
+                /// Resolve the name before looking at its prefix: a stored column can itself be named `a.v` next
+                /// to an alias `a`. A subcolumn (`m.v`) is defined by the column it belongs to.
+                if (auto resolved = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier_name))
+                    return resolved->getNameInStorage() == alias_name || column_reads(resolved->getNameInStorage());
+
+                return identifier_name.starts_with(alias_name + ".");
             }
 
             if (const auto * function = node.as<ASTFunction>();
@@ -6847,7 +6859,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     auto check_key_materialized_sources = [&](const AlterCommand & command)
     {
-        if (!command.data_type)
+        if (!command.data_type || is_secondary_replay)
             return;
 
         /// An ALIAS column is not in old_types, which holds physical columns only.
@@ -7425,8 +7437,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 getStorageID().getNameForLogs());
         checkStoragePolicy(new_storage_policy);
     }
-
-    const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 
     /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
     /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a

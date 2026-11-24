@@ -28,7 +28,16 @@ ENGINE = MergeTree ORDER BY m;
 ALTER TABLE t_alias_lambda_parameter MODIFY COLUMN a Int32;
 SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_alias_lambda_parameter' AND name = 'a';
 
+-- A stored column named `a.v` next to the alias `a` is not a subcolumn of the alias.
+DROP TABLE IF EXISTS t_alias_dotted_stored_column;
+CREATE TABLE t_alias_dotted_stored_column (x Int64, a Int64 ALIAS x, `a.v` Int64, m Int64 MATERIALIZED `a.v`)
+ENGINE = MergeTree ORDER BY m;
+INSERT INTO t_alias_dotted_stored_column (x, `a.v`) VALUES (5000000001, 7);
+ALTER TABLE t_alias_dotted_stored_column MODIFY COLUMN a Int32;
+SELECT a, `a.v`, m FROM t_alias_dotted_stored_column;
+
 DROP TABLE t_alias_key;
 DROP TABLE t_alias_key_through_subcolumn;
 DROP TABLE t_alias_not_key;
 DROP TABLE t_alias_lambda_parameter;
+DROP TABLE t_alias_dotted_stored_column;
