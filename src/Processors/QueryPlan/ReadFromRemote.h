@@ -184,7 +184,10 @@ ASTPtr tryBuildAdditionalFilterAST(
     Tables * external_tables,
     ContextMutablePtr & context,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
-    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr,
+    /// A conjunct whose copy would have more elements or be deeper than these is left out. Zero is no limit.
+    size_t max_ast_elements_budget = 0,
+    size_t max_ast_depth_budget = 0);
 
 /// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
 /// remote query - all of them where it does not run.
