@@ -65,7 +65,7 @@ void registerInputFormatHiveText(FormatFactory & factory)
         "HiveText", [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams & params, const FormatSettings & settings)
         {
             return std::make_shared<HiveTextRowInputFormat>(std::make_unique<const Block>(sample), buf, params, settings);
-        });
+        }, /*supports_reset_parser=*/ true);
 
     /// The structured documentation for `HiveText` is registered unconditionally alongside the
     /// output format (see `registerOutputFormatHiveText`), because the output format is compiled

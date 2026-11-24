@@ -9,5 +9,7 @@ shadow_part	1
 shadow_part	2
 shadow_partition	1
 shadow_partition	2
+shadow_alias	1
+shadow_alias	2
 lazy_stand_in	TableProxy
 lazy_survivors	3

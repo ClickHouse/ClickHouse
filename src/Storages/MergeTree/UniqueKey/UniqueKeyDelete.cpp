@@ -10,7 +10,6 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSubquery.h>
@@ -28,6 +27,7 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
 
@@ -104,43 +104,54 @@ std::vector<String> partitionsToVisit(const MergeTreeData & storage, const ASTDe
     return {partition_ids->begin(), partition_ids->end()};
 }
 
-/// The predicate reads only the deleted table: a subquery, or a table on the right of `IN`, brings in SQL with its
-/// own settings, whose limits could end it early and leave a `NOT IN` set incomplete.
-/// A column with an expression brings it in: an `ALIAS` column on every read, a `DEFAULT` or `MATERIALIZED` one in a
-/// part written before it was added. So the expressions of the columns it names are checked too.
-void throwIfPredicateReadsTables(const IAST & ast, const ColumnsDescription & columns, NameSet & expanded_columns)
+/// A literal, `tuple` or `array` of constant sets, or a `CAST` of one (a query parameter arrives as `_CAST(literal, 'T')`).
+/// Its set is built in one block, which a `break` set limit cannot cut short.
+bool isConstantSet(const IAST & ast)
+{
+    if (ast.as<ASTLiteral>())
+        return true;
+
+    const auto * function = ast.as<ASTFunction>();
+    if (!function)
+        return false;
+
+    if (function->name == "tuple" || function->name == "array")
+        return !function->arguments
+            || std::ranges::all_of(function->arguments->children, [](const ASTPtr & argument) { return isConstantSet(*argument); });
+
+    if (function->name == "CAST" || function->name == "_CAST")
+    {
+        const auto * arguments = function->arguments.get();
+        return arguments && arguments->children.size() == 2 && isConstantSet(*arguments->children[0])
+            && arguments->children[1]->as<ASTLiteral>();
+    }
+
+    return false;
+}
+
+/// The expression reads only the deleted table, with constants on the right of `IN`: a subquery or a table brings in
+/// SQL with its own settings, whose limits could end it early and leave a `NOT IN` set incomplete.
+void throwIfReadsTables(const IAST & ast)
 {
     if (ast.as<ASTSubquery>())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support subqueries");
 
-    if (const auto * identifier = ast.as<ASTIdentifier>())
-    {
-        /// Every dotted run of the parts, for a column qualified with its table or one whose subcolumn is named.
-        const auto & parts = identifier->name_parts;
-        for (size_t begin = 0; begin < parts.size(); ++begin)
-        {
-            String name;
-            for (size_t end = begin; end < parts.size(); ++end)
-            {
-                name += (end == begin ? "" : ".") + parts[end];
-                if (const auto * column = columns.tryGet(name);
-                    column && column->default_desc.expression && expanded_columns.insert(column->name).second)
-                    throwIfPredicateReadsTables(*column->default_desc.expression, columns, expanded_columns);
-            }
-        }
-        return;
-    }
-
     if (const auto * function = ast.as<ASTFunction>();
         function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
     {
-        const auto & rhs = function->arguments->children[1];
-        if ((rhs->as<ASTIdentifier>() && !columns.has(rhs->as<ASTIdentifier>()->name())) || rhs->as<ASTTableIdentifier>())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support a table on the right of `{}`", function->name);
+        if (!isConstantSet(*function->arguments->children[1]))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "DELETE on a UNIQUE KEY table supports only constants on the right of `{}`", function->name);
     }
 
     for (const auto & child : ast.children)
-        throwIfPredicateReadsTables(*child, columns, expanded_columns);
+        throwIfReadsTables(*child);
+}
+
+bool hasAlias(const IAST & ast, std::string_view alias)
+{
+    return ast.tryGetAlias() == alias
+        || std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return hasAlias(*child, alias); });
 }
 
 /// `READ_COLUMN _part, _part_offset` plus an `UPDATE _row_exists = 0 IN PARTITION ID ... WHERE <predicate>`
@@ -150,11 +161,17 @@ MutationCommands scanCommands(
     const ASTDeleteQuery & query, const StorageInMemoryMetadata & metadata, const String & partition_id, const ContextPtr & context)
 {
     /// `READ_COLUMN` and the `IN PARTITION ID` filter on `_partition_id` resolve their column by name,
-    /// where a table column of the same name wins.
+    /// where a table column, or a predicate alias, of the same name wins.
     for (const auto * name : {"_part", "_part_offset", "_partition_id"})
+    {
         if (metadata.getColumns().has(name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "DELETE on a UNIQUE KEY table reads the virtual column `{}`, which a table column of the same name shadows", name);
+        if (hasAlias(*query.predicate, name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "DELETE on a UNIQUE KEY table reads the virtual column `{}`, which an alias of the same name in its predicate shadows",
+                name);
+    }
 
     MutationCommands commands;
     for (const auto * name : {"_part", "_part_offset"})
@@ -216,7 +233,7 @@ struct DeleteStatement
 
     /// The rows of one partition the predicate matches at `txn`'s snapshot. Scanned like a lightweight
     /// update: the storage is read directly, so only `ALTER DELETE` is checked.
-    DeleteRowsByPart findRowsInPartition(const MergeTreeTransactionPtr & txn, const String & partition_id) const
+    [[nodiscard]] DeleteRowsByPart findRowsInPartition(const MergeTreeTransactionPtr & txn, const String & partition_id) const
     {
         auto scan_context = Context::createCopy(query_context);
         scan_context->makeQueryContext();
@@ -262,7 +279,7 @@ struct DeleteStatement
     /// Scan and commit one partition under one transaction, retrying on a conflict.
     /// Each partition has its own snapshot, so a DELETE is atomic per partition, not statement-wide as a mutation.
     /// Returns the newly-dead rows committed.
-    size_t deleteInPartition(const String & partition_id) const
+    [[nodiscard]] size_t deleteInPartition(const String & partition_id) const
     {
         for (size_t attempt = 1;; ++attempt)
         {
@@ -299,6 +316,19 @@ struct DeleteStatement
 
 }
 
+/// A synchronous `DELETE FROM`: each partition is scanned and committed under its own transaction, so the statement is
+/// atomic per partition, not as a whole.
+///
+/// The predicate must evaluate completely: a set built from another table's rows can be cut short by its own limits, and
+/// a truncated `NOT IN` set would delete rows that should stay.
+/// - Supported: the table's columns, constants and functions, e.g. `id = 5`, `startsWith(s, 'a')`, `has(arr, id)`,
+///   `dictGet(...)`; `IN` / `NOT IN` with constants: `id IN (1, 2)`, `id IN [1, 2]`, `id IN {ids:Array(UInt64)}`,
+///   `id IN CAST([1, 2], 'Array(UInt64)')`.
+/// - Refused: a subquery (`IN (SELECT ...)`, scalar, `EXISTS`); anything else on the right of `IN`: a table, a table
+///   function, a column, a lambda parameter, a computed list such as `(1, x + 1)`.
+/// - Refused: any DELETE on a table where an `ALIAS`, `DEFAULT` or `MATERIALIZED` column expression breaks these rules,
+///   whether or not the predicate names the column.
+/// - Refused before this point: `ON CLUSTER`, a table in a Replicated database.
 void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr query_context)
 {
     assertNotReadonly();
@@ -311,8 +341,23 @@ void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr qu
 
     const auto & query = query_ptr->as<ASTDeleteQuery &>();
     const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
-    NameSet expanded_columns;
-    throwIfPredicateReadsTables(*query.predicate, metadata_snapshot->getColumns(), expanded_columns);
+    throwIfReadsTables(*query.predicate);
+    /// Every column's expression, as any column can enter the scan (by name, through `*`, or under a `Nested` prefix):
+    /// an `ALIAS` one on every read, a `DEFAULT` or `MATERIALIZED` one in a part written before it was added.
+    for (const auto & column : metadata_snapshot->getColumns())
+    {
+        if (!column.default_desc.expression)
+            continue;
+        try
+        {
+            throwIfReadsTables(*column.default_desc.expression);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("in the expression of column {}", column.name);
+            throw;
+        }
+    }
 
     const DeleteStatement statement{
         .storage = *this,

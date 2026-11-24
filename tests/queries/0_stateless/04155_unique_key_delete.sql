@@ -2,7 +2,8 @@
 -- UNIQUE KEY DELETE:
 --   1. explicit transaction: a DELETE inside a transaction is refused and changes nothing
 --   2. Alias: a DELETE through an Alias table deletes from the table it points to
---   3. shadowed virtual column: a table column named `_part_offset`, `_part` or `_partition_id` refuses the DELETE
+--   3. shadowed virtual column: a table column or predicate alias named `_part_offset`, `_part` or `_partition_id`
+--      refuses the DELETE
 --   4. lazy table: a DELETE reaches a table whose database loads it lazily, directly and through an Alias
 
 SET enable_unique_key = 1;
@@ -60,30 +61,38 @@ DROP TABLE uk_alias_target;
 
 -- 3. shadowed virtual column: red if the DELETE runs, taking the stored `_part_offset` as the row address
 -- (deleting id 2 then kills id 1), crashing on a stored `_part`, or taking the stored `_partition_id` as
--- the partition (deleting partition 0 then kills id 2 in partition 1).
+-- the partition (deleting partition 0 then kills id 2 in partition 1), or a predicate alias of that name as it.
 DROP TABLE IF EXISTS uk_shadow_offset;
 DROP TABLE IF EXISTS uk_shadow_part;
 DROP TABLE IF EXISTS uk_shadow_partition;
+DROP TABLE IF EXISTS uk_shadow_alias;
 
+-- Reserved names need the setting at CREATE; a table attached from an older version can carry them without it.
+SET allow_reserved_column_names = 1;
 CREATE TABLE uk_shadow_offset (id UInt64, _part_offset UInt64) ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id);
 CREATE TABLE uk_shadow_part (id UInt64, _part String) ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id);
 CREATE TABLE uk_shadow_partition (id UInt64, p UInt8, _partition_id String) ENGINE = MergeTree PARTITION BY p UNIQUE KEY (id) ORDER BY (id);
+CREATE TABLE uk_shadow_alias (id UInt64, p UInt8) ENGINE = MergeTree PARTITION BY p UNIQUE KEY (id) ORDER BY (id);
 
 INSERT INTO uk_shadow_offset VALUES (1, 0), (2, 0);
 INSERT INTO uk_shadow_part VALUES (1, 'x'), (2, 'x');
 INSERT INTO uk_shadow_partition VALUES (1, 0, '0'), (2, 1, '0');
+INSERT INTO uk_shadow_alias VALUES (1, 0), (2, 1);
 
 DELETE FROM uk_shadow_offset WHERE id = 2; -- { serverError ILLEGAL_COLUMN }
 DELETE FROM uk_shadow_part WHERE id = 2; -- { serverError ILLEGAL_COLUMN }
 DELETE FROM uk_shadow_partition IN PARTITION 0 WHERE 1; -- { serverError ILLEGAL_COLUMN }
+DELETE FROM uk_shadow_alias IN PARTITION 0 WHERE ('0' AS _partition_id) = '0'; -- { serverError ILLEGAL_COLUMN }
 
 SELECT 'shadow_offset' AS step, id FROM uk_shadow_offset ORDER BY id;  -- 1,2
 SELECT 'shadow_part' AS step, id FROM uk_shadow_part ORDER BY id;  -- 1,2
 SELECT 'shadow_partition' AS step, id FROM uk_shadow_partition ORDER BY id;  -- 1,2
+SELECT 'shadow_alias' AS step, id FROM uk_shadow_alias ORDER BY id;  -- 1,2
 
 DROP TABLE uk_shadow_offset;
 DROP TABLE uk_shadow_part;
 DROP TABLE uk_shadow_partition;
+DROP TABLE uk_shadow_alias;
 
 -- 4. lazy table: red if the DELETE goes to the catalog's stand-in, which refuses it (SUPPORT_IS_DISABLED).
 -- Each DELETE follows a re-attach, which is what puts a stand-in in the catalog.

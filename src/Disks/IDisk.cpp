@@ -324,12 +324,12 @@ catch (Exception & e)
 
 bool IDisk::isCaseInsensitive()
 {
+    if (is_case_sensitivity_checked)
+        return is_case_insensitive;
+
     /// For readonly disk we cannot perform the case sensitivity check.
     if (isReadOnly())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check if filesystem is case insensitive: disk {} is readonly", name);
-
-    if (is_case_sensitivity_checked)
-        return is_case_insensitive;
 
     std::unique_lock lock(case_sensitivity_check_mutex);
     const String path = fmt::format("clickhouse_case_sensitivity_check_{}", toString(DB::UUIDHelpers::generateV4()));

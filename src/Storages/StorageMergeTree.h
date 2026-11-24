@@ -61,8 +61,6 @@ public:
 
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
 
-    bool supportsParallelInsert() const override { return true; }
-
     bool supportsStreaming() const override { return true; }
 
     CursorPromotersMap buildPromoters() override;
@@ -209,6 +207,7 @@ private:
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+      * The merge runs on this thread for the query of `query_thread_group`, which gets the counters of the merge.
       * Returns true if merge is finished successfully.
       */
     bool merge(
@@ -218,11 +217,12 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
+            const ThreadGroupPtr & query_thread_group,
             PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
     /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
-    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool remove_covered_parts_immediately);
 
     /// Must be called from a `catch` block after renaming the empty parts of `transaction` failed or committing them failed.
     /// Without a `MergeTreeTransaction`, removes the rolled back empty parts from disk right away. Rethrows the current exception.
@@ -239,10 +239,6 @@ private:
     MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
     ActionLock stopMergesAndWait();
     ActionLock stopMergesAndWaitForPartition(String partition_id);
-
-    /// Allocate block number for new mutation, write mutation to disk
-    /// and into in-memory structures. Wake up merge-mutation task.
-    Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
 
     /// Result of `prepareMutationEntry`. Holds the block-number reservation
     /// that must outlive the call to `addPreparedMutationEntry`.
@@ -265,6 +261,10 @@ private:
     /// increment `mutation_counters`. Caller must hold
     /// `currently_processing_in_background_mutex`.
     void addPreparedMutationEntry(PreparedMutationEntry prepared);
+
+    /// Register a mutation prepared by `prepareMutationEntry` in the in-memory structures
+    /// and wake up the merge-mutation task. Returns the mutation version.
+    Int64 startMutation(PreparedMutationEntry prepared, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
@@ -499,9 +499,9 @@ private:
         MutationsSnapshot() = default;
         MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
 
-        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
-        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getColumnsChangedOnFly() const override;
+        [[nodiscard]] MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        [[nodiscard]] std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        [[nodiscard]] NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy
@@ -521,7 +521,7 @@ private:
             {}
 
 
-            size_t getNextMinExecutionTimeUsResolution() const
+            [[nodiscard]] size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
                     return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
@@ -537,7 +537,7 @@ private:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated() const
+            [[nodiscard]] bool partCanBeMutated() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;
