@@ -13,7 +13,6 @@ namespace DB
 
 struct FormatSettings;
 
-/// Detects whether `Impl` accepts a `JSON` haystack, see `JSONAsStringConverter`.
 template <typename T, typename = void>
 struct ImplSupportsJSONHaystack : std::false_type {};
 
