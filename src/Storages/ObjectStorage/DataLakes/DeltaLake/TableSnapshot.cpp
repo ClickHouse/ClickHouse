@@ -75,27 +75,6 @@ bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
     return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
 }
 
-/// A data file with the size its `add` action records.
-struct DataObjectInfo : public DB::ObjectInfo
-{
-    DataObjectInfo(std::string path_, int64_t size_)
-        : DB::ObjectInfo(DB::RelativePathWithMetadata(std::move(path_)))
-        , size(size_)
-    {
-    }
-
-    [[nodiscard]] std::shared_ptr<DB::ObjectInfo> clone() const override { return std::make_shared<DataObjectInfo>(*this); }
-
-    [[nodiscard]] std::optional<size_t> getFileSizeHint() const override
-    {
-        if (size > 0)
-            return static_cast<size_t>(size);
-        return std::nullopt;
-    }
-
-    const int64_t size;
-};
-
 }
 
 class TableSnapshot::Iterator final : public DB::IObjectIterator, private DB::WithContext
@@ -629,7 +608,9 @@ public:
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
         std::string full_path = context->helper->resolveDataFilePath(KernelUtils::fromDeltaString(path), context->getContext());
-        auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
+        DB::ObjectInfoPtr object = size > 0
+            ? std::make_shared<DB::ObjectInfoWithFileSizeHint>(DB::RelativePathWithMetadata(std::move(full_path)), static_cast<size_t>(size))
+            : std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
         object->data_lake_metadata.emplace();
         if (stats)
             object->data_lake_metadata->num_rows = stats->num_records;

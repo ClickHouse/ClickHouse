@@ -2445,11 +2445,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
-    /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
+    /// Check type compatible for materialized dest table and select columns.
+    /// A full-definition `ATTACH` by a user is validated like `CREATE`, unlike a replayed one: a follower replica
+    /// gets `ATTACH` (not `SECONDARY_CREATE`), and the initiator has already validated it before enqueueing.
+    const bool is_user_full_attach = !internal && mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax
+        && !is_secondary_query && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
+    if (create.select && create.is_materialized_view && (mode <= LoadingStrictnessLevel::CREATE || is_user_full_attach))
     {
         // An MV with a flattened nested column in an inner table can never be filled
-        if (create.is_materialized_view_with_inner_table())
+        if (mode <= LoadingStrictnessLevel::CREATE && create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties);
     }
