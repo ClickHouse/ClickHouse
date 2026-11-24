@@ -56,6 +56,27 @@ list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
 # Overlength strings
 set_source_files_properties(${GENERATED_LICENSES_SRC} PROPERTIES COMPILE_FLAGS -w)
 
+# The data of system.changelog is generated from CHANGELOG.md at configure time, like the licenses above.
+set(GENERATED_CHANGELOG_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemChangelog.generated.cpp")
+set(CHANGELOG_MD "${ClickHouse_SOURCE_DIR}/CHANGELOG.md")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${CHANGELOG_MD} ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemChangelog.sh)
+
+execute_process(
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemChangelog.sh ${CHANGELOG_MD} ${GENERATED_CHANGELOG_SRC}.tmp
+    RESULT_VARIABLE CHANGELOG_RESULT
+    OUTPUT_QUIET)
+if (NOT CHANGELOG_RESULT EQUAL 0)
+    file(REMOVE ${GENERATED_CHANGELOG_SRC}.tmp)
+    message(FATAL_ERROR "Failed to generate StorageSystemChangelog.generated.cpp (it requires python3)")
+endif()
+file(COPY_FILE ${GENERATED_CHANGELOG_SRC}.tmp ${GENERATED_CHANGELOG_SRC} ONLY_IF_DIFFERENT)
+file(REMOVE ${GENERATED_CHANGELOG_SRC}.tmp)
+
+# A copy in the source tree may remain from the time when the file was committed.
+list (REMOVE_ITEM storages_system_sources StorageSystemChangelog.generated.cpp)
+list (APPEND storages_system_sources ${GENERATED_CHANGELOG_SRC})
+
 list (SORT storages_system_sources) # Reproducible build
 add_library(clickhouse_storages_system ${storages_system_sources})
 
