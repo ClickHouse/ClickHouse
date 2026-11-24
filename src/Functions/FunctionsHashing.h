@@ -42,6 +42,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
 #include <base/range.h>
@@ -50,6 +51,11 @@
 
 #include <algorithm>
 #include <memory>
+
+/// Hash functions are built on wrapping arithmetic: multiplications by large odd constants,
+/// additions of the length and of the block words. Switch off the check for unsigned integer
+/// overflow for the whole file instead of annotating every single implementation.
+#pragma clang attribute push (__attribute__((__no_sanitize__("unsigned-integer-overflow"))), apply_to = function)
 
 namespace DB
 {
@@ -2081,5 +2087,7 @@ using FunctionXXH3_128 = FunctionAnyHash<ImplXXH3_128>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 }
+
+#pragma clang attribute pop
 
 #pragma clang diagnostic pop
