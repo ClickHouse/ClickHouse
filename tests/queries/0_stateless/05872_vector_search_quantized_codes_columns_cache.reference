@@ -1,0 +1,18 @@
+-- codes only, from disk and then from the cache
+1
+['vec.quantized']
+1
+['vec.quantized']
+-- a filter column is read and cached
+1
+['id','vec.quantized']
+1
+-- setting disabled
+1
+[]
+-- lazy materialization disabled: the read reads the vectors, so it does not use the cache
+1
+[]
+-- a filter on the vector column: the vectors are never cached
+1
+0

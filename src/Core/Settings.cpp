@@ -10504,6 +10504,10 @@ Enables a two-stage approximate vector search without index (brute force scan) o
 2. rescore the found vectors against original, full-precision vectors.
 )", 0, \
         {"26.7", false, false, "New setting to opt into the two-stage approximate vector-search optimization over a Quantize(...) column codec; queries stay exact by default."}) \
+    DECLARE(Bool, vector_search_cache_quantized_codes, true, R"(
+Read the quantized codes of the two-stage vector search (see `vector_search_use_quantized_codes`) through the columns cache, even if `use_columns_cache` is disabled. Every such query reads the codes of all rows it searches, and they are much smaller than the full-precision vectors. The cache then holds the codes and any filter columns read with them, but not the full-precision vectors, which are read for the shortlist as configured. Where the full-precision vectors have to be read for every row together with the codes, for example with patch parts or `query_plan_optimize_lazy_materialization = 0`, the cache is not used. `columns_cache_size`, `enable_reads_from_columns_cache` and `enable_writes_to_columns_cache` apply as usual.
+)", 0, \
+        {"26.12", false, true, "New setting to read the quantized codes of the two-stage vector search through the columns cache."}) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally.
 )", 0, \

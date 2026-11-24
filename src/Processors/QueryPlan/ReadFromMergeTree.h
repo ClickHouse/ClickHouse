@@ -521,6 +521,10 @@ public:
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
     void disableSpreadingSmallRead() { allow_spreading_small_read = false; }
+    /// Read through the columns cache even if `use_columns_cache` is disabled, unless the read reads `column` itself.
+    /// For a read of small columns that every query reads in full, such as the quantized codes of the two-stage vector
+    /// search, whose full-precision vector column `column` lazy materialization normally takes out of this read.
+    void enableColumnsCacheUnlessReading(const String & column) { columns_cache_unless_reading = column; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -900,6 +904,9 @@ private:
 
     using PoolSettings = MergeTreeReadPoolBase::PoolSettings;
 
+    /// Whether a read of `columns_to_read` uses the columns cache: by `use_columns_cache` or `enableColumnsCacheUnlessReading`.
+    bool useColumnsCache(const Names & columns_to_read) const;
+
     Pipe read(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1025,6 +1032,8 @@ private:
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
     bool allow_spreading_small_read = true;
+    /// See `enableColumnsCacheUnlessReading`, empty if not enabled.
+    String columns_cache_unless_reading;
     bool no_rows_needed = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;

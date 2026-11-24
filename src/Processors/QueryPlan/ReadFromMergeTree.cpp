@@ -1370,6 +1370,31 @@ Pipe ReadFromMergeTree::readInOrder(
     return pipe;
 }
 
+bool ReadFromMergeTree::useColumnsCache(const Names & columns_to_read) const
+{
+    if (context->getSettingsRef()[Setting::use_columns_cache])
+        return true;
+
+    if (columns_cache_unless_reading.empty())
+        return false;
+
+    /// Where lazy materialization could not take the column out of this read (patch parts, FINAL, SAMPLE, a filter on
+    /// the column, ...), the read reads it for every row. The same goes for a mutation applied on the fly, whose steps
+    /// read their columns for every row. Do not cache the read then.
+    if (mutations_snapshot && (mutations_snapshot->hasPatchParts() || mutations_snapshot->hasDataMutations()))
+        return false;
+
+    const auto reads_column = [this](const Names & names) { return std::ranges::find(names, columns_cache_unless_reading) != names.end(); };
+    if (reads_column(columns_to_read))
+        return false;
+    if (query_info.prewhere_info && reads_column(query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames()))
+        return false;
+    if (query_info.row_level_filter && reads_column(query_info.row_level_filter->actions.getRequiredColumnsNames()))
+        return false;
+
+    return true;
+}
+
 Pipe ReadFromMergeTree::read(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1396,7 +1421,7 @@ Pipe ReadFromMergeTree::read(
         .min_marks_per_task_at_read_end = min_marks_per_task_at_read_end,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
-        .use_columns_cache = settings[Setting::use_columns_cache],
+        .use_columns_cache = useColumnsCache(required_columns),
         .use_const_size_tasks_for_remote_reading = settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
         .total_query_nodes = total_query_nodes,
     };
@@ -2362,7 +2387,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .min_marks_for_concurrent_read = info.min_marks_for_concurrent_read,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = info.use_uncompressed_cache,
-        .use_columns_cache = info.use_columns_cache,
+        .use_columns_cache = useColumnsCache(column_names),
         .total_query_nodes = total_query_nodes,
     };
 

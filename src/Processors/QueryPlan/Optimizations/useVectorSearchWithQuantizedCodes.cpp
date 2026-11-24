@@ -38,6 +38,7 @@ namespace DB::Setting
 {
     extern const SettingsFloat vector_search_index_fetch_multiplier;
     extern const SettingsBool vector_search_use_quantized_codes;
+    extern const SettingsBool vector_search_cache_quantized_codes;
 }
 
 namespace DB
@@ -342,6 +343,13 @@ bool optimizeVectorSearchWithQuantizedCodes(
         extra_columns.push_back(codebook_column);
     for (const auto & extra_column : extra_columns)
         read_step->addReadColumn(extra_column);
+
+    /// Every such query reads the codes of all rows it searches, and they are small: keep them in the columns cache, as
+    /// the vector similarity index is kept in its own cache. This read then caches the codes and any filter columns read
+    /// with them, but not the full-precision vectors: lazy materialization reads those for the shortlist only, as
+    /// configured, and where it cannot take them out of this read, the read does not use the cache.
+    if (context->getSettingsRef()[Setting::vector_search_cache_quantized_codes])
+        read_step->enableColumnsCacheUnlessReading(search_column);
 
     /// 2. Propagate the extra subcolumns up through the filter/rename chain (bottom-up), so they are available where we
     /// splice the shortlist (above all filters). Each Expression/Filter step would otherwise drop them.
