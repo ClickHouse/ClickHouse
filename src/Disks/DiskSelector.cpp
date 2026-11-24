@@ -1,9 +1,11 @@
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskRoot.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/getUnderlyingDisk.h>
 
 #include <IO/WriteHelpers.h>
+#include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -21,24 +23,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
-{
-    if (disk->getDataSourceDescription().is_encrypted)
-        return unwrapEncryptedAndCacheLayers(disk->getDelegateDiskIfExists());
-
-    DiskObjectStoragePtr object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
-    if (!object_storage_disk)
-        return nullptr;
-
-    MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
-
-    while (auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get()))
-        metadata_storage = cache_metadata->getUnderlying();
-
-    chassert(metadata_storage);
-    return metadata_storage;
-}
-
 void DiskSelector::assertInitialized() const
 {
     if (!is_initialized)
@@ -47,55 +31,19 @@ void DiskSelector::assertInitialized() const
 
 void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 {
-    if (disk->isPlain() && !disk->isReadOnly() && !disk->isWriteOnce())
+    const auto root = getDiskRoot(disk);
+    if (root && !disk->isReadOnly() && !disk->isWriteOnce())
     {
+        const auto underlying_disk = getUnderlyingDisk(disk);
         for (const auto & [saved_disk_name, saved_disk] : disks)
         {
-            if (!saved_disk->isPlain() || saved_disk->isReadOnly() || saved_disk->isWriteOnce())
+            if (saved_disk->isReadOnly() || saved_disk->isWriteOnce())
                 continue;
 
-            /// Same endpoint
-            if (disk->getObjectStorage()->getDescription() != saved_disk->getObjectStorage()->getDescription())
-                continue;
-
-            /// Same bucket
-            if (disk->getObjectStorage()->getObjectsNamespace() != saved_disk->getObjectStorage()->getObjectsNamespace())
-                continue;
-
-            LOG_TEST(getLogger("recordDisk"), "Validating plain disk: {}-{}-{}-{}-{} vs {}-{}-{}-{}-{}",
-                disk_name, disk->isReadOnly(), disk->isWriteOnce(), disk->getObjectStorage()->getDescription(), disk->getObjectStorage()->getObjectsNamespace(),
-                saved_disk_name, saved_disk->isReadOnly(), saved_disk->isWriteOnce(), saved_disk->getObjectStorage()->getDescription(), saved_disk->getObjectStorage()->getObjectsNamespace());
-
-            /// Nested common keys
-            const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
-            const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
-            if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
-            {
-                const auto unwrapped_metadata_storage_saved = unwrapEncryptedAndCacheLayers(saved_disk);
-                const auto unwrapped_metadata_storage_new = unwrapEncryptedAndCacheLayers(disk);
-
-                if (unwrapped_metadata_storage_saved.get() != unwrapped_metadata_storage_new.get())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
-                        disk_name, saved_disk_name);
-            }
-        }
-    }
-
-    if (disk->getDataSourceDescription().is_encrypted)
-    {
-        for (const auto & [saved_disk_name, saved_disk] : disks)
-        {
-            if (!saved_disk->getDataSourceDescription().is_encrypted)
-                continue;
-
-            if (disk->getDelegateDiskIfExists() != saved_disk->getDelegateDiskIfExists())
-                continue;
-
-            if (disk->getPath() == saved_disk->getPath())
+            if (getDiskRoot(saved_disk) == root && getUnderlyingDisk(saved_disk) != underlying_disk)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Disk {} and disk {} cannot have the same path ({})",
-                    disk_name, saved_disk_name, disk->getPath());
+                    "Disks {} and {} store data in the same place ({})",
+                    backQuote(saved_disk_name), backQuote(disk_name), root->path);
         }
     }
 
