@@ -396,6 +396,38 @@ bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool
     return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType(), allow_drop_nullable);
 }
 
+bool isCast(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() != 2)
+        return false;
+
+    const auto function_name = node.function_base->getName();
+    return function_name == "CAST" || function_name == "_CAST";
+}
+
+/// The `x` of `CAST(CAST(x, 'Dynamic'), T)` if the pair never changes a value of `x`. `Dynamic` stores
+/// the value as its own type and casts it to `T` with an ordinary `CAST`, except that it parses a
+/// top-level `String` under `cast_string_to_dynamic_use_inference` and turns a NULL into the default
+/// of a non-`Nullable` `T` instead of throwing.
+const ActionsDAG::Node * getDynamicRoundTripSource(const ActionsDAG::Node & node)
+{
+    if (!isCast(node))
+        return nullptr;
+
+    const auto * dynamic_node = node.children.front()->getWithoutAlias();
+    if (!isCast(*dynamic_node) || !isDynamic(dynamic_node->result_type))
+        return nullptr;
+
+    const auto * source = dynamic_node->children.front();
+    if (isStringOrFixedString(removeNullable(removeLowCardinality(source->result_type))))
+        return nullptr;
+
+    if (!isLosslessConversion(source->result_type, node.result_type, /*allow_drop_nullable=*/ false))
+        return nullptr;
+
+    return source;
+}
+
 }
 
 bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable, bool allow_conversion_functions)
@@ -429,6 +461,9 @@ RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, boo
         return node;
 
     const auto function = node.toFunctionNode();
+    if (const auto * source = getDynamicRoundTripSource(*function.getDAGNode()))
+        return unwrapLosslessConversion(RPNBuilderTreeNode(source, node.getContext()), allow_drop_nullable, allow_conversion_functions);
+
     if (!isLosslessConversionFunction(*function.getDAGNode(), allow_drop_nullable, allow_conversion_functions))
         return node;
 
@@ -438,6 +473,9 @@ RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, boo
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable)
 {
     const auto * node_without_alias = node->getWithoutAlias();
+
+    if (const auto * source = getDynamicRoundTripSource(*node_without_alias))
+        return unwrapLosslessConversion(source, allow_drop_nullable);
 
     if (!isLosslessConversionFunction(*node_without_alias, allow_drop_nullable))
         return node;
