@@ -41,7 +41,7 @@ public:
         , parallel_replicas_possible(canUseParallelReplicas(context))
     {}
 
-    bool found() const { return parallel_replicas_possible && reads_temporary_table; }
+    [[nodiscard]] bool found() const { return parallel_replicas_possible && reads_temporary_table; }
 
     bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr &) const { return !found(); }
 
