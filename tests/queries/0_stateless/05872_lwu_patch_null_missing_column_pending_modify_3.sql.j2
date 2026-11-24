@@ -110,4 +110,19 @@ SELECT 'twocolumns {{ version }} b', id, b FROM t_twocolumns_{{ version }} ORDER
 SELECT 'twocolumns {{ version }} a3, b', id, a3, b FROM t_twocolumns_{{ version }} ORDER BY id;
 DROP TABLE t_twocolumns_{{ version }} SYNC;
 
+-- order ({{ version }}): two old patches on one row, a NULL and a value, in both orders.
+DROP TABLE IF EXISTS t_order_{{ version }} SYNC;
+CREATE TABLE t_order_{{ version }} (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_order_{{ version }} VALUES (1), (2);
+SYSTEM STOP MERGES t_order_{{ version }};
+ALTER TABLE t_order_{{ version }} ADD COLUMN s Nullable(String) DEFAULT 'old';
+UPDATE t_order_{{ version }} SET s = NULL WHERE id = 1;
+UPDATE t_order_{{ version }} SET s = 'u' WHERE id = 1;
+UPDATE t_order_{{ version }} SET s = 'w' WHERE id = 2;
+UPDATE t_order_{{ version }} SET s = NULL WHERE id = 2;
+ALTER TABLE t_order_{{ version }} MODIFY COLUMN s String DEFAULT 'abc' SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'order {{ version }}', id, s FROM t_order_{{ version }} ORDER BY id;
+DROP TABLE t_order_{{ version }} SYNC;
+
 {% endfor -%}

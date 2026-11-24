@@ -11,8 +11,10 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -642,6 +644,40 @@ ColumnPtr mergePatchedRows(
     return res;
 }
 
+bool oldPatchMayHaveNull(const PatchPartInfoForReader & patch, const std::deque<PatchReadResultPtr> & results, const String & column_name)
+{
+    if (patch.mode == PatchMode::Join)
+        return true;
+
+    for (const auto & result : results)
+    {
+        const Block & block = patch.mode == PatchMode::Merge
+            ? typeid_cast<const PatchMergeReadResult &>(*result).block
+            : typeid_cast<const PatchMergeOnKeyReadResult &>(*result).block;
+
+        const auto * column = block.findByName(column_name);
+        if (!column)
+            continue;
+
+        auto full = removeSpecialRepresentations(column->column->convertToFullColumnIfConst());
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(full.get()))
+        {
+            const auto & null_map = nullable->getNullMapData();
+            if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+                return true;
+        }
+        else if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(full.get()))
+        {
+            if (low_cardinality->containsNull())
+                return true;
+        }
+        else
+            return true;
+    }
+
+    return false;
+}
+
 }
 
 void MergeTreeReadersChain::executeActionsBeforePrewhere(
@@ -750,6 +786,11 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                 if (order == ColumnForPatch::Order::BeforeConversions && !merge_tree_reader->isColumnDroppedByPendingMutation(pos)
                     && (merge_tree_reader->data_part_info_for_read->getColumnPosition(columns_in_part[pos].getNameInStorage()).has_value()
                         || merge_tree_reader->isColumnFrozen(pos) || !columns_in_part[pos].type->equals(*type)))
+                    continue;
+
+                /// Without a NULL there, the patch is cast like any other.
+                if (!oldPatchMayHaveNull(
+                        patch_readers[i]->getPatchPart(), patches_results[i], parent ? parent->name : column_for_patch.column_name))
                     continue;
 
                 defaults.resize(read_columns.size());

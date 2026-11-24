@@ -32,6 +32,8 @@ twocolumns v1 b	3	bdef
 twocolumns v1 a3, b	1	adef	bdef
 twocolumns v1 a3, b	2	adef	previous
 twocolumns v1 a3, b	3	adef	bdef
+order v1	1	u
+order v1	2	abc
 killed v2 patch type	LowCardinality(Nullable(String))
 killed v2 patch type	LowCardinality(Nullable(String))
 killed v2 patch type	Nullable(String)
@@ -66,3 +68,5 @@ twocolumns v2 b	3	bdef
 twocolumns v2 a3, b	1	adef	bdef
 twocolumns v2 a3, b	2	adef	previous
 twocolumns v2 a3, b	3	adef	bdef
+order v2	1	u
+order v2	2	abc
