@@ -1933,6 +1933,126 @@ def test_postgres_strict_query_local_only_column(started_cluster):
     started_cluster.postgres_conn.commit()
 
 
+def test_postgres_delete(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_delete"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (id integer, value text)")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete (id Int32, value String) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"
+    )
+    node1.query(
+        "INSERT INTO test.pg_delete SELECT number, concat('name_', toString(number)) FROM numbers(100)"
+    )
+
+    # The lightweight syntax. The result is verified on the PostgreSQL side, and the pushed-down
+    # statement is a single DELETE with the translated predicate.
+    node1.query("DELETE FROM test.pg_delete WHERE id < 10")
+    cursor.execute(f"SELECT count(*), min(id) FROM {table_name}")
+    assert cursor.fetchall() == [(90, 10)]
+    assert node1.contains_in_log('Query: DELETE FROM "test_delete" WHERE "id" < 10')
+
+    # The ALTER syntax, with a predicate over both columns.
+    node1.query("ALTER TABLE test.pg_delete DELETE WHERE value = 'name_10' OR id = 11")
+    cursor.execute(f"SELECT count(*) FROM {table_name}")
+    assert cursor.fetchall() == [(88,)]
+
+    # A constant expression is folded into a literal before the push-down.
+    node1.query("ALTER TABLE test.pg_delete DELETE WHERE id = 90 + 9")
+    cursor.execute(f"SELECT count(*) FROM {table_name} WHERE id = 99")
+    assert cursor.fetchall() == [(0,)]
+    assert node1.contains_in_log('Query: DELETE FROM "test_delete" WHERE "id" = 99')
+
+    # A predicate matching no rows succeeds as a no-op.
+    node1.query("DELETE FROM test.pg_delete WHERE id = 100500")
+    cursor.execute(f"SELECT count(*) FROM {table_name}")
+    assert cursor.fetchall() == [(87,)]
+
+    # A string literal with quotes is escaped in the PostgreSQL dialect: the statement stays
+    # well-formed (a broken escape would be a PostgreSQL syntax error) and deletes nothing.
+    node1.query("DELETE FROM test.pg_delete WHERE value = 'quo''te; DROP TABLE nope; --'")
+    cursor.execute(f"SELECT count(*) FROM {table_name}")
+    assert cursor.fetchall() == [(87,)]
+
+    node1.query("DROP TABLE test.pg_delete")
+    cursor.execute(f"DROP TABLE {table_name}")
+
+
+def test_postgres_delete_errors(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_delete_errors"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (id integer, value text)")
+    cursor.execute(
+        f"INSERT INTO {table_name} SELECT i, 'name_' || i FROM generate_series(0, 9) AS i"
+    )
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_errors (id Int32, value String) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"
+    )
+
+    def remote_count():
+        cursor.execute(f"SELECT count(*) FROM {table_name}")
+        return cursor.fetchall()[0][0]
+
+    # A predicate with no PostgreSQL form is rejected in full, even when one conjunct could be
+    # pushed down: weakening a DELETE filter would delete rows the query did not ask to delete.
+    error = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_errors WHERE toString(id) = '1' AND id >= 0"
+    )
+    assert "cannot be pushed down" in error
+    assert remote_count() == 10
+
+    # The UPDATE mutation is not supported yet.
+    error = node1.query_and_get_error(
+        "ALTER TABLE test.pg_delete_errors UPDATE value = 'x' WHERE id = 1"
+    )
+    assert "Only the DELETE mutation is supported" in error
+
+    # Mutations cannot be combined.
+    error = node1.query_and_get_error(
+        "ALTER TABLE test.pg_delete_errors DELETE WHERE id = 1, DELETE WHERE id = 2"
+    )
+    assert "Mutations cannot be combined" in error
+    assert remote_count() == 10
+
+    # A table backed by a query cannot be mutated.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_query_backed "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', query('SELECT id, value FROM {table_name}'), 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_query_backed WHERE id = 1"
+    )
+    assert "Cannot mutate a PostgreSQL table representing the result of a query" in error
+    assert remote_count() == 10
+
+    # A PostgreSQL error is returned to the caller: a role without the DELETE privilege.
+    cursor.execute("DROP ROLE IF EXISTS delete_norole")
+    cursor.execute("CREATE ROLE delete_norole WITH LOGIN PASSWORD 'norole_pass'")
+    cursor.execute(f"GRANT SELECT ON {table_name} TO delete_norole")
+    node1.query(
+        f"CREATE TABLE test.pg_delete_noperm (id Int32, value String) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', '{table_name}', 'delete_norole', 'norole_pass')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_noperm WHERE id = 1")
+    assert "permission denied" in error
+    assert remote_count() == 10
+
+    # The remote table disappeared after the ClickHouse table was created: the PostgreSQL error
+    # is returned with its SQLSTATE (42P01, undefined_table).
+    cursor.execute(f"DROP TABLE {table_name}")
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_errors WHERE id = 1")
+    assert "SQLSTATE 42P01" in error
+
+    cursor.execute("DROP ROLE delete_norole")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

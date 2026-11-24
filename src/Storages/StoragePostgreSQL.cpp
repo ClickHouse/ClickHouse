@@ -34,6 +34,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -45,6 +46,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -57,6 +59,7 @@
 #include <base/range.h>
 
 #include <boost/algorithm/string/join.hpp>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -82,6 +85,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
+    extern const int LOGICAL_ERROR;
+    extern const int POSTGRESQL_CONNECTION_FAILURE;
+    extern const int POSTGRESQL_QUERY_ERROR;
 }
 
 namespace
@@ -613,6 +619,102 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
 }
 
+void StoragePostgreSQL::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
+{
+    if (commands.empty())
+        return;
+
+    if (remote_table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mutate a PostgreSQL table representing the result of a query");
+
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations cannot be combined for the PostgreSQL table engine");
+
+    if (commands.front().type != MutationCommand::Type::DELETE)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only the DELETE mutation is supported for the PostgreSQL table engine");
+}
+
+void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr local_context)
+{
+    if (commands.empty())
+        return;
+
+    checkMutationIsPossible(commands, local_context->getSettingsRef());
+
+    /// Hoisted into a local: `ast` reparses `ast_text` on every call.
+    const auto alter_command = commands.front().ast();
+    if (!alter_command || !alter_command->predicate)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The DELETE mutation command has no predicate");
+
+    /// The predicate is translated in full or the query fails: see `transformMutationPredicateForExternalDatabase`.
+    const String where = transformMutationPredicateForExternalDatabase(
+        *alter_command->predicate,
+        getInMemoryMetadataPtr()->getColumns().getAllPhysical(),
+        IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
+        LiteralEscapingStyle::PostgreSQL,
+        local_context);
+
+    auto connection_holder = pool->get();
+    auto & connection = connection_holder->get();
+
+    const auto table_path = remote_table_schema.empty()
+        ? pqxx::table_path({remote_table_or_query.getTableName()})
+        : pqxx::table_path({remote_table_schema, remote_table_or_query.getTableName()});
+    const String query = fmt::format("DELETE FROM {} WHERE {}", connection.quote_table(table_path), where);
+    LOG_TRACE(log, "Query: {}", query);
+
+    /// The statement is executed in a single transaction and the function returns only after
+    /// PostgreSQL confirms the commit. It is not retried on any failure: once the statement may
+    /// have reached the server, a retry could apply it twice.
+    try
+    {
+        pqxx::work tx(connection);
+        const auto result = tx.exec(query);
+        tx.commit();
+        LOG_DEBUG(log, "Deleted {} rows on the PostgreSQL side", result.affected_rows());
+    }
+    catch (const pqxx::in_doubt_error & e)
+    {
+        connection_holder->setBroken();
+        throw Exception(ErrorCodes::POSTGRESQL_QUERY_ERROR,
+            "The outcome of the PostgreSQL transaction is unknown: the connection failed while its COMMIT was in progress. "
+            "The DELETE may or may not have been applied; it is not retried automatically. Error: {}", e.what());
+    }
+    catch (const pqxx::statement_completion_unknown & e)
+    {
+        connection_holder->setBroken();
+        throw Exception(ErrorCodes::POSTGRESQL_QUERY_ERROR,
+            "The outcome of the PostgreSQL statement is unknown: the connection failed while it was executing. "
+            "The DELETE may or may not have been applied; it is not retried automatically. Error: {}", e.what());
+    }
+    catch (const pqxx::broken_connection & e)
+    {
+        connection_holder->setBroken();
+        throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE,
+            "The connection to PostgreSQL failed before the transaction was committed, so nothing was applied. Error: {}", e.what());
+    }
+    catch (const pqxx::sql_error & e)
+    {
+        /// Also `pqxx::transaction_rollback`: a deadlock or serialization failure ends here,
+        /// rolled back on the PostgreSQL side and reported to the caller.
+        throw Exception(ErrorCodes::POSTGRESQL_QUERY_ERROR,
+            "PostgreSQL returned an error (SQLSTATE {}): {}", e.sqlstate(), e.what());
+    }
+    catch (const pqxx::failure & e)
+    {
+        connection_holder->setBroken();
+        throw Exception(ErrorCodes::POSTGRESQL_QUERY_ERROR, "PostgreSQL error: {}", e.what());
+    }
+    catch (const std::logic_error & e)
+    {
+        /// libpqxx errors such as `pqxx::usage_error` and `pqxx::conversion_error` derive from
+        /// `std::logic_error`, and an unhandled `std::logic_error` is treated as a logical error
+        /// of the server, so wrap them.
+        connection_holder->setBroken();
+        throw Exception(ErrorCodes::POSTGRESQL_QUERY_ERROR, "PostgreSQL client error: {}", e.what());
+    }
+}
+
 postgres::ConnectionSSLParams StoragePostgreSQL::getSSLParams(const NamedCollection & named_collection)
 {
     /// A path to a certificate or a key is only accepted from the server configuration file: the
@@ -950,7 +1052,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
+The PostgreSQL engine allows `SELECT`, `INSERT` and `DELETE` queries on data stored on a remote PostgreSQL server.
 
 <Note>
 Currently, only PostgreSQL versions 12 and up are supported for the table engine.
@@ -1101,6 +1203,12 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, and `IN [ array ]` conditions are executed in ClickHouse after the query to PostgreSQL finishes. The `LIMIT` sampling constraint is pushed to PostgreSQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
+
+## Deleting rows {#deleting-rows}
+
+`DELETE FROM pg_table WHERE ...` and `ALTER TABLE pg_table DELETE WHERE ...` are executed as a single `DELETE FROM ... WHERE ...` statement on the PostgreSQL side, in its own transaction. The query returns success only after PostgreSQL confirms the commit, and it is never retried automatically: if the connection fails while the commit is in progress, the query fails reporting that the outcome is unknown.
+
+The `WHERE` predicate must be translated into PostgreSQL SQL in full: unlike `SELECT`, a predicate is never split into a remote and a local part, because weakening it would delete rows the query did not ask to delete. A query whose predicate contains expressions with no PostgreSQL form fails with `INCORRECT_QUERY` (constant expressions are folded into literals first, so they are fine). A table backed by a query (see below) cannot be mutated. `UPDATE` is not supported yet.
 
 ## Passing a query instead of a table name {#passing-a-query}
 

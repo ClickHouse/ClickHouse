@@ -96,4 +96,23 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
   */
 void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style);
 
+/** Render the predicate of a mutation (`ALTER TABLE ... DELETE WHERE ...` / `DELETE FROM ... WHERE ...`)
+  * as a WHERE clause for the external database.
+  *
+  * Unlike `transformQueryForExternalDatabase`, nothing may be dropped from the predicate: a `SELECT`
+  * pushdown that loses a condition reads extra rows and filters them locally, while a mutation
+  * pushdown that loses a condition modifies rows the query did not ask to modify. So any
+  * subexpression that cannot be translated for the external database throws `INCORRECT_QUERY`,
+  * regardless of `external_table_strict_query`.
+  *
+  * Constant expressions are folded into literals first, so a predicate like `d < '2026-01-01'::Date`
+  * is translated even though the external database does not know the ClickHouse functions involved.
+  */
+String transformMutationPredicateForExternalDatabase(
+    const IAST & predicate,
+    const NamesAndTypesList & available_columns,
+    IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style,
+    ContextPtr context);
+
 }

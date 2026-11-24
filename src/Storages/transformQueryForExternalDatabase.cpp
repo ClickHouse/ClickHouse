@@ -1607,4 +1607,61 @@ void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle li
     normalizeSubqueryForExternalDatabaseImpl(node, literal_escaping_style, RowValueContext::Disallowed);
 }
 
+String transformMutationPredicateForExternalDatabase(
+    const IAST & predicate,
+    const NamesAndTypesList & available_columns,
+    IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style,
+    ContextPtr context)
+{
+    ASTPtr where = predicate.clone();
+
+    /// Every identifier must be a column of the external table. Unlike the `SELECT` path, no
+    /// subexpression may be removed from the predicate: removing one widens the filter, and a
+    /// widened filter mutates rows the query did not ask to mutate.
+    SourceColumnNames known_columns;
+    for (const auto & column : available_columns)
+        known_columns.emplace(column.name, column.name);
+
+    const auto removal_result = removeUnknownSubexpressionsFromWhere(where, known_columns);
+    if (!removal_result.keep || removal_result.modified)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "The mutation predicate '{}' contains expressions that cannot be pushed down to the external database",
+            predicate.formatForErrorMessage());
+
+    /// Fold constant expressions (`now()` was already replaced with a literal by the interpreter,
+    /// but e.g. `toDate('2026-01-01')` was not) so that more predicates have an external SQL form.
+    replaceConstantExpressions(where, context, available_columns);
+
+    /// Replace e.g. `x AND 1` with `x AND 1 = 1`: a bare integer is not a boolean for the external database.
+    ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
+    ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(where);
+
+    /// The same for the whole predicate being a bare `0` or `1` (`WHERE 1`).
+    if (const auto * literal = where->as<ASTLiteral>())
+    {
+        UInt64 value = 0;
+        if (literal->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
+            where = makeASTOperator("equals", make_intrusive<ASTLiteral>(UInt64(1)), make_intrusive<ASTLiteral>(value));
+    }
+
+    if (!isCompatible(where, literal_escaping_style, available_columns, RowValueContext::BooleanPredicate,
+                      /*unsupported_functions=*/ {}, /*require_dialect_neutral_literals=*/ false))
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "The mutation predicate '{}' contains expressions that cannot be pushed down to the external database",
+            predicate.formatForErrorMessage());
+
+    dropAliases(where);
+
+    WriteBufferFromOwnString out;
+    IAST::FormatSettings format_settings(
+        /*one_line=*/ true,
+        /*identifier_quoting_rule=*/ IdentifierQuotingRule::Always,
+        /*identifier_quoting_style=*/ identifier_quoting_style,
+        /*show_secrets_=*/ true,
+        /*literal_escaping_style=*/ literal_escaping_style);
+    where->format(out, format_settings);
+    return out.str();
+}
+
 }
