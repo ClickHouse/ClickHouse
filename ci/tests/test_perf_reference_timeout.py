@@ -320,16 +320,26 @@ def test_reference_timeout_of_a_write_in_a_measured_run_fails_the_test(tmp_path,
     assert not _rows(result.stdout, "partial")
     # The query that reads the table is not run: the servers do not hold the same rows.
     assert not _servers_of_query(result.stdout, 1)
+    assert "teardown-complete" in result.stdout.splitlines()
     assert _job_warnings(tmp_path, result.stdout) == []
 
 
-def test_reference_timeout_of_a_write_in_the_prewarm_run_is_an_error(tmp_path):
-    result = _run_perf(tmp_path, [_failure(REFERENCE_PORT, ".prewarm0")], xml=WRITE_TEST_XML.format(write=WRITES[0]))
+@pytest.mark.parametrize("write", WRITES)
+def test_reference_timeout_of_a_write_in_the_prewarm_run_fails_the_test(tmp_path, write):
+    result = _run_perf(tmp_path, [_failure(REFERENCE_PORT, ".prewarm0")], xml=WRITE_TEST_XML.format(write=write))
 
-    # As any other error of the reference in the prewarm run: the job turns it into a Run Errors row.
+    # The job keeps the error output of a test only when the test exits with an error.
+    assert result.returncode != 0
     assert "reference_timeout.query0.prewarm0" in result.stderr
     assert f"Code: {TIMEOUT_EXCEEDED}" in result.stderr
+    assert [row[:2] for row in _rows(result.stdout, "run-error")] == [["0", "0"]]
     assert not _rows(result.stdout, "reference-timeout")
+    assert not _rows(result.stdout, "partial")
+    # Neither the write nor the query that reads the table is measured.
+    assert not _servers_of_query(result.stdout, 0)
+    assert not _servers_of_query(result.stdout, 1)
+    # The tables are dropped, so the job can go on with the next test on the same servers.
+    assert "teardown-complete" in result.stdout.splitlines()
     assert _job_warnings(tmp_path, result.stdout) == []
 
 

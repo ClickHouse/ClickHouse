@@ -1537,7 +1537,7 @@ def report_reference_timeout(query_index, stage, budget):
     query. `ci/jobs/performance_tests.py` turns this line into a warning of the report. `stage` is
     `prewarm` or `run`. A query that writes and a shell query are not treated this way: cut by
     the time limit, they can leave the reference server in another state than the tested ones,
-    and the queries after them would compare different data."""
+    and the queries after them would compare different data, so the test stops with an error."""
     print(f"reference-timeout\t{query_index}\t{stage}\t{budget}")
     sys.stdout.flush()
 
@@ -1685,6 +1685,23 @@ for query_index in queries_to_run:
     if tested_failure is not None:
         fail_query(query_index, tested_failure, prewarm_exceptions[tested_failure])
         continue
+
+    # A query that writes and was cut by its time limit on the reference leaves the reference with
+    # other data than the tested servers, so the queries after it cannot be compared: the test
+    # stops here, as it does for such a timeout in a measured run. With `--long` the query is
+    # `partial`, as any reference-only error.
+    if (
+        not args.long
+        and q_item["kind"] == "sql"
+        and not is_read_only(q_item)
+        and reference is not None
+        and is_timeout(prewarm_exceptions.get(reference))
+    ):
+        fail_query(query_index, reference, prewarm_exceptions[reference])
+        raise Exception(
+            f"Query {query_prefix} writes and ran out of its time limit on the reference server "
+            "in the prewarm run: the servers no longer hold the same data, the test is stopped."
+        )
 
     # A shell-script query is a benchmark we control end to end, so -- unlike an
     # SQL query that may legitimately use a function missing from the old server
