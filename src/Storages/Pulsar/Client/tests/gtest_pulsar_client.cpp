@@ -691,6 +691,37 @@ TEST(PulsarClient, LargeBatchAcknowledgement)
     EXPECT_LT(elapsed, 10s);
 }
 
+TEST(PulsarClient, BatchAcknowledgementOnALaterLedger)
+{
+    FakeBroker broker;
+    broker.setPartitions(topicName("t"), 3);
+    Client client(broker.url(), configuration());
+    auto consumer = client.subscribe({"t"}, "s", {});
+
+    /// A batch of 2 from ledger 2 on each partition.
+    auto metadata = metadataOf();
+    metadata.set_num_messages_in_batch(2);
+    for (const auto & [topic, sub] : subscriptions(broker))
+        broker.sendMessage(sub.first, sub.second, 1, metadata, batchEntry("a") + batchEntry("b"), 2);
+
+    auto messages = receiveAtLeast(*consumer, 6);
+    ASSERT_EQ(messages.size(), 6);
+    std::vector<MessageId> ids; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    for (const auto & message : messages)
+        ids.push_back(message.id());
+    consumer->acknowledge(ids);
+
+    ASSERT_TRUE(broker.waitForCount(Type::ACK, 3));
+    auto acks = broker.eventsOf(Type::ACK);
+    ASSERT_EQ(acks.size(), 3);
+    for (const auto & ack : acks)
+    {
+        ASSERT_EQ(ack.command.ack().message_id_size(), 1);
+        EXPECT_EQ(ack.command.ack().message_id(0).ledgerid(), 2);
+        EXPECT_EQ(ack.command.ack().message_id(0).entryid(), 1);
+    }
+}
+
 TEST(PulsarClient, ChecksumMismatchIsDiscarded)
 {
     FakeBroker broker;

@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <base/sanitizer_defs.h>
 
 #include <fmt/format.h>
 
@@ -59,7 +60,7 @@ ConsumerImpl::SubConsumer::SubConsumer(String topic_, size_t index_, size_t wind
 {
 }
 
-size_t ConsumerImpl::BatchKeyHash::operator()(const BatchKey & key) const
+size_t NO_SANITIZE_UNSIGNED_OVERFLOW ConsumerImpl::BatchKeyHash::operator()(const BatchKey & key) const
 {
     return std::hash<UInt64>()(key.sub_consumer * 0x9E3779B97F4A7C15ULL ^ key.entry.ledger_id * 0xC2B2AE3D27D4EB4FULL ^ key.entry.entry_id);
 }
