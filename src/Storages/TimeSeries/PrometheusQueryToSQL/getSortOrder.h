@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Analyzer/SortNode.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 
 #include <optional>
@@ -14,7 +13,9 @@ struct SortOrder
 {
     /// Expressions over the columns `group`, `tags` and `value` of the final SELECT.
     ASTs keys;
-    SortDirection direction;
+
+    /// 1 for ascending, -1 for descending, as in `SelectQueryBuilder`.
+    int direction;
 };
 
 /// Returns the ORDER BY of the final SELECT for the specified result of an instant query, or `std::nullopt` if

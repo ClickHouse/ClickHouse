@@ -1,8 +1,8 @@
 -- The second argument of `naturalSortKey` selects the order of strings with non-digit characters.
 -- With the value 1, a sequence of non-digit characters is compared as a whole chunk with the chunk at the same position
 -- of the other string, and a number is compared only if the chunks before it are equal.
--- It is the order of the PromQL function `sort_by_label`, and the orders expected here are the ones
--- that Prometheus gives for the same values.
+-- It is the order of the PromQL function `sort_by_label`: the orders expected in the scenarios `end of chunk`, `spaces`,
+-- `punctuation`, `several chunks` and `number positions` are the ones that Prometheus gives for the same values.
 -- In the keys, spaces are shown as `_`, because a key can end with spaces.
 
 -- The key itself: a chunk is followed by two spaces, a space inside a chunk is written as ` A`,
@@ -29,6 +29,12 @@ ORDER BY naturalSortKey(value);
 SELECT '-- spaces';
 SELECT value
 FROM (SELECT arrayJoin(['host -3', 'host-1', 'host 3', 'host10', 'host  1', 'host2']) AS value)
+ORDER BY naturalSortKey(value, 1);
+
+-- A chunk with spaces can be followed by a number and by another chunk: each chunk is escaped and ended on its own.
+SELECT '-- chunks with spaces';
+SELECT value, replaceAll(naturalSortKey(value, 1), ' ', '_')
+FROM (SELECT arrayJoin(['a 1b c2', 'a 01b', 'a b 1 c', 'a1 b', 'a 123456789b']) AS value)
 ORDER BY naturalSortKey(value, 1);
 
 -- Characters up to the space keep their order, are after the end of the chunk (`a1`)
@@ -89,13 +95,14 @@ FROM (SELECT arrayJoin(['b', NULL, '', 'a', '1', NULL, '']) AS value)
 ORDER BY naturalSortKey(value, 1);
 
 -- A constant and a column give the same key, `LowCardinality` and `Nullable` strings are accepted,
--- and a `NULL` mode gives `NULL`.
+-- the mode can have any unsigned integer type, and a `NULL` mode gives `NULL`.
 SELECT '-- types';
 SELECT
     naturalSortKey('host2', 1) = naturalSortKey(materialize('host2'), 1) AS constant_as_column,
     naturalSortKey(toLowCardinality('host2'), 1) = naturalSortKey('host2', 1) AS low_cardinality,
     toTypeName(naturalSortKey('host2', 1)) AS string_type,
     toTypeName(naturalSortKey(toNullable('host2'), 1)) AS nullable_type,
+    naturalSortKey('host2', toUInt64(1)) = naturalSortKey('host2', 1) AS wide_mode_type,
     naturalSortKey('host2', NULL) AS null_mode;
 
 -- The value 0 is the same as no second argument.

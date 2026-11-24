@@ -26,6 +26,12 @@ host 3
 host  1
 host -3
 host-1
+-- chunks with spaces
+a1 b	a__01_Ab__
+a 01b	a_A__01b__
+a 1b c2	a_A__01b_Ac__02
+a 123456789b	a_A__80123456789b__
+a b 1 c	a_Ab_A__01_Ac__
 -- control characters
 no character	a__01
 zero byte	a_!__01
@@ -78,7 +84,7 @@ b	b__
 \N	\N
 \N	\N
 -- types
-1	1	String	Nullable(String)	\N
+1	1	String	Nullable(String)	1	\N
 -- mode 0
 0	10
 -- bad arguments

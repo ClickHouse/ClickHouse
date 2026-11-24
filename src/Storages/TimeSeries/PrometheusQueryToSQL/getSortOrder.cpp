@@ -20,17 +20,18 @@ namespace
         if (sort_function.by_label)
         {
             /// The first argument is the instant vector; the label names follow it. `applyFunctionSort` has checked
-            /// that their nodes are string literals.
+            /// that they have the type string, which only a string literal has.
             const auto & arguments = function_node->getArguments();
             for (size_t i = 1; i < arguments.size(); ++i)
             {
+                chassert(arguments[i]->node_type == PrometheusQueryTree::NodeType::StringLiteral);
                 const auto & label_name = static_cast<const PrometheusQueryTree::StringLiteral *>(arguments[i])->string;
 
                 /// No series has a label with an empty name, so it decides nothing, and `timeSeriesExtractTag` does not accept one.
                 if (label_name.empty())
                     continue;
 
-                /// A series without the label is ordered as if the label were empty, as in Prometheus.
+                /// A series without the label is ordered as if the label were empty.
                 auto label_value = makeASTFunction("ifNull",
                     makeASTFunction("timeSeriesExtractTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(label_name)),
                     make_intrusive<ASTLiteral>(String{}));
@@ -48,7 +49,7 @@ namespace
         /// Ties are ordered by tags, in the same direction, to make the result deterministic.
         keys.emplace_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
 
-        return SortOrder{std::move(keys), sort_function.direction};
+        return SortOrder{std::move(keys), sort_function.direction == SortDirection::DESCENDING ? -1 : 1};
     }
 
     /// Returns the order of `topk` or `bottomk` at the root of the query.
@@ -68,14 +69,12 @@ namespace
         }
         keys.emplace_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
 
-        return SortOrder{std::move(keys), aggregation->operator_name == "topk" ? SortDirection::DESCENDING : SortDirection::ASCENDING};
+        return SortOrder{std::move(keys), aggregation->operator_name == "topk" ? -1 : 1};
     }
 }
 
 std::optional<SortOrder> getSortOrder(const SQLQueryPiece & result)
 {
-    /// The order of the result depends on the root of the query: a PromQL sort function, `topk` or `bottomk`
-    /// set their own order, and any other instant vector is ordered by tags.
     if (result.store_method == StoreMethod::VECTOR_GRID && result.node->node_type == PrometheusQueryTree::NodeType::Function)
     {
         const auto * function_node = static_cast<const PrometheusQueryTree::Function *>(result.node);
@@ -93,7 +92,7 @@ std::optional<SortOrder> getSortOrder(const SQLQueryPiece & result)
     if (result.store_method == StoreMethod::VECTOR_GRID)
     {
         /// Other instant vectors are sorted by tags, as range vectors are.
-        return SortOrder{{make_intrusive<ASTIdentifier>(ColumnNames::Tags)}, SortDirection::ASCENDING};
+        return SortOrder{{make_intrusive<ASTIdentifier>(ColumnNames::Tags)}, 1};
     }
 
     return std::nullopt;

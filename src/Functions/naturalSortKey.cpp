@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -131,7 +133,6 @@ private:
 
         size_t digits = 0; // Length of the current sequence of digits (not counting leading zeros).
         bool leading_zero = false;
-        size_t chars_to_escape = 0; // Number of characters up to the space in the current sequence of non-digit characters.
 
         for (; data_curr != data_end; ++data_curr)
         {
@@ -146,17 +147,13 @@ private:
                     digits = 0;
                     leading_zero = false;
                     data_non_digits_start = data_curr;
-                    chars_to_escape = 0;
                 }
                 else if (leading_zero) // End of a sequence of zeros.
                 {
                     appendNumberToResult(data_curr - 1, 1, res_data);
                     data_non_digits_start = data_curr;
                     leading_zero = false;
-                    chars_to_escape = 0;
                 }
-                if (c <= ' ') // Special characters to escape.
-                    ++chars_to_escape;
             }
             else
             {
@@ -165,7 +162,7 @@ private:
                 else // Start of a new sequence of digits or zeros.
                 {
                     if (!leading_zero) // End of a sequence of non-digit characters.
-                        appendTextToResult(data_non_digits_start, data_curr, res_data, mode, chars_to_escape);
+                        appendTextToResult(data_non_digits_start, data_curr, res_data, mode);
 
                     if (c != '0') // Start of a new sequence of digits (non-zero).
                     {
@@ -183,7 +180,7 @@ private:
         else if (leading_zero) // String ends with a sequence of zeros.
             appendNumberToResult(data_curr - 1, 1, res_data);
         else // String ends with non-digit characters.
-            appendTextToResult(data_non_digits_start, data_curr, res_data, mode, chars_to_escape);
+            appendTextToResult(data_non_digits_start, data_curr, res_data, mode);
     }
 
     /**
@@ -197,7 +194,6 @@ private:
 
     /**
      * Append a sequence of non-digit characters to the result.
-     * `chars_to_escape` is the number of characters up to the space (code 32 or less) in the sequence.
      *
      * In `Mode::Default` the sequence is copied as is.
      *
@@ -205,7 +201,7 @@ private:
      * - The sequence is followed by an end mark of two spaces. The mark is less than any character of a longer chunk,
      *   so a chunk sorts before every longer chunk that starts with it. Without the mark, the next byte would be
      *   the length prefix of the following number, which is greater than characters such as `-` and `.`.
-     * - A character `c` up to the space is written as a space followed by `'!' + c`. So it cannot be taken for the end mark,
+     * - A character `c` with code 32 (space) or less is written as a space followed by `'!' + c`. So it cannot be taken for the end mark,
      *   it sorts after the end mark and before all other characters, and such characters keep their order.
      *
      * Examples:
@@ -214,7 +210,7 @@ private:
      *   `host 3`  ->  `host<space>A<space><space>03`
      * They sort as `host2`, `host 3`, `host-1`.
      */
-    static void appendTextToResult(const UInt8 * text_start, const UInt8 * text_end, ColumnString::Chars & res_data, Mode mode, size_t chars_to_escape)
+    static void appendTextToResult(const UInt8 * text_start, const UInt8 * text_end, ColumnString::Chars & res_data, Mode mode)
     {
         if (text_start == text_end)
             return;
@@ -227,6 +223,8 @@ private:
             case Mode::TextAsChunks:
             {
                 static constexpr UInt8 end_mark[] = {' ', ' '};
+                /// Characters with code 32 (space) or less; each of them takes one more byte in the key.
+                const size_t chars_to_escape = static_cast<size_t>(std::count_if(text_start, text_end, [](UInt8 c) { return c <= ' '; }));
                 const size_t init_size = res_data.size();
                 const size_t bytes_to_write = static_cast<size_t>(text_end - text_start) + chars_to_escape + std::size(end_mark);
 
@@ -248,7 +246,7 @@ private:
                             *out++ = c;
                         else
                         {
-                            /// A character up to the space would sort before the end mark or look like a part of it,
+                            /// A character with code 32 (space) or less would sort before the end mark or look like a part of it,
                             /// so it is written as two bytes that start with a space.
                             *out++ = ' ';
                             /// The second byte is from '!' to 'A': greater than the second space of the end mark,
@@ -329,10 +327,17 @@ private:
 
 REGISTER_FUNCTION(NaturalSortKey)
 {
-    FunctionDocumentation::Description description = "The function is used for natural sorting.";
-    FunctionDocumentation::Syntax syntax = "naturalSortKey(s)";
+    FunctionDocumentation::Description description = R"(
+Returns a key for natural sorting: strings ordered by their keys are in natural order, in which a sequence of digits is compared as a number, so `a2` is before `a10`.
+
+The optional argument `mode` selects how the characters that are not digits are compared:
+- `0` (default): the characters are compared one by one with the characters or the number at the same position of the other string. So `host-1` is before `host2`, because `-` is compared with the number `2`.
+- `1`: a sequence of non-digit characters is compared as a whole with the sequence at the same position of the other string, and a number is compared only if the sequences before it are equal. So `host2` is before `host-1`, because `host` is compared with `host-`. This is the order of the PromQL function `sort_by_label`.
+)";
+    FunctionDocumentation::Syntax syntax = "naturalSortKey(s[, mode])";
     FunctionDocumentation::Arguments arguments = {
-        {"s", "A string to convert to natural sort key.", {"String"}}
+        {"s", "A string to convert to natural sort key.", {"String"}},
+        {"mode", "Optional. How non-digit characters are compared: `0` (default) or `1`.", {"const UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a natural sort key string from `s`.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -349,6 +354,19 @@ SELECT s FROM t ORDER BY naturalSortKey(s);
 │ a1  │
 │ a02 │
 └─────┘
+        )"
+    },
+    {
+        "The two modes",
+        R"(
+SELECT
+    arraySort(s -> naturalSortKey(s), ['host-1', 'host10', 'host2']) AS default_mode,
+    arraySort(s -> naturalSortKey(s, 1), ['host-1', 'host10', 'host2']) AS mode_1;
+        )",
+        R"(
+┌─default_mode────────────────┬─mode_1──────────────────────┐
+│ ['host-1','host2','host10'] │ ['host2','host10','host-1'] │
+└─────────────────────────────┴─────────────────────────────┘
         )"
     }
     };

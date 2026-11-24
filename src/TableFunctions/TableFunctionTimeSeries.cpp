@@ -327,7 +327,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 - `sort` and `sort_desc` order the result by sample value, with `NaN` last. Series with equal values are ordered by their labels.
 - `sort_by_label` and `sort_by_label_desc` order the result by the values of the specified labels, compared in natural order (`host2` before `host10`). A series without a specified label is ordered as if the label were empty. Series with equal values of these labels are ordered by all their labels.
 
-The natural order differs from Prometheus in two cases: numbers that differ only in leading zeros (`7` and `007`) are equal, and numbers of any length are compared as numbers (Prometheus compares a number above the `Int64` range as text).
+This order differs from Prometheus in three cases: numbers that differ only in leading zeros (`7` and `007`) are equal, numbers of any length are compared as numbers (Prometheus compares a number above the `Int64` range as text), and a series without a specified label is always before the series that have it (in Prometheus its position depends on the order of the input).
 
 **Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`, `mad_over_time`, `sort_by_label` and `sort_by_label_desc` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 

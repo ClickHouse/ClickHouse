@@ -12,9 +12,6 @@ namespace DB::PrometheusQueryToSQL
 /// The struct holds what distinguishes the PromQL sort functions from each other.
 struct SortFunctionInfo
 {
-    /// Name of the PromQL sort function.
-    std::string_view function_name;
-
     /// Direction of the sort.
     SortDirection direction;
 

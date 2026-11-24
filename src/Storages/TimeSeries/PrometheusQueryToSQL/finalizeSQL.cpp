@@ -286,12 +286,11 @@ namespace
 
         builder.where = std::move(where);
 
-        /// The order of the result depends on the root of the query: a PromQL sort function, `topk` or `bottomk`
-        /// set their own order, and any other instant vector is ordered by tags.
+        /// The order depends on the root of the query, see `getSortOrder`.
         if (auto sort_order = getSortOrder(result))
         {
             builder.order_by = std::move(sort_order->keys);
-            builder.order_direction = (sort_order->direction == SortDirection::DESCENDING) ? -1 : 1;
+            builder.order_direction = sort_order->direction;
         }
 
         builder.with = std::move(context.subqueries);
