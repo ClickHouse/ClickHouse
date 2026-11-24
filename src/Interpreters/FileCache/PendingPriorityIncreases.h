@@ -47,7 +47,7 @@ public:
     [[nodiscard]] size_t getSizeApprox() const;
 
 private:
-    struct Buffers;
+    class Buffers;
 
     Buffers & getOrAllocateBuffers(size_t buffer_size);
 

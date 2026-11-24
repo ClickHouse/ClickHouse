@@ -21,8 +21,45 @@ namespace ErrorCodes
 /// Ring buffers which many threads add to and one thread pops from. A writer takes the next position by incrementing
 /// `write_position`, writes its increase into the slot, then sets the slot's `sequence` to mark it written. The reader
 /// pops slots in order while they are marked written, and sets `sequence` so that each slot is free for the next pass.
-struct PendingPriorityIncreases::Buffers
+class PendingPriorityIncreases::Buffers
 {
+public:
+    Buffers(size_t buffers_count, size_t buffer_size)
+        : buffers(buffers_count)
+    {
+        for (auto & buffer : buffers)
+            buffer.createSlots(buffer_size);
+    }
+
+    bool tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full)
+    {
+        return getBufferOfCurrentThread().tryAdd(increase, on_half_full);
+    }
+
+    void pop(PriorityIncreases & increases, size_t max_increases)
+    {
+        size_t i = 0;
+        for (; i < buffers.size(); ++i)
+        {
+            max_increases -= buffers[(first_buffer_to_pop + i) % buffers.size()].pop(increases, max_increases);
+            if (!max_increases)
+                break;
+        }
+        /// The next pop starts after the buffer where this one stopped, so that all buffers are popped in turn, not always the first ones.
+        first_buffer_to_pop = (first_buffer_to_pop + i + 1) % buffers.size();
+    }
+
+    void popBufferOfCurrentThread(PriorityIncreases & increases) { getBufferOfCurrentThread().popAll(increases); }
+
+    [[nodiscard]] size_t getSizeApprox() const
+    {
+        size_t size = 0;
+        for (const auto & buffer : buffers)
+            size += buffer.getSizeApprox();
+        return size;
+    }
+
+private:
     /// Each slot on its own cache line, so that threads writing or popping neighbouring slots do not slow each other down.
     struct alignas(CH_CACHE_LINE_SIZE) Slot
     {
@@ -118,42 +155,6 @@ struct PendingPriorityIncreases::Buffers
         alignas(CH_CACHE_LINE_SIZE) std::atomic<size_t> read_position = 0;
     };
 
-    Buffers(size_t buffers_count, size_t buffer_size)
-        : buffers(buffers_count)
-    {
-        for (auto & buffer : buffers)
-            buffer.createSlots(buffer_size);
-    }
-
-    bool tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full)
-    {
-        return getBufferOfCurrentThread().tryAdd(increase, on_half_full);
-    }
-
-    void pop(PriorityIncreases & increases, size_t max_increases)
-    {
-        size_t i = 0;
-        for (; i < buffers.size(); ++i)
-        {
-            max_increases -= buffers[(first_buffer_to_pop + i) % buffers.size()].pop(increases, max_increases);
-            if (!max_increases)
-                break;
-        }
-        /// The next pop starts after the buffer where this one stopped, so that all buffers are popped in turn, not always the first ones.
-        first_buffer_to_pop = (first_buffer_to_pop + i + 1) % buffers.size();
-    }
-
-    void popBufferOfCurrentThread(PriorityIncreases & increases) { getBufferOfCurrentThread().popAll(increases); }
-
-    [[nodiscard]] size_t getSizeApprox() const
-    {
-        size_t size = 0;
-        for (const auto & buffer : buffers)
-            size += buffer.getSizeApprox();
-        return size;
-    }
-
-private:
     Buffer & getBufferOfCurrentThread()
     {
         static std::atomic<size_t> threads_count = 0;
