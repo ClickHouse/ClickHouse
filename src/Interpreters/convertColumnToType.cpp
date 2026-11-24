@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_TEXT;
@@ -62,6 +63,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TYPE_MISMATCH;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
@@ -572,6 +574,7 @@ ColumnPtr tryConvertColumnToTypeOrNull(
             || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
             || code == ErrorCodes::CANNOT_PARSE_IPV4
             || code == ErrorCodes::CANNOT_PARSE_IPV6
+            || code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
             || code == ErrorCodes::CANNOT_PARSE_NUMBER
             || code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
             || code == ErrorCodes::CANNOT_PARSE_TEXT
@@ -581,6 +584,7 @@ ColumnPtr tryConvertColumnToTypeOrNull(
             || code == ErrorCodes::DECIMAL_OVERFLOW
             || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
             || code == ErrorCodes::TYPE_MISMATCH
+            || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
             || code == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE
             || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
             return {};
