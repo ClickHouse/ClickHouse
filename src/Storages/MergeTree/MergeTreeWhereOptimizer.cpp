@@ -14,6 +14,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/extractStringValueFilters.h>
@@ -123,6 +124,26 @@ bool typeContainsFloat(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
+size_t getMaxNameSize(const NameSet & names)
+{
+    size_t max_size = 0;
+    for (const auto & name : names)
+        max_size = std::max(max_size, name.size());
+    return max_size;
+}
+
+/// `compute()` for the DAG node of `node`, computed once however many paths lead to it.
+template <typename Compute>
+bool getCachedResult(UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> & cache, const RPNBuilderTreeNode & node, Compute && compute)
+{
+    if (auto it = cache.find(node.getDAGNode()); it != cache.end())
+        return it->second;
+
+    bool result = compute();
+    cache.emplace(node.getDAGNode(), result);
+    return result;
+}
+
 }
 
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
@@ -174,6 +195,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , supported_columns{supported_columns_}
     , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
     , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot)}
+    , max_table_column_name_size(getMaxNameSize(table_columns))
+    , max_sorting_key_name_size(getMaxNameSize(sorting_key_names))
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
@@ -309,8 +332,12 @@ static void collectColumns(
     const NameSet & columns_names,
     NameSet & result_set,
     bool & has_invalid_column,
-    bool & may_use_primary_index)
+    bool & may_use_primary_index,
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & visited)
 {
+    if (!visited.insert(node.getDAGNode()).second)
+        return;
+
     if (node.isConstant())
         return;
 
@@ -363,11 +390,11 @@ static void collectColumns(
     for (size_t i = 0; i < arguments_size; ++i)
     {
         auto function_argument = function_node.getArgumentAt(i);
-        collectColumns(function_argument, &node, columns_names, result_set, has_invalid_column, may_use_primary_index);
+        collectColumns(function_argument, &node, columns_names, result_set, has_invalid_column, may_use_primary_index, visited);
     }
 }
 
-static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet & columns_names)
+static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet & columns_names, size_t max_column_name_size)
 {
     if (!condition.isFunction())
         return false;
@@ -383,11 +410,11 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     auto lhs_argument = function_node.getArgumentAt(0);
     auto rhs_argument = function_node.getArgumentAt(1);
 
-    auto lhs_argument_column_name = lhs_argument.getColumnName();
-    auto rhs_argument_column_name = rhs_argument.getColumnName();
+    auto lhs_argument_column_name = lhs_argument.tryGetColumnName(max_column_name_size);
+    auto rhs_argument_column_name = rhs_argument.tryGetColumnName(max_column_name_size);
 
-    bool lhs_argument_is_column = columns_names.contains(lhs_argument_column_name);
-    bool rhs_argument_is_column = columns_names.contains(rhs_argument_column_name);
+    bool lhs_argument_is_column = lhs_argument_column_name && columns_names.contains(*lhs_argument_column_name);
+    bool rhs_argument_is_column = rhs_argument_column_name && columns_names.contains(*rhs_argument_column_name);
 
     bool lhs_argument_is_constant = lhs_argument.isConstant();
     bool rhs_argument_is_constant = rhs_argument.isConstant();
@@ -544,17 +571,17 @@ static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBui
 /// which splits such a condition into a step that runs on the rows filtered by the previous step.
 static bool conditionMayThrow(const ActionsDAG::Node * node)
 {
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+    return anyReachableNode({node}, [](const ActionsDAG::Node * reachable)
     {
-        DataTypesWithConstInfo argument_types;
-        argument_types.reserve(node->children.size());
-        for (const auto * child : node->children)
-            argument_types.push_back({child->result_type, child->column != nullptr});
-        if (node->function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
-            return true;
-    }
+        if (reachable->type != ActionsDAG::ActionType::FUNCTION || !reachable->function_base)
+            return false;
 
-    return std::ranges::any_of(node->children, [](const auto * child) { return conditionMayThrow(child); });
+        DataTypesWithConstInfo argument_types;
+        argument_types.reserve(reachable->children.size());
+        for (const auto * child : reachable->children)
+            argument_types.push_back({child->result_type, child->column != nullptr});
+        return reachable->function_base->isSuitableForShortCircuitArgumentsExecution(argument_types);
+    });
 }
 
 /// Analyze the WHERE expression and populate `res` with one `Condition` per conjunct group.
@@ -598,7 +625,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     for (const auto & conjunct : conjuncts)
     {
         ConjunctInfo info{conjunct, {}, {}, false, true, false, false};
-        collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+        collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index, visited);
 
         for (const auto & column : info.columns)
         {
@@ -775,7 +803,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 group_columns.insert(infos[idx].columns.begin(), infos[idx].columns.end());
                 group_may_use_primary_index = group_may_use_primary_index && infos[idx].may_use_primary_index;
                 if (!where_optimizer_context.use_statistics && !where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
-                    group_good = group_good || isConditionGood(infos[idx].node, table_columns);
+                    group_good = group_good || isConditionGood(infos[idx].node, table_columns, max_table_column_name_size);
                 group_is_runtime_filter = group_is_runtime_filter && isJoinRuntimeFilter(infos[idx].node);
                 group_must_follow_preceding_conditions = group_must_follow_preceding_conditions || infos[idx].must_follow_preceding_conditions;
             }
@@ -845,7 +873,8 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             NameSet columns;
             bool has_invalid_column = false;
             bool may_use_primary_index = true;
-            collectColumns(conjunct, nullptr, table_columns, columns, has_invalid_column, may_use_primary_index);
+            UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+            collectColumns(conjunct, nullptr, table_columns, columns, has_invalid_column, may_use_primary_index, visited);
 
             Condition cond({conjunct});
             cond.table_columns = columns;
@@ -1198,6 +1227,13 @@ static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNo
 
 bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
 {
+    NodeResultCache cache;
+    return isDeterministicExpressionOverSortingKey(node, context, cache);
+}
+
+bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(
+    const RPNBuilderTreeNode & node, const ContextPtr & context, NodeResultCache & cache) const
+{
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
@@ -1212,7 +1248,7 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function_node.getArgumentAt(i);
-            auto argument_column_name = argument.getColumnName();
+            auto argument_column_name = argument.tryGetColumnName(max_sorting_key_name_size);
 
             if (argument.isConstant())
             {
@@ -1222,17 +1258,21 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
                 continue;
             }
 
-            if (sorting_key_names.contains(argument_column_name))
+            if (argument_column_name && sorting_key_names.contains(*argument_column_name))
                 continue;
 
-            if (!isDeterministicExpressionOverSortingKey(argument, context))
+            if (!getCachedResult(cache, argument, [&] { return isDeterministicExpressionOverSortingKey(argument, context, cache); }))
                 return false;
         }
 
         return true;
     }
 
-    return node.isConstant() || sorting_key_names.contains(node.getColumnName());
+    if (node.isConstant())
+        return true;
+
+    auto column_name = node.tryGetColumnName(max_sorting_key_name_size);
+    return column_name && sorting_key_names.contains(*column_name);
 }
 
 bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
@@ -1250,6 +1290,13 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & columns) co
 }
 
 bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
+{
+    NodeResultCache cache;
+    return cannotBeMoved(node, where_optimizer_context, cache);
+}
+
+bool MergeTreeWhereOptimizer::cannotBeMoved(
+    const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, NodeResultCache & cache) const
 {
     if (node.isFunction())
     {
@@ -1271,7 +1318,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function_node.getArgumentAt(i);
-            if (cannotBeMoved(argument, where_optimizer_context))
+            if (getCachedResult(cache, argument, [&] { return cannotBeMoved(argument, where_optimizer_context, cache); }))
                 return true;
         }
     }
@@ -1291,6 +1338,12 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
 
 bool MergeTreeWhereOptimizer::isExpensiveExpression(const RPNBuilderTreeNode & node)
 {
+    NodeResultCache cache;
+    return isExpensiveExpression(node, cache);
+}
+
+bool MergeTreeWhereOptimizer::isExpensiveExpression(const RPNBuilderTreeNode & node, NodeResultCache & cache)
+{
     if (!node.isFunction())
         return false;
 
@@ -1301,7 +1354,8 @@ bool MergeTreeWhereOptimizer::isExpensiveExpression(const RPNBuilderTreeNode & n
     size_t arguments_size = function_node.getArgumentsSize();
     for (size_t i = 0; i < arguments_size; ++i)
     {
-        if (isExpensiveExpression(function_node.getArgumentAt(i)))
+        auto argument = function_node.getArgumentAt(i);
+        if (getCachedResult(cache, argument, [&] { return isExpensiveExpression(argument, cache); }))
             return true;
     }
 

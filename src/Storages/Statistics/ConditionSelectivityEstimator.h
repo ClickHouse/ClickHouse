@@ -131,7 +131,9 @@ private:
     };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
-    bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+    /// A name longer than this is not a column of `metadata`, nor a `.null` subcolumn of one.
+    static size_t getMaxNameSizeToLookUp(const StorageMetadataPtr & metadata);
+    bool extractAtomFromTree(const StorageMetadataPtr & metadata, size_t max_name_size, const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
     /// the share of rows inside the set's bounding range, capped by the share of distinct values the set

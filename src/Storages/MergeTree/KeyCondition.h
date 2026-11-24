@@ -587,6 +587,8 @@ private:
         const ExpressionActionsPtr key_expr;
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
+        /// The longest name of `key_subexpr_names` and the key columns, so a longer node name matches none of them.
+        const size_t max_key_name_size = 0;
         /// Filter columns named like a node the key computes (not like a column it reads).
         /// An atom reading one of them is not analyzed against this key.
         const NameSet columns_named_like_key_expressions;

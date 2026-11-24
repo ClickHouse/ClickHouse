@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -66,42 +67,22 @@ struct ConditionList
 /// and once in the original filter above the JOIN), producing duplicate rows.
 bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet & available_columns)
 {
-    if (node.type == ActionsDAG::ActionType::INPUT)
+    return allReachableNodes({&node}, [&](const ActionsDAG::Node * reachable)
     {
-        return available_columns.contains(node.result_name);
-    }
-    else if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-    {
-        return false;
-    }
-    else
-    {
-        /// The extracted predicate runs in addition to the filter above the JOIN, so a per-row draw such as
-        /// `rand` happens twice and only a row passing both survives; a lambda body is a separate DAG.
-        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
+        if (reachable->type == ActionsDAG::ActionType::INPUT)
+            return available_columns.contains(reachable->result_name);
+        if (reachable->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return false;
 
-        for (const auto * child : node.children)
-        {
-            if (!onlyDependsOnAvailableColumns(*child, available_columns))
-                return false;
-        }
-        return true;
-    }
+        /// The extracted predicate runs in addition to the filter above the JOIN, so a per-row draw such as
+        /// `rand` happens twice and only a row passing both survives; a lambda body is a separate DAG.
+        return allNodeFunctions(*reachable, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+    });
 }
 
 bool dependsOnSomeColumn(const ActionsDAG::Node & node)
 {
-    if (node.type == ActionsDAG::ActionType::INPUT)
-        return true;
-
-    for (const auto * child : node.children)
-    {
-        if (dependsOnSomeColumn(*child))
-            return true;
-    }
-
-    return false;
+    return anyReachableNode({&node}, [](const ActionsDAG::Node * reachable) { return reachable->type == ActionsDAG::ActionType::INPUT; });
 }
 
 /// A condition that reads no column is the same for every row, so pre-filtering a side with it can

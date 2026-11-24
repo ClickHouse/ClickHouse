@@ -919,6 +919,15 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     return addNode(std::move(node));
 }
 
+std::string ActionsDAG::nameForRebuiltFunction(std::string_view function_name, const NodeRawConstPtrs & children, const std::string & source_name)
+{
+    size_t generated_size = function_name.size() + 2;
+    for (size_t i = 0; i < children.size(); ++i)
+        generated_size += children[i]->result_name.size() + (i > 0 ? 2 : 0);
+
+    return generated_size > MAX_GENERATED_NAME_SIZE ? source_name : std::string{};
+}
+
 const ActionsDAG::Node & ActionsDAG::addPlaceholder(std::string name, DataTypePtr type)
 {
     Node node;
@@ -4620,6 +4629,9 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
 
                 auto function_arguments = getFunctionArguments(function_children);
                 auto function_base = function_overload_resolver ? function_overload_resolver->build(function_arguments.first) : node->function_base;
+
+                if (result_name.empty())
+                    result_name = ActionsDAG::nameForRebuiltFunction(function_base->getName(), function_children, node->result_name);
 
                 result_node = &result_dag.addFunction(
                     function_base,

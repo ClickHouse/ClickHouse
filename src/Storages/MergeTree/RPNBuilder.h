@@ -34,6 +34,10 @@ public:
       */
     [[nodiscard]] std::string getColumnNameWithModuloLegacy() const;
 
+    /// The same names, or nullopt as soon as the name is longer than `max_size`: it then equals no name of that size.
+    [[nodiscard]] std::optional<std::string> tryGetColumnName(size_t max_size) const;
+    [[nodiscard]] std::optional<std::string> tryGetColumnNameWithModuloLegacy(size_t max_size) const;
+
     /// Is node function
     [[nodiscard]] bool isFunction() const;
 

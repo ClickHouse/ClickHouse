@@ -33,7 +33,9 @@ namespace ErrorCodes
 namespace
 {
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool legacy = false);
+void appendColumnNameWithoutAlias(
+    const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool legacy = false,
+    size_t max_size = std::numeric_limits<size_t>::max());
 
 /// Produces the lambda's column name in the AST format `lambda(tuple(args), body)`.
 /// Used both for live FUNCTION nodes wrapping `ExecutableFunctionCapture`/`FunctionCapture` and for
@@ -44,7 +46,8 @@ void appendLambdaColumnName(
     ActionsDAG capture_dag,
     WriteBuffer & out,
     const ContextPtr & context,
-    bool legacy)
+    bool legacy,
+    size_t max_size)
 {
     writeString("lambda(tuple(", out);
     bool first = true;
@@ -61,7 +64,7 @@ void appendLambdaColumnName(
     /// The lambda body is a value expression whose reconstructed name must match the original
     /// expression exactly, so truthiness-only rewrites must not apply.
     ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context, /* boolean_context */ false);
-    appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, legacy);
+    appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, legacy, max_size);
     writeChar(')', out);
 }
 
@@ -71,7 +74,8 @@ bool tryAppendConstantFunctionColumnName(
     const ActionsDAG::Node & node,
     WriteBuffer & out,
     const ContextPtr & context,
-    bool legacy)
+    bool legacy,
+    size_t max_size)
 {
     const auto * column_const = node.column.get();
     if (!column_const)
@@ -113,12 +117,15 @@ bool tryAppendConstantFunctionColumnName(
         capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
     }
 
-    appendLambdaColumnName(capture, std::move(capture_dag), out, context, legacy);
+    appendLambdaColumnName(capture, std::move(capture_dag), out, context, legacy, max_size);
     return true;
 }
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool legacy)
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool legacy, size_t max_size)
 {
+    if (out.count() > max_size)
+        return;
+
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
@@ -129,18 +136,18 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             /// A constant-folded lambda is a `ColumnConst` of a `ColumnFunction`. Recover the
             /// `lambda(tuple(args), body)` AST form so the name aligns with what the index sample
             /// block produced for the same expression (the index goes through the old analyzer).
-            if (tryAppendConstantFunctionColumnName(node, out, context, legacy))
+            if (tryAppendConstantFunctionColumnName(node, out, context, legacy, max_size))
                 break;
 
             writeString(node.result_name, out);
             break;
         }
         case ActionsDAG::ActionType::ALIAS:
-            appendColumnNameWithoutAlias(*node.children.front(), out, context, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, context, legacy, max_size);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
             writeCString("arrayJoin(", out);
-            appendColumnNameWithoutAlias(*node.children.front(), out, context, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, context, legacy, max_size);
             writeChar(')', out);
             break;
         case ActionsDAG::ActionType::FUNCTION:
@@ -159,7 +166,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
                 }
 
-                appendLambdaColumnName(*capture, std::move(capture_dag), out, context, legacy);
+                appendLambdaColumnName(*capture, std::move(capture_dag), out, context, legacy, max_size);
                 break;
             }
             else
@@ -180,7 +187,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     writeCString(", ", out);
                 first = false;
 
-                appendColumnNameWithoutAlias(*arg, out, context, legacy);
+                appendColumnNameWithoutAlias(*arg, out, context, legacy, max_size);
             }
             writeChar(')', out);
             break;
@@ -195,6 +202,16 @@ String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr
 {
     WriteBufferFromOwnString out;
     appendColumnNameWithoutAlias(node, out, context, legacy);
+
+    return std::move(out.str());
+}
+
+std::optional<String> tryGetColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr & context, bool legacy, size_t max_size)
+{
+    WriteBufferFromOwnString out;
+    appendColumnNameWithoutAlias(node, out, context, legacy, max_size);
+    if (out.count() > max_size)
+        return {};
 
     return std::move(out.str());
 }
@@ -216,6 +233,16 @@ std::string RPNBuilderTreeNode::getColumnName() const
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
 {
     return getColumnNameWithoutAlias(*dag_node, getContext(), true /*legacy*/);
+}
+
+std::optional<std::string> RPNBuilderTreeNode::tryGetColumnName(size_t max_size) const
+{
+    return tryGetColumnNameWithoutAlias(*dag_node, getContext(), false /*legacy*/, max_size);
+}
+
+std::optional<std::string> RPNBuilderTreeNode::tryGetColumnNameWithModuloLegacy(size_t max_size) const
+{
+    return tryGetColumnNameWithoutAlias(*dag_node, getContext(), true /*legacy*/, max_size);
 }
 
 bool RPNBuilderTreeNode::isFunction() const
