@@ -8,7 +8,18 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 from subprocess import DEVNULL
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Set,
+    TextIO,
+    Tuple,
+    Union,
+)
 
 import tqdm  # type: ignore
 from github.GithubException import RateLimitExceededException, UnknownObjectException
@@ -227,32 +238,75 @@ class ExistingEntry:
 Entry = Union[Description, ExistingEntry]
 
 
-def read_existing_entries(path: Path, repo: str) -> Dict[int, List[Tuple[str, str]]]:
-    """The entries of `CHANGELOG.md` by pull request, as `(category, bullet)`.
+class ExistingBullet(NamedTuple):
+    """A bullet of `CHANGELOG.md` with the pull requests it attributes."""
 
-    A bullet is an entry of every pull request it attributes. The attribution is
-    what this script writes at the end of an entry, and what an editor keeps for
-    each of the entries merged into one bullet: `[#N](.../pull/N) ([Author](...))`.
-    A link that is not followed by the author is a mention in the text of another
-    entry ("Follow-up to ..."), not an entry of that pull request. It is the same
-    definition as `PR_ATTRIBUTION_RE` in `ci/jobs/changelog_nightly.py`.
+    release: str
+    category: str
+    text: str
+    numbers: Tuple[int, ...]
+
+
+def read_existing_bullets(path: Path, repo: str) -> List[ExistingBullet]:
+    """The entries of `CHANGELOG.md`: the bullets that attribute a pull request.
+
+    The attribution is what this script writes at the end of an entry, and what
+    an editor keeps for each of the entries merged into one bullet:
+    `[#N](.../pull/N) ([Author](...))`. A link that is not followed by the author
+    is a mention in the text of another entry ("Follow-up to ..."), not an entry
+    of that pull request. It is the same definition as `PR_ATTRIBUTION_RE` in
+    `ci/jobs/changelog_nightly.py`.
     """
     attribution = re.compile(
         rf"\[#(\d+)\]\(https://github\.com/{re.escape(repo)}/pull/\1\) \(\["
     )
-    entries = {}  # type: Dict[int, List[Tuple[str, str]]]
+    bullets = []  # type: List[ExistingBullet]
+    release = ""
     category = ""
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("#### "):
             category = line[5:].strip()
             category = _match_changelog_category(category) or category
-        elif line.startswith("#"):
-            # A header of another level ends the category
+        elif re.match(r"#{1,3} ", line):
+            # The header of a release, or of something that is not one
+            release = line
             category = ""
         elif line.startswith("* ") and category:
-            for number in dict.fromkeys(attribution.findall(line)):
-                entries.setdefault(int(number), []).append((category, line.rstrip()))
-    return entries
+            numbers = tuple(dict.fromkeys(int(n) for n in attribution.findall(line)))
+            if numbers:
+                bullets.append(ExistingBullet(release, category, line.rstrip(), numbers))
+    return bullets
+
+
+def group_existing_bullets(
+    bullets: List[ExistingBullet],
+) -> Dict[int, Tuple[Set[int], List[ExistingBullet]]]:
+    """For every pull request, the group it is in: all the pull requests and all
+    the bullets that the attributions connect to it.
+
+    Most groups are one pull request with its one bullet. A bullet that attributes
+    several pull requests puts them into one group, and so does a pull request
+    attributed by several bullets with the pull requests of those bullets.
+    """
+    parent = {}  # type: Dict[int, int]
+
+    def find(number: int) -> int:
+        while parent.setdefault(number, number) != number:
+            parent[number] = parent[parent[number]]
+            number = parent[number]
+        return number
+
+    for bullet in bullets:
+        root = find(bullet.numbers[0])
+        for number in bullet.numbers[1:]:
+            parent[find(number)] = root
+
+    groups = {}  # type: Dict[int, Tuple[Set[int], List[ExistingBullet]]]
+    for number in parent:
+        groups.setdefault(find(number), (set(), []))[0].add(number)
+    for bullet in bullets:
+        groups[find(bullet.numbers[0])][1].append(bullet)
+    return {number: groups[find(number)] for number in parent}
 
 
 def get_merged_prs() -> Dict[int, str]:
@@ -283,11 +337,27 @@ def get_existing_entries(
     The search finds the pull requests by the date of the merge, and the dates
     cover more than the changelog interval, so an entry is copied only for a pull
     request whose merge commit is in the interval. For a backport, it is the entry
-    of the original pull request. A pull request without an entry, or without a
-    merge commit found in the interval, is left to `get_descriptions`.
+    of the original pull request.
+
+    An entry is copied only if it says what is in the interval, no more and no
+    less. The bullets of `CHANGELOG.md` and the pull requests they attribute make
+    groups (`group_existing_bullets`), and the bullets of a group are copied if:
+    - they are all in one release: a pull request that has an entry in two
+      releases has two renditions of it, and nothing says which one applies;
+    - every pull request of the group is merged in the interval: a bullet merged
+      from several entries would otherwise announce a change that is not there.
+      For a backport, the group has to be the original pull request alone.
+
+    A pull request that fails these, has no entry, or has no merge commit found
+    in the interval, is left to `get_descriptions`.
     """
-    existing = read_existing_entries(path, repo)
+    groups = group_existing_bullets(read_existing_bullets(path, repo))
     merged = get_merged_prs()
+    merged_directly = {
+        number
+        for number, head_ref in merged.items()
+        if get_backported_number(head_ref) is None
+    }
     entries = {}  # type: Dict[Tuple[str, str], ExistingEntry]
     reused = set()  # type: Set[int]
     for number in sorted(issue.number for issue in issues):
@@ -295,22 +365,29 @@ def get_existing_entries(
         if head_ref is None:
             continue
         original = get_backported_number(head_ref)
-        bullets = existing.get(number if original is None else original)
-        if not bullets:
+        group = groups.get(number if original is None else original)
+        if group is None:
+            continue
+        numbers, bullets = group
+        if len({bullet.release for bullet in bullets}) != 1:
+            continue
+        if original is None and not numbers <= merged_directly:
+            continue
+        if original is not None and numbers != {original}:
             continue
         reused.add(number)
-        for category, bullet in bullets:
+        for bullet in bullets:
             # The same prefix and the same place as in `generate_description`:
             # a backport is sorted by the number of the original pull request.
-            entry_number = number
+            text = bullet.text
             if original is not None:
                 prefix = link_issues(f"Backported in #{number}: ")
-                bullet = f"* {prefix}{bullet[2:]}"
-                entry_number = original
+                text = f"* {prefix}{text[2:]}"
             # A bullet that attributes several pull requests is their common
             # entry: it is written once, at the place of the first of them.
             entries.setdefault(
-                (category, bullet), ExistingEntry(entry_number, category, bullet)
+                (bullet.category, text),
+                ExistingEntry(min(bullet.numbers), bullet.category, text),
             )
     return list(entries.values()), reused
 

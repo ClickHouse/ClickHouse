@@ -29,6 +29,8 @@ import changelog  # noqa: E402  pylint: disable=wrong-import-position
 REPO = "ClickHouse/ClickHouse"
 URL = f"https://github.com/{REPO}"
 BUG_FIX = "Bug Fix (user-visible misbehavior in an official stable release)"
+INCOMPATIBLE = "Backward Incompatible Change"
+PERFORMANCE = "Performance Improvement"
 
 
 def _attribution(number, author="Author"):
@@ -40,7 +42,16 @@ FEATURE = f"* Added a thing. {_attribution(1001)}"
 GROUPED = f"* Faster reads. {_attribution(1002)} {_attribution(1003, 'Other')}"
 # `#1001` is only mentioned here, the entry belongs to `#1004`.
 FIX = f"* Fixed the thing. Follow-up to [#1001]({URL}/pull/1001). {_attribution(1004)}"
+# One pull request with an entry in two categories of a release.
+SETTING_CHANGED = f"* The setting has another default. {_attribution(1006)}"
+SETTING_FASTER = f"* The setting makes it faster. {_attribution(1006)}"
+# One pull request with an entry in two releases.
+SPILL_NEW = f"* Sets spill to disk, as it is in 26.11. {_attribution(950)}"
+SPILL_OLD = f"* Sets spill to disk, as it was in 26.10. {_attribution(950)}"
 OLD_FIX = f"* Fixed something long ago. {_attribution(900)}"
+
+RELEASE_NEW = '### <a id="2611"></a> ClickHouse release 26.11, 2026-11-24'
+RELEASE_OLD = '### <a id="2610"></a> ClickHouse release 26.10, 2026-10-22'
 
 CHANGELOG = f"""### Table of Contents
 **[ClickHouse release v26.11, 2026-11-24](#2611)**<br/>
@@ -48,20 +59,28 @@ CHANGELOG = f"""### Table of Contents
 
 # 2026 Changelog
 
-### <a id="2611"></a> ClickHouse release 26.11, 2026-11-24
+{RELEASE_NEW}
+
+#### Backward Incompatible Change
+{SETTING_CHANGED}
 
 #### New Feature
 {FEATURE}
 
 #### Performance Improvement
 {GROUPED}
+{SETTING_FASTER}
+{SPILL_NEW}
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 
 {FIX}
 * An entry of another repository. [#1005](https://github.com/ClickHouse/other/pull/1005) ([Author](https://github.com/Author)).
 
-### <a id="2610"></a> ClickHouse release 26.10, 2026-10-22
+{RELEASE_OLD}
+
+#### New Feature
+{SPILL_OLD}
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 {OLD_FIX}
@@ -85,14 +104,17 @@ def _copy(changelog_path, searched, merged):
 
 
 def test_an_entry_is_a_bullet_that_attributes_the_pull_request(changelog_path):
-    entries = changelog.read_existing_entries(changelog_path, REPO)
-    assert entries == {
-        1001: [("New Feature", FEATURE)],
-        1002: [("Performance Improvement", GROUPED)],
-        1003: [("Performance Improvement", GROUPED)],
-        1004: [(BUG_FIX, FIX)],
-        900: [(BUG_FIX, OLD_FIX)],
-    }
+    bullets = changelog.read_existing_bullets(changelog_path, REPO)
+    assert bullets == [
+        (RELEASE_NEW, INCOMPATIBLE, SETTING_CHANGED, (1006,)),
+        (RELEASE_NEW, "New Feature", FEATURE, (1001,)),
+        (RELEASE_NEW, PERFORMANCE, GROUPED, (1002, 1003)),
+        (RELEASE_NEW, PERFORMANCE, SETTING_FASTER, (1006,)),
+        (RELEASE_NEW, PERFORMANCE, SPILL_NEW, (950,)),
+        (RELEASE_NEW, BUG_FIX, FIX, (1004,)),
+        (RELEASE_OLD, "New Feature", SPILL_OLD, (950,)),
+        (RELEASE_OLD, BUG_FIX, OLD_FIX, (900,)),
+    ]
 
 
 def test_only_pull_requests_merged_in_the_interval_are_copied(changelog_path):
@@ -112,8 +134,49 @@ def test_a_shared_bullet_is_written_once(changelog_path):
     entries, reused = _copy(
         changelog_path, searched=[1003, 1002], merged={1002: "a", 1003: "b"}
     )
-    assert entries == [(1002, "Performance Improvement", GROUPED)]
+    assert entries == [(1002, PERFORMANCE, GROUPED)]
     assert reused == {1002, 1003}
+
+
+def test_a_shared_bullet_is_not_copied_for_a_part_of_it(changelog_path):
+    # `#1003` is not in the interval: the bullet would announce its change too.
+    entries, reused = _copy(changelog_path, searched=[1002], merged={1002: "a"})
+    assert entries == []
+    assert reused == set()
+    # The same when only one of the two is backported.
+    entries, reused = _copy(
+        changelog_path, searched=[5002], merged={5002: "backport/26.10/1002"}
+    )
+    assert entries == []
+    assert reused == set()
+    # And when both are there, but one of them as a backport.
+    entries, reused = _copy(
+        changelog_path,
+        searched=[1002, 5003],
+        merged={1002: "a", 5003: "backport/26.11/1003"},
+    )
+    assert entries == []
+    assert reused == set()
+
+
+def test_both_entries_of_a_pull_request_in_one_release_are_copied(changelog_path):
+    entries, reused = _copy(changelog_path, searched=[1006], merged={1006: "setting"})
+    assert entries == [
+        (1006, INCOMPATIBLE, SETTING_CHANGED),
+        (1006, PERFORMANCE, SETTING_FASTER),
+    ]
+    assert reused == {1006}
+
+
+def test_an_entry_repeated_in_two_releases_is_not_copied(changelog_path):
+    # Nothing says which of the two renditions applies.
+    for searched, merged in (
+        ([950], {950: "spill"}),
+        ([5950], {5950: "backport/26.10/950"}),
+    ):
+        entries, reused = _copy(changelog_path, searched=searched, merged=merged)
+        assert entries == []
+        assert reused == set()
 
 
 def test_a_backport_copies_the_entry_of_the_original(changelog_path):
