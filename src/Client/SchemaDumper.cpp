@@ -80,6 +80,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <base/EnumReflection.h>
 #include <Poco/Net/IPAddress.h>
+#include <Poco/NumberParser.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
@@ -1034,10 +1036,18 @@ const ASTFunction * asEvalCall(const IAST & node)
 }
 
 /// Parses a SELECT the way `executeQuery` does: settings such as `filter` become query text, so their reads are found too.
-ASTPtr parseSelectWithConstructionSettings(const String & text)
+/// `outer_settings` are the ones the query runs under; its own `SETTINGS` clause overrides them.
+ASTPtr parseSelectWithConstructionSettings(const String & text, const SettingsChanges & outer_settings = {})
 {
     ParserSelectWithUnionQuery parser;
     ASTPtr query = parseQuery(parser, text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    if (!outer_settings.empty())
+    {
+        auto settings = make_intrusive<ASTSetQuery>();
+        settings->is_standalone = false;
+        settings->changes = outer_settings;
+        query->as<ASTSelectWithUnionQuery &>().settings_ast = settings;
+    }
     wrapPerArmConstructionSettings(query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     wrapNestedConstructionSettings(query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     return query;
@@ -1336,8 +1346,9 @@ bool engineCanBind(ReferenceKind kind, const String & engine)
 }
 
 /// The query of a dictionary's local `CLICKHOUSE` source, which an eager dictionary runs at CREATE; null for any other source.
+/// `unproven_host` is set when the metadata does not show the host to be this server: the query is then only checked for a warning.
 ASTPtr localDictionarySourceQuery(
-    const ASTDictionary & dictionary, const ASTExpressionList * attributes, const ClusterLocality & clusters)
+    const ASTDictionary & dictionary, const ASTExpressionList * attributes, const ClusterLocality & clusters, String & unproven_host)
 {
     const auto * source = dictionary.source;
     if (!source || !source->elements || !equalsCaseInsensitive(source->name, "clickhouse"))
@@ -1349,21 +1360,41 @@ ASTPtr localDictionarySourceQuery(
     String host = "localhost";
     std::optional<UInt64> port;
     UInt64 secure = 0;
+    std::set<String> seen;
     for (const auto & element : source->elements->children)
     {
         const auto * pair = element->as<ASTPair>();
-        const auto * literal = pair && pair->second ? pair->second->as<ASTLiteral>() : nullptr;
+        /// The source reads the first of the pairs with the same key.
+        if (!pair || !seen.insert(Poco::toLower(pair->first)).second)
+            continue;
+        const auto * literal = pair->second ? pair->second->as<ASTLiteral>() : nullptr;
         if (!literal)
             continue;
         if (equalsCaseInsensitive(pair->first, "port") || equalsCaseInsensitive(pair->first, "secure"))
         {
-            /// A port or a flag that is not a plain number is not shown to be this server's.
-            if (literal->value.getType() != Field::Types::UInt64)
+            const bool is_port = equalsCaseInsensitive(pair->first, "port");
+            /// The source reads both from text, so a quoted number or a quoted flag counts as well.
+            std::optional<UInt64> number;
+            bool flag = false;
+            unsigned parsed = 0;
+            if (literal->value.getType() == Field::Types::UInt64)
+                number = literal->value.safeGet<UInt64>();
+            else if (literal->value.getType() == Field::Types::Bool)
+                number = literal->value.safeGet<bool>();
+            else if (literal->value.getType() != Field::Types::String)
                 return nullptr;
-            if (equalsCaseInsensitive(pair->first, "port"))
-                port = literal->value.safeGet<UInt64>();
+            else if (is_port && Poco::NumberParser::tryParseUnsigned(literal->value.safeGet<String>(), parsed))
+                number = parsed;
+            else if (!is_port && Poco::NumberParser::tryParseBool(literal->value.safeGet<String>(), flag))
+                number = flag;
+            /// A port or a flag that cannot be read is not shown to be this server's.
+            if (!number)
+                return nullptr;
+            if (is_port)
+                port = *number;
             else
-                secure = literal->value.safeGet<UInt64>();
+                secure = *number;
+            continue;
         }
         if (literal->value.getType() != Field::Types::String)
             continue;
@@ -1396,11 +1427,18 @@ ASTPtr localDictionarySourceQuery(
     if (port && *port != (secure ? clusters.tcp_port_secure() : clusters.tcp_port))
         return nullptr;
     if (remoteAddressLocality(host.contains(':') ? "[" + host + "]" : host, secure != 0, clusters) != Locality::Local)
-        return nullptr;
+        unproven_host = host;
+    /// The source runs the query under the dictionary's settings, and these of them are query text.
+    SettingsChanges construction_settings;
+    if (dictionary.dict_settings)
+        for (const auto & change : dictionary.dict_settings->changes)
+            if ((change.name == "select" || change.name == "filter" || change.name == "order" || change.name == "sort")
+                && change.value.getType() == Field::Types::String)
+                construction_settings.push_back(change);
     try
     {
         /// The source replaces `{condition}` before it runs the query, so the query parses only without it.
-        return parseSelectWithConstructionSettings(removeWhereConditionPlaceholder(query));
+        return parseSelectWithConstructionSettings(removeWhereConditionPlaceholder(query), construction_settings);
     }
     catch (const Exception &)
     {
@@ -2690,6 +2728,8 @@ std::vector<TableInfo> resolveTables(
         /// A view's select sources are deliberately not in `loading_dependencies_*`, so they are
         /// only discoverable by parsing the stored `SELECT`.
         ASTPtr select_ast;
+        /// Set for a dictionary source on a host not shown to be this server: what it reads only warns.
+        String unproven_source;
         if ((row.engine == "Distributed" || row.engine == "Proxy") && !row.create_query.empty()
             && !database_info.at(row.database).is_external)
         {
@@ -2732,9 +2772,12 @@ std::vector<TableInfo> resolveTables(
             const auto * create = create_ast->as<ASTCreateQuery>();
             if (create && create->dictionary)
             {
-                select_ast = localDictionarySourceQuery(*create->dictionary, create->dictionary_attributes_list, clusters);
+                String unproven_host;
+                select_ast = localDictionarySourceQuery(*create->dictionary, create->dictionary_attributes_list, clusters, unproven_host);
                 if (!select_ast)
                     continue;
+                if (!unproven_host.empty())
+                    unproven_source = "the dictionary source CLICKHOUSE(HOST " + quoteString(unproven_host) + " ...)";
             }
             else if (create && create->columns_list)
             {
@@ -2866,6 +2909,7 @@ std::vector<TableInfo> resolveTables(
         };
 
         std::vector<TableReference> references;
+        std::vector<String> unproven_unchecked_references;
         const auto visit = [&](const IAST & node, bool in_table_expression, const EvalQuery * eval_query)
         {
             /// The server qualifies the tables a stored query names, but not the ones in the query `eval` generates: those
@@ -2903,9 +2947,23 @@ std::vector<TableInfo> resolveTables(
             collectFunctionArgumentReferences(node, clusters, references, /* constant_keys= */ !in_table_expression);
             collectMergeAndLoopReferences(
                 node, all_table_names_by_db, undumped_databases, omitted_tables, row.database,
-                clusters.context, references, row.unchecked_references);
+                clusters.context, references, unproven_source.empty() ? row.unchecked_references : unproven_unchecked_references);
         };
-        visitLocalAST(select_ast.get(), clusters, {row.database, row.name}, visit);
+        if (unproven_source.empty())
+            visitLocalAST(select_ast.get(), clusters, {row.database, row.name}, visit);
+        else
+        {
+            try
+            {
+                visitLocalAST(select_ast.get(), clusters, {row.database, row.name}, visit);
+            }
+            catch (const Exception &) // NOLINT(bugprone-empty-catch)
+            {
+                /// The source reads as remote, so a target the dump cannot name is skipped, not refused.
+            }
+            for (auto & candidate : references)
+                candidate.remote_via = unproven_source;
+        }
         for (const auto & candidate : references)
             add_dependency(candidate);
     }
