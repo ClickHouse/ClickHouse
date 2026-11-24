@@ -24,9 +24,9 @@ SETTINGS allow_experimental_iceberg_compaction = 0;
 
 INSERT INTO t VALUES (1);
 
-SYSTEM ENABLE FAILPOINT iceberg_writes_unknown_commit_status;
+SYSTEM ENABLE FAILPOINT iceberg_writes_fail_version_hint_after_publication;
 INSERT INTO t VALUES (2); -- { serverError UNKNOWN_STATUS_OF_INSERT }
-SYSTEM DISABLE FAILPOINT iceberg_writes_unknown_commit_status;
+SYSTEM DISABLE FAILPOINT iceberg_writes_fail_version_hint_after_publication;
 
 -- The metadata file of the second insert was published: its rows must be readable.
 SELECT id FROM t ORDER BY id;

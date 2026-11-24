@@ -98,6 +98,12 @@ extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
 extern const int S3_ERROR;
 extern const int CANNOT_WRITE_TO_FILE;
+extern const int NETWORK_ERROR;
+}
+
+namespace DB::FailPoints
+{
+extern const char iceberg_writes_fail_version_hint_after_publication[];
 }
 
 namespace DB::DataLakeStorageSetting
@@ -745,7 +751,7 @@ static bool tryWriteVersionHintFileImpl(
 
         if (version_hint.exists && version_hint.etag.empty())
         {
-            /// `writeMetadataFileAndVersionHint` checks this before publishing the metadata file,
+            /// `checkVersionHintCanBeAdvanced` checks this before publishing the metadata file,
             /// so there the hint was created concurrently after that check. The new metadata file
             /// is already published and visible to listing-based readers, and another writer may
             /// already have built its own snapshot on top of it, inheriting the files it references.
@@ -826,6 +832,80 @@ bool tryWriteVersionHintFile(
         resolver, metadata_file_info, version_hint_path, object_storage, context, create, assert_version_exactly, std::nullopt);
 }
 
+/// Whether the hint can be advanced at all is decided *before* the new metadata file is
+/// published. `expireSnapshots` and the schema-alter path in `Mutations.cpp` do not remove that
+/// file when the commit throws, so failing after writing it would leave the new snapshot visible
+/// to listing-based readers while readers with `iceberg_use_version_hint = 1` stay on the old
+/// one.
+/// A storage that reports a tag for every object can never fail this check, so it is skipped
+/// there and the commit does not pay for an extra request; the returned state is then empty.
+static VersionHintState checkVersionHintCanBeAdvanced(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context)
+{
+    VersionHintState version_hint;
+    if (!object_storage->alwaysReportsETag())
+    {
+        auto storage_version_hint_path = resolver.resolve(version_hint_path);
+        version_hint = readVersionHint(object_storage, storage_version_hint_path, context);
+        if (version_hint.exists && version_hint.etag.empty() && version_hint.version < metadata_file_info.version)
+            throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
+    }
+    return version_hint;
+}
+
+/// The hint phase of a commit whose metadata file is already published and visible to listing-based
+/// readers. Another writer may already have built its own snapshot on top of it, inheriting the files
+/// it references, so no failure of this phase may look like a failed commit to the caller, which would
+/// then remove those files. That includes the reads of the hint (`exists`, the read itself), which can
+/// fail like any other request: every exception leaves as `UNKNOWN_STATUS_OF_INSERT`, the one the
+/// callers keep the referenced files on (see `isUnknownCommitStatus`).
+///
+/// An existing hint read before the publication (`hint_before_publication`) is reused, so that a commit
+/// does not pay for reading it twice. An absent one (or one that was not read) is read again: another
+/// writer may have created it while the metadata file was being written.
+static bool advanceVersionHintAfterPublication(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context,
+    bool create,
+    const VersionHintState & hint_before_publication)
+{
+    try
+    {
+        fiu_do_on(FailPoints::iceberg_writes_fail_version_hint_after_publication,
+        {
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failpoint for a failed read of the version hint after the publication enabled");
+        });
+
+        return tryWriteVersionHintFileImpl(
+            resolver,
+            metadata_file_info,
+            version_hint_path,
+            object_storage,
+            context,
+            create,
+            /* assert_version_exactly */ false,
+            hint_before_publication.exists ? std::optional<VersionHintState>(hint_before_publication) : std::nullopt);
+    }
+    catch (...)
+    {
+        if (isUnknownCommitStatus())
+            throw;
+        throwUnknownCommitStatus(
+            resolver.resolve(metadata_file_info.path),
+            fmt::format(
+                "the metadata file is published, but advancing {} failed: {}",
+                resolver.resolve(version_hint_path),
+                getCurrentExceptionMessage(false)));
+    }
+}
+
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -835,37 +915,14 @@ bool writeMetadataFileAndVersionHint(
     ContextPtr context,
     bool try_write_version_hint)
 {
-    /// Whether the hint can be advanced at all is decided *before* the new metadata file is
-    /// published. `expireSnapshots` and the schema-alter path in `Mutations.cpp` do not remove that
-    /// file when the commit throws, so failing after writing it would leave the new snapshot visible
-    /// to listing-based readers while readers with `iceberg_use_version_hint = 1` stay on the old
-    /// one.
-    /// A storage that reports a tag for every object can never fail this check, so it is skipped
-    /// there and the commit does not pay for an extra request.
-    VersionHintState version_hint;
-    if (!object_storage->alwaysReportsETag())
-    {
-        auto storage_version_hint_path = resolver.resolve(version_hint_path);
-        version_hint = readVersionHint(object_storage, storage_version_hint_path, context);
-        if (version_hint.exists && version_hint.etag.empty() && version_hint.version < metadata_file_info.version)
-            throwVersionHintCannotBeAdvanced(storage_version_hint_path, metadata_file_info.version);
-    }
+    const auto version_hint = checkVersionHintCanBeAdvanced(resolver, metadata_file_info, version_hint_path, object_storage, context);
 
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
-    /// An existing hint read above is reused, so that a commit does not pay for reading it twice.
-    /// An absent one (or one that was not read) is read again: another writer may have created it
-    /// while the metadata file was being written.
-    (void)tryWriteVersionHintFileImpl(
-        resolver,
-        metadata_file_info,
-        version_hint_path,
-        object_storage,
-        context,
-        /* create */ try_write_version_hint,
-        /* assert_version_exactly */ false,
-        version_hint.exists ? std::optional<VersionHintState>(version_hint) : std::nullopt);
+    /// The hint is not a part of the commit: if it could not be advanced, the next writer advances it.
+    (void)advanceVersionHintAfterPublication(
+        resolver, metadata_file_info, version_hint_path, object_storage, context, /* create */ try_write_version_hint, version_hint);
     return true;
 }
 
@@ -937,6 +994,12 @@ bool commitMetadataFile(
         if (fail_points.pause_before_reconciliation)
             FailPointInjection::pauseFailPoint(fail_points.pause_before_reconciliation);
     };
+
+    /// Nothing is written yet, so a hint that cannot be advanced fails the commit in the ordinary way.
+    /// A catalog that writes the metadata file itself keeps no hint.
+    VersionHintState version_hint;
+    if (!catalog_writes_metadata_file)
+        version_hint = checkVersionHintCanBeAdvanced(resolver, metadata_file_info, version_hint_path, object_storage, context);
 
     LOG_DEBUG(log, "Committing metadata file {} with snapshot {}", metadata_file_info.path, snapshot_id);
     bool committed = false;
@@ -1016,14 +1079,8 @@ bool commitMetadataFile(
     commit_outcome_unknown = true;
     /// The version hint is not a part of the commit: if writing it fails, the next writer advances it.
     if (!catalog_writes_metadata_file
-        && !tryWriteVersionHintFile(
-            resolver,
-            metadata_file_info,
-            version_hint_path,
-            object_storage,
-            context,
-            create_version_hint,
-            /* assert_version_exactly */ false))
+        && !advanceVersionHintAfterPublication(
+            resolver, metadata_file_info, version_hint_path, object_storage, context, create_version_hint, version_hint))
     {
         LOG_WARNING(
             log,

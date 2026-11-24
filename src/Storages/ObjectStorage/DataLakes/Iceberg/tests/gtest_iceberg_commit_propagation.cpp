@@ -248,6 +248,11 @@ public:
     std::vector<std::string> removed;
     /// Every read of the hint fails, as a transient network error would.
     bool read_fails = false;
+    /// The existence check of the hint fails, as a transient network error would, once the metadata
+    /// file of the commit is published.
+    bool exists_fails_after_publication = false;
+    /// The same for the read of the hint.
+    bool read_fails_after_publication = false;
     /// How every removal of the hint fails.
     RemovalFailure hint_removal_failure = RemovalFailure::None;
     /// With `Race::CreatedByThisCommit`: another writer advances the hint this commit has created to
@@ -293,16 +298,20 @@ public:
     }
 
     /// The metadata file of the commit is there once it is written; the version hint as `race` says.
-    bool exists(const StoredObject & object) const override
+    [[nodiscard]] bool exists(const StoredObject & object) const override
     {
         if (object.remote_path.ends_with(version_hint_name))
+        {
+            if (exists_fails_after_publication && metadata_present)
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot check {}", object.remote_path);
             return hint_present;
+        }
         return object.remote_path.ends_with(metadata_file_name) && metadata_present;
     }
 
-    bool hintPresent() const { return hint_present; }
-    bool metadataPresent() const { return metadata_present; }
-    bool metadataRemovalAttempted() const { return metadata_removal_attempted; }
+    [[nodiscard]] bool hintPresent() const { return hint_present; }
+    [[nodiscard]] bool metadataPresent() const { return metadata_present; }
+    [[nodiscard]] bool metadataRemovalAttempted() const { return metadata_removal_attempted; }
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -311,7 +320,7 @@ public:
         std::optional<size_t>) const override
     {
         EXPECT_TRUE(object.remote_path.ends_with(version_hint_name)) << object.remote_path;
-        if (read_fails)
+        if (read_fails || (read_fails_after_publication && metadata_present))
             throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot read {}", object.remote_path);
 
         SmallObjectDataWithMetadata result;
@@ -320,16 +329,16 @@ public:
         return result;
     }
 
-    std::string getName() const override { return "ExistingVersionHintObjectStorage"; }
-    ObjectStorageType getType() const override { return ObjectStorageType::None; }
-    std::string getCommonKeyPrefix() const override { return ""; }
-    std::string getDescription() const override { return "test stub"; }
-    String getObjectsNamespace() const override { return ""; }
-    bool isRemote() const override { return true; }
+    [[nodiscard]] std::string getName() const override { return "ExistingVersionHintObjectStorage"; }
+    [[nodiscard]] ObjectStorageType getType() const override { return ObjectStorageType::None; }
+    [[nodiscard]] std::string getCommonKeyPrefix() const override { return ""; }
+    [[nodiscard]] std::string getDescription() const override { return "test stub"; }
+    [[nodiscard]] String getObjectsNamespace() const override { return ""; }
+    [[nodiscard]] bool isRemote() const override { return true; }
     void startup() override { }
     void shutdown() override { }
 
-    ObjectMetadata getObjectMetadata(const std::string & path, bool) const override
+    [[nodiscard]] ObjectMetadata getObjectMetadata(const std::string & path, bool) const override
     {
         EXPECT_TRUE(path.ends_with(version_hint_name)) << path;
         EXPECT_TRUE(hint_present) << path;
@@ -338,7 +347,7 @@ public:
         metadata.etag = head_etag;
         return metadata;
     }
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string &, bool) const override
+    [[nodiscard]] std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string &, bool) const override
     {
         unexpected("tryGetObjectMetadata");
     }
@@ -375,7 +384,7 @@ public:
     {
         unexpected("copyObject");
     }
-    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override { unexpected("createKeyGenerator"); }
+    [[nodiscard]] ObjectStorageKeyGeneratorPtr createKeyGenerator() const override { unexpected("createKeyGenerator"); }
 
 private:
     [[noreturn]] static void unexpected(std::string_view method)
@@ -409,7 +418,7 @@ struct CommitOverExistingVersionHint
     {
     }
 
-    bool run(bool try_write_version_hint = true) const
+    [[nodiscard]] bool run(bool try_write_version_hint = true) const
     {
         Iceberg::IcebergPathResolver resolver(
             "/table",
@@ -433,7 +442,7 @@ struct CommitOverExistingVersionHint
 
     /// The commit of full compaction: it publishes the metadata file, then creates the hint in the exact
     /// mode, which confirms that the hint resolves to that metadata file.
-    bool runExactHintUpdate() const
+    [[nodiscard]] bool runExactHintUpdate() const
     {
         Iceberg::IcebergPathResolver resolver(
             "/table",
@@ -458,8 +467,8 @@ struct CommitOverExistingVersionHint
             /* assert_version_exactly */ true);
     }
 
-    const std::vector<ExistingVersionHintObjectStorage::Write> & writes() const { return object_storage->writes; }
-    const std::vector<std::string> & removed() const { return object_storage->removed; }
+    [[nodiscard]] const std::vector<ExistingVersionHintObjectStorage::Write> & writes() const { return object_storage->writes; }
+    [[nodiscard]] const std::vector<std::string> & removed() const { return object_storage->removed; }
 
     std::shared_ptr<ExistingVersionHintObjectStorage> object_storage;
     /// What the commit works on: `object_storage` itself, or `object_storage` under decorators.
@@ -541,6 +550,58 @@ TEST(IcebergCommitPropagation, VersionHintAppearingMidCommitKeepsThePublishedMet
     EXPECT_TRUE(commit.removed().empty());
     EXPECT_FALSE(commit.object_storage->metadataRemovalAttempted());
     EXPECT_TRUE(commit.object_storage->metadataPresent());
+}
+
+TEST(IcebergCommitPropagation, FailedHintExistenceCheckAfterPublicationKeepsThePublishedFiles)
+{
+    /// The hint is absent before the commit, the metadata file is published, and then the existence
+    /// check of the hint fails as any request can. The snapshot is visible to listing-based readers, so
+    /// the failure must not look like a failed commit: the callers remove the data files and the
+    /// manifests of the commit on every exception except `UNKNOWN_STATUS_OF_INSERT`.
+    CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::Absent);
+    commit.object_storage->exists_fails_after_publication = true;
+
+    try
+    {
+        bool committed = commit.run();
+        FAIL() << "Expected the commit to report an unknown status, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT) << e.message();
+    }
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 1u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
+    EXPECT_TRUE(commit.object_storage->metadataPresent());
+    EXPECT_FALSE(commit.object_storage->metadataRemovalAttempted());
+    EXPECT_TRUE(commit.removed().empty());
+}
+
+TEST(IcebergCommitPropagation, FailedHintReadAfterPublicationKeepsThePublishedFiles)
+{
+    /// The same for the read of a hint that another writer created while the metadata file was being
+    /// written: the existence check sees it, and reading it fails.
+    CommitOverExistingVersionHint commit("\"abc\"", CommitOverExistingVersionHint::Race::AppearsAfterTheMetadataFileIsWritten);
+    commit.object_storage->read_fails_after_publication = true;
+
+    try
+    {
+        bool committed = commit.run(/*try_write_version_hint=*/ false);
+        FAIL() << "Expected the commit to report an unknown status, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT) << e.message();
+    }
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 1u);
+    EXPECT_TRUE(writes[0].path.ends_with("v2.metadata.json")) << writes[0].path;
+    EXPECT_TRUE(commit.object_storage->metadataPresent());
+    EXPECT_FALSE(commit.object_storage->metadataRemovalAttempted());
+    EXPECT_TRUE(commit.removed().empty());
 }
 
 TEST(IcebergCommitPropagation, HintCreatedAfterThePreCheckIsStillAdvancedByAWriterThatDoesNotCreateHints)
