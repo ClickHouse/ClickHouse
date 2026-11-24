@@ -10,7 +10,6 @@
 #include <Common/Stopwatch.h>
 #include <functional>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <utility>
 
@@ -48,7 +47,7 @@ namespace JSONUtils
         const FormatSettings & format_settings,
         bool yield_strings);
 
-    Strings makeNamesValidJSONStrings(std::span<const String> names, const FormatSettings & settings, bool validate_utf8);
+    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8);
 
     /// Returns true if the JSON keys derived from `names` (via `makeNamesValidJSONStrings`) would
     /// contain bytes that are not valid UTF-8 under the given settings. This can happen only when

@@ -106,10 +106,6 @@ struct TopKFilterInfo
 
     /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
     bool dynamic_filter_pending = false;
-
-    /// Set once `__topKFilter` drops the rows equal to the threshold. Only for `ORDER BY` of a single `String` column:
-    /// for `GROUP BY key LIMIT n`, the later rows of the group on the boundary still count in its aggregates.
-    std::shared_ptr<std::atomic<bool>> rows_equal_to_threshold_dropped = nullptr;
 };
 
 namespace QueryPlanOptimizations
@@ -222,10 +218,6 @@ public:
         /// Set only on a parallel replicas follower: it kept every part, and the coordinator chooses its ranges
         /// from the analysis done on the initiator.
         bool index_analysis_was_already_done_on_initiator = false;
-        /// The filter constrains the primary key of the analyzed parts (the same criterion the
-        /// `force_primary_key` check uses). A projection whose own key is not used may not serve
-        /// the read.
-        bool pk_condition_useful = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -249,7 +241,6 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
-            , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -272,7 +263,6 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
-            , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -374,8 +364,7 @@ public:
         std::optional<std::unordered_set<String>> part_values;
     };
 
-    void addJoinRuntimeFilterIndexAnalysisOnDataRead(
-        const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index = false);
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
     const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
     {
         return join_runtime_filters_for_index_analysis;
@@ -473,6 +462,9 @@ public:
     bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
+    /// The last result of `selectRangesToReadForEstimation`. It is never the analysis of the executed read; the probe
+    /// plan of automatic parallel replicas estimates its joins from it to choose what this plan chose.
+    AnalysisResultPtr getAnalyzedResultForEstimation() const { return analyzed_result_for_estimation_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     /// Adopt from another read of the same table, for the same query, everything that
@@ -533,7 +525,6 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
-    void disableSpreadingSmallRead() { allow_spreading_small_read = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -557,13 +548,7 @@ public:
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
-    /// A deserialized read knows only its storage, so the initiator's own copy is coordinated under the
-    /// storage name too, also when it reads through a table function.
-    void enableParallelReadingFromReplicasForSerialization()
-    {
-        is_parallel_reading_from_replicas = true;
-        query_info.parallel_replicas_coordinated_under_storage_name = true;
-    }
+    void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
@@ -572,17 +557,8 @@ public:
     void createReadTasksForTextIndex(IndexReadTasks text_index_read_tasks, const Names & removed_columns);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
-    struct PartsForPrewhere
-    {
-        RangesInDataParts parts;
-        /// Whether the read is large enough for statistics to pay off, see `min_marks_per_part_to_load_statistics`.
-        bool use_statistics = true;
-    };
-
     /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
-    /// `selectivity_estimator_columns` are the columns whose statistics would order the conditions,
-    /// or nullptr if statistics are not used for that.
-    PartsForPrewhere getPartsForPrewhere(const Names * selectivity_estimator_columns) const;
+    RangesInDataParts getPartsForPrewhere() const;
     IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
@@ -612,13 +588,6 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageMetadataPtr & metadata_snapshot,
         bool skip_partition_pruning_ = false);
-
-    /// The primary-key condition of `buildIndexes`.
-    static ConditionTemplate<KeyCondition>::Ptr buildPrimaryKeyCondition(
-        std::shared_ptr<ActionsDAGWithInversionPushDown> filter_dag,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & query_context,
-        bool skip_constant_folding);
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
@@ -709,9 +678,16 @@ public:
     std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
         const std::vector<size_t> & unneeded_output_positions, const std::vector<size_t> & lazy_output_positions);
 
-    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
-    /// their part offsets. Reading a projection instead would address other rows.
-    bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
+    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by their part
+    /// offsets. The read puts the parts it reads where the lazy read reads them from, when it builds its pipeline.
+    bool hasLazilyReadColumns() const { return !columns_read_lazily.empty(); }
+    /// The columns the lazy read reads for the rows of this one.
+    const Names & getColumnsReadLazily() const { return columns_read_lazily; }
+    /// Makes this read, which replaces `other` or serves some of its parts, put its parts where the lazy read of `other`
+    /// reads them from.
+    void shareLazyReadOf(const ReadFromMergeTree & other);
+    /// The rows the lazy read of the columns this read leaves out reads, or null without such a lazy read.
+    const LazyMaterializingRowsPtr & getLazyReadRows() const { return lazy_read_rows; }
 
     /// The columns `addStartingPartOffsetAndPartOffset` reads, where they are in the output header, and whether it added
     /// them. The columns the output header had keep their order.
@@ -730,7 +706,6 @@ public:
 
     /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
     bool isPrewhereDeferredAfterFinal() const;
-    bool canReadColumnsAhead(const Names & column_names, const RangesInDataParts & parts) const;
     bool canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
@@ -765,9 +740,6 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
-    /// The name this read is coordinated under, which every replica must announce identically.
-    String getParallelReplicasStreamId() const;
-
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
@@ -964,6 +936,7 @@ private:
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
+    mutable AnalysisResultPtr analyzed_result_for_estimation_ptr;
     VirtualFields shared_virtual_fields;
     IndexReadTasks index_read_tasks;
 
@@ -973,11 +946,13 @@ private:
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
-    bool allow_spreading_small_read = true;
     bool no_rows_needed = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    bool has_lazily_read_columns = false;
+
+    /// The rows the lazy read of the columns this read leaves out reads, and those columns. See `hasLazilyReadColumns`.
+    LazyMaterializingRowsPtr lazy_read_rows;
+    Names columns_read_lazily;
 
     ExpressionActionsPtr virtual_row_conversion;
 

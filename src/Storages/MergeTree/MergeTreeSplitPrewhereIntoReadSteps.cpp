@@ -51,11 +51,6 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     return types;
 }
 
-bool isTopKFilter(const ActionsDAG::Node * node)
-{
-    return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "__topKFilter";
-}
-
 /// Fills the info of an input column. A virtual column of an index is resolved to the name of the index whose reader fills it.
 void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const IndexReadTasks * index_read_tasks)
 {
@@ -365,12 +360,8 @@ bool tryBuildPrewhereSteps(
             num_attributed_steps = condition_groups.size();
 
         const bool same_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
-        /// `__topKFilter` is the first condition (see `buildTopKDynamicFilterPrewhere`). In its own step the condition runs only
-        /// on the rows the threshold passes once it is selective, because the `__topKFilter` step's filter stays optional.
-        const bool follows_top_k_filter = same_columns && read_ahead_columns && isTopKFilter(condition_groups.back().front())
-            && canBeMovedToTheFrontOfAndChain(node);
 
-        if (same_columns && !node_info.may_throw && !is_first_unattributed && !follows_top_k_filter)
+        if (same_columns && !node_info.may_throw && !is_first_unattributed)
         {
             condition_groups.back().push_back(node);
             continue;
@@ -401,7 +392,7 @@ bool tryBuildPrewhereSteps(
     struct Step
     {
         ActionsDAGPtr actions;
-        /// Original condition if the step has one condition, null for an AND of several.
+        /// Original condition, in case if we have only one condition, and it was not cast
         const ActionsDAG::Node * original_node;
         /// Result condition node
         const ActionsDAG::Node * result_node;
@@ -439,7 +430,6 @@ bool tryBuildPrewhereSteps(
         else
         {
             result_node = new_condition_nodes.front();
-            original_node = condition_group.front();
         }
 
         step_dag->getOutputs().insert(step_dag->getOutputs().begin(), result_node);
@@ -501,12 +491,9 @@ bool tryBuildPrewhereSteps(
                 .type = PrewhereExprStep::Filter,
                 .actions = std::make_shared<ExpressionActions>(std::move(*step.actions), actions_settings),
                 .filter_column_name = step.result_node->result_name,
-                /// Don't remove a condition that is an original output or that a later step uses.
-                /// An AND of several conditions is a node the steps create, nothing else references it.
-                /// A stored column used as the condition stays: a later step may read it as the parent of a subcolumn.
-                .remove_filter_column = !step.original_node
-                    || (step.original_node->type != ActionsDAG::ActionType::INPUT && !all_outputs.contains(step.original_node)
-                        && node_to_step[step.original_node] <= step_index),
+                /// Don't remove if it's in the list of original outputs
+                .remove_filter_column =
+                    step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 /// A step that precedes a may_throw condition must materialize its filter, so that
                 /// the throwing condition is not evaluated on the rows this step rejects.
                 .need_filter = groups_requiring_filtered_input.contains(step_index + 1) || (force_short_circuit_execution && !next_step_can_see_rejected_rows),
@@ -514,7 +501,6 @@ bool tryBuildPrewhereSteps(
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
                 .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
-                .is_query_prewhere = true,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

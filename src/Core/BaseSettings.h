@@ -5,7 +5,6 @@
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <IO/Operators.h>
-#include <IO/VarInt.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -61,6 +60,8 @@ struct BaseSettingsHelpers
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
+    /// Returns true (and logs a warning) if `e` is `BAD_ARGUMENTS` or a parse error (`isParseError`); other errors are not skipped.
+    static bool skipInvalidSettingValue(std::string_view name, const Exception & e);
     static void flushWarnings();
 
     /// The value as it is echoed in the "while setting '<name>' to value <value>" context of a rejected value.
@@ -323,12 +324,11 @@ public:
     /// Write all settings (or only changed ones depending on format)
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
 
-    /// Read settings from a buffer
-    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
+    /// Read settings from a buffer.
+    /// With `skip_invalid_values`, a non-important setting whose value is rejected keeps its default instead of failing the read.
+    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT, bool skip_invalid_values = false);
 
-    /// Write only changed settings in binary format.
-    /// Used for serialization of object storage settings (`S3Settings`, `DataLakeStorageSettings`),
-    /// including by code outside of this repository, so do not remove it as unused.
+    /// Write only changed settings in binary format
     void writeChangedBinary(WriteBuffer & out) const;
 
     /// Read settings in binary format
@@ -840,7 +840,7 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
+void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format, bool skip_invalid_values)
 {
     resetToDefault();
     const auto & accessor = Traits::Accessor::instance();
@@ -877,7 +877,20 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
                 accessor.setValue(*this, index, static_cast<Field>(temp));
             }
             else if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
-                accessor.setValueString(*this, index, BaseSettingsHelpers::readString(in));
+            {
+                String value = BaseSettingsHelpers::readString(in);
+                try
+                {
+                    accessor.setValueString(*this, index, value);
+                }
+                catch (const Exception & e)
+                {
+                    if (!skip_invalid_values || is_important || !BaseSettingsHelpers::skipInvalidSettingValue(name, e))
+                        throw;
+                    /// A failed parse may have assigned the field already.
+                    accessor.resetValueToDefault(*this, index);
+                }
+            }
             else
                 accessor.readBinary(*this, index, in);
         }
@@ -1592,21 +1605,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         }
 
 
-/// Constant description of one setting. IMPLEMENT_SETTINGS_TRAITS_COMMON emits one entry per setting
-/// into a static table that the Accessor copies into its FieldInfo vector, so the per-setting part of
-/// the generated code is data, not a sequence of inlined `emplace_back` calls in one huge function.
-struct SettingFieldInfoInit
-{
-    std::string_view name;
-    std::string_view path;
-    std::string_view type;
-    std::string_view description;
-    UInt64 flags;
-    const SettingFieldOps & (*ops)();
-    size_t data_offset;
-};
-
-
 /// Skip this setting in the macro expansion (used for selective application)
 /// NOLINTNEXTLINE
 #define SETTING_SKIP_TRAIT(...)
@@ -1724,20 +1722,14 @@ struct SettingFieldInfoInit
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
             [[maybe_unused]] constexpr int AFFECTS_CLIENT = 0x20; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
+            Accessor res; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \
             _Pragma("clang diagnostic push") \
             _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
-            /* One constant entry per setting, emitted as data */ \
-            static constexpr std::initializer_list<SettingFieldInfoInit> field_info_inits = { \
-                LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
-                LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
-            }; \
-            _Pragma("clang diagnostic pop") \
-            Accessor res; \
             /* Populate field_infos with one entry per setting */ \
-            res.field_infos.reserve(field_info_inits.size()); \
-            for (const auto & init : field_info_inits) \
-                res.field_infos.push_back(FieldInfo{String(init.name), init.path, init.type, init.description, init.flags, &init.ops(), init.data_offset}); \
+            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
+            _Pragma("clang diagnostic pop") \
             /* Build name -> index and data offset -> index maps for fast lookups */ \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
@@ -1773,26 +1765,30 @@ struct SettingFieldInfoInit
 /// Uses typed-array offsets from the constexpr layout.
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    SettingFieldInfoInit{ \
-        #NAME, \
-        "", \
-        #TYPE, \
-        DESCRIPTION, \
-        static_cast<UInt64>(FLAGS), \
-        &settingFieldOps<SettingField##TYPE>, \
-        offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
-    },
+    res.field_infos.emplace_back( \
+        FieldInfo\
+        { \
+            #NAME, \
+            "", \
+            #TYPE, \
+            DESCRIPTION, \
+            static_cast<UInt64>(FLAGS), \
+            &settingFieldOps<SettingField##TYPE>(), \
+            offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
+        });
 
 /// Generate a FieldInfo entry for a setting with a config file path
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
-    SettingFieldInfoInit{ \
-        #NAME, \
-        PATH, \
-        #TYPE, \
-        DESCRIPTION, \
-        static_cast<UInt64>(FLAGS), \
-        &settingFieldOps<SettingField##TYPE>, \
-        offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
-    },
+    res.field_infos.emplace_back( \
+        FieldInfo\
+        { \
+            #NAME, \
+            PATH, \
+            #TYPE, \
+            DESCRIPTION, \
+            static_cast<UInt64>(FLAGS), \
+            &settingFieldOps<SettingField##TYPE>(), \
+            offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
+        });
 }

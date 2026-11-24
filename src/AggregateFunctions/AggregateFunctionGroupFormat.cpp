@@ -96,11 +96,12 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        new (place) GroupFormatData;
-        auto & state = data(place);
-        state.columns.reserve(argument_types.size());
+        /// Build the columns first, so that nothing is left in `place` if an allocation throws.
+        MutableColumns columns;
+        columns.reserve(argument_types.size());
         for (const auto & type : argument_types)
-            state.columns.emplace_back(type->createColumn());
+            columns.emplace_back(type->createColumn());
+        new (place) GroupFormatData{std::move(columns)};
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -184,7 +185,7 @@ public:
             const auto & column = state.columns[i];
             const auto & type = argument_types[i];
             auto serialization = type->getDefaultSerialization();
-            NativeWriter::writeData(*serialization, column->getPtr(), buf, nullptr, 0, num_rows, serialization_protocol_version);
+            NativeWriter::writeData(*serialization, column->getPtr(), buf, std::nullopt, 0, num_rows, serialization_protocol_version);
         }
     }
 

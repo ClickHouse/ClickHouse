@@ -139,8 +139,6 @@ Chunk FileLogSource::generate()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
-    const Field table_name = storage.getStorageID().getTableName();
-
     size_t failed_poll_attempts = 0;
 
     Stopwatch watch;
@@ -159,7 +157,7 @@ Chunk FileLogSource::generate()
             {
                 virtual_columns[0]->insert(file_name);
                 virtual_columns[1]->insert(offset);
-                virtual_columns[2]->insert(table_name);
+                virtual_columns[2]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)

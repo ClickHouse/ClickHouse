@@ -16,6 +16,7 @@
 
 #include <functional>
 #include <limits>
+#include <tuple>
 #include <vector>
 
 namespace DB::ErrorCodes
@@ -25,6 +26,9 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONVERT_TYPE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int UNKNOWN_LOAD_BALANCING;
 }
 
 namespace
@@ -319,7 +323,107 @@ GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
 
     /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
     ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
+    ASSERT_THROW(seconds.parseFromString("-1"), DB::Exception);
+    ASSERT_THROW(seconds.parseFromString("9223372036854.775"), DB::Exception);
+    ASSERT_EQ(seconds.totalSeconds(), 300);
+
+    seconds.parseFromString("9223372036854");
+    ASSERT_GT(seconds.totalSeconds(), 0);
 }
+
+GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
+{
+    auto wire = [](const String & value)
+    {
+        WriteBufferFromOwnString out;
+        BaseSettingsHelpers::writeString("max_execution_time", out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags{}, out);
+        BaseSettingsHelpers::writeString(value, out);
+        BaseSettingsHelpers::writeString("", out); /// end of settings
+        return out.str();
+    };
+
+    for (const String & value : {String("-1"), String("9223372036854.775")})
+    {
+        const String bytes = wire(value);
+        ReadBufferFromString in(bytes);
+        Settings settings;
+        try
+        {
+            settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            FAIL() << value << " was accepted";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
+    const String bytes = wire("60");
+    ReadBufferFromString in(bytes);
+    Settings settings;
+    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    ASSERT_TRUE(settings.isChanged("max_execution_time"));
+    ASSERT_EQ(settings.get("max_execution_time"), Field(Float64(60)));
+}
+
+GTEST_TEST(Settings, SkipInvalidValuesKeepsTheDefaultsAndReadsTheRest)
+{
+    /// The settings a server of an older version sends in `Hello` may hold values this version rejects.
+    using Entry = std::tuple<std::string_view, BaseSettingsHelpers::Flags, std::string_view>;
+    auto wire = [](std::initializer_list<Entry> entries)
+    {
+        WriteBufferFromOwnString out;
+        for (const auto & [name, flags, value] : entries)
+        {
+            BaseSettingsHelpers::writeString(name, out);
+            BaseSettingsHelpers::writeFlags(flags, out);
+            BaseSettingsHelpers::writeString(value, out);
+        }
+        BaseSettingsHelpers::writeString("", out); /// end of settings
+        return out.str();
+    };
+
+    auto read_error_code = [](const String & bytes, bool skip_invalid_values)
+    {
+        ReadBufferFromString in(bytes);
+        Settings settings;
+        try
+        {
+            settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS, skip_invalid_values);
+        }
+        catch (const Exception & e)
+        {
+            return e.code();
+        }
+        return 0;
+    };
+
+    const String bytes = wire({
+        {"max_execution_time", {}, "-1"},
+        {"max_block_size", {}, "0"}, /// `NonZeroUInt64` assigns the value before it rejects it.
+        {"log_queries", {}, "maybe"},
+        {"max_threads", {}, "4"},
+    });
+    ReadBufferFromString in(bytes);
+    Settings settings;
+    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS, /* skip_invalid_values= */ true);
+    const SettingsChanges changes = settings.changes();
+    ASSERT_EQ(changes.size(), 1u);
+    ASSERT_EQ(changes[0].name, "max_threads");
+    ASSERT_EQ(changes[0].value, Field(UInt64(4)));
+    ASSERT_FALSE(settings.isChanged("max_execution_time"));
+    ASSERT_FALSE(settings.isChanged("max_block_size"));
+    ASSERT_EQ(settings.get("max_block_size"), Settings().get("max_block_size"));
+    ASSERT_FALSE(settings.isChanged("log_queries"));
+
+    /// The default read stays strict; an important setting and other error codes are not skipped.
+    ASSERT_EQ(read_error_code(bytes, false), ErrorCodes::BAD_ARGUMENTS);
+    ASSERT_EQ(read_error_code(wire({{"log_queries", {}, "maybe"}}), false), ErrorCodes::CANNOT_PARSE_BOOL);
+    ASSERT_EQ(read_error_code(wire({{"max_execution_time", BaseSettingsHelpers::Flags::IMPORTANT, "-1"}}), true), ErrorCodes::BAD_ARGUMENTS);
+    ASSERT_EQ(read_error_code(wire({{"load_balancing", {}, "nonsense"}}), true), ErrorCodes::UNKNOWN_LOAD_BALANCING);
+}
+
 GTEST_TEST(SettingsCompatibility, MarkChangedByCompatibilityAsUnchangedKeepsTheValues)
 {
     /// The client passes such a Settings object to `Connection::sendQuery`: the values that
@@ -676,4 +780,34 @@ GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
     ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(4096)));
     ASSERT_EQ(settings.get("totals_auto_threshold"), Field(0.25));
     ASSERT_TRUE(in.eof());
+}
+
+
+GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
+{
+    /// A per-query settings block arrives over the native TCP protocol and, in interserver mode, is
+    /// decoded by `Settings::read` before the interserver hash is checked. With `STRINGS_WITH_FLAGS`,
+    /// a built-in setting marked `CUSTOM` is parsed via `SettingFieldCustom::parseFromString` ->
+    /// `Field::restoreFromDump` -> `readQuoted`. An exponent-form decimal dump builds a `Decimal`
+    /// scale that, before the fix, bypassed the binary reader's check and reached the decimal text
+    /// writer (a fixed-size stack buffer) with an oversized scale. The scale must be rejected while
+    /// reading the settings, not formatted later.
+    WriteBufferFromOwnString out;
+    BaseSettingsHelpers::writeString("max_block_size", out);
+    BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+    BaseSettingsHelpers::writeString("Decimal64_'1e-1000'", out);
+    BaseSettingsHelpers::writeString("", out); /// end of settings
+
+    const String wire = out.str();
+    Settings settings;
+    ReadBufferFromString in(wire);
+    try
+    {
+        settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+        FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 }

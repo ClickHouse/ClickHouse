@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: atomic POPULATE intermittently duplicates rows, https://github.com/ClickHouse/ClickHouse/issues/124446
+
 -- Atomic CREATE MATERIALIZED VIEW ... POPULATE must read the source from the pinned local snapshot even
 -- when parallel-replica / distributed insert-select settings are enabled on the query. The pinned
 -- snapshot lives only in this server's contexts, so if the internal INSERT ... SELECT were dispatched to

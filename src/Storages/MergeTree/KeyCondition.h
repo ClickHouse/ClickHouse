@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Core/SortDescription.h>
@@ -98,7 +97,7 @@ public:
 
     struct BloomFilterData
     {
-        using HashesForColumns = std::vector<VectorWithMemoryTracking<uint64_t>>;
+        using HashesForColumns = std::vector<std::vector<uint64_t>>;
         HashesForColumns hashes_per_column;
         /// Subset of RPNElement::key_columns.
         std::vector<std::size_t> key_columns;
@@ -112,7 +111,7 @@ public:
         /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
         /// value set intersect the two sequences in one pass instead of searching for each hash
         /// separately. Returns true if any of them may be present.
-        virtual bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) = 0;
+        virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
@@ -150,7 +149,8 @@ public:
     BoolMask checkInHyperrectangle(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_data_types) const;
+        const DataTypes & sparse_data_types,
+        const DataTypes & key_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -177,6 +177,7 @@ public:
     ///      Information about the entire prefix covered by `equal_boundaries_mask` must be specified.
     /// `sparse_left_keys` and `sparse_right_keys` contain only 3 fields each, corresponding to columns (1, 3, 4).
     /// `sparse_data_types` contain only 3 data types each, corresponding to columns (1, 3, 4).
+    /// `key_types` are the types of all key columns, indexed by key column position.
     /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
     /// partition minmax), indexed by full key column position. A key without a bound defaults to (-inf, +inf).
     /// `sparse_key_indices` may also contain indices >= `equal_boundaries_mask.size()` (e.g. key columns not
@@ -188,6 +189,7 @@ public:
         const FieldRef * sparse_left_keys,
         const FieldRef * sparse_right_keys,
         const DataTypes & sparse_data_types,
+        const DataTypes & key_types,
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
         const Hyperrectangle * key_bounds = nullptr) const;
@@ -267,8 +269,7 @@ public:
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
-        size_t first_function_number,
-        const DataTypePtr & key_type,
+        DataTypePtr current_type,
         bool single_point = false);
 
     /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
@@ -431,10 +432,6 @@ public:
         /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
 
-        /// The number of the first function of `monotonic_functions_chain`, or of the chains of `set_index` in mapping
-        /// order. Assigned when the condition is built, it names the cached results of the functions (see `applyFunction`).
-        size_t first_function_number = 0;
-
         std::optional<BloomFilterData> bloom_filter_data;
     };
 
@@ -530,7 +527,7 @@ public:
     bool hasOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
+                                std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
 
     /// Split the KeyCondition into single-column conditions AND-ed together, plus a remaining
     /// multi-column KeyCondition.
@@ -540,7 +537,7 @@ public:
     /// as the original KeyCondition. E.g. when calling checkInHyperrectangle on the single-column
     /// KeyCondition-s, the passed hyperrectangle must have as many elements as the original key size,
     /// not just one element.
-    void extractSingleColumnConditions(VectorWithMemoryTracking<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const;
+    void extractSingleColumnConditions(std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const;
 
     /// List key columns that are actually used in the condition. E.g. condition `x AND y` doesn't use column `z`.
     std::unordered_set<size_t> getUsedColumns() const;
@@ -563,7 +560,7 @@ private:
     bool mayReadNullKeyValue(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_key_types) const;
+        const DataTypes & key_types) const;
 
     /// The atoms extracted from one predicate leaf, which become one element of the RPN: none makes
     /// `FUNCTION_UNKNOWN`, one is the element itself, and several make a `FUNCTION_ATOM_GROUP` (see
@@ -580,9 +577,6 @@ private:
         const ExpressionActionsPtr key_expr;
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
-        /// Filter columns named like a node the key computes (not like a column it reads).
-        /// An atom reading one of them is not analyzed against this key.
-        const NameSet columns_named_like_key_expressions;
         /// If true, an `IN` atom whose set is not built yet is declined instead of building it.
         /// Analysis passes that are not allowed to execute a user subquery set this.
         const bool require_ready_sets = false;
@@ -909,7 +903,6 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetAtomCandidate candidate,
-        bool allow_relaxed_pruning,
         const DataTypePtr & has_element_type);
 
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side
@@ -1041,4 +1034,8 @@ private:
 /// cast to that type, when the two are compared in `comparison_type`. See the definition.
 bool floatValuesMissKeyValues(
     ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type, const DataTypePtr & comparison_type);
+
+/// Errors that must still fail the query when an index evaluates an expression on values the query did not ask about.
+bool isQueryOuterGuardError(int code);
+
 }
