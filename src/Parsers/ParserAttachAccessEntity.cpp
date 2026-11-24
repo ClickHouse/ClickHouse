@@ -1,4 +1,5 @@
 #include <Parsers/ParserAttachAccessEntity.h>
+#include <Parsers/Access/ParserCreateQueryMaskingRuleQuery.h>
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ParserCreateRowPolicyQuery.h>
@@ -17,6 +18,7 @@ bool ParserAttachAccessEntity::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserCreateRowPolicyQuery create_policy_p;
     ParserCreateMaskingPolicy create_masking_policy_p;
     ParserCreateQuotaQuery create_quota_p;
+    ParserCreateQueryMaskingRuleQuery create_query_masking_rule_p;
     ParserCreateSettingsProfileQuery create_profile_p;
     ParserGrantQuery grant_p;
 
@@ -25,13 +27,14 @@ bool ParserAttachAccessEntity::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     create_policy_p.useAttachMode();
     create_masking_policy_p.useAttachMode();
     create_quota_p.useAttachMode();
+    create_query_masking_rule_p.useAttachMode();
     create_profile_p.useAttachMode();
     grant_p.useAttachMode();
 
     return create_user_p.parse(pos, node, expected) || create_role_p.parse(pos, node, expected)
         || create_policy_p.parse(pos, node, expected) || create_masking_policy_p.parse(pos, node, expected)
-        || create_quota_p.parse(pos, node, expected) || create_profile_p.parse(pos, node, expected)
-        || grant_p.parse(pos, node, expected);
+        || create_quota_p.parse(pos, node, expected) || create_query_masking_rule_p.parse(pos, node, expected)
+        || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected);
 }
 
 }

@@ -1696,6 +1696,8 @@ The [`system.events`](/reference/system-tables/events) table has counter `QueryM
 For distributed queries each server has to be configured separately, otherwise, subqueries passed to other
 nodes will be stored without masking.
 
+Rules can also be created without access to the server configuration with [`CREATE QUERY MASKING RULE`](/reference/statements/create/query-masking-rule); they are applied after the rules from the configuration.
+
 ## remote_servers {#remote_servers}
 Configuration of clusters used by the [Distributed](/reference/engines/table-engines/special/distributed) table engine and by the `cluster` table function.
 

@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_QUOTA;
     extern const int THERE_IS_NO_PROFILE;
     extern const int UNKNOWN_MASKING_POLICY;
+    extern const int UNKNOWN_QUERY_MASKING_RULE;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
@@ -36,7 +37,7 @@ String AccessEntityTypeInfo::formatEntityNameWithType(const String & entity_name
 
 const AccessEntityTypeInfo & AccessEntityTypeInfo::get(AccessEntityType type_)
 {
-    static constexpr auto make_info = [](const char * raw_name_, const char * plural_raw_name_, char unique_char_, int not_found_error_code_)
+    static constexpr auto make_info = [](const char * raw_name_, const char * plural_raw_name_, char unique_char_, int not_found_error_code_, bool with_aliases = true)
     {
         String init_names[2] = {raw_name_, plural_raw_name_};
         String init_aliases[2];
@@ -46,7 +47,7 @@ const AccessEntityTypeInfo & AccessEntityTypeInfo::get(AccessEntityType type_)
             String & init_alias = init_aliases[i];
             toUpperASCII(init_name);
             std::replace(init_name.begin(), init_name.end(), '_', ' ');
-            if (auto underscore_pos = init_name.find_first_of(' '); underscore_pos != String::npos)
+            if (auto underscore_pos = init_name.find_first_of(' '); with_aliases && underscore_pos != String::npos)
                 init_alias = init_name.substr(underscore_pos + 1);
         }
         String init_name_for_output_with_entity_name = init_names[0];
@@ -84,6 +85,11 @@ const AccessEntityTypeInfo & AccessEntityTypeInfo::get(AccessEntityType type_)
         case AccessEntityType::MASKING_POLICY:
         {
             static const auto info = make_info("MASKING_POLICY", "MASKING_POLICIES", 'M', ErrorCodes::UNKNOWN_MASKING_POLICY);
+            return info;
+        }
+        case AccessEntityType::QUERY_MASKING_RULE:
+        {
+            static const auto info = make_info("QUERY_MASKING_RULE", "QUERY_MASKING_RULES", 'K', ErrorCodes::UNKNOWN_QUERY_MASKING_RULE, /*with_aliases=*/false);
             return info;
         }
         case AccessEntityType::MAX: break;

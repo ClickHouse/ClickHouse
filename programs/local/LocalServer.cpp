@@ -1364,6 +1364,8 @@ void LocalServer::setupUsers()
         /// Use in-memory storage for the temporary/ephemeral mode (--tmp).
         access_control.addMemoryStorage(MemoryAccessStorage::STORAGE_TYPE, /* allow_backup= */ false);
     }
+
+    access_control.ensureQueryMaskingRulesRead();
 }
 
 void LocalServer::connect()

@@ -44,6 +44,7 @@
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
+#include <Parsers/Access/ASTCreateQueryMaskingRuleQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
@@ -282,6 +283,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTCreateMaskingPolicyQuery>())
     {
         interpreter_name = "InterpreterCreateMaskingPolicyQuery";
+    }
+    else if (query->as<ASTCreateQueryMaskingRuleQuery>())
+    {
+        interpreter_name = "InterpreterCreateQueryMaskingRuleQuery";
     }
     else if (query->as<ASTCreateSettingsProfileQuery>())
     {

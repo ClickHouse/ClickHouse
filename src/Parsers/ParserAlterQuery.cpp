@@ -1330,6 +1330,7 @@ These `ALTER` statements modify entities related to role-based access control:
 | [QUOTA](/reference/statements/alter/quota)                       |
 | [ROW POLICY](/reference/statements/alter/row-policy)             |
 | [MASKING POLICY](/reference/statements/alter/masking-policy)     |
+| [QUERY MASKING RULE](/reference/statements/alter/query-masking-rule) |
 | [SETTINGS PROFILE](/reference/statements/alter/settings-profile) |
 
 | Statement                                                                             | Description                                                                               |
@@ -1429,7 +1430,7 @@ If you need ordered mutation apply, you can still issue one `MATERIALIZE INDEX` 
 ALTER TABLE [db.]name [ON CLUSTER cluster] action [, action ...]
 ALTER DATABASE [db.]name [ON CLUSTER cluster] action
 ALTER NAMED COLLECTION ...
-ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
+ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUERY MASKING RULE | QUOTA | SETTINGS PROFILE ...
 )",
         .related = {
             "ALTER TABLE ... COLUMN", "ALTER TABLE ... PARTITION", "ALTER TABLE ... DELETE", "ALTER TABLE ... UPDATE",

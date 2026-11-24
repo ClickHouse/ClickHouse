@@ -11,6 +11,7 @@
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/Access/ASTCreateQueryMaskingRuleQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
@@ -50,6 +51,7 @@ static bool isAccessControlQuery(const ASTPtr & query)
 {
     return query->as<ASTCreateUserQuery>()
         || query->as<ASTCreateQuotaQuery>()
+        || query->as<ASTCreateQueryMaskingRuleQuery>()
         || query->as<ASTCreateRoleQuery>()
         || query->as<ASTCreateRowPolicyQuery>()
         || query->as<ASTCreateSettingsProfileQuery>()

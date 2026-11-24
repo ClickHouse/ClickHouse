@@ -262,6 +262,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
 
+        if (max_flags.contains(AccessType::QUERY_MASKING_RULE_ADMIN))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "query_masking_rules");
+
         if (max_flags.contains(AccessType::SYSTEM_JEMALLOC))
         {
             static constexpr std::string_view jemalloc_tables[] = {

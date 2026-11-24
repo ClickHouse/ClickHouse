@@ -31,6 +31,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
+#include <Parsers/Access/ParserCreateQueryMaskingRuleQuery.h>
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ParserCreateRowPolicyQuery.h>
@@ -76,6 +77,7 @@ static bool parseCreateAccessEntityQuery(IParser::Pos & pos, ASTPtr & node, Expe
     ParserCreateQuotaQuery create_quota_p;
     ParserCreateRowPolicyQuery create_row_policy_p;
     ParserCreateMaskingPolicy create_masking_policy_p;
+    ParserCreateQueryMaskingRuleQuery create_query_masking_rule_p;
     ParserCreateSettingsProfileQuery create_settings_profile_p;
 
     return create_user_p.parse(pos, node, expected)
@@ -83,6 +85,7 @@ static bool parseCreateAccessEntityQuery(IParser::Pos & pos, ASTPtr & node, Expe
         || create_quota_p.parse(pos, node, expected)
         || create_row_policy_p.parse(pos, node, expected)
         || create_masking_policy_p.parse(pos, node, expected)
+        || create_query_masking_rule_p.parse(pos, node, expected)
         || create_settings_profile_p.parse(pos, node, expected);
 }
 

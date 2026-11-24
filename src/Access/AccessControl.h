@@ -44,6 +44,7 @@ class EnabledRowPolicies;
 class RowPolicyCache;
 class EnabledQuota;
 class QuotaCache;
+class QueryMaskingRulesCache;
 struct QuotaUsage;
 struct SettingsProfilesInfo;
 class EnabledSettings;
@@ -115,6 +116,10 @@ public:
 
     /// Reloads and updates all access entities.
     void reload(ReloadMode reload_mode) override;
+
+    /// Reads the query masking rules and keeps SensitiveDataMasker up to date with them.
+    /// Call it after the access storages are added.
+    void ensureQueryMaskingRulesRead();
 
     using OnChangedHandler = AccessChangesNotifier::OnChangedHandler;
 
@@ -347,6 +352,7 @@ private:
     std::unique_ptr<OneTimePasswordUsageTracker> one_time_password_usage_tracker;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
     std::unique_ptr<AccessChangesNotifier> changes_notifier;
+    std::unique_ptr<QueryMaskingRulesCache> query_masking_rules_cache;
     std::unique_ptr<PasswordComplexityRules> password_rules;
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;

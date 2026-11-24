@@ -136,6 +136,13 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             break;
         }
 
+        case AccessEntityType::QUERY_MASKING_RULE:
+        {
+            origin = "query_masking_rules";
+            expr = "name";
+            break;
+        }
+
         case AccessEntityType::MAX:
             break;
     }
