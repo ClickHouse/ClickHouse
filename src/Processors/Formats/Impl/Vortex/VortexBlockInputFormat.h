@@ -18,18 +18,10 @@
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <mutex>
 #include <optional>
-
-namespace arrow
-{
-class Array;
-class Schema;
-}
-namespace arrow::io
-{
-class RandomAccessFile;
-}
 
 struct FFI_VortexRuntime;
 struct FFI_VortexReader;
@@ -41,12 +33,17 @@ struct ArrowArray;
 namespace DB::Vortex
 {
 struct VortexReadContext;
+class VortexFile;
+}
+
+namespace DB::ArrowIPC
+{
+struct ArrowSchema;
 }
 
 namespace DB
 {
 
-class ArrowColumnToCHColumn;
 class ShutdownHelper;
 
 /// Reads Vortex files (https://docs.vortex.dev/) through the Rust bindings in
@@ -105,7 +102,7 @@ private:
         /// The row numbers of the piece, only turned into a `ChunkInfoRowNumbers` when `read`
         /// returns it, so that the filters of all the pieces of a chunk never exist at once. Null
         /// when nobody needs the row numbers.
-        std::shared_ptr<arrow::Array> row_numbers;
+        ColumnPtr row_numbers;
     };
 
     struct DeliveredChunk
@@ -170,26 +167,22 @@ private:
     /// allowed to call back into the library.
     void setBackgroundException(std::exception_ptr exception, bool cancel_scan = true) noexcept;
 
-    std::unique_ptr<ArrowColumnToCHColumn> createConverter() const;
-
-    /// Takes a converter out of the pool, creating one if the pool is empty, and returns it there
-    /// afterwards. They are pooled because each caches dictionaries and cannot be used by two
-    /// threads at once.
-    std::unique_ptr<ArrowColumnToCHColumn> takeConverter();
-    void returnConverter(std::unique_ptr<ArrowColumnToCHColumn> converter);
-
-    std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
+    std::unique_ptr<Vortex::VortexFile> file;
     std::unique_ptr<Vortex::VortexReadContext> read_context;
     FFI_VortexRuntime * runtime = nullptr;
     FFI_VortexReader * reader = nullptr;
-    std::shared_ptr<arrow::Schema> file_schema;
+    std::shared_ptr<const ArrowIPC::ArrowSchema> file_schema;
+    /// The GeoParquet geometry columns of the file's schema metadata, when `input_format_parquet_allow_geoparquet_parser` is on.
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
+    /// The requested types of the header columns, by name: the hints the decoder reads the batches with.
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_types;
 
     /// Cancellation can arrive on any thread, so the lifetime of the scan handle is serialized.
     std::mutex scan_mutex;
     FFI_VortexScan * scan TSA_GUARDED_BY(scan_mutex) = nullptr;
     /// Set before the first task exists and cleared after the last one has stopped, so the tasks
     /// can read it without holding a lock.
-    std::shared_ptr<arrow::Schema> scan_schema;
+    std::shared_ptr<const ArrowIPC::ArrowSchema> scan_schema;
 
     std::mutex delivery_mutex;
     std::condition_variable delivery_cv;
@@ -203,9 +196,6 @@ private:
     std::exception_ptr background_exception TSA_GUARDED_BY(delivery_mutex);
     /// The pieces of the chunk `read` took last that it has not returned yet. Only `read` uses it.
     DequeWithMemoryTracking<DeliveredPiece> pending_pieces;
-
-    std::mutex converters_mutex;
-    VectorWithMemoryTracking<std::unique_ptr<ArrowColumnToCHColumn>> converters TSA_GUARDED_BY(converters_mutex);
 
     /// Atomic rather than guarded by `delivery_mutex`: the library reports new tasks from inside a
     /// running task, and that thread may already be holding the mutex.
@@ -272,14 +262,14 @@ private:
 
     const FormatSettings format_settings;
 
-    std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
+    std::unique_ptr<Vortex::VortexFile> file;
     std::unique_ptr<Vortex::VortexReadContext> read_context;
     /// Reading a footer takes a few small reads, so the calling thread runs this runtime itself.
     FFI_VortexRuntime * runtime = nullptr;
     FFI_VortexReader * reader = nullptr;
-    std::shared_ptr<arrow::Schema> file_schema;
+    std::shared_ptr<const ArrowIPC::ArrowSchema> file_schema;
 
-    /// Never set: it only exists because the Arrow file wrapper takes a cancellation flag.
+    /// Never set: it only exists because reading a file into memory takes a cancellation flag.
     std::atomic<int> is_stopped{0};
 };
 
