@@ -61,8 +61,19 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
+    /// Every range is read by one reader per column group; the readers of a range are consecutive inputs.
+    size_t num_column_groups = 1;
+    size_t num_ranges = 0;
+    size_t next_range_to_process = 0;
+    VectorWithMemoryTracking<InputPort *> input_ports;
+    /// For every column of the output header: the column group that reads it and its position in that group's header.
+    VectorWithMemoryTracking<std::pair<size_t, size_t>> output_column_sources;
+
     Processors buildReaders();
     RangesInDataParts splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const;
+    VectorWithMemoryTracking<Names> splitColumnsIntoGroups(const RangesInDataParts & parts_with_ranges) const;
+    Status prepareColumnGroups(const UpdatedInputPorts & updated_input_ports);
+    Chunk joinColumnGroups(size_t range);
 };
 
 }

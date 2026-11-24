@@ -24,6 +24,9 @@ public:
     /// and a partial result still needs them, so such a source must not stop on `CancelReason::PartialResult`.
     void keepReadingOnPartialResult() { keep_reading_on_partial_result = true; }
 
+    /// A reader of some of the columns of rows that another reader also reads reports only the bytes it reads.
+    void doNotCountReadRows() { count_read_rows = false; }
+
     void cancel(CancelReason reason) noexcept override;
     using ISource::cancel;
 
@@ -41,6 +44,7 @@ private:
     /// Formatted once: `tryGenerate` is called for every block, and the span is usually not recorded.
     const std::string span_name;
     bool keep_reading_on_partial_result = false;
+    bool count_read_rows = true;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

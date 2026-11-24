@@ -39,7 +39,10 @@ QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilder
     auto transform = std::make_shared<LazyMaterializingTransform>(
         input_headers.front(), input_headers.back(), lazy_materializing_rows, dataflow_cache_updater, index_column_name);
     transform->setPassThrough(pass_through);
-    return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), transform, &processors);
+    auto res = QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), transform, &processors);
+    if (lazy_materializing_rows)
+        lazy_materializing_rows->num_threads = res->getNumThreads();
+    return res;
 }
 
 void JoinLazyColumnsStep::updateOutputHeader()

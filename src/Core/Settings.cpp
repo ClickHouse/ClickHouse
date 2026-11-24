@@ -8463,6 +8463,10 @@ in between. Takes effect only if `query_plan_optimize_lazy_materialization` is e
         {"25.12", 100, 10000, "Increase the limit after performance improvement"}, \
         {"25.11", 10, 100, "More optimal"}, \
         {"25.4", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"}) \
+    DECLARE(UInt64, query_plan_max_column_groups_for_lazy_materialization, 8, R"(
+The maximum number of groups into which lazy materialization splits the columns it reads from `MergeTree` when it reads few ranges of rows. Every group of every range is read by a reader of its own, so several threads read the columns of the same rows at once. `0` and `1` disable the split.
+)", 0, \
+        {"26.12", 1, 8, "New setting: lazy materialization reads the columns of a few `MergeTree` rows with several threads."}) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
 Optimize reading with FINAL from ReplacingMergeTree by building a set of primary keys and using it for index analysis.
 )", 0, \
