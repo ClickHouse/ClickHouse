@@ -78,6 +78,15 @@ UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryIn
     return node_name_to_input_node_column;
 }
 
+FilterDAGInfo FilterDAGInfo::clone() const
+{
+    FilterDAGInfo filter;
+    filter.actions = actions.clone();
+    filter.column_name = column_name;
+    filter.do_remove_column = do_remove_column;
+    return filter;
+}
+
 PrewhereInfo PrewhereInfo::clone() const
 {
     PrewhereInfo prewhere_info;

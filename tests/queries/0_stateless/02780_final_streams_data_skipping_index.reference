@@ -5,7 +5,7 @@ FORMAT LineAsString;
 (Expression)
 ExpressionTransform × 2
   (Filter)
-  FilterTransform × 2
+  FilterTransform × 4
     (ReadFromMergeTree)
     ExpressionTransform × 2
       AggregatingSortedTransform 2 → 1
@@ -24,7 +24,7 @@ FORMAT LineAsString;
 (Expression)
 ExpressionTransform × 2
   (Filter)
-  FilterTransform × 2
+  FilterTransform × 4
     (ReadFromMergeTree)
     ExpressionTransform × 2
       AggregatingSortedTransform 2 → 1

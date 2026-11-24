@@ -81,6 +81,8 @@ struct FilterDAGInfo
 
     [[nodiscard]] std::string dump() const;
 
+    [[nodiscard]] FilterDAGInfo clone() const;
+
     void serialize(QueryPlanStepSerialization & ctx) const;
     static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
