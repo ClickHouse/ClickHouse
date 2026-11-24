@@ -44,7 +44,6 @@ public:
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
     bool hasStaticStructure() const override;
-    void setPartitionBy(const ASTPtr & partition_by_) override;
 
     static void updateStructureAndFormatArgumentsIfNeeded(
         ASTs & args,

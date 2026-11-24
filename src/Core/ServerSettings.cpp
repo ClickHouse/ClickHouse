@@ -542,38 +542,9 @@ A value of `0` means all cores.
 The delay during which a dropped table can be restored using the [`UNDROP`](/reference/statements/undrop) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 )", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-[`database_catalog_unused_dir_hide_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
-removing all access rights. It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "immediately".
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previously "hidden"
-(see [database_catalog_unused_dir_hide_timeout_sec](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec))
-and this directory was not modified for last
-[`database_catalog_unused_dir_rm_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
-It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 30 days.
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-Sets scheduling period of the task.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 1 day.
-</Note>
-)", 0) \
+    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task revoked all access rights from an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task removed an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the scheduling period of the task. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     DECLARE(UInt64, database_catalog_shutdown_table_concurrency, 0, R"(The size of the threadpool used for shutting down tables when the server is stopping. Zero means the number of threads is equal to the number of cores.)", 0) \
@@ -1441,7 +1412,7 @@ The threshold ratio for purging jemalloc relative to the memory available to Cli
 Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
 )", 0) \
     DECLARE(Bool, memory_worker_correct_memory_tracker, 1, R"(
-Whether the background memory worker corrects the global memory tracker, on every tick, from an external measurement of the memory the process really uses: the cgroup memory usage when cgroups are available (see `memory_worker_use_cgroup`), otherwise jemalloc's `stats.resident`.
+Whether the background memory worker corrects the global memory tracker, on every tick, from an external measurement of the memory the process really uses: the cgroup memory usage when cgroups are available (see `memory_worker_use_cgroup`), otherwise jemalloc's `stats.resident`. The tracker is set to the maximum of this measurement and jemalloc's `stats.allocated`, so that memory which is allocated but not touched yet, and therefore not resident, stays accounted, and concurrent queries cannot be admitted past `max_server_memory_usage` before their pages are touched.
 
 The global memory tracker is a counter: allocations add to it and deallocations subtract from it. Any accounting asymmetry stays in it for the lifetime of the process, because nothing else lowers it, and an upward drift is never worked off — the memory it describes has already been freed. Once the drift alone exceeds `max_server_memory_usage`, every allocation fails, down to the zero-byte check at the start of a connection, and the server rejects all queries while using a fraction of its limit. Correcting from a measurement bounds the lifetime of such a drift to one tick of the worker (`memory_worker_period_ms`, by default 50 ms when reading from cgroups and 100 ms when reading from jemalloc).
 

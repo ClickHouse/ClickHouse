@@ -122,6 +122,8 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
         {
             response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
             response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
+            if (const auto details = usage->getObject("prompt_tokens_details"))
+                response.cache_read_tokens = details->optValue<UInt64>("cached_tokens", 0);
         }
     }
 

@@ -668,7 +668,8 @@ Wide part with Full storage. The persisted mutation commands and their
 versions are unchanged.
 Set to false to execute each command separately.
 )", 0, \
-        {"26.10", false, true, "Enable row-mask update coalescing by default"}) \
+        {"26.10", true, true, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", false, true, "Enable row-mask update coalescing by default"}) \
     DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
 Maximum number of keys in one coalesced row-mask update. The effective limit
 also respects `max_rows_in_set` in the background query settings. Values below
@@ -2457,8 +2458,8 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0, \
-        {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
-        {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \
+        {"26.7", "basic, uniq_v2", "basic, uniq_v2", "26.7 replaced `minmax, uniq` with `basic, uniq_v2` (`basic` is a superset of the deprecated `minmax`, `uniq_v2` has less overhead on inserts, merges and memory). The change is recorded at 26.4, so that `compatibility` with 26.4 to 26.6 does not bring back `minmax, uniq`."}, \
+        {"26.4", "", "basic, uniq_v2", "Enable auto statistics by default. 26.4 to 26.6 shipped `minmax, uniq`, but `compatibility` with these versions gives `basic, uniq_v2`: statistics affect only query planning, not results, and merging the large `uniq` states of every part makes query planning many times slower in newer versions."}, \
         {"25.10", "", "", "New setting"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing

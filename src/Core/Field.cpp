@@ -753,29 +753,40 @@ void writeText(const CustomType & x, WriteBuffer & buf)
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
-    assertChar('\'', buf);
+    String text;
+    readQuotedString(text, buf);
+    ReadBufferFromString in(text);
     T value{};
-    UInt32 scale = 0;
     int32_t exponent = 0;
     uint32_t max_digits = static_cast<uint32_t>(-1);
-    readDigits<true>(buf, value, max_digits, exponent, true);
-    if (exponent > 0)
+    bool has_digits = false;
+    if (!text.empty())
+        readDigits<true>(in, value, max_digits, exponent, true, &has_digits);
+    if (!has_digits || !in.eof())
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse decimal dump '{}'", text);
+
+    /// `readDigits` drops trailing fractional zeroes, but the dump writes them to keep the scale.
+    size_t mantissa_end = std::min(text.find_first_of("eE"), text.size());
+    uint32_t trailing_zeroes = 0;
+    if (text.find('.') < mantissa_end)
+        while (text[mantissa_end - 1 - trailing_zeroes] == '0')
+            ++trailing_zeroes;
+    if (!mulPow10AddChecked(value.value, trailing_zeroes, typename T::NativeType(0)))
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+
+    /// An out-of-range scale overruns the decimal text writer.
+    Int64 total_exponent = static_cast<Int64>(exponent) - trailing_zeroes;
+    UInt32 scale = 0;
+    if (total_exponent > 0)
     {
-        scale = 0;
-        if (common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value))
+        if (!mulPow10AddChecked(value.value, static_cast<uint32_t>(std::min<Int64>(total_exponent, UINT32_MAX)), typename T::NativeType(0)))
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
-    else
-        scale = -exponent;
-    /// The scale comes from untrusted text: `restoreFromDump` is reached from the pre-auth native
-    /// settings reader for a `CUSTOM`-flagged setting (`SettingFieldCustom::parseFromString`), and an
-    /// exponent-form value such as `Decimal64_'1e-1000'` builds a scale that bypasses the binary
-    /// reader's check. An out-of-range scale later overruns a fixed-size buffer in the decimal text
-    /// writer, so reject it here, matching `readDecimalFieldBinary` and `DataTypeDecimalBase`.
-    if (scale > DecimalUtils::max_precision<T>)
+    else if (-total_exponent > static_cast<Int64>(DecimalUtils::max_precision<T>))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                        scale, DecimalUtils::max_precision<T>);
-    assertChar('\'', buf);
+                        -total_exponent, DecimalUtils::max_precision<T>);
+    else
+        scale = static_cast<UInt32>(-total_exponent);
     x = DecimalField<T>{value, scale};
 }
 

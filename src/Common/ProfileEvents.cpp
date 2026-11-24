@@ -1747,9 +1747,10 @@ The server successfully detected this situation and will download merged part fr
     M(AutomaticParallelReplicasDecidedWithoutBuildingPlan, "Number of times automatic parallel replicas decided against using parallel replicas at a boundary remembered from an earlier execution, without building a candidate plan to cost. The event saying why, such as `AutoParallelReplicasRejectedByCostModel`, is counted beside it", ValueType::Number) \
     M(AutoParallelReplicasOptimizationMicroseconds, "Time spent in the automatic parallel replicas optimization other than building the plan with parallel replicas", ValueType::Microseconds) \
     M(AutoParallelReplicasPlanBuildMicroseconds, "Time spent building the plan with parallel replicas that automatic parallel replicas compares against the local plan", ValueType::Microseconds) \
-    M(AutoParallelReplicasPlansNotComparable, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, or at a boundary remembered from building it earlier, because it could not match that plan with the local one well enough to compare or use it: for example, it could not pair their reads, or tell which read the replicas would split. The `AutoParallelReplicas` logger says which case it was", ValueType::Number) \
-    M(AutoParallelReplicasPlanWithoutParallelReplicas, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, because the planner did not use parallel replicas in it, for example for too few rows per replica or a correlated subquery. The `Planner` logger says why", ValueType::Number) \
-    M(AutoParallelReplicasNoStatistics, "Number of times automatic parallel replicas had no statistics yet, so it collected them instead of deciding", ValueType::Number) \
+    M(AutoParallelReplicasPlansNotComparable, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, or at a boundary remembered from building it earlier, because it could not match that plan with the local one well enough to compare or use it: for example, it could not pair their reads, or tell which read the replicas would split. The `AutoParallelReplicas` logger says which case it was. Also counted, beside `AutoParallelReplicasRetryDeferred`, when such a recent build is why the plan is not built again", ValueType::Number) \
+    M(AutoParallelReplicasPlanWithoutParallelReplicas, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, because the planner did not use parallel replicas in it, for example for too few rows per replica or a correlated subquery. The `Planner` logger says why. Also counted, beside `AutoParallelReplicasRetryDeferred`, when such a recent build is why the plan is not built again", ValueType::Number) \
+    M(AutoParallelReplicasRetryDeferred, "Number of times automatic parallel replicas did not build the plan with parallel replicas because building it for the same plan recently ended without a decision, and fewer than `automatic_parallel_replicas_undecided_retry_after_executions` executions have skipped it since. The event of that earlier outcome, such as `AutoParallelReplicasPlansNotComparable`, is counted beside it", ValueType::Number) \
+    M(AutoParallelReplicasNoStatistics, "Number of times automatic parallel replicas had no statistics yet, so it collected them instead of deciding. Also counted, beside `AutoParallelReplicasRetryDeferred`, when a recent collection that a step could not take part in, or that measured nothing, is why the plan with parallel replicas is not built again", ValueType::Number) \
     M(AutoParallelReplicasStatisticsDrifted, "Number of times the rows read from storage differed from the cached statistics by more than `automatic_parallel_replicas_statistics_drift_ratio`, so automatic parallel replicas recollected them instead of deciding", ValueType::Number) \
     M(AutoParallelReplicasCostModelEvaluated, "Number of times automatic parallel replicas reached the cost model and compared the local plan against the parallel replicas plan", ValueType::Number) \
     M(AutoParallelReplicasApplied, "Number of times automatic parallel replicas replaced the query plan with the parallel replicas one", ValueType::Number) \
@@ -1823,12 +1824,16 @@ The server successfully detected this situation and will download merged part fr
     \
     M(JoinBuildRowStoreMicroseconds, "Elapsed time transforming the right JOIN side payload into row-major format.", ValueType::Microseconds) \
     \
-    M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query.", ValueType::Number) \
+    M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query, including cache reads and writes.", ValueType::Number) \
     M(AIOutputTokens, "Total completion tokens consumed across all AI function calls in the query.", ValueType::Number) \
+    M(AICacheReadTokens, "Prompt tokens read from the provider cache, as reported by AI chat providers. Included in AIInputTokens.", ValueType::Number) \
+    M(AICacheWriteTokens, "Prompt tokens written to the provider cache, as reported by AI chat providers. Included in AIInputTokens.", ValueType::Number) \
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
     M(AIAPICallsRetried, "Number of AI provider requests retried after a transient failure.", ValueType::Number) \
     M(AIAPICallsFailed, "Number of AI provider requests that failed after all retries.", ValueType::Number) \
     M(AIAPICallsThrottled, "Number of AI provider requests rejected with HTTP 429 (Too Many Requests).", ValueType::Number) \
+    M(AIRequestMicroseconds, "Total time spent in AI provider requests, including failed attempts and response parsing, excluding retry backoff. Summed across threads.", ValueType::Microseconds) \
+    M(AIRetryBackoffMicroseconds, "Total time spent waiting before retries of failed AI provider requests. Summed across threads.", ValueType::Microseconds) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \

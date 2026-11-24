@@ -773,7 +773,9 @@ When reading an object from S3 (or an S3-compatible store such as GCS), check th
     DECLARE(Bool, azure_validate_etag_on_read, true, R"(
 When reading a blob from Azure Blob Storage through the `azureBlobStorage` / `azureBlobStorageCluster` table functions or the `AzureBlobStorage` table engine, pin every `GET` request to the generation of the blob that was observed when it was listed by sending its `ETag` in `If-Match`, and check the `ETag` of the response. A single file read issues many ranged `GET` requests; if the blob is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different generations of the blob and surface as a corrupted checksum or parse error. The size recorded at listing time is also used as the right bound of the read, so it is only correct for the generation it was recorded for. When a mismatch is detected the read fails with `AZURE_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read blobs that are being overwritten and can tolerate inconsistent reads.
 )", 0, \
-        {"26.10", false, true, "New setting to detect concurrent in-place overwrites of Azure blobs during a read by pinning every `GET` to the listed `ETag` with `If-Match` and validating the `ETag` of the response, like `s3_validate_etag_on_read` does for S3. `compatibility` with versions before 26.10 restores the previous behavior (no validation)."}) \
+        {"26.10", false, true, "The validation is enabled by default again: 26.9 does not have it."}, \
+        {"26.9", true, false, "26.9 does not have this validation, which was backported to 26.7 and 26.8 but not to 26.9."}, \
+        {"26.7", false, true, "New setting to detect concurrent in-place overwrites of Azure blobs during a read by pinning every `GET` to the listed `ETag` with `If-Match` and validating the `ETag` of the response, like `s3_validate_etag_on_read` does for S3. `compatibility` with earlier versions restores the previous behavior (no validation)."}) \
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0, \
@@ -3412,22 +3414,26 @@ Possible values:
     DECLARE(UInt64, http_max_fields, 1000, R"(
 Maximum number of fields in HTTP request headers, query parameters, and form data.
 )", 0, \
-        {"26.4", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
+        {"26.4", 1000, 1000, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of a field name in HTTP request headers, query parameters, and form data.
 )", 0, \
-        {"26.4", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
+        {"26.4", 4096, 4096, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of a field value in HTTP request headers, query parameters, and form data.
 )", 0) \
     DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
 Maximum total size of all HTTP request headers (names and values combined) in bytes.
 )", 0, \
-        {"26.4", 0, 10485760, "New setting to limit total HTTP request header size before authentication."}) \
+        {"26.4", 10485760, 10485760, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 0, 10485760, "New setting to limit total HTTP request header size before authentication."}) \
     DECLARE(Seconds, http_headers_read_timeout, 30, R"(
 Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
 )", 0, \
-        {"26.4", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."}) \
+        {"26.4", 30, 30, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."}) \
     DECLARE(Bool, http_skip_not_found_url_for_globs, true, R"(
 Skip URLs for globs with HTTP_NOT_FOUND error
 )", 0) \
@@ -3858,7 +3864,7 @@ Note, that `max_bytes_before_external_sort` is still respected, spilling to disk
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.
 )", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
@@ -4909,7 +4915,8 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
     DECLARE(UInt64, backup_s3_expired_token_retry_timeout_ms, 120000, R"(
 Maximum time in milliseconds to retry an S3 request whose response identifies `ExpiredToken` during backup or restore. Retries also stop at `backup_restore_s3_retry_attempts`. Zero disables these retries. AWS S3 `HEAD` responses expose only a generic HTTP status, so this retry does not cover `HEAD` metadata requests.
 )", 0, \
-        {"26.10", 0, 120000, "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."}) \
+        {"26.10", 120000, 120000, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", 0, 120000, "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."}) \
     DECLARE(UInt64, backup_restore_s3_retry_initial_backoff_ms, 25, R"(
 Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
 )", 0, \
@@ -7053,7 +7060,7 @@ Higher values raise peak memory when the Iceberg metadata files cache is disable
 
 Must be greater than zero; `1` decodes the manifests one at a time.
 )", 0, iceberg_delete_manifest_decode_concurrency, \
-        {"26.9", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}, \
+        {"26.9", 4, 4, "The change was backported to 26.8 and is recorded there."}, \
         {"26.8", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}) \
     DECLARE(NonZeroUInt64, iceberg_file_entries_queue_size, 100, R"(
 Capacity of the queue between the Iceberg data manifest decode tasks and the query, in data file entries.
@@ -8606,7 +8613,10 @@ Wait time to lock cache for space reservation in filesystem cache
     DECLARE(UInt64, filesystem_cache_wait_for_concurrent_download_timeout_milliseconds, 1000, R"(
 Maximum time to wait for a file segment which is being downloaded to the filesystem cache by a concurrent query. When the timeout is reached, the read bypasses the filesystem cache for that range and reads directly from remote storage, while the concurrent download continues to fill the cache. Value `0` means do not wait at all: bypass the cache immediately if the needed range is not downloaded yet. Lowering this value bounds the tail latency of cache-hit reads which would otherwise wait for another query's download pace at the cost of additional requests to remote storage.
 )", 0, \
-        {"26.8", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."}) \
+        {"26.8", 1000, 1000, "The change was backported to 26.3 and 26.5 and is recorded there."}, \
+        {"26.5", 60000, 1000, "The bounded wait is the default again: 26.4 does not have this setting."}, \
+        {"26.4", 1000, 60000, "26.4 does not have this setting, which was backported to 26.3 and 26.5 but not to 26.4."}, \
+        {"26.3", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."}) \
     DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0, \
@@ -9646,7 +9656,8 @@ If enabled and the schema-id of an Iceberg manifest file is already registered f
 
 The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 )", 0, \
-        {"26.10", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}) \
+        {"26.10", true, true, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.8 restores the previous strict behavior."}) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
@@ -9688,9 +9699,19 @@ Lets automatic parallel replicas remember, per query plan, where the replicas' s
 repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
 replicas.
 
-Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
+Disables remembered boundaries. To benchmark the cost of building the plan with parallel replicas, also set
+`automatic_parallel_replicas_undecided_retry_after_executions = 0`: the plans whose last build ended without a
+decision are skipped independently of this setting.
 )", 0, \
         {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
+    DECLARE(UInt64, automatic_parallel_replicas_undecided_retry_after_executions, 10, R"(
+How many executions of a query plan skip building the plan with parallel replicas after its last build ended without a decision in automatic parallel replicas: the two plans could not be compared, the planner used no parallel replicas
+in the plan built with them, a step of the plan cannot collect the statistics, or the collection measured nothing. Concurrent executions take turns: one in every `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan again.
+After the first such outcome for a query plan, the next execution builds the plan again at once just in case the first execution populated other statistics caches and the planning decisions will change.
+
+0 disables deferral after undecided outcomes. It is independent of `automatic_parallel_replicas_remember_boundary`, which spares the build for plans decided from statistics.
+)", 0, \
+        {"26.10", 0, 10, "New setting. Automatic parallel replicas now skips building the plan with parallel replicas for a number of executions of a query plan whose last build ended without a decision; previously every execution built it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
@@ -9755,6 +9776,10 @@ This is internal setting that should not be used directly and represents an impl
     DECLARE(UInt64, parallel_replica_offset, 0, R"(
 This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the index of the replica participating in query processing among parallel replicas.
 )", BETA) \
+    DECLARE(UInt64, distributed_group_by_top_k, 0, R"(
+This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. The initiator sends it as `n` with a `GROUP BY ... LIMIT n` query without `ORDER BY` when it keeps the smallest `n` merged groups by all grouping keys. Then each replica keeps only its smallest `n` groups in its partial aggregation (see `enable_group_by_top_k_optimization`). It is not forwarded further.
+)", BETA, \
+        {"26.10", 0, 0, "New internal setting: the initiator of a query with parallel replicas lets the replicas apply the `GROUP BY` top-K heap to `GROUP BY ... LIMIT` without `ORDER BY`."}) \
     DECLARE(String, parallel_replicas_custom_key, "", R"(
 An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
@@ -10541,6 +10566,12 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
     \
     /* ####################################################### */ \
     /* AI function settings */ \
+    DECLARE_WITH_ALIAS(Bool, allow_ai_functions, true, R"(
+Allow the use of AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). If disabled, a query that uses them throws an exception.
+)", 0, allow_experimental_ai_functions, \
+        {"26.10", true, true, "Added an alias for setting `allow_experimental_ai_functions`."}, \
+        {"26.9", false, true, "AI functions are beta and enabled by default. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it. Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}, \
+        {"26.4", false, false, "New setting. At the time the setting was named `allow_experimental_ai_functions`, which is now an alias of it."}) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA, \
@@ -10548,8 +10579,8 @@ Timeout in seconds for individual HTTP requests made by AI functions (AI chat co
     DECLARE(UInt64, ai_function_max_retries, 3, R"(
 Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`. At most 5.
 )", BETA, \
-        {"26.10", 1, 3, "Retry a transient API error up to three times by default, to reduce load on an overloaded rate-limited provider under concurrent requests."}, \
-        {"26.9", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}, \
+        {"26.11", 3, 3, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", 0, 3, "Retry a transient API error up to three times by default, so a 429 or 5xx from the provider does not fail the query and an overloaded rate-limited provider is retried under concurrent requests."}, \
         {"26.4", 0, 0, "New setting"}) \
     DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
 Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms. At most 10000.
@@ -10560,23 +10591,25 @@ If true (default), an AI function call that fails permanently after exhausting a
 )", BETA, \
         {"26.4", true, true, "New setting"}) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
+Maximum total input (prompt) tokens across all AI function API calls in a single query including cache reads and writes. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA, \
-        {"26.10", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
+        {"26.10", 0, 0, "The change was backported to 26.7 and is recorded there."}, \
+        {"26.7", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
         {"26.4", 1000000, 1000000, "New setting"}) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 0, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", BETA, \
-        {"26.10", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
+        {"26.10", 0, 0, "The change was backported to 26.7 and is recorded there."}, \
+        {"26.7", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
         {"26.4", 500000, 500000, "New setting"}) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. 0 (default) disables the limit. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA, \
-        {"26.10", 1000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."}, \
+        {"26.10", 1000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit.", CompatibilitySetting::Ignore}, \
         {"26.8", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."}, \
         {"26.4", 0, 0, "New setting"}) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
@@ -10599,7 +10632,8 @@ A value above `1` loosens two guarantees:
 
 `ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
 )", BETA, \
-        {"26.10", 1, 8, "New setting"}) \
+        {"26.11", 8, 8, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", 1, 8, "New setting"}) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
 Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", BETA, \
@@ -10818,7 +10852,8 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to cache deserialized text index posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0, \
-        {"26.10", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."}, \
+        {"26.10", true, true, "The change was backported to 26.9 and is recorded there."}, \
+        {"26.9", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."}, \
         {"25.11", false, false, "New setting"}) \
     DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::Lazy, R"(
 Controls how posting lists are applied during text index queries.
@@ -11268,6 +11303,12 @@ decide which join reorderings are valid. The following values are available:
 )", BETA, \
         {"26.10", "", "c", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}, \
         {"26.9", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}) \
+    DECLARE(Bool, query_plan_join_order_use_interesting_orders, true, R"(
+Only affects the `dpsub` join order algorithm. Makes it aware of the sort order of the joined tables: for each inner equi-join it chooses between a hash join and `full_sorting_merge` by cost, and keeps partial plans whose result is sorted by a join key that a later join can use.
+
+An input counts as sorted by a join key when `optimize_read_in_order` can read it in the order of that key from a `MergeTree` table, or when it is the result of a `full_sorting_merge` join on that key. A join chosen to run as `full_sorting_merge` tries it first, with the `join_algorithm` list as its fallback. The choice is made only when `join_algorithm` has its default value: any other list is a priority list, used as it is. Requires `enable_join_transitive_predicates`.
+)", BETA, \
+        {"26.10", false, true, "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL, \
@@ -11333,9 +11374,6 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_ai_functions, false, \
-        {"26.9", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."}, \
-        {"26.4", false, false, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false, \
         {"25.4", false, false, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0, \
@@ -12374,9 +12412,9 @@ void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
     impl->write(out, format);
 }
 
-void Settings::read(ReadBuffer & in, SettingsWriteFormat format)
+void Settings::read(ReadBuffer & in, SettingsWriteFormat format, bool skip_invalid_values)
 {
-    impl->read(in, format);
+    impl->read(in, format, skip_invalid_values);
 }
 
 void Settings::writeEmpty(WriteBuffer & out)

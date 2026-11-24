@@ -574,6 +574,7 @@ SortAnalysisResult analyzeSort(
     actions_chain.addStep(std::move(actions_step_before_sort));
 
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+    NameToNameMap interpolate_target_column_names;
 
     /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
     if (query_node.hasInterpolate())
@@ -616,8 +617,15 @@ SortAnalysisResult analyzeSort(
             if (nodes.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Interpolate expression must return single column");
             const auto * node = nodes.front();
-            node = &before_interpolate_actions_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
+            const auto & target_name = interpolate_node_typed.getExpressionName();
 
+            /// A target alias may be the name of another column, as in `count() AS c, n AS `count()``.
+            String column_name = target_name;
+            for (size_t i = 0; before_interpolate_actions_dag.tryFindInOutputs(column_name); ++i)
+                column_name = fmt::format("__interpolate_{}_{}", i, target_name);
+
+            interpolate_target_column_names.emplace(target_name, column_name);
+            node = &before_interpolate_actions_dag.addAlias(*node, column_name);
             before_interpolate_actions_dag.getOutputs().push_back(node);
         }
 
@@ -627,7 +635,11 @@ SortAnalysisResult analyzeSort(
 
     /// before_interpolate_actions is intentionally not added to the chain here;
     /// buildExpressionAnalysisResult appends it after analyzeLimitBy so the chain order matches plan execution order.
-    return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
+    return SortAnalysisResult{
+        std::move(before_sort_actions),
+        has_with_fill,
+        std::move(before_interpolate_actions),
+        std::move(interpolate_target_column_names)};
 }
 
 /** Construct limit by analysis result.
@@ -943,7 +955,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             if (input->column && source_constants.contains(input->result_name))
                 keep_inputs.insert(input);
 
-    if (query_node.hasInterpolate())
+    if (query_node.hasInterpolate() && sort_analysis_result_optional)
     {
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
         NameSet interpolate_names;
@@ -953,7 +965,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
         for (auto & [name, alias] : project_names)
             if (interpolate_names.contains(alias))
-                name = alias;
+                name = sort_analysis_result_optional->interpolate_target_column_names.at(alias);
 
         project_names_actions->dag.project(project_names, keep_inputs);
     }

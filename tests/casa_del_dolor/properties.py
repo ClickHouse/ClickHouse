@@ -171,15 +171,6 @@ possible_properties = {
     "database_atomic_delay_before_drop_table_sec": threshold_generator(0.2, 0.2, 0, 60),
     "database_catalog_drop_error_cooldown_sec": threshold_generator(0.2, 0.2, 0, 30),
     "database_catalog_drop_table_concurrency": threads_lambda,
-    "database_catalog_unused_dir_cleanup_period_sec": threshold_generator(
-        0.2, 0.2, 60, 86400
-    ),
-    "database_catalog_unused_dir_hide_timeout_sec": threshold_generator(
-        0.2, 0.2, 60, 3600
-    ),
-    "database_catalog_unused_dir_rm_timeout_sec": threshold_generator(
-        0.2, 0.2, 3600, 2592000
-    ),
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
     "dictionaries_lazy_load": true_false_lambda,
