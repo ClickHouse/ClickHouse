@@ -257,6 +257,7 @@ public:
 
     virtual SinkToStoragePtr write(
         SharedHeader /* sample_block */,
+        StorageMetadataPtr /* metadata_snapshot */,
         const StorageID & /* table_id */,
         ObjectStoragePtr /* object_storage */,
         const std::optional<FormatSettings> & /* format_settings */,
@@ -431,6 +432,9 @@ public:
     /// or, for `CREATE TABLE ... AS table_function(...)`, by the table function: the inferred `format` or `structure` stored
     /// over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted, and so are unknown S3 key-value arguments.
     bool is_replayed_definition = false;
+
+    /// Set by `initialize` when the arguments come from a named collection.
+    bool initialized_from_named_collection = false;
 
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not

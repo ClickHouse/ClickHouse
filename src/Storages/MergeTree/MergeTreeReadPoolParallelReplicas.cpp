@@ -39,8 +39,9 @@ size_t chooseSegmentSize(
 
     LOG_TRACE(
         log,
-        "mark_segment_size={}, min_marks_per_task*threads={}, sum_marks/number_of_replicas^2={}",
+        "mark_segment_size={}, number_of_replicas={}, min_marks_per_task*threads={}, sum_marks/number_of_replicas^2={}",
         mark_segment_size,
+        number_of_replicas,
         min_marks_per_task * threads,
         sum_marks / number_of_replicas / number_of_replicas);
 

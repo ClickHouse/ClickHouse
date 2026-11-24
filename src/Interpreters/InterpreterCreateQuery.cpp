@@ -1017,7 +1017,8 @@ void throwIfEngineIsUnknownAndNotGranted(
 /// insert by another user, could go outside a filter such as `WRITE ON S3('<regex>')`. Without this grant,
 /// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
 /// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
-std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(
+/// A function with a source but no engine, such as `filesystem`, needs unfiltered `READ` and `WRITE` on its source instead.
+std::optional<AccessRightsElement> InterpreterCreateQuery::getRequiredAccessOfTableFunction(
     const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition)
 {
     /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`. A copy is
@@ -1029,8 +1030,14 @@ std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(
     throwIfTableFunctionCannotBeUsedToCreateTable(parsed_ast, *table_function, query_context);
     String engine_name = table_function->getEngineNameForAccessCheck();
     const auto & storages = StorageFactory::instance().getAllStorages();
-    if (auto it = storages.find(engine_name); it != storages.end() && it->second.features.source_access_type)
-        return engine_name;
+    if (auto it = storages.find(engine_name); it != storages.end())
+    {
+        if (it->second.features.source_access_type)
+            return AccessRightsElement(AccessType::TABLE_ENGINE, engine_name);
+        return {};
+    }
+    if (const auto source = table_function->getSourceAccessObject())
+        return AccessRightsElement(AccessType::READ | AccessType::WRITE, toStringSource(*source));
     return {};
 }
 
@@ -1063,9 +1070,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// A table function inherited by `CREATE TABLE copy AS src` from `src`.
     if (create.as_table_function)
-        if (auto engine_name = getSourceEngineOfTableFunction(
+        if (auto access = getRequiredAccessOfTableFunction(
                 create.as_table_function->ptr(), getContext(), isReplayedTableDefinition(mode, create, getContext())))
-            getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
+            getContext()->checkAccess(*access);
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
@@ -2423,11 +2430,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
-    /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
+    /// Check type compatible for materialized dest table and select columns.
+    /// A full-definition `ATTACH` by a user is validated like `CREATE`, unlike a replayed one: a follower replica
+    /// gets `ATTACH` (not `SECONDARY_CREATE`), and the initiator has already validated it before enqueueing.
+    const bool is_user_full_attach = !internal && mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax
+        && !is_secondary_query && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
+    if (create.select && create.is_materialized_view && (mode <= LoadingStrictnessLevel::CREATE || is_user_full_attach))
     {
         // An MV with a flattened nested column in an inner table can never be filled
-        if (create.is_materialized_view_with_inner_table())
+        if (mode <= LoadingStrictnessLevel::CREATE && create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties);
     }
@@ -4222,9 +4233,9 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     {
         const auto mode = getLoadingStrictnessLevel(
             create.attach, /*force_attach*/ false, /*force_restore*/ false, isSecondaryDDLReplay(getContext()));
-        if (auto engine_name = getSourceEngineOfTableFunction(
+        if (auto access = getRequiredAccessOfTableFunction(
                 create.as_table_function->ptr(), getContext(), isReplayedTableDefinition(mode, create, getContext())))
-            required_access.emplace_back(AccessType::TABLE_ENGINE, *engine_name);
+            required_access.push_back(std::move(*access));
     }
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the

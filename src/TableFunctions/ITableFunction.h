@@ -66,6 +66,11 @@ public:
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
+    /// Set before `parseArguments` when the arguments come from a table definition the server stored
+    /// itself (`CREATE TABLE ... AS f(...)` loaded back from metadata), see `isReplayedTableDefinition`.
+    /// Such a definition has to load even if a newer version validates the arguments more strictly.
+    void setReplayedDefinition(bool value) { arguments_from_stored_definition = value; }
+
     /** The identity of the source this call reads, if a parallel-replicas read can be coordinated over it.
       * Each replica resolves the call itself, so the call must denote the same logical source on every
       * replica, and evaluating it must have no effect beyond looking that source up. The identity names the
@@ -132,9 +137,6 @@ public:
     /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
     void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }
 
-    /// For the `AS` table function of a table definition replayed from stored metadata (see `isReplayedTableDefinition`).
-    void setReplayedDefinition(bool value) { is_replayed_table_definition = value; }
-
     /// Create storage according to the query.
     /// `check_create_temporary_table` is passed as false by database engines that resolve their
     /// tables through a table function (e.g. the `URL` database): the table is referenced in the
@@ -151,6 +153,9 @@ public:
     /// source object, and `CREATE TEMPORARY TABLE` (for table functions not allowed in readonly mode).
     /// Use this instead of `getActualTableStructure` from outside `execute`.
     ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
+
+    /// The source whose READ/WRITE grants the function needs (e.g. S3, FILE), if any.
+    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
@@ -185,9 +190,9 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
-    bool is_replayed_table_definition = false;
-
-    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+    /// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
+    /// them only for such a table definition, including its replay, and never for a call in a query.
+    static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
 
     /// Appends to `result` the indexes of the named arguments, whose keys name parameters of the table function
     /// (e.g. the overrides of a named collection) and so must not resolve to a column or alias: the trailing run of
@@ -227,6 +232,9 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
+
+protected:
+    bool arguments_from_stored_definition = false;
 };
 
 /// Properties of table function that are independent of argument types and parameters.
