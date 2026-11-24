@@ -674,4 +674,23 @@ void checkPrometheusQueryDistributedWrite(
     checkShardTargets(storage, target, context, cluster, /* for_write = */ true);
 }
 
+bool isLocalShardInsertGranted(
+    const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context)
+{
+    const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
+    const auto is_local = [](const auto & address) { return address.is_local; };
+    if (!std::ranges::any_of(cluster->getShardsAddresses(), [&](const auto & shard) { return std::ranges::any_of(shard, is_local); }))
+        return true;
+
+    const auto local_id = context->tryResolveStorageID(target.remote_time_series_storage_id);
+    if (!local_id)
+        return true;
+
+    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+    const auto columns_to_send = context->getSettingsRef()[Setting::insert_allow_materialized_columns]
+        ? metadata->getSampleBlock().getNames()
+        : metadata->getSampleBlockNonMaterialized().getNames();
+    return context->getAccess()->isGranted(AccessType::INSERT, local_id.database_name, local_id.table_name, columns_to_send);
+}
+
 }

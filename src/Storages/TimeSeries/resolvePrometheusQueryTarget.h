@@ -56,4 +56,8 @@ void pinDistributedReadSettings(const ContextMutablePtr & context);
 void checkPrometheusQueryDistributedWrite(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, const Block & block);
 
+/// Whether the caller still holds the INSERT grant that check asks for on a shard this server writes in-process.
+[[nodiscard]] bool isLocalShardInsertGranted(
+    const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context);
+
 }

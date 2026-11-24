@@ -492,6 +492,50 @@ def test_a_denied_local_shard_is_refused_before_a_remote_partition_commits():
         time.sleep(0.5)
 
 
+def test_a_local_shard_grant_revoked_after_the_check_is_a_retryable_refusal():
+    """The local shard is written in-process, so its insert denies the caller with no remote exception:
+    a grant the check saw and the insert no longer does is a race, refused with a retryable status, and
+    the resent batch gets the 403 from the check, before any shard is written.
+    """
+    user = "prom_late_revoke"
+    local_grant = "INSERT ON metrics.ts_mixed"
+    node.query(
+        f"CREATE USER {user} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
+    )
+    # The inner tables of the shard-local table too, which its own insert asks for.
+    node.query(f"GRANT INSERT ON metrics.* TO {user}")
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        pending = pool.submit(
+            mixed_write, "late_revoke_metric", [LOCAL_HOST, REMOTE_HOST], user
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_INSERT} PAUSE", timeout=60)
+        node.query(f"REVOKE {local_grant} FROM {user}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
+        response = pending.result(timeout=60)
+        assert response.status_code == 500, response.text
+        assert "ALL_CONNECTION_TRIES_FAILED" in response.text, response.text
+        assert "metrics.ts_mixed" in response.text, response.text
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+
+        # Still revoked: the check refuses the resent batch for good.
+        response = mixed_write("late_revoke_metric", [LOCAL_HOST, REMOTE_HOST], user)
+        assert response.status_code == 403, response.text
+        assert mixed_counts("late_revoke_metric")[0] == 0
+
+        # A denial the check does not cover, on an inner table, is not a race: it stays a 403.
+        node.query(f"REVOKE INSERT ON metrics.* FROM {user}")
+        node.query(f"GRANT INSERT ON metrics.prom_mixed, {local_grant} TO {user}")
+        response = mixed_write("inner_denied_metric", [LOCAL_HOST, REMOTE_HOST], user)
+        assert response.status_code == 403, response.text
+        assert ".inner_id." in response.text, response.text
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+        pool.shutdown(wait=True)
+        node.query(f"DROP USER {user}")
+
+
 def test_an_early_commit_setting_still_writes_the_shards_a_caller_may_write():
     """Pinned off rather than refused: the same request from a caller granted both shards is the
     write it always was."""

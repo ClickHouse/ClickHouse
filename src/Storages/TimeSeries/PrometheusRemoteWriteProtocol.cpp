@@ -500,7 +500,9 @@ void PrometheusRemoteWriteProtocol::write(
     {
         /// A shard-local table gone since the check, or a shard denying the insert, is as transient as an unreachable
         /// shard, but `UNKNOWN_TABLE` is a 404 and `ACCESS_DENIED` a 403, which Prometheus drops instead of resending.
-        const bool shard_denied = e.code() == ErrorCodes::ACCESS_DENIED && e.isRemoteException();
+        /// A shard written in-process denies as the caller: transient only if the grant the check saw is gone since.
+        const bool shard_denied = distributed_target && e.code() == ErrorCodes::ACCESS_DENIED
+            && (e.isRemoteException() || !isLocalShardInsertGranted(*time_series_storage, *distributed_target, getContext()));
         if (!distributed_target || (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE && !shard_denied))
             throw;
         throw Exception(
