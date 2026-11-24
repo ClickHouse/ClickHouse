@@ -1,5 +1,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -286,7 +288,16 @@ void MetadataStorageFromCacheObjectStorage::submitForRemoval(const StoredObjects
     /// A new file may get the key of a removed blob before the blob killer runs: a `plain_rewritable` storage derives
     /// keys from paths, and a move copies the blob through the wrapped object storage, which does not drop the cache.
     /// So the cache entries are dropped right away, otherwise a read of the new file could return the cached old data.
-    cached_object_storage->removeObjectsIfExist(blobs);
+    /// This runs after the metadata is committed, so an error must not reach the disk transaction: it would roll back
+    /// the blobs that the committed metadata refers to. The blobs are already queued, so the blob killer drops them later.
+    try
+    {
+        cached_object_storage->removeObjectsIfExist(blobs);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("MetadataStorageFromCacheObjectStorage"), "Cannot drop the cache entries of the removed blobs");
+    }
 
     /// Called after the blobs are queued, so `hasDeadBlobsQueue` already answers `true` in the woken up round.
     /// The mutex is held during the call, so that the callback is not unregistered while it is running.
