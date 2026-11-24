@@ -26,17 +26,18 @@ SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_single, 'a_t
 SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_single, 'a_total{job=~"()"}', 1000) ORDER BY value);
 SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_single, 'a_total{job!~"(api)(-)((prod))"}', 1000) ORDER BY value);
 
+-- The primary key checks run without parallel replicas: they are about the plan of this server, not of a remote replica.
 SELECT '-- a metric name regex with such groups reads the tags table by its primary key';
-SELECT count() FROM timeSeriesSelector(rx_single, '{__name__=~"(a|b)(_)(total)()"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
-SELECT count() FROM timeSeriesSelector(rx_single, '{__name__=~"(c)(?:_total)"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
+SELECT count() FROM timeSeriesSelector(rx_single, '{__name__=~"(a|b)(_)(total)()"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
+SELECT count() FROM timeSeriesSelector(rx_single, '{__name__=~"(c)(?:_total)"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
 
 SELECT '-- many groups with a single string after a long list of long strings';
-SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(a|b)_total', repeat('()', 2000), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
-SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(98)), '|'), ')_tot', repeat('(?:)', 1000), '(a)(l)"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
-SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(100)), '|'), ')', repeat('y', 2000), repeat('(?:b)', 1000), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
+SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(a|b)_total', repeat('()', 2000), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
+SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(98)), '|'), ')_tot', repeat('(?:)', 1000), '(a)(l)"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
+SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(100)), '|'), ')', repeat('y', 2000), repeat('(?:b)', 1000), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
 
 SELECT '-- a single string after more than 100 strings keeps the regex';
 SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')(_total)"}'), 0, 2000, 'timestamp_and_value');
-SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')(_total)"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM timeSeriesSelector(rx_single, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')(_total)"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE rx_single;

@@ -28,24 +28,25 @@ SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'a_total{jo
 SELECT '-- a quantifier after a group keeps the regex';
 SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'a_total{job=~"api(-prod)?"}', 1000) ORDER BY value);
 
+-- The primary key checks run without parallel replicas: they are about the plan of this server, not of a remote replica.
 SELECT '-- a metric name regex with groups reads the tags table by its primary key';
-SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b)_total"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
-SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b|c)_(total)"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
+SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b)_total"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
+SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b|c)_(total)"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
 
 SELECT '-- too many combinations of groups keep the regex';
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b|c|d|e|f|g|h|i|j|k)(_|)(total|v|w|x|y|z|q|r|s|t)"}', 0, 2000, 'timestamp_and_value');
-SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b|c|d|e|f|g|h|i|j|k)(_|)(total|v|w|x|y|z|q|r|s|t)"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b|c|d|e|f|g|h|i|j|k)(_|)(total|v|w|x|y|z|q|r|s|t)"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0; -- { serverError INDEX_NOT_USED }
 
 SELECT '-- a big group with literals around it keeps the regex, a big group alone is a list';
 SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')_total"}'), 0, 2000, 'timestamp_and_value');
-SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')_total"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"a_(', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), '|total)"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a_total|b_total|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')_total"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"a_(', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), '|total)"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a_total|b_total|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
 
 SELECT '-- groups nested deeper than 32 keep the regex';
-SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 32), 'a_total|b_total', repeat(')', 32), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 32), 'a_total|b_total', repeat(')', 32), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0;
 SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 33), 'a_total|b_total', repeat(')', 33), '"}'), 0, 2000, 'timestamp_and_value');
-SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 33), 'a_total|b_total', repeat(')', 33), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"', repeat('(', 33), 'a_total|b_total', repeat(')', 33), '"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1, enable_parallel_replicas = 0; -- { serverError INDEX_NOT_USED }
 SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, concat('a_total{job=~"', repeat('(', 40), 'api-prod|api-stg', repeat(')', 40), '"}'), 1000) ORDER BY value);
 
 DROP TABLE rx;
