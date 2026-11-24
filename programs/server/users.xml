@@ -77,7 +77,8 @@
                  In first line will be password and in second - corresponding double SHA1.
             -->
             <!-- With an empty password, anyone from the networks below can connect as 'default' on every
-                 interface, also without specifying a user name (see <default_session_user> in config.xml).
+                 interface the server listens on, also without specifying a user name (see <default_session_user>
+                 in config.xml).
                  Set a password before the server listens beyond localhost (<listen_host> in config.xml);
                  otherwise, the server reports this in system.warnings. -->
             <password></password>

@@ -74,9 +74,4 @@ inline String toString(AuthenticationType type_)
 /// the signing keys (JWKS) or delegating the check to an external validator.
 bool authenticationTypeIsVerifiedLocally(AuthenticationType type_);
 
-/// Whether a method of this authentication type may be used for a login. A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method
-/// is ignored entirely when the corresponding server setting disables it (`allow_no_password` / `allow_plaintext_password`),
-/// including for users stored before the setting was turned off.
-bool authenticationTypeIsAllowed(AuthenticationType type_, bool allow_no_password, bool allow_plaintext_password);
-
 }

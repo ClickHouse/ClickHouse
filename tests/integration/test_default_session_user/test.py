@@ -953,21 +953,56 @@ def users_without_password(node):
     warning = node.query(
         "SELECT message FROM system.warnings WHERE message LIKE 'The server listens on %' FORMAT TSVRaw"
     ).strip()
-    marker = "these users can connect from any host without a password: "
     if not warning:
-        return ""
+        return []
+    marker = "these users can connect from any host without a password: "
     assert marker in warning, warning
-    return warning.split(marker)[1].split(". ")[0]
+    return [
+        name.strip("'") for name in warning.split(marker)[1].split(". ")[0].split(", ")
+    ]
+
+
+def wait_for_users_without_password(node, expected, timeout=30):
+    for _ in range(timeout):
+        if users_without_password(node) == expected:
+            return
+        time.sleep(1)
+    assert users_without_password(node) == expected
 
 
 def test_users_without_password_warning():
     # All nodes listen on a non-loopback address and have the shipped `default` user: no password, any host.
-    # node1 also reports its default session user. node2's does not exist, and node_reject prohibits
-    # connections without a user name, which does not hide `default`: it can still be named explicitly.
-    assert users_without_password(node1) == "'default', 'global_default_user'"
-    assert node1.contains_in_log("these users can connect from any host without a password")
-    assert users_without_password(node2) == "'default'"
-    assert users_without_password(node_reject) == "'default'"
+    # `default` is always checked: node_reject prohibits connections without a user name, but `default` can still
+    # be named explicitly. node2's global default session user does not exist.
+    users = users_without_password(node1)
+    assert users[0] == "default", users
+    assert node1.contains_in_log(
+        "these users can connect from any host without a password"
+    )
+    assert users_without_password(node2) == ["default"]
+    assert users_without_password(node_reject)[0] == "default"
+
+    # node1 also reports the users that connections without a user name get: the global default session user and
+    # those of the endpoints in the `protocols` section, also when inherited through `impl`.
+    for user in [
+        "global_default_user",
+        "proto_tcp_user",
+        "proto_endpoint_user",
+        "proto_shared_impl_user",
+        "proto_mysql_user",
+        "proto_pg_user",
+    ]:
+        assert user in users, users
+    # Not reported: default session users with a password, an explicitly named user, and the default session user of a
+    # module without a port (it does not listen), whatever value an earlier test has reloaded it to.
+    for user in [
+        "proto_tcp_password_user",
+        "proto_pg_password_user",
+        "explicit_user",
+        "reload_shadow_base_before",
+        "reload_shadow_base_after",
+    ]:
+        assert user not in users, users
 
     # The warning follows the users: the default session user drops out once it gets a password
     # (here through a users.d override picked up by the users config reload) and comes back when
@@ -980,22 +1015,91 @@ def test_users_without_password_warning():
             "</global_default_user></users></clickhouse>",
         )
         node1.query("SYSTEM RELOAD CONFIG")
-        assert users_without_password(node1) == "'default'"
+        assert sorted(users_without_password(node1)) == sorted(
+            user for user in users if user != "global_default_user"
+        )
 
         # The empty user name is only an alias for the user: the password is now required.
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             execute_query_http(8123, "SELECT currentUser()")
         assert exc_info.value.code == 403
         assert (
-            execute_query_http(8123, "SELECT currentUser()", headers={"X-ClickHouse-Key": "secret"})
+            execute_query_http(
+                8123, "SELECT currentUser()", headers={"X-ClickHouse-Key": "secret"}
+            )
             == "global_default_user\n"
         )
     finally:
         node1.exec_in_container(["rm", "-f", override_path])
         node1.query("SYSTEM RELOAD CONFIG")
 
-    assert users_without_password(node1) == "'default', 'global_default_user'"
+    assert sorted(users_without_password(node1)) == sorted(users)
     assert execute_query_http(8123, "SELECT currentUser()") == "global_default_user\n"
+
+
+def test_users_without_password_warning_listeners():
+    # The warning follows the listeners: an endpoint added by a config reload reports its default session user,
+    # unless it listens on a loopback address only.
+    config_path = "/etc/clickhouse-server/config.d/z_users_without_password_warning.xml"
+    assert users_without_password(node2) == ["default"]
+    try:
+        node2.replace_config(
+            config_path,
+            """<clickhouse>
+    <protocols>
+        <warning_loopback>
+            <type>tcp</type>
+            <host>127.0.0.1</host>
+            <port>9201</port>
+            <default_session_user>proto_tcp_user</default_session_user>
+        </warning_loopback>
+        <warning_public>
+            <type>tcp</type>
+            <host>0.0.0.0</host>
+            <port>9202</port>
+            <default_session_user>proto_mysql_user</default_session_user>
+        </warning_public>
+    </protocols>
+</clickhouse>
+""",
+        )
+        node2.query("SYSTEM RELOAD CONFIG")
+        wait_for_users_without_password(node2, ["default", "proto_mysql_user"])
+    finally:
+        node2.exec_in_container(["rm", "-f", config_path])
+        node2.query("SYSTEM RELOAD CONFIG")
+
+    wait_for_users_without_password(node2, ["default"])
+
+
+def test_users_without_password_warning_sql_users():
+    # node2's global default session user `undeclared_user` is not declared in users.xml, so it can be created with SQL.
+    assert users_without_password(node2) == ["default"]
+    try:
+        # After `TRUNCATE TABLE system.warnings` the warning stays hidden while the situation does not change ...
+        node2.query("TRUNCATE TABLE system.warnings")
+        node2.query("CREATE USER unrelated_user IDENTIFIED WITH no_password")
+        assert users_without_password(node2) == []
+
+        # ... and comes back when the reported users change.
+        node2.query("CREATE USER undeclared_user IDENTIFIED WITH no_password")
+        assert users_without_password(node2) == ["default", "undeclared_user"]
+
+        # A password or a restriction of the hosts removes the user from the warning.
+        node2.query("ALTER USER undeclared_user IDENTIFIED BY 'Secret_password_1'")
+        assert users_without_password(node2) == ["default"]
+        node2.query("ALTER USER undeclared_user IDENTIFIED WITH no_password HOST LOCAL")
+        assert users_without_password(node2) == ["default"]
+
+        # A login without a password that expires is reported until it expires.
+        valid_until = node2.query("SELECT formatDateTime(now() + 10, '%F %T')").strip()
+        node2.query(
+            f"ALTER USER undeclared_user IDENTIFIED WITH no_password VALID UNTIL '{valid_until}' HOST ANY"
+        )
+        assert users_without_password(node2) == ["default", "undeclared_user"]
+        wait_for_users_without_password(node2, ["default"])
+    finally:
+        node2.query("DROP USER IF EXISTS undeclared_user, unrelated_user")
 
 
 def test_config_reload_prometheus_keeper_metrics_only_switch():

@@ -644,10 +644,20 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     SettingsChanges & settings,
     bool check_valid_until = true);
 
-/// Both the primary authentication loop and the fail-close ambiguity scan below must apply `authenticationTypeIsAllowed`,
-/// otherwise a disabled method could still narrow the `GRANTS` or shorten the `VALID UNTIL` of an allowed login,
-/// contradicting the "skip this authentication type entirely" contract. `userAcceptsEmptyPassword` in
-/// StartupWarnings.cpp mirrors these gates for the empty password: keep them in sync.
+/// A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method is ignored entirely when the corresponding server setting disables it
+/// (`allow_no_password` / `allow_plaintext_password`). Both the primary authentication loop and the fail-close ambiguity
+/// scan below must apply this gate, otherwise a disabled method could still narrow the `GRANTS` or shorten the
+/// `VALID UNTIL` of an allowed login, contradicting the "skip this authentication type entirely" contract.
+/// `acceptsEmptyPassword` below applies the same rules to an empty password.
+static bool authenticationTypeIsAllowed(AuthenticationType type, bool allow_no_password, bool allow_plaintext_password)
+{
+    if (type == AuthenticationType::NO_PASSWORD)
+        return allow_no_password;
+    if (type == AuthenticationType::PLAINTEXT_PASSWORD)
+        return allow_plaintext_password;
+    return true;
+}
+
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
@@ -814,6 +824,36 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
         throwNotFound(AccessEntityType::USER, credentials.getUserName(), storage_name);
     else
         return std::nullopt;
+}
+
+bool IAccessStorage::acceptsEmptyPassword(
+    const User & user, bool allow_no_password, bool allow_plaintext_password, time_t now, time_t * valid_until)
+{
+    /// The rules of `authenticateImpl` for an empty password. A method that accepts it is verified locally, so the fail-close
+    /// ambiguity scan there takes it into account: the login succeeds if an allowed method accepts the empty password and has
+    /// not expired, and it expires at the earliest `VALID UNTIL` of all allowed methods accepting it, expired ones included.
+    /// `gtest_accepts_empty_password.cpp` checks that both agree.
+    bool matched = false;
+    time_t combined_valid_until = 0;
+    for (const auto & method : user.authentication_methods)
+    {
+        if (!authenticationTypeIsAllowed(method.getType(), allow_no_password, allow_plaintext_password)
+            || !Authentication::acceptsEmptyPassword(method))
+            continue;
+
+        const time_t method_valid_until = method.getValidUntil();
+        if (method_valid_until == 0 || now <= method_valid_until)
+            matched = true;
+        if (method_valid_until != 0 && (combined_valid_until == 0 || method_valid_until < combined_valid_until))
+            combined_valid_until = method_valid_until;
+    }
+
+    if (!matched || (combined_valid_until != 0 && now > combined_valid_until))
+        return false;
+
+    if (valid_until)
+        *valid_until = combined_valid_until;
+    return true;
 }
 
 Authentication::CredentialsCheckResult areCredentialsValid(

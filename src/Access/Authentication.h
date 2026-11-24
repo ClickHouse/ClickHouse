@@ -63,6 +63,11 @@ struct Authentication
       */
     static bool mysqlNative41CannotVerify(const AuthenticationData & authentication_method);
 
+    /// Whether this authentication method accepts an empty password, judged by its password hash or by the absence of a password,
+    /// with the same checks as a login. Ignores `VALID UNTIL`. Methods verified by an external system (LDAP, HTTP, Kerberos, JWT)
+    /// and key- or certificate-based methods do not count, nor do methods with a one-time password, which is a secret on its own.
+    static bool acceptsEmptyPassword(const AuthenticationData & authentication_method);
+
     // A signaling class used to communicate requirements for credentials.
     template <typename CredentialsType>
     class Require : public Exception

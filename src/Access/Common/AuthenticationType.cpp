@@ -109,13 +109,4 @@ bool authenticationTypeIsVerifiedLocally(AuthenticationType type_)
     }
 }
 
-
-bool authenticationTypeIsAllowed(AuthenticationType type_, bool allow_no_password, bool allow_plaintext_password)
-{
-    if (type_ == AuthenticationType::NO_PASSWORD)
-        return allow_no_password;
-    if (type_ == AuthenticationType::PLAINTEXT_PASSWORD)
-        return allow_plaintext_password;
-    return true;
-}
 }

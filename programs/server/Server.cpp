@@ -77,6 +77,7 @@
 #include <Server/ConnectionRegistry.h>
 #include <Server/createServer.h>
 #include <Server/StartupWarnings.h>
+#include <Server/UsersWithoutPasswordWarning.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
 #include <Server/waitServersToFinish.h>
@@ -266,6 +267,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsString default_session_user;
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
@@ -752,6 +754,43 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
 
     /// Use more general restriction in case of emptiness
     return getListenHosts(config);
+}
+
+std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & protocol);
+
+/// The running listeners that accept connections of users, each with the user that a connection without a user name gets.
+std::vector<UsersWithoutPasswordWarning::Listener> getUserListeners(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & global_default_session_user,
+    std::initializer_list<const std::vector<ProtocolServerAdapter> *> server_lists)
+{
+    static constexpr std::string_view protocols_prefix = "protocols.";
+    static constexpr std::string_view port_suffix = ".port";
+
+    std::vector<UsersWithoutPasswordWarning::Listener> listeners;
+    for (const auto * server_list : server_lists)
+    {
+        for (const auto & server : *server_list)
+        {
+            /// Keeper and the interserver protocol do not authenticate users.
+            const String & port_name = server.getPortName();
+            if (server.isStopping() || port_name.starts_with("keeper_server.")
+                || server.getProtocolType() == ServerType::Type::INTERSERVER_HTTP
+                || server.getProtocolType() == ServerType::Type::INTERSERVER_HTTPS)
+                continue;
+
+            /// An endpoint of the `protocols` section (with the port `protocols.<name>.port`) can override the setting.
+            String default_session_user = global_default_session_user;
+            if (port_name.starts_with(protocols_prefix) && port_name.ends_with(port_suffix))
+            {
+                if (auto endpoint_user = getEffectiveDefaultSessionUser(config, port_name.substr(0, port_name.size() - port_suffix.size())))
+                    default_session_user = std::move(*endpoint_user);
+            }
+
+            listeners.push_back({.host = server.getListenHost(), .default_session_user = std::move(default_session_user)});
+        }
+    }
+    return listeners;
 }
 
 bool isIntrospectionProtocol(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
@@ -2707,6 +2746,25 @@ try
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
+    /// Created before the main config reloader, which updates its listeners, so that it outlives the reloader, and destroyed
+    /// before the global context is shut down. The callbacks stored in the global context refer to it through a `weak_ptr`.
+    auto users_without_password_warning = std::make_shared<UsersWithoutPasswordWarning>(global_context);
+    /// Must be called under `servers_lock` after the servers change, so that the listeners are passed on in the same order.
+    auto update_users_without_password_warning = [&](UsersWithoutPasswordWarning & warning)
+    {
+        try
+        {
+            warning.setListeners(getUserListeners(
+                config(),
+                global_context->getServerSettings()[ServerSetting::default_session_user],
+                {&servers, &servers_to_start_before_tables, &introspection_servers}));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("UsersWithoutPasswordWarning", "Cannot update the listeners");
+        }
+    };
+
     /// The preprocessed configuration goes into `path` as it is used everywhere else: without the whitespace around it,
     /// and relative to the original working directory rather than to the current one, which differs with `--daemon`.
     auto main_config_reloader = std::make_unique<ConfigReloader>(
@@ -3128,10 +3186,8 @@ try
                 {
                     std::lock_guard lock(servers_lock);
                     updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
+                    update_users_without_password_warning(*users_without_password_warning);
                 }
-
-                /// `listen_host` may have changed.
-                updateUsersWithoutPasswordWarning(global_context);
             }
 
             global_context->updateStorageConfiguration(config());
@@ -3528,18 +3584,6 @@ try
         throw;
     }
 
-    /// Unlike the other startup warnings, re-checked on every user change (users.xml reload, `ALTER USER`, ...)
-    /// and on every config reload (see the main config reloader above).
-    /// The handler uses the global context, so the subscription must be released before its shutdown.
-    scope_guard users_without_password_warning_subscription = access_control.subscribeForChanges<User>(
-        [this](const std::vector<AccessChangesNotifier::Change> & changes)
-        {
-            /// By-type handlers are also called with an empty batch; nothing to re-check then.
-            if (!changes.empty())
-                updateUsersWithoutPasswordWarning(global_context);
-        });
-    updateUsersWithoutPasswordWarning(global_context);
-
     auto disable_config_reload_callbacks = [&]
     {
         global_context->setConfigReloadCallback([]
@@ -3564,34 +3608,43 @@ try
         access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
 
-    global_context->setStopServersCallback([&](const ServerType & server_type)
-    {
-        std::lock_guard lock(servers_lock);
-        stopServers(servers, server_type);
-    });
+    /// `update_users_without_password_warning` is copied: these callbacks may be called after it goes out of scope.
+    global_context->setStopServersCallback(
+        [&, update_users_without_password_warning, weak_warning = std::weak_ptr(users_without_password_warning)](
+            const ServerType & server_type)
+        {
+            std::lock_guard lock(servers_lock);
+            stopServers(servers, server_type);
+            if (auto warning = weak_warning.lock())
+                update_users_without_password_warning(*warning);
+        });
 
-    global_context->setStartServersCallback([&](const ServerType & server_type)
-    {
-        std::lock_guard lock(servers_lock);
-        /// Introspection server can run SYSTEM START LISTEN before other servers' startup or after other servers' shutdown.
-        /// In either case, we need to return an error.
-        if (is_cancelled || !global_context->isServerCompletelyStarted())
-            throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
-        /// The config may have been reloaded since startup, so recompute the listener
-        /// configuration from the current config instead of the startup snapshot.
-        ServerSettings current_server_settings;
-        current_server_settings.loadSettingsFromConfig(config());
-        createServers(
-            config(),
-            current_server_settings,
-            getListenHosts(config()),
-            getListenTry(config(), current_server_settings),
-            server_pool,
-            *async_metrics,
-            servers,
-            /* start_servers= */ true,
-            server_type);
-    });
+    global_context->setStartServersCallback(
+        [&, update_users_without_password_warning, weak_warning = std::weak_ptr(users_without_password_warning)](
+            const ServerType & server_type)
+        {
+            std::lock_guard lock(servers_lock);
+            /// Introspection server can run SYSTEM START LISTEN before other servers' startup or after other servers' shutdown.
+            /// In either case, we need to return an error.
+            if (is_cancelled || !global_context->isServerCompletelyStarted())
+                throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
+            /// The config may have been reloaded since startup, so recompute the listener
+            /// configuration from the current config instead of the startup snapshot.
+            ServerSettings current_server_settings;
+            current_server_settings.loadSettingsFromConfig(config());
+            createServers(
+                config(),
+                current_server_settings,
+                getListenHosts(config()),
+                getListenTry(config(), current_server_settings),
+                server_pool,
+                *async_metrics,
+                servers,
+                /* start_servers= */ true,
+                server_type);
+            if (auto warning = weak_warning.lock())
+                update_users_without_password_warning(*warning);
+        });
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(server_settings[ServerSetting::max_concurrent_queries]);
@@ -4160,6 +4213,7 @@ try
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
 
+            update_users_without_password_warning(*users_without_password_warning);
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
