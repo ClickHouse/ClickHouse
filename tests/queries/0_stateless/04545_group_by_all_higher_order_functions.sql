@@ -35,6 +35,10 @@ SELECT arrayMap(x -> arrayMap(y -> y + x + c + sum(v), [1]), arr) FROM (SELECT 5
 -- references the outer parameter, so it must not become a key; only the free column does.
 SELECT arrayMap(x -> arrayMap(y -> y + x, [1]) || [toUInt8(sum(v))], arr) FROM (SELECT [10, 20] AS arr, 3 AS v) GROUP BY ALL;
 
+-- A window function in the lambda body keeps the enclosing function out of the keys, as at top level.
+SELECT arrayMap(x -> x + count() OVER (), [1]) FROM numbers(3) GROUP BY ALL;
+SELECT number % 2 AS k, arrayMap(x -> x + sum(sum(number)) OVER (), [1]) FROM numbers(4) GROUP BY ALL ORDER BY k;
+
 -- Type wrappers.
 SELECT arrayFilter(x -> x > 0, groupArray(toNullable(number))) FROM numbers(5) GROUP BY ALL;
 SELECT arrayMap(x -> first_value(toLowCardinality(_Start)), range(0, 3)) FROM (SELECT 7 AS _Start) GROUP BY ALL;
