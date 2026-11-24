@@ -1,15 +1,14 @@
 #pragma once
 
+#include <Interpreters/InsertDeduplication.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyInsertSink.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
-#include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 
 #include <base/scope_guard.h>
 
 #include <string>
-#include <functional>
 #include <vector>
 
 namespace DB
@@ -17,6 +16,14 @@ namespace DB
 
 class StorageMergeTree;
 class MergedPartOffsets;
+
+struct UniqueKeyInsertOutcome
+{
+    /// Block ids already in the table's insert-deduplication log
+    std::vector<std::string> conflicting_blocks;
+    /// Every incoming row conflicted under `unique_key_conflict_action = 'ignore'`, so there is no part.
+    bool part_discarded = false;
+};
 
 /// The three writes that implement `IUniqueKeyCommit`, one entry point each. The protocol they
 /// run -- stage, publish, commit, all inside one hold of the partition guard -- is described on
@@ -26,30 +33,20 @@ class UniqueKeyTxnCommit
 public:
     struct InsertRequest
     {
-        IUniqueKeyInsertSink & sink;
-        MergeTreeData & storage;
+        StorageMergeTree & storage;
         StorageMetadataPtr metadata_snapshot;
         ContextPtr context;
-        /// Replaced in place when `ignore` filters the block and the part is rewritten.
-        MergeTreeTemporaryPartPtr & temp_part;
-        /// The rows `temp_part` was written from.
+        const MergeTreeTemporaryPart & temp_part;
+        /// The rows `temp_part` was written from, before the writer sorted them.
         std::shared_ptr<const Block> block;
         const std::vector<DeduplicationHash> & deduplication_hashes;
         MergeTreeTransactionHolder & transaction;
     };
 
-    struct InsertOutcome
-    {
-        /// The dedup-log conflicts that ask the sink to retry.
-        std::vector<std::string> conflicting_blocks;
-        /// `unique_key_conflict_action = ignore` filtered every incoming row, so there is no part.
-        bool part_discarded = false;
-    };
-
     /// INSERT:
     /// 1. Write temp part
     /// 2. Probes the dense index for every key in the written part and resolves conflicts per `unique_key_conflict_action`.
-    static InsertOutcome insert(InsertRequest request);
+    static UniqueKeyInsertOutcome insert(InsertRequest request);
 
     struct MergeRequest
     {
@@ -73,9 +70,6 @@ public:
         MergeTreeTransactionHolder & transaction;
         String partition_id;
         const DeleteRowsByPart & rows_by_part;
-        /// A closure and not a holder because only `executeUniqueKeyDelete` is a friend of
-        /// `StorageMergeTree`: the caller supplies the means, the commit picks the moment.
-        std::function<std::unique_ptr<PlainCommittingBlockHolder>()> allocate_marker_block;
     };
 
     /// DELETE: Stages a 0-row marker part to carry the commit's csn, and installs one delta

@@ -40,26 +40,26 @@ namespace KernelUtils
 {
     /// Conversions functions to convert DeltaKernel string
     /// to std::string and vica versa.
-    ffi::KernelStringSlice toDeltaString(const std::string & string);
-    std::string fromDeltaString(ffi::KernelStringSlice slice);
+    ::KernelStringSlice toDeltaString(std::string_view string);
+    std::string fromDeltaString(::KernelStringSlice slice);
 
     /// Allocation helpers, passed to DeltaKernel.
     /// DeltaKernel would use these functions to do the allocations.
     /// We would be responsible for deallocations as well, not the library.
-    void * allocateString(ffi::KernelStringSlice slice);
-    ffi::EngineError * allocateError(ffi::KernelError etype, ffi::KernelStringSlice message);
+    void * allocateString(::KernelStringSlice slice);
+    ::EngineError * allocateError(::KernelError etype, ::KernelStringSlice message);
 
-    [[noreturn]] void throwError(ffi::EngineError * error, const std::string & from);
+    [[noreturn]] void throwError(::EngineError * error, const std::string & from);
 
-    /// Process DeltaKernel result in cases is is ffi::ExternResult,
+    /// Process DeltaKernel result in cases is is ::ExternResult,
     /// which means that it would either contain the result of type `T` or the error.
     template <class T>
-    T unwrapResult(ffi::ExternResult<T> result, const std::string & from)
+    T unwrapResult(::ExternResult<T> result, const std::string & from)
     {
-        if (result.tag == ffi::ExternResult<T>::Tag::Ok)
+        if (result.tag == ::ExternResult<T>::Tag::Ok)
             return result.ok._0;
 
-        if (result.tag == ffi::ExternResult<T>::Tag::Err)
+        if (result.tag == ::ExternResult<T>::Tag::Err)
         {
             if (result.err._0)
                 throwError(result.err._0, from);
@@ -70,12 +70,15 @@ namespace KernelUtils
         }
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Invalid error ExternResult tag found!");
+            "Invalid error ExternResult tag found");
     }
 };
 
 std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
 std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map);
+/// Keys of the physical names map: field names from the table column down, joined with dots. A dot or a backslash
+/// inside a name is escaped with a backslash, so a column `a.b` and the field `b` of a column `a` have different keys.
+std::string appendToLogicalPath(const std::string & logical_path, const std::string & field_name);
 
 }
 

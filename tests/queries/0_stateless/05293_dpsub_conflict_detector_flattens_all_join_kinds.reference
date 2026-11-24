@@ -1,0 +1,27 @@
+-- table_1 INNER JOIN table_2 ON table_1.a = table_2.a RIGHT JOIN table_3 ON table_2.b = table_3.b
+group of 3
+planned by DPSUB
+same result
+-- table_1 INNER JOIN table_2 ON table_1.a = table_2.a FULL JOIN table_3 ON table_2.b = table_3.b
+group of 3
+planned by DPSUB
+same result
+-- table_1 FULL JOIN table_2 ON table_1.a = table_2.a INNER JOIN table_3 ON table_2.b = table_3.b
+group of 3
+planned by DPSUB
+same result
+-- table_1 LEFT JOIN table_2 ON table_1.a = table_2.a RIGHT SEMI JOIN table_3 ON table_2.b = table_3.b
+group of 3
+planned by DPSUB
+same result
+-- table_1 INNER JOIN table_2 ON table_1.a = table_2.a RIGHT ANTI JOIN table_3 ON table_2.b = table_3.b
+group of 3
+planned by DPSUB
+same result
+-- table_1 LEFT SEMI JOIN table_2 ON table_1.a = table_2.a FULL JOIN table_3 ON table_1.p % 6 = table_3.b
+group of 3
+planned by DPSUB
+same result
+-- join kinds of table_1 CROSS JOIN table_3 LEFT SEMI JOIN table_2
+Type: cross
+Type: left

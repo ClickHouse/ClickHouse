@@ -112,7 +112,8 @@ public:
 
         std::chrono::sys_time<std::chrono::nanoseconds> last_success_end_time {};
 
-        /// State of views that this view DEPENDS ON, as of the start of last successful refresh.
+        /// State of views that this view DEPENDS ON, as of the start of last successful refresh,
+        /// or of the last attempt that used up all `refresh_retries`.
         /// Used for triggering dependent refresh: if the last_success_end_time stored here is less than
         /// the dependency's latest last_success_end_time, we should start a refresh.
         AllDependenciesInfo last_success_dependencies;
@@ -124,7 +125,7 @@ public:
         /// Znode version. Not serialized.
         int32_t version = -1;
 
-        String toString() const;
+        [[nodiscard]] String toString() const;
         void parse(const String & data, bool running_znode_exists, const LoggerPtr & log_);
     };
 
@@ -194,7 +195,8 @@ public:
     /// Waits for the currently running refresh attempt to complete, either on this replica
     /// or on another one (if `coordinated`).
     /// If the refresh fails, throws an exception.
-    /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
+    /// If no refresh is running or due (a due refresh may be waiting for its `refresh_coordination_jitter_ms` delay),
+    /// completes immediately, throwing an exception if previous refresh failed.
     /// For a coordinated view, also waits for a refresh requested but not started yet on any replica, and fails on Keeper errors.
     void wait(const ContextPtr & context);
 
@@ -281,6 +283,9 @@ private:
         /// the replicated target table of a non-APPEND view in a Replicated database).
         bool unavailable = false;
 
+        /// ATTACH could not reach Keeper; `doScheduling` creates the missing znodes before its first read.
+        bool znodes_setup_pending = false;
+
         bool read_only = false;
         String path;
         String replica_name;
@@ -340,6 +345,11 @@ private:
         /// Redrawn when last_completed_timeslot changes.
         std::chrono::sys_seconds randomness_drawn_for_timeslot {};
         Int64 randomness = 0;
+
+        /// When this replica may start a due coordinated refresh (`refresh_coordination_jitter_ms`),
+        /// and the root znode version it was drawn for. Redrawn when the version changes.
+        int32_t jitter_drawn_for_version = -1;
+        std::chrono::steady_clock::time_point jitter_deadline {};
 
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.
@@ -446,6 +456,8 @@ private:
     ///    e.g. on SYSTEM REFRESH VIEW.
     std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, CoordinationZnode>
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
+    /// Whether the attempt recorded in `znode` used up the last of `refresh_retries`.
+    bool retriesExhausted(const CoordinationZnode & znode) const;
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
     /// Update the root znode and create/remove-if-exists the 'running' znode,
@@ -461,6 +473,9 @@ private:
     /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
     /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
     void markCoordinationUnavailable();
+
+    /// Creates the coordination znodes of this replica unless its replica znode exists.
+    void createCoordinationZnodesIfNeeded(zkutil::ZooKeeper & zookeeper, const String & root_znode_data, bool is_restore_from_backup) const;
 
     /// Children of the coordination znode, one per replica with a pending `SYSTEM REFRESH VIEW`, see `run`.
     static constexpr std::string_view request_znode_prefix = "requested-";

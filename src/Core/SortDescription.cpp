@@ -1,7 +1,9 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
+#include <Analyzer/TableQualifiers.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
@@ -16,7 +18,9 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 
+#include <algorithm>
 #include <string_view>
 #include <unordered_set>
 
@@ -97,12 +101,6 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
-namespace
-{
-
-/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
-/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
-/// and `Object` are only known at run time and may hold such a value.
 bool comparisonCanMergeDistinctValues(const IDataType & type)
 {
     auto is_ambiguous = [](const IDataType & subtype)
@@ -111,14 +109,7 @@ bool comparisonCanMergeDistinctValues(const IDataType & type)
         return which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject();
     };
 
-    if (is_ambiguous(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || is_ambiguous(child); });
-    return result;
-}
-
+    return anyInTypeTree(type, is_ambiguous);
 }
 
 SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header)
@@ -144,10 +135,24 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
         if (!column_in_header || !column_in_header->type || comparisonCanMergeDistinctValues(*column_in_header->type))
             break;
 
-        prefix.emplace_back(sort_column_desc);
+        /// A repeated column must not count twice in the size of the prefix.
+        if (std::ranges::none_of(prefix, [&](const auto & desc) { return desc.column_name == sort_column_desc.column_name; }))
+            prefix.emplace_back(sort_column_desc);
     }
 
     return prefix;
+}
+
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header)
+{
+    for (const auto & column_description : description)
+    {
+        const auto * column = header.findByName(column_description.column_name);
+        if (!column || !column->column || !isColumnConst(*column->column))
+            return false;
+    }
+
+    return true;
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -498,12 +503,21 @@ void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer &
 
 }
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version)
+void serializeSortDescription(
+    const SortDescription & sort_description,
+    WriteBuffer & out,
+    UInt64 version,
+    bool for_cache_key,
+    const Block * input_header)
 {
     writeVarUInt(sort_description.size(), out);
     for (const auto & desc : sort_description)
     {
-        writeStringBinary(desc.column_name, out);
+        /// A sort column is a plan-build-local name in a cache key; see `writeCacheKeyColumnName`.
+        if (for_cache_key)
+            writeCacheKeyColumnName(desc.column_name, input_header, out);
+        else
+            writeStringBinary(desc.column_name, out);
 
         UInt8 flags = 0;
         if (desc.direction > 0)

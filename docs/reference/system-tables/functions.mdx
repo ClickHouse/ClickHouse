@@ -15,6 +15,7 @@ Contains information about normal and aggregate functions.
 
 - `name` ([String](/reference/data-types/string)) — The name of the function.
 - `is_aggregate` ([UInt8](/reference/data-types/int-uint)) — Whether the function is an aggregate function.
+- `is_window` ([UInt8](/reference/data-types/int-uint)) — Whether the function is a window function that can only be used with an `OVER` clause.
 - `case_insensitive` ([UInt8](/reference/data-types/int-uint)) — Whether the function name can be used case-insensitively.
 - `alias_to` ([String](/reference/data-types/string)) — The original function name, if the function name is an alias.
 - `create_query` ([String](/reference/data-types/string)) — Obsolete.
@@ -29,6 +30,7 @@ Contains information about normal and aggregate functions.
 - `categories` ([String](/reference/data-types/string)) — The category of the function.
 - `deterministic` ([Nullable(UInt8)](/reference/data-types/nullable)) — Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions).
 - `higher_order` ([Nullable(UInt8)](/reference/data-types/nullable)) — Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown.
+- `signature` ([String](/reference/data-types/string)) — Declarative signature of the function, when available.
 
 ## Example {#example}
 

@@ -57,7 +57,7 @@ SET max_bytes_ratio_before_external_group_by = 0;
 SELECT '-- canary: variant A fires for the spill query';
 EXPLAIN SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
-    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1;
 
 -- A server-side fuzzed re-run repeats the statement under the same session settings, so it would
 -- carry the marker below and, being later, would win the lookup.
@@ -86,7 +86,7 @@ WITH (
 ) AS probe
 SELECT probe != '' AND count() > 0 AS merge_spilled
 FROM system.text_log
-WHERE query_id IN (SELECT query_id FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (SELECT query_id FROM system.query_log
                    WHERE event_date >= yesterday() AND initial_query_id = probe)
   AND logger_name = 'Aggregator' AND message LIKE 'Writing part of aggregation data%'
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;

@@ -58,7 +58,7 @@ SET param__internal_join_table_stat_hints = '{"t_corr_left": {"cardinality": 100
 SELECT '-- canary: variant A (partial pushdown) fires for case 1''s query';
 EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
-    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1;
 
 SELECT '-- canary: variant B (full pushdown) fires for case 13''s query (single Aggregating, below the join)';
 EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k

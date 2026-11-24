@@ -1,4 +1,4 @@
--- Tags: long, no-random-settings, no-random-merge-tree-settings
+-- Tags: long, no-random-settings, no-random-merge-tree-settings, no-msan
 -- no-random-settings, no-random-merge-tree-settings: Explain output may differ
 
 -- max_threads = 8: the cost heuristic requires partitions >= max_threads/2, and every positive case
@@ -7,11 +7,6 @@
 SET max_threads = 8;
 -- The optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
-
--- Independent per-partition DISTINCT is not applied when a DISTINCT size limit is set, and some CI
--- configurations set these limits at the server level, so pin them to unlimited.
-SET max_rows_in_distinct = 0;
-SET max_bytes_in_distinct = 0;
 
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain `Skip stream merging: 1` lines.

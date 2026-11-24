@@ -5,6 +5,7 @@
 #include <Common/ThreadStatus.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
@@ -177,6 +178,27 @@ UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
     : WithContext(Context::getGlobalContextInstance())
 {}
 
+/// The shape of a definition that `UserDefinedSQLFunctionVisitor` relies on; `validateSQLFunction` adds the rules for new definitions.
+static void validateSQLFunctionShape(const IAST & function)
+{
+    const auto * lambda_function = function.as<ASTFunction>();
+    const auto * lambda_arguments = lambda_function && lambda_function->arguments && lambda_function->arguments->children.size() >= 2
+        ? lambda_function->arguments->children[0]->as<ASTFunction>()
+        : nullptr;
+
+    if (!lambda_arguments || !lambda_arguments->arguments
+        || !std::ranges::all_of(lambda_arguments->arguments->children, [](const ASTPtr & argument) { return argument->as<ASTIdentifier>() != nullptr; }))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid SQL user defined function: {}", function.formatForErrorMessage());
+
+    UnorderedSetWithMemoryTracking<String> argument_names;
+    for (const auto & argument : lambda_arguments->arguments->children)
+    {
+        const auto & argument_name = argument->as<ASTIdentifier &>().name();
+        if (!argument_names.insert(argument_name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identifier {} already used as function parameter", argument_name);
+    }
+}
+
 /// Checks that a specified function can be registered, throws an exception if not.
 static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query, bool throw_if_exists)
 {
@@ -186,6 +208,9 @@ static void checkCanBeRegistered(const ContextPtr & context, const String & func
     if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
+    if (WindowFunctionFactory::instance().hasNameOrAlias(function_name))
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The window function '{}' already exists", function_name);
+
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
@@ -193,13 +218,14 @@ static void checkCanBeRegistered(const ContextPtr & context, const String & func
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined wasm function '{}' already exists", function_name);
 
     if (const auto * create_sql_function_query = typeid_cast<const ASTCreateSQLFunctionQuery *>(&create_function_query))
-        validateSQLFunction(create_sql_function_query->function_core, function_name);
+        validateSQLFunctionShape(*create_sql_function_query->function_core);
 }
 
 static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
-        AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
+        AggregateFunctionFactory::instance().hasNameOrAlias(function_name) ||
+        WindowFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
 
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) // NOLINT(readability-static-accessed-through-instance)
@@ -242,6 +268,14 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
     }
 
     return true;
+}
+
+bool UserDefinedSQLFunctionFactory::createFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
+{
+    if (const auto * create_sql_function_query = typeid_cast<const ASTCreateSQLFunctionQuery *>(create_function_query.get()))
+        validateSQLFunction(create_sql_function_query->function_core, function_name);
+
+    return registerFunction(current_context, function_name, std::move(create_function_query), throw_if_exists, replace_if_exists);
 }
 
 bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr & current_context, const String & function_name, bool throw_if_not_exists)

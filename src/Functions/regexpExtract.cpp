@@ -15,7 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE;
 }
@@ -28,44 +27,27 @@ public:
     static constexpr auto name = "regexpExtract";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRegexpExtract>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}",
-                getName(),
-                arguments.size());
-
-        FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
-        };
-
-        if (arguments.size() == 3)
-            args.emplace_back(FunctionArgumentDescriptor{"index", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"});
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeString>();
+        return "(String, const String, [Integer]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnPtr column_pattern = arguments[1].column;
@@ -137,7 +119,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         /// Default index: `1` when capture groups exist, `0` (whole match) otherwise.
         ssize_t index = index_arg.value_or(capture == 0 ? 0 : 1);
@@ -181,7 +163,7 @@ private:
         res_data.reserve(data.size() / 5);
         res_offsets.reserve(offsets.size());
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
 
         OptimizedRegularExpression::MatchVec matches;
@@ -228,11 +210,11 @@ private:
         ColumnString::Chars padded_str;
         padded_str.insert(str.begin(), str.end());
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(capture + 1);
-        regexp.match(reinterpret_cast<const char *>(padded_str.data()), padded_str.size(), matches, static_cast<unsigned>(capture + 1));
+        regexp.match(reinterpret_cast<const char *>(padded_str.data()), padded_str.size(), matches, capture + 1);
 
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)

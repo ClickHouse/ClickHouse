@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/JoinEstimation.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/IJoin.h>
@@ -213,10 +214,20 @@ std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_r
         static_cast<double>(actual_rows) / static_cast<double>(*estimated_rows));
 }
 
-void prependEstimationComparison(
-    StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
+void prependSideEstimate(MetricGroup & group, std::optional<UInt64> estimated_rows, const JoinSideRows & side)
 {
-    const JoinEstimation & estimation = join_step.getEstimation();
+    group.metrics.insert(group.metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimated_rows)});
+    if (!side.input_rows)
+        return;
+    const auto q_error = resultRowsQError(estimated_rows, *side.input_rows);
+    const auto rows_it = std::ranges::find(group.metrics, MetricKey::Rows, &StepMetric::key);
+    if (q_error && rows_it != group.metrics.end())
+        group.metrics.insert(std::next(rows_it), {MetricKey::QError, *q_error});
+}
+
+void prependEstimationComparison(
+    StepAnalysisReport & report, const JoinEstimation & estimation, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
+{
 
     std::optional<UInt64> actual_branch_cost;
     if (const auto cost_it = std::ranges::find(report, MetricGroupKey::Cost, &MetricGroup::key); cost_it != report.end())
@@ -232,9 +243,9 @@ void prependEstimationComparison(
     const JoinSideRows right_side = readSideRows(right_group);
 
     if (left_group)
-        left_group->metrics.insert(left_group->metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimation.left_rows)});
+        prependSideEstimate(*left_group, estimation.left_rows, left_side);
     if (right_group)
-        right_group->metrics.insert(right_group->metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimation.right_rows)});
+        prependSideEstimate(*right_group, estimation.right_rows, right_side);
 
     MetricGroup cost{MetricGroupKey::Cost, {}};
     cost.metrics.emplace_back(MetricKey::Estimated, optionalDouble(estimation.cost));
@@ -273,17 +284,28 @@ void inlineGroupIntoStage(AnalyzedStepData & step_data, MetricGroupKey group_key
 
 }
 
-AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report)
+AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report, const JoinAnalysisInputs & join_inputs)
 {
-    const auto * join_step = typeid_cast<const JoinStep *>(context.step);
-    const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(context.step);
-    if (!join_step && !filled_join_step)
+    /// The block nested loop join is a plan step of its own rather than an `IJoin`. It never swaps its
+    /// inputs and reports no per-stage metrics, so the derived per-side numbers and the spill group
+    /// are all there is to shape.
+    if (join_inputs.is_block_nested_loop)
+    {
+        enrichJoinSides(
+            report, context.io.output_rows, join_inputs.block_nested_loop_kind, join_inputs.block_nested_loop_strictness);
+
+        if (auto * spill_group = findGroup(report, MetricGroupKey::Spill))
+            reshapeSpillGroup(*spill_group);
+
+        return buildAnalyzedStepData(context, std::move(report));
+    }
+
+    if (!join_inputs.join)
         return buildAnalyzedStepData(context, std::move(report));
 
     /// Only JoinStep can swap its inputs; a filled join always keeps the storage on the right.
-    bool swapped = join_step && join_step->swap_streams;
-    const auto & join = join_step ? join_step->getJoin() : filled_join_step->getJoin();
-    const auto & table_join = join->getTableJoin();
+    const bool swapped = join_inputs.swapped;
+    const auto & table_join = join_inputs.join->getTableJoin();
 
     const JoinKind logical_kind = swapped ? reverseJoinKind(table_join.kind()) : table_join.kind();
 
@@ -299,14 +321,14 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
         reshapeSpillGroup(*spill_group);
 
     /// Only a JoinStep passes through the optimizer that assigns the estimation; a filled join has none.
-    if (join_step)
+    if (join_inputs.has_estimation)
     {
-        prependEstimationComparison(report, *join_step, context, matched_output_rows);
+        prependEstimationComparison(report, join_inputs.estimation, context, matched_output_rows);
 
         /// Ad hoc solution since we don't have generic infrastructure for rendering EXPLAIN PLAN
         /// and EXPLAIN ANALYZE at the moment. That is why we pull the part for the collecting the input columns
         /// and instead put it in here
-        for (auto & group : QueryPlanFormat::collectJoinInputColumns(*join_step))
+        for (auto group : join_inputs.input_columns)
             report.push_back(std::move(group));
     }
 
