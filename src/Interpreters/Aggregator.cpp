@@ -5934,11 +5934,22 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// `StringHashTable::reserve` splits the hint evenly over its four size-class sub-maps,
     /// while a real key set concentrates in one of them, so it is not reserved.
     constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
+    /// A table of fixed-width values and a packed string keeps the keys with an empty string in a sub-table of their
+    /// own and reserves both sub-tables (see `KeysAndPackedStringHashTable::reserve`). Without the reserve, the merge
+    /// inserts the cells of the other tables in their order into a table that grows on the way, which piles them up
+    /// into long collision resolution chains.
+    constexpr bool can_reserve_by_key_class = requires { dst.reserve(size_t{}, size_t{}); dst.sizeWithEmptyString(); };
     size_t input_keys = 0;
-    if constexpr (can_reserve)
+    [[maybe_unused]] size_t input_keys_with_empty_string = 0;
+    if constexpr (can_reserve || can_reserve_by_key_class)
     {
         for (const auto & variants : data)
-            input_keys += getDataVariant<Method>(*variants).data.impls[bucket].size();
+        {
+            const auto & table = getDataVariant<Method>(*variants).data.impls[bucket];
+            input_keys += table.size();
+            if constexpr (can_reserve_by_key_class)
+                input_keys_with_empty_string += table.sizeWithEmptyString();
+        }
 
         /// A bucket that is about to be abandoned must not add a buffer to the unwinding query.
         if (is_cancelled.load(std::memory_order_seq_cst))
@@ -5950,9 +5961,18 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
         const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
         if (seen_input_keys)
-            dst.reserve(std::min(
-                input_keys,
-                static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+        {
+            const auto expected_keys = [&](size_t keys)
+            {
+                return std::min(
+                    keys, static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(keys)));
+            };
+            /// `expected_keys` is monotonic, so the hint for the keys with an empty string never exceeds the total.
+            if constexpr (can_reserve_by_key_class)
+                dst.reserve(expected_keys(input_keys), expected_keys(input_keys_with_empty_string));
+            else
+                dst.reserve(expected_keys(input_keys));
+        }
     }
 
     DeferredMerges deferred;
@@ -5999,7 +6019,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     if (deferred_ptr)
         mergeDeferredLargeStates(deferred, arena, is_cancelled, /*destroy_sources=*/ true);
 
-    if constexpr (can_reserve)
+    if constexpr (can_reserve || can_reserve_by_key_class)
     {
         res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
         res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_release);
