@@ -6,6 +6,7 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
@@ -122,6 +123,11 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
+}
+
+namespace FailPoints
+{
+    extern const char insert_pause_before_reading_serialization_hints[];
 }
 
 namespace ServerSetting
@@ -1107,7 +1113,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
+        {
+            /// The format parses the columns with the types from `metadata_snapshot`; a concurrent `ALTER` may have changed them since.
+            FailPointInjection::pauseFailPoint(FailPoints::insert_pause_before_reading_serialization_hints);
+            format->setSerializationHints(table->getSerializationHints(*metadata_snapshot));
+        }
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
