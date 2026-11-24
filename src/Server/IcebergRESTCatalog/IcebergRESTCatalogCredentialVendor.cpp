@@ -9,6 +9,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 
+#include <optional>
 #include <sstream>
 
 #if USE_AWS_S3
@@ -69,12 +70,34 @@ String escapeForIAM(const String & value)
     return result;
 }
 
+/// One statement of a policy. `NotAction` and `NotResource` as keys mean "all except these".
+Poco::JSON::Object makeStatement(
+    const String & effect,
+    const String & action_key,
+    const Poco::Dynamic::Var & actions,
+    const String & resource_key,
+    const Poco::Dynamic::Var & resources,
+    const std::optional<Poco::JSON::Object> & condition = {})
+{
+    Poco::JSON::Object statement;
+    statement.set("Effect", effect);
+    statement.set(action_key, actions);
+    statement.set(resource_key, resources);
+    if (condition)
+        statement.set("Condition", *condition);
+    return statement;
 }
 
-/// Session policy has three statements:
+}
+
+/// Session policy has three `Allow` statements:
 ///   1. `GetObject` (and write actions with `ReadWrite`) on `<bucket>/<key>/*`.
 ///   2. `ListBucket` on bucket, limited to prefix `<key>/`.
 ///   3. `GetBucketLocation` on bucket.
+/// And three `Deny` statements for everything else:
+///   4. Actions outside allowed set.
+///   5. Other buckets and objects outside table.
+///   6. Listing outside prefix `<key>/`.
 String CredentialVendor::buildSessionPolicy(const String & bucket, const String & key, VendedAccessLevel access) const
 {
     /// Bucket is in same partition as role.
@@ -83,16 +106,8 @@ String CredentialVendor::buildSessionPolicy(const String & bucket, const String 
     const auto table_prefix = key.empty() ? String() : escapeForIAM(key) + "/";
     const auto table_objects_arn = fmt::format("{}/{}*", bucket_arn, table_prefix);
 
-    auto allow = [](const Poco::Dynamic::Var & actions, const String & resource)
-    {
-        Poco::JSON::Object statement;
-        statement.set("Effect", "Allow");
-        statement.set("Action", actions);
-        statement.set("Resource", resource);
-        return statement;
-    };
-
-    /// 1. Objects of table.
+    /// Actions on objects of table.
+    /// TODO: `kms:Decrypt` and `kms:GenerateDataKey` for a bucket with SSE-KMS.
     Poco::JSON::Array object_actions;
     object_actions.add("s3:GetObject");
     if (access == VendedAccessLevel::ReadWrite)
@@ -101,25 +116,43 @@ String CredentialVendor::buildSessionPolicy(const String & bucket, const String 
         object_actions.add("s3:DeleteObject");
         object_actions.add("s3:AbortMultipartUpload");
     }
-    auto object_statement = allow(object_actions, table_objects_arn);
 
-    /// 2. Listing of table. `ListBucket` is a bucket-level action, so table prefix goes to a condition.
-    Poco::JSON::Object prefix_condition;
-    prefix_condition.set("s3:prefix", table_prefix + "*");
-    Poco::JSON::Object condition;
-    condition.set("StringLike", prefix_condition);
-    auto list_statement = allow("s3:ListBucket", bucket_arn);
-    list_statement.set("Condition", condition);
+    /// All actions a client can do.
+    Poco::JSON::Array all_actions = object_actions;
+    all_actions.add("s3:ListBucket");
+    all_actions.add("s3:GetBucketLocation");
 
-    /// 3. Clients call `GetBucketLocation` to find region before first read.
-    auto location_statement = allow("s3:GetBucketLocation", bucket_arn);
+    /// All resources a client can touch. Bucket ARN names bucket itself, not objects in it.
+    Poco::JSON::Array all_resources;
+    all_resources.add(bucket_arn);
+    all_resources.add(table_objects_arn);
 
-    /// TODO: 4. `kms:Decrypt` and `kms:GenerateDataKey` for a bucket with SSE-KMS.
+    /// `ListBucket` acts on bucket, so table prefix goes to a condition on prefix that request asks for.
+    auto prefix_condition = [&](const String & comparison)
+    {
+        Poco::JSON::Object prefix;
+        prefix.set("s3:prefix", table_prefix + "*");
+        Poco::JSON::Object condition;
+        condition.set(comparison, prefix);
+        return condition;
+    };
 
     Poco::JSON::Array statements;
-    statements.add(object_statement);
-    statements.add(list_statement);
-    statements.add(location_statement);
+
+    /// 1. Allow reading (and writing) objects of table.
+    statements.add(makeStatement("Allow", "Action", object_actions, "Resource", table_objects_arn));
+    /// 2. Allow listing inside table.
+    statements.add(makeStatement("Allow", "Action", "s3:ListBucket", "Resource", bucket_arn, prefix_condition("StringLike")));
+    /// 3. Allow finding region of bucket. Clients do it before first read.
+    statements.add(makeStatement("Allow", "Action", "s3:GetBucketLocation", "Resource", bucket_arn));
+
+    /// A bucket policy can allow more than statements above. `Deny` always wins over `Allow`.
+    /// 4. Deny all other actions.
+    statements.add(makeStatement("Deny", "NotAction", all_actions, "Resource", "*"));
+    /// 5. Deny all other buckets and objects.
+    statements.add(makeStatement("Deny", "Action", "s3:*", "NotResource", all_resources));
+    /// 6. Deny listing outside table. Listing without prefix is denied too.
+    statements.add(makeStatement("Deny", "Action", "s3:ListBucket", "Resource", bucket_arn, prefix_condition("StringNotLike")));
 
     Poco::JSON::Object policy;
     policy.set("Version", "2012-10-17");
