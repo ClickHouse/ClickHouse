@@ -5,6 +5,8 @@
 
 #include <base/defines.h>
 
+#include <list>
+
 namespace DB
 {
 
@@ -103,8 +105,24 @@ private:
     mutable std::mutex removed_objects_mutex;
     InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 
+    /// Committed transactions whose removed blobs could not be queued in `objects_to_remove` (see
+    /// `MetadataStorageFromCacheObjectStorageTransaction::submitRemovedBlobsAfterCommit`). They are kept until
+    /// their blobs are queued, so that the cache entries of these blobs are dropped after all. Every transaction
+    /// brings its own list node, allocated before the commit, so retaining it does not allocate and cannot fail.
+    using UnqueuedTransactions = std::list<MetadataTransactionPtr>;
+    UnqueuedTransactions transactions_with_unqueued_blobs TSA_GUARDED_BY(removed_objects_mutex);
+
     /// Queues the blobs removed by a committed transaction and wakes up the blob killer.
     void submitForRemoval(const StoredObjects & blobs);
+
+    /// Moves the only node of `node` to `transactions_with_unqueued_blobs`.
+    void retainTransactionWithUnqueuedBlobs(UnqueuedTransactions & node) noexcept;
+
+    /// Queues the blobs of the retained transactions. A transaction stays retained if its blobs cannot be queued.
+    void queueBlobsOfRetainedTransactions() TSA_REQUIRES(removed_objects_mutex);
+
+    /// Calls `dead_blobs_queued_callback`, if any.
+    void notifyDeadBlobsQueued();
 
     std::mutex dead_blobs_queued_callback_mutex;
     std::function<void()> dead_blobs_queued_callback TSA_GUARDED_BY(dead_blobs_queued_callback_mutex);
@@ -153,6 +171,11 @@ public:
 private:
     const MetadataTransactionPtr underlying;
     MetadataStorageFromCacheObjectStorage & metadata_storage;
+
+    /// The list node that keeps `underlying` in the metadata storage if the blobs it removed cannot be queued
+    /// after the commit. It is allocated when the transaction is created: nothing can be allocated reliably
+    /// once the metadata is committed.
+    MetadataStorageFromCacheObjectStorage::UnqueuedTransactions retry_node;
 
     /// Queues the blobs removed by the committed underlying transaction. Does not throw: see the implementation.
     void submitRemovedBlobsAfterCommit() noexcept;

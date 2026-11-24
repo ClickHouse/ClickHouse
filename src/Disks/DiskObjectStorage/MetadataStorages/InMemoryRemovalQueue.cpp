@@ -7,12 +7,22 @@ void InMemoryRemovalQueue::submitForRemoval(const StoredObjects & blobs)
 {
     for (const auto & blob : blobs)
     {
-        if (index.contains(blob))
+        auto [it, inserted] = index.try_emplace(blob, next_slot);
+        if (!inserted)
             continue;
 
-        int64_t slot = next_slot++;
-        queue.emplace(slot, blob);
-        index.emplace(blob, slot);
+        /// Keep `queue` and `index` in sync if the second insertion throws: a blob left only in one of them
+        /// would either never be handed out or never be forgotten.
+        try
+        {
+            queue.emplace(next_slot, blob);
+        }
+        catch (...)
+        {
+            index.erase(it);
+            throw;
+        }
+        ++next_slot;
     }
 }
 

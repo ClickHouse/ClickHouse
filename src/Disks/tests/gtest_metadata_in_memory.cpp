@@ -10,6 +10,7 @@
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ObjectStorageKey.h>
@@ -429,6 +430,51 @@ TEST_F(MetadataInMemoryTest, TestPendingRemovalBlobs)
     /// Once the cleaner records the blob as removed, the wait condition clears.
     EXPECT_EQ(metadata->recordAsRemoved({blob}), 1);
     EXPECT_FALSE(metadata->hasPendingRemovalBlobs({blob}));
+}
+
+/// The cache layer queues the blobs removed by a committed transaction to drop their cache entries. If that
+/// bookkeeping fails after the commit, the commit must still succeed, and the blobs must not be forgotten:
+/// with deterministic blob paths (`plain_rewritable`) a later file can reuse the path, and the stale cache
+/// entry would be served for it. The blobs must stay pending and be handed out to the blob killer.
+TEST_F(MetadataInMemoryTest, TestCacheWrapperRetriesFailedPostCommitBookkeeping)
+{
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(getMetadataStorage(), /*object_storage_=*/ nullptr);
+
+    std::unordered_map<DB::Location, DB::LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
+    DB::ClusterConfigurationPtr cluster = std::make_shared<DB::ClusterConfiguration>("in_memory", std::move(cluster_registry));
+
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 111);
+
+    {
+        auto transaction = wrapped->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_FALSE(wrapped->hasPendingRemovalBlobs({blob}));
+
+    {
+        DB::FailPointInjection::enableFailPoint("cache_metadata_storage_fail_after_commit");
+        SCOPE_EXIT_SAFE(DB::FailPointInjection::disableFailPoint("cache_metadata_storage_fail_after_commit"));
+
+        auto transaction = wrapped->createTransaction();
+        transaction->unlinkFile("file", /* if_exists= */ false, /* should_remove_objects= */ true);
+        EXPECT_NO_THROW(transaction->commit(DB::NoCommitOptions{}));
+    }
+
+    /// The metadata is committed, and the removed blob is not lost.
+    EXPECT_FALSE(wrapped->existsFile("file"));
+    EXPECT_TRUE(wrapped->hasDeadBlobsQueue());
+    EXPECT_EQ(wrapped->getDeadBlobsQueueEstimate(), 1);
+    EXPECT_TRUE(wrapped->hasPendingRemovalBlobs({blob}));
+
+    /// The next round of the blob killer gets the blob.
+    const auto blobs_to_remove = wrapped->getBlobsToRemove(cluster, /*max_count=*/ 0);
+    ASSERT_EQ(blobs_to_remove.size(), 1);
+    EXPECT_EQ(blobs_to_remove.begin()->first, blob);
+    EXPECT_EQ(wrapped->getDeadBlobsQueueEstimate(), 1);
+
+    EXPECT_EQ(wrapped->recordAsRemoved({blob}), 1);
+    EXPECT_EQ(wrapped->getDeadBlobsQueueEstimate(), 0);
 }
 
 /// Unlinking the last owner of a blob must always submit that blob for removal, even when the caller
