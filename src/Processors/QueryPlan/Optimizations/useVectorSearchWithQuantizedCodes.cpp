@@ -341,7 +341,7 @@ bool rewriteToShortlist(
 
     /// All checks passed - rewrite the plan.
 
-    /// 0. Split the returned columns off to a lazy read above the final LIMIT, only for wide columns (it costs a round of reads).
+    /// 0. Move the wide returned columns to a lazy read above the final LIMIT (it costs a round of reads of its own).
     auto are_wide_columns = [&](const Names & columns)
     {
         static constexpr size_t min_uncompressed_bytes_per_row = 64;
@@ -367,7 +367,6 @@ bool rewriteToShortlist(
         return bytes >= min_uncompressed_bytes_per_row * rows;
     };
 
-    /// The split adds the row index column to every header from the outer LimitStep down to the read: the name must be free.
     auto headers_have_row_index_name = [&]
     {
         VectorWithMemoryTracking<const QueryPlan::Node *> split_nodes{limit_node, sorting_node, expression_node};
