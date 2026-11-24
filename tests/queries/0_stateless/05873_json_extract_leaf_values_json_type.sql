@@ -98,6 +98,11 @@ SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDat
 SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, use_query_condition_cache = 0;
 SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), serverTimezone()))
 SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 0, use_query_condition_cache = 0;
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), serverTimezone()))
+    SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, use_query_condition_cache = 0, enable_parallel_replicas = 0
+) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu'))
 SETTINGS session_timezone = 'Asia/Kathmandu', use_skip_indexes = 1, use_query_condition_cache = 0;
 SELECT count() FROM t_leaf_tz WHERE has(JSONExtractLeafValues(j), toString(toDateTime(1577836805, 'UTC'), 'Asia/Kathmandu'))
