@@ -558,6 +558,25 @@ struct IntHash32
     }
 };
 
+
+/// The 32-bit finalizer of MurmurHash3. It is a bijection with full avalanche, so it spreads the bits of a value that is
+/// already a hash and never maps two values to one. Cheaper than `intHash32`.
+inline UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW fmix32(UInt32 key)
+{
+    key ^= key >> 16;
+    key *= 0x85ebca6bU;
+    key ^= key >> 13;
+    key *= 0xc2b2ae35U;
+    key ^= key >> 16;
+    return key;
+}
+
+/// For containers.
+struct FMix32Hash
+{
+    UInt32 operator()(UInt32 key) const { return fmix32(key); }
+};
+
 template <>
 struct DefaultHash<std::string_view> : public StringViewHash {};
 
