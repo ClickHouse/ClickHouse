@@ -8,7 +8,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/JSONAsStringConverter.h>
 #include <Interpreters/Context.h>
+
+#include <optional>
 
 
 namespace DB
@@ -43,9 +46,18 @@ public:
     {
         if (context && context->getSettingsRef()[Setting::compile_regular_expressions])
             regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
+
+        if constexpr (ImplSupportsJSONHaystack<Impl>::value)
+            json_converter.emplace(context);
     }
 
     [[nodiscard]] String getName() const override { return name; }
+
+    void updateHash(SipHash & hash) const override
+    {
+        if (json_converter)
+            json_converter->updateHash(hash);
+    }
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
@@ -56,7 +68,10 @@ public:
 
     [[nodiscard]] String getSignatureString() const override
     {
-        return "(String, const String) -> String";
+        if constexpr (ImplSupportsJSONHaystack<Impl>::value)
+            return "(String | JSON, const String) -> String";
+        else
+            return "(String, const String) -> String";
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -66,7 +81,12 @@ public:
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr column = arguments[0].column;
+        ColumnPtr column = arguments[0].column;
+        if constexpr (ImplSupportsJSONHaystack<Impl>::value)
+        {
+            if (isObject(arguments[0].type))
+                column = json_converter->convert(arguments[0]);
+        }
         const ColumnPtr column_needle = arguments[1].column;
 
         const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
@@ -95,6 +115,8 @@ public:
 private:
     /// Compile-count threshold for JIT-compiling regular expressions, or `size_t(-1)` to disable.
     size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
+
+    std::optional<JSONAsStringConverter> json_converter;
 };
 
 }

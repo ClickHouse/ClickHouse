@@ -29,6 +29,7 @@ REGISTER_FUNCTION(VisitParamExtractString)
 {
     FunctionDocumentation::Description description = R"(
 Parses `String` in double quotes from the value of the field named `field_name`.
+A `JSON` value is searched as its `String` text.
 
 **Implementation details**
 
@@ -36,7 +37,7 @@ There is currently no support for code points in the format `\uXXXX\uYYYY` that 
 )";
     FunctionDocumentation::Syntax syntax = "simpleJSONExtractString(json, field_name)";
     FunctionDocumentation::Arguments arguments = {
-        {"json", "The JSON in which the field is searched for.", {"String"}},
+        {"json", "The JSON in which the field is searched for.", {"String", "JSON"}},
         {"field_name", "The name of the field to search for.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the unescaped value of a field as a string, including separators. An empty string is returned if the field doesn't contain a double quoted string, if unescaping fails or if the field doesn't exist", {"String"}};

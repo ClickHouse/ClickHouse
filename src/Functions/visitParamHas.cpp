@@ -23,10 +23,11 @@ REGISTER_FUNCTION(VisitParamHas)
 {
     FunctionDocumentation::Description description = R"(
 Checks whether there is a field named `field_name`.
+A `JSON` value is searched as its `String` text.
 )";
     FunctionDocumentation::Syntax syntax = "simpleJSONHas(json, field_name)";
     FunctionDocumentation::Arguments arguments = {
-        {"json", "The JSON in which the field is searched for.", {"String"}},
+        {"json", "The JSON in which the field is searched for.", {"String", "JSON"}},
         {"field_name", "The name of the field to search for.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the field exists, `0` otherwise",{"UInt8"}};

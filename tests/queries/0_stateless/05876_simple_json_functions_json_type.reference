@@ -1,0 +1,118 @@
+text	1	{"a":42,"b":-7,"c":1.5,"d":true,"e":"s\\/t\\"r","t":{"x":0}}
+text	2	{"a":2,"t":{"x":0},"z":{"a":1}}
+text	3	{"arr":[1,2,{"a":3}],"objs":[{"a":1},{"a":2}],"t":{"x":0}}
+text	4	{"b":1,"t":{"x":0}}
+text	5	{"t":{"x":0}}
+text	6	{"big":18446744073709551615,"f":1e300,"neg":-9223372036854775808,"t":{"x":0}}
+text	7	{"dt":"2020-01-01 00:00:00","t":{"x":5}}
+text	8	{"a":{"b":1},"q":{"r":{"s":"deep"}},"t":{"x":0}}
+matrix
+simpleJSONHas	1	1	1	1	1	1	1	0	0	0	0	0	0	0	0	1
+simpleJSONHas	2	1	0	0	0	0	1	0	0	0	0	0	0	0	0	1
+simpleJSONHas	3	1	0	0	0	0	1	1	1	0	0	0	0	0	0	1
+simpleJSONHas	4	0	1	0	0	0	1	0	0	0	0	0	0	0	0	1
+simpleJSONHas	5	0	0	0	0	0	1	0	0	0	0	0	0	0	0	1
+simpleJSONHas	6	0	0	0	0	0	1	0	0	1	1	1	0	0	0	1
+simpleJSONHas	7	0	0	0	0	0	1	0	0	0	0	0	1	0	0	1
+simpleJSONHas	8	1	1	0	0	0	1	0	0	0	0	0	0	1	0	1
+simpleJSONExtractUInt	1	42	0	1	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	2	2	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	3	3	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	4	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	5	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	6	0	0	0	0	0	0	0	0	18446744073709551615	0	1	0	0	0	1
+simpleJSONExtractUInt	7	0	0	0	0	0	5	0	0	0	0	0	2020	0	0	1
+simpleJSONExtractUInt	8	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractInt	1	42	-7	1	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractInt	2	2	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractInt	3	3	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractInt	4	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractInt	5	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractInt	6	0	0	0	0	0	0	0	0	0	-9223372036854775808	1	0	0	0	1
+simpleJSONExtractInt	7	0	0	0	0	0	5	0	0	0	0	0	2020	0	0	1
+simpleJSONExtractInt	8	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractFloat	1	42	-7	1.5	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractFloat	2	2	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractFloat	3	3	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractFloat	4	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractFloat	5	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractFloat	6	0	0	0	0	0	0	0	0	18446744073709552000	-9223372036854776000	1e300	0	0	0	1
+simpleJSONExtractFloat	7	0	0	0	0	0	5	0	0	0	0	0	2020	0	0	1
+simpleJSONExtractFloat	8	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractBool	1	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractBool	2	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractBool	3	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractBool	4	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractBool	5	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractBool	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractBool	7	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractBool	8	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractRaw	1	42	-7	1.5	true	"s\\/t\\"r"	0									1
+simpleJSONExtractRaw	2	2					0									1
+simpleJSONExtractRaw	3	3					0	[1,2,{"a":3}]	[{"a":1},{"a":2}]							1
+simpleJSONExtractRaw	4		1				0									1
+simpleJSONExtractRaw	5						0									1
+simpleJSONExtractRaw	6						0			18446744073709551615	-9223372036854775808	1e300				1
+simpleJSONExtractRaw	7						5						"2020-01-01 00:00:00"			1
+simpleJSONExtractRaw	8	{"b":1}	1				0							{"r":{"s":"deep"}}		1
+simpleJSONExtractString	1					s/t"r										1
+simpleJSONExtractString	2															1
+simpleJSONExtractString	3															1
+simpleJSONExtractString	4															1
+simpleJSONExtractString	5															1
+simpleJSONExtractString	6															1
+simpleJSONExtractString	7												2020-01-01 00:00:00			1
+simpleJSONExtractString	8															1
+aliases
+1
+session settings
+simpleJSONExtractRaw	1	"42"	"-7"	1.5	true	"s/t\\"r"	0									1
+simpleJSONExtractRaw	2	"2"					0									1
+simpleJSONExtractRaw	3	"3"					0	["1","2",{"a":"3"}]	[{"a":"1"},{"a":"2"}]							1
+simpleJSONExtractRaw	4		"1"				0									1
+simpleJSONExtractRaw	5						0									1
+simpleJSONExtractRaw	6						0			"18446744073709551615"	"-9223372036854775808"	1e300				1
+simpleJSONExtractRaw	7						5						"1577836800"			1
+simpleJSONExtractRaw	8	{"b":"1"}	"1"				0							{"r":{"s":"deep"}}		1
+simpleJSONExtractString	1	42	-7			s/t"r										1
+simpleJSONExtractString	2	2														1
+simpleJSONExtractString	3	3														1
+simpleJSONExtractString	4		1													1
+simpleJSONExtractString	5															1
+simpleJSONExtractString	6									18446744073709551615	-9223372036854775808					1
+simpleJSONExtractString	7												1577836800			1
+simpleJSONExtractString	8		1													1
+simpleJSONExtractUInt	1	42	0	1	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	2	2	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	3	3	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	4	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	5	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+simpleJSONExtractUInt	6	0	0	0	0	0	0	0	0	18446744073709551615	0	1	0	0	0	1
+simpleJSONExtractUInt	7	0	0	0	0	0	5	0	0	0	0	0	1577836800	0	0	1
+simpleJSONExtractUInt	8	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1
+nullable
+1	Nullable(UInt8)	\N	1	\N	1
+2	Nullable(UInt8)	1	1	1	1
+3	Nullable(UInt8)	1	1	"x"	1
+constant
+2	2	1
+1	-3	v
+sub-object and Dynamic
+1		1
+2		1
+3		1
+4		1
+5		1
+6		1
+7		1
+8	deep	1
+Nullable(String)	{"b":1}	1
+query condition cache
+0
+20000
+0
+20000
+0
+10000
+0
+10000

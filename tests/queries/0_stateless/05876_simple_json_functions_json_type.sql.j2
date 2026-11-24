@@ -1,0 +1,107 @@
+-- simpleJSON* (visitParam*) functions on the `JSON` data type return the same as on `json::String`.
+
+SET session_timezone = 'UTC';
+SET output_format_json_quote_64bit_integers = 0, output_format_json_quote_64bit_floats = 0,
+    output_format_json_escape_forward_slashes = 1, date_time_output_format = 'simple';
+
+{% set functions = ['simpleJSONHas', 'simpleJSONExtractUInt', 'simpleJSONExtractInt', 'simpleJSONExtractFloat',
+                    'simpleJSONExtractBool', 'simpleJSONExtractRaw', 'simpleJSONExtractString'] -%}
+{% set keys = ['a', 'b', 'c', 'd', 'e', 'x', 'arr', 'objs', 'big', 'neg', 'f', 'dt', 'q', 'missing'] -%}
+
+{% macro matrix(f, settings='') -%}
+SELECT '{{ f }}', id,
+{%- for k in keys %}
+    {{ f }}(j, '{{ k }}'),
+{%- endfor %}
+    ({% for k in keys %}{{ f }}(j, '{{ k }}'){{ ', ' if not loop.last }}{% endfor %})
+        = ({% for k in keys %}{{ f }}(j::String, '{{ k }}'){{ ', ' if not loop.last }}{% endfor %})
+FROM t ORDER BY id{{ settings }};
+{%- endmacro %}
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (id UInt32, j JSON(max_dynamic_paths = 2, t.x UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t VALUES
+    (1, '{"a":42,"b":-7,"c":1.5,"d":true,"e":"s/t\\"r"}'),
+    (2, '{"z":{"a":1},"a":2}'),
+    (3, '{"arr":[1,2,{"a":3}],"objs":[{"a":1},{"a":2}]}'),
+    (4, '{"a":null,"b":1}'),
+    (5, '{}'),
+    (6, '{"big":18446744073709551615,"neg":-9223372036854775808,"f":1e300}'),
+    (7, '{"t":{"x":5},"dt":"2020-01-01 00:00:00"}'),
+    (8, '{"a.b":1,"q":{"r":{"s":"deep"}}}');
+
+SELECT 'text', id, j::String FROM t ORDER BY id;
+
+SELECT 'matrix';
+{% for f in functions -%}
+{{ matrix(f) }}
+{% endfor %}
+
+SELECT 'aliases';
+SELECT countIf(
+    visitParamHas(j, 'a') = simpleJSONHas(j::String, 'a')
+    AND visitParamExtractUInt(j, 'a') = simpleJSONExtractUInt(j::String, 'a')
+    AND visitParamExtractInt(j, 'b') = simpleJSONExtractInt(j::String, 'b')
+    AND visitParamExtractFloat(j, 'c') = simpleJSONExtractFloat(j::String, 'c')
+    AND visitParamExtractBool(j, 'd') = simpleJSONExtractBool(j::String, 'd')
+    AND visitParamExtractRaw(j, 'a') = simpleJSONExtractRaw(j::String, 'a')
+    AND visitParamExtractString(j, 'e') = simpleJSONExtractString(j::String, 'e')) = count()
+FROM t;
+
+SELECT 'session settings';
+{% for f in ['simpleJSONExtractRaw', 'simpleJSONExtractString', 'simpleJSONExtractUInt'] -%}
+{{ matrix(f, "\nSETTINGS output_format_json_quote_64bit_integers = 1, output_format_json_escape_forward_slashes = 0, date_time_output_format = 'unix_timestamp'") }}
+{% endfor %}
+
+SELECT 'nullable';
+DROP TABLE IF EXISTS t_nullable;
+CREATE TABLE t_nullable (id UInt32, n Nullable(JSON)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_nullable VALUES (1, NULL), (2, '{"a":1}'), (3, '{"b":{"a":"x"}}');
+SELECT id, toTypeName(simpleJSONHas(n, 'a')), simpleJSONHas(n, 'a'), simpleJSONHas(n, 'a') <=> simpleJSONHas(n::Nullable(String), 'a'),
+    simpleJSONExtractRaw(n, 'a'), simpleJSONExtractRaw(n, 'a') <=> simpleJSONExtractRaw(n::Nullable(String), 'a')
+FROM t_nullable ORDER BY id;
+
+SELECT 'constant';
+SELECT simpleJSONExtractRaw('{"b":{"a":1},"a":2}'::JSON, 'a'), simpleJSONExtractRaw('{"b":{"a":1},"a":2}'::JSON::String, 'a'),
+    simpleJSONExtractRaw('{"b":{"a":1},"a":2}', 'a');
+SELECT simpleJSONHas('{"a":1}'::JSON, 'a'), simpleJSONExtractInt('{"a":-3}'::JSON, 'a'), simpleJSONExtractString('{"a":"v"}'::JSON, 'a');
+
+SELECT 'sub-object and Dynamic';
+SELECT id, simpleJSONExtractString(j.^q, 's'), simpleJSONExtractString(j.^q, 's') = simpleJSONExtractString((j.^q)::String, 's')
+FROM t ORDER BY id;
+SELECT toTypeName(simpleJSONExtractRaw(d, 'a')), simpleJSONExtractRaw(d, 'a'), simpleJSONExtractRaw(d, 'a') = simpleJSONExtractRaw(d::String, 'a')
+FROM (SELECT '{"a":{"b":1}}'::JSON::Dynamic AS d);
+
+-- The text of a `JSON` value depends on the session's output settings, so the query condition cache must not
+-- serve a "no match" verdict computed under other settings. The filters use `startsWith` and a bare
+-- `simpleJSONHas`, which hash no setting themselves (a comparison would hash all format settings).
+SELECT 'query condition cache';
+DROP TABLE IF EXISTS t_qcc;
+CREATE TABLE t_qcc (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_qcc SELECT number, '{"a":2,"b/c":1}' FROM numbers(20000);
+SELECT count() FROM t_qcc WHERE startsWith(simpleJSONExtractRaw(j, 'a'), '"') SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM t_qcc WHERE startsWith(simpleJSONExtractRaw(j, 'a'), '"')
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1;
+SELECT count() FROM t_qcc WHERE simpleJSONHas(j, 'b/c') SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM t_qcc WHERE simpleJSONHas(j, 'b/c')
+SETTINGS use_query_condition_cache = 1, output_format_json_escape_forward_slashes = 0;
+
+DROP TABLE IF EXISTS t_qcc_dynamic;
+CREATE TABLE t_qcc_dynamic (id UInt64, d Dynamic) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_qcc_dynamic SELECT number, '{"a":2}'::JSON FROM numbers(10000);
+SELECT count() FROM t_qcc_dynamic WHERE startsWith(simpleJSONExtractRaw(d, 'a'), '"') SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM t_qcc_dynamic WHERE startsWith(simpleJSONExtractRaw(d, 'a'), '"')
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1;
+
+DROP TABLE IF EXISTS t_qcc_variant;
+CREATE TABLE t_qcc_variant (id UInt64, v Variant(JSON, String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_qcc_variant SELECT number, '{"a":2}'::JSON FROM numbers(10000);
+SELECT count() FROM t_qcc_variant WHERE startsWith(simpleJSONExtractRaw(v, 'a'), '"') SETTINGS use_query_condition_cache = 1;
+SELECT count() FROM t_qcc_variant WHERE startsWith(simpleJSONExtractRaw(v, 'a'), '"')
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1;
+
+DROP TABLE t;
+DROP TABLE t_nullable;
+DROP TABLE t_qcc;
+DROP TABLE t_qcc_dynamic;
+DROP TABLE t_qcc_variant;

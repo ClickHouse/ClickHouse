@@ -86,10 +86,11 @@ REGISTER_FUNCTION(VisitParamExtractRaw)
 {
     FunctionDocumentation::Description description = R"(
 Returns the value of the field named `field_name` as a `String`, including separators.
+A `JSON` value is searched as its `String` text.
 )";
     FunctionDocumentation::Syntax syntax = "simpleJSONExtractRaw(json, field_name)";
     FunctionDocumentation::Arguments arguments = {
-        {"json", "The JSON in which the field is searched for.", {"String"}},
+        {"json", "The JSON in which the field is searched for.", {"String", "JSON"}},
         {"field_name", "The name of the field to search for.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
