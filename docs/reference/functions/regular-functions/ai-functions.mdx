@@ -97,8 +97,8 @@ ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 | `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
-| `headers.header.name`, `headers.header[N].name` | String | — | Custom HTTP header name. Use an indexed `header[N]` for additional headers. |
-| `headers.header.value`, `headers.header[N].value` | String | — | Value of the corresponding custom HTTP header. |
+| `headers.<label>.name` | String | — | Custom HTTP header name. Use a distinct label for each header. |
+| `headers.<label>.value` | String | — | Value of the corresponding custom HTTP header. |
 
 <Note>
 Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `provider = 'openai'` and pointing the `endpoint` to your service.
@@ -115,14 +115,14 @@ CREATE NAMED COLLECTION ai_gateway AS
     provider = 'openai',
     endpoint = 'https://gateway.example/v1/chat/completions',
     model = 'gateway-model',
-    `headers.header.name` = 'x-api-key',
-    `headers.header.value` = 'gateway-key',
-    `headers.header[1].name` = 'X-Tenant',
-    `headers.header[1].value` = 'analytics-team';
+    `headers.api_key.name` = 'x-api-key',
+    `headers.api_key.value` = 'gateway-key',
+    `headers.tenant.name` = 'X-Tenant',
+    `headers.tenant.value` = 'analytics-team';
 
 SELECT aiGenerate('Summarize the order status.', map('credentials', 'ai_gateway'));
 
-ALTER NAMED COLLECTION ai_gateway SET `headers.header.value` = 'replacement-key';
+ALTER NAMED COLLECTION ai_gateway SET `headers.api_key.value` = 'replacement-key';
 ```
 
 The same `headers` subtree can be set in a server-configured named collection.

@@ -880,7 +880,7 @@ def header_collection(started_cluster):
         if api_key is not None:
             values["api_key"] = api_key
         for index, (header_name, value) in enumerate(headers):
-            prefix = "headers.header" if index == 0 else f"headers.header[{index}]"
+            prefix = f"headers.entry_{index}"
             values[f"{prefix}.name"] = header_name
             values[f"{prefix}.value"] = value
 
@@ -921,6 +921,11 @@ def test_custom_headers_authenticate_gateway(
     else:
         query = f"SELECT aiGenerate('headers', map('credentials', '{collection}'))"
     assert instance.query(query).strip() == ("4" if embedding else "headers")
+    if embedding:
+        similarity = instance.query(
+            f"SELECT aiSimilarity('headers', 'headers', 'test-model', map('credentials', '{collection}'))"
+        )
+        assert parse_nullable_float(similarity) == pytest.approx(1.0)
     headers = last_request()["headers"]
     assert headers["x-api-key"] == "gateway-test-key"
     assert headers["x-tenant"] == "tenant-a"
@@ -928,6 +933,39 @@ def test_custom_headers_authenticate_gateway(
         assert headers["anthropic-version"] == "2023-06-01"
     else:
         assert "authorization" not in headers
+
+
+@pytest.mark.parametrize(
+    "provider,path,embedding,secret,status",
+    [
+        ("openai", "/v1/error_marker", False, "fixture-credential-marker", 400),
+        ("anthropic", "/v1/raw_error_marker", False, "fixture-credential-marker", 400),
+        ("openai", "/v1/raw_error_marker", True, "fixture-credential-marker", 400),
+    ],
+)
+def test_provider_error_hides_configured_values(
+    header_collection, provider, path, embedding, secret, status
+):
+    collection = header_collection(
+        provider,
+        f"http://localhost:{MOCK_PORT}{path}",
+        [] if embedding else [("X-Tenant", secret)],
+        api_key=secret if embedding else None,
+    )
+    expression = "aiEmbed('x', 'test-model'," if embedding else "aiGenerate('x',"
+    qid = unique_query_id("provider_error")
+    error = instance.query_and_get_error(
+        f"SELECT {expression} map('credentials', '{collection}'))", query_id=qid
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    logged = instance.query(
+        f"SELECT exception FROM system.query_log WHERE query_id = '{qid}' "
+        "AND type = 'ExceptionWhileProcessing'"
+    )
+    for message in (error, logged):
+        assert f"HTTP {status}" in message
+        assert "[REDACTED]" in message
+        assert secret not in message
 
 
 def test_custom_headers_preserve_bearer_and_follow_alter(header_collection):
@@ -941,7 +979,7 @@ def test_custom_headers_preserve_bearer_and_follow_alter(header_collection):
     assert instance.query(query).strip() == "headers"
     assert last_request()["headers"]["x-tenant"] == "before"
     instance.query(
-        f"ALTER NAMED COLLECTION {collection} SET `headers.header.value` = 'after'"
+        f"ALTER NAMED COLLECTION {collection} SET `headers.entry_0.value` = 'after'"
     )
     assert instance.query(query).strip() == "headers"
     headers = last_request()["headers"]

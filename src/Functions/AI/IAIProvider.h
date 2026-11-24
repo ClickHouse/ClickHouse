@@ -175,6 +175,9 @@ public:
         const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response);
 
 protected:
+    /// Format a remote error without exposing configured credentials.
+    String formatProviderError(int status_code, const String & response_body, std::string_view api_key) const;
+
     /// Reject ambiguous, case-insensitive duplicates instead of silently replacing authentication.
     [[nodiscard]] HTTPHeaderEntries addCustomHeaders(HTTPHeaderEntries headers) const;
 
@@ -191,10 +194,7 @@ AIProviderPtr createAIProvider(
     const String & endpoint,
     std::string_view api_key,
     const String & api_version,
-    HTTPHeaderEntries custom_headers = {});
-
-/// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
-String formatProviderError(int status_code, const String & response_body);
+    HTTPHeaderEntries custom_headers);
 
 /// Replace control characters (including `\t \n \r`) with spaces.
 /// Needed to block provider-controlled text from forging log lines or corrupt a terminal when embedded in a logged exception.

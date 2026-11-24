@@ -565,6 +565,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(400, make_error_response("invalid request", error_type="invalid_request_error"))
             return
 
+        if parsed.path == "/v1/error_marker":
+            self._send_json(400, make_error_response("fixture-credential-marker"))
+            return
+
+        if parsed.path == "/v1/raw_error_marker":
+            self._send_raw(400, b"fixture-credential-marker")
+            return
+
         if parsed.path == "/v1/error_control_chars":
             # An error whose `message` and `type` carry control characters (newline, tab, carriage
             # return, BEL). The server must not copy these verbatim into the logged exception, so the

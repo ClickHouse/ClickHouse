@@ -114,7 +114,7 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("Anthropic provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            PreformattedMessage::create("Anthropic provider error: {}", formatProviderError(static_cast<int>(status), response_body, api_key)));
     }
 
     Poco::JSON::Parser parser;

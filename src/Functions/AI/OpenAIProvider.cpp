@@ -109,7 +109,7 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body, api_key)));
     }
 
     Poco::JSON::Parser parser;
@@ -219,7 +219,7 @@ void OpenAIProvider::embed(
     {
         throw AIProviderHTTPException(
             status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body, api_key)));
     }
 
     Poco::JSON::Parser parser;
