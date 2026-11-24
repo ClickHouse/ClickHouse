@@ -29,5 +29,7 @@ format row expected	1
 format row	1
 json string expected	1
 json string	1
+json to string expected	1
+json to string	1
 time zone expected	1
 time zone	1

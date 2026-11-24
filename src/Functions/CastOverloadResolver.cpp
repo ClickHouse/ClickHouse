@@ -51,6 +51,7 @@ namespace Setting
     extern const SettingsBool input_format_tsv_use_best_effort_in_schema_inference;
     extern const SettingsIntervalOutputFormat interval_output_format;
     extern const SettingsBool json_type_escape_dots_in_keys;
+    extern const SettingsBool type_json_skip_null_typed_paths;
     extern const SettingsBool output_format_always_write_decimal_point_in_float_and_decimal;
     extern const SettingsBool output_format_decimal_trailing_zeros;
     extern const SettingsUInt64 output_format_float_precision;
@@ -664,7 +665,8 @@ FunctionResultSettings getConversionResultSettings(ConversionResultKind kind)
         Setting::interval_output_format, Setting::bool_true_representation, Setting::bool_false_representation,
         Setting::output_format_decimal_trailing_zeros, Setting::output_format_always_write_decimal_point_in_float_and_decimal,
         Setting::output_format_float_precision, Setting::output_format_trim_fixed_string,
-        Setting::output_format_values_escape_quote_with_quote
+        Setting::output_format_values_escape_quote_with_quote, Setting::type_json_skip_null_typed_paths,
+        Setting::json_type_escape_dots_in_keys
     };
 
     static constexpr FunctionResultSetting cast_settings[] = {
@@ -680,6 +682,7 @@ FunctionResultSettings getConversionResultSettings(ConversionResultKind kind)
         Setting::input_format_try_infer_datetimes, Setting::input_format_try_infer_datetimes_only_datetime64,
         Setting::schema_inference_make_columns_nullable, Setting::aggregate_function_input_format,
         Setting::type_json_skip_invalid_typed_paths, Setting::type_json_use_partial_match_to_skip_paths_by_regexp,
+        Setting::type_json_skip_null_typed_paths,
         Setting::json_type_escape_dots_in_keys, Setting::date_time_output_format,
         Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, Setting::interval_output_format,
         Setting::bool_true_representation, Setting::bool_false_representation, Setting::output_format_decimal_trailing_zeros,

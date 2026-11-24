@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_lambda;
 DROP TABLE IF EXISTS t_part;
 DROP TABLE IF EXISTS t_format_row;
 DROP TABLE IF EXISTS t_json_string;
+DROP TABLE IF EXISTS t_json_to_string;
 DROP TABLE IF EXISTS t_time_zone;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
@@ -44,6 +45,8 @@ INSERT INTO t_format_row SELECT 0, number FROM numbers(10000);
 CREATE TABLE t_json_string (j JSON(a Nullable(Int64))) ENGINE = MergeTree ORDER BY toJSONString(j) SETTINGS index_granularity = 1;
 INSERT INTO t_json_string SELECT '{"a":' || toString(number) || '}' FROM numbers(100);
 INSERT INTO t_json_string VALUES ('{"a":null}');
+CREATE TABLE t_json_to_string (j JSON(a Nullable(Int64))) ENGINE = MergeTree ORDER BY toString(j) SETTINGS index_granularity = 1;
+INSERT INTO t_json_to_string SELECT * FROM t_json_string;
 CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
 INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
 
@@ -88,12 +91,15 @@ SELECT 'format row expected', count() FROM t_format_row WHERE formatRowNoNewline
 SELECT 'format row', count() FROM t_format_row WHERE formatRowNoNewline('CSV', x, y) = '0;5000';
 SELECT 'json string expected', count() FROM t_json_string WHERE toJSONString(j) = '{}' SETTINGS use_primary_key = 0;
 SELECT 'json string', count() FROM t_json_string WHERE toJSONString(j) = '{}';
+SELECT 'json to string expected', count() FROM t_json_to_string WHERE toString(j) = '{}' SETTINGS use_primary_key = 0;
+SELECT 'json to string', count() FROM t_json_to_string WHERE toString(j) = '{}';
 SET session_timezone = 'Pacific/Kiritimati';
 SELECT 'time zone expected', count() FROM t_time_zone WHERE toDateTime(s) = toDateTime('2024-01-01 05:00:00', 'UTC') SETTINGS use_primary_key = 0;
 SELECT 'time zone', count() FROM t_time_zone WHERE toDateTime(s) = toDateTime('2024-01-01 05:00:00', 'UTC');
 
 DROP TABLE t_format_row;
 DROP TABLE t_json_string;
+DROP TABLE t_json_to_string;
 DROP TABLE t_time_zone;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
