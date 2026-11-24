@@ -2294,7 +2294,7 @@ bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type, 
         {
             if (null_map && (*null_map)[row])
                 continue;
-            if (!fitsIntoMaxScaleDateTime64(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+            if (!fitsIntoMaxScaleDateTime64(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
                 return false;
         }
         return true;
@@ -2356,7 +2356,7 @@ bool hasNonFiniteFloats(const IColumn & column, const IDataType & type, size_t b
         {
             if (null_map && (*null_map)[row])
                 continue;
-            if (hasNonFiniteFloats(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+            if (hasNonFiniteFloats(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
                 return true;
         }
         return false;
@@ -2394,7 +2394,7 @@ bool uint64ValuesFitInt64(const IColumn & column, const IDataType & type, size_t
         {
             if (null_map && (*null_map)[row])
                 continue;
-            if (!uint64ValuesFitInt64(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+            if (!uint64ValuesFitInt64(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
                 return false;
         }
         return true;
@@ -2791,7 +2791,7 @@ bool sharedDataIsAffectedByNewTypedPaths(
     const auto & shared_data_offsets = src.getSharedDataOffsets();
     for (size_t row = 0; row < shared_data_offsets.size(); ++row)
     {
-        size_t start = shared_data_offsets[row - 1];
+        size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
         size_t end = shared_data_offsets[row];
         if (start == end)
             continue;
@@ -2926,7 +2926,7 @@ bool newLeafTypedPathsNeedFormatParse(
 
     for (size_t row = 0; row != rows; ++row)
     {
-        size_t search_start = has_shared_data ? shared_data_offsets[row - 1] : 0;
+        size_t search_start = has_shared_data ? shared_data_offsets[static_cast<ssize_t>(row) - 1] : 0;
         const size_t search_end = has_shared_data ? shared_data_offsets[row] : 0;
 
         for (const auto & leaf : leaves)
@@ -3646,7 +3646,7 @@ ColumnPtr convertObjectColumns(
 
         for (size_t row = 0; row < rows; ++row)
         {
-            size_t src_start = src_shared_offsets[row - 1];
+            size_t src_start = src_shared_offsets[static_cast<ssize_t>(row) - 1];
             size_t src_end = src_shared_offsets[row];
 
             populated_in_row.clear();
