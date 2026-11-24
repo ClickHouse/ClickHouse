@@ -33,13 +33,13 @@ public:
     public:
         Element() = default;
 
-        bool isObject() const { return is_sub_object || value.isObject(); }
-        bool isArray() const { return !is_sub_object && value.isArray(); }
-        bool isString() const { return !is_sub_object && value.isString(); }
-        std::string_view getString() const { return value.getString(); }
-        Array getArray() const;
-        Object getObject() const;
-        const Element & getElement() const { return *this; }
+        [[nodiscard]] bool isObject() const { return is_sub_object || value.isObject(); }
+        [[nodiscard]] bool isArray() const { return !is_sub_object && value.isArray(); }
+        [[nodiscard]] bool isString() const { return !is_sub_object && value.isString(); }
+        [[nodiscard]] std::string_view getString() const { return value.getString(); }
+        [[nodiscard]] Array getArray() const;
+        [[nodiscard]] Object getObject() const;
+        [[nodiscard]] const Element & getElement() const { return *this; }
 
     private:
         friend class ObjectColumnJSONParser;
@@ -60,7 +60,7 @@ public:
     class Array
     {
     public:
-        size_t size() const { return array.size(); }
+        [[nodiscard]] size_t size() const { return array.size(); }
         Element operator[](size_t index) const { return Element(parser, array[index]); }
 
     private:
@@ -117,7 +117,7 @@ private:
 
     bool findMember(std::string_view prefix, std::string_view key, Element & result);
     bool findValue(std::string_view value_path, Element & result);
-    bool hasPathsWithPrefix(std::string_view prefix) const;
+    [[nodiscard]] bool hasPathsWithPrefix(std::string_view prefix) const;
     void appendSubObject(std::string_view prefix, PaddedPODArray<UInt8> & buffer);
 
     template <typename Write>

@@ -140,7 +140,7 @@ bool ObjectColumnJSONParser::findMember(std::string_view prefix, std::string_vie
     }
     else
     {
-        if (key.find('.') != std::string_view::npos)
+        if (key.contains('.'))
             return false;
         path += key;
     }
