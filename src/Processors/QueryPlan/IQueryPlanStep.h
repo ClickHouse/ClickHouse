@@ -166,7 +166,7 @@ public:
     /// expressions of a plan without knowing the step types. Most steps own none and inherit this.
     ///
     /// A step that holds an expression and does not override this reports nothing rather than
-    /// failing, which is how the DAGs of `TotalsHavingStep`, `FillingStep` and `IEJoinStep` went
+    /// failing, which is how the DAGs of `TotalsHavingStep`, `FillingStep` and `InequalityJoinStep` went
     /// unnoticed: the subqueries they consume were captured but never attributed to them.
     using ActionsDAGVisitor = std::function<void(const ActionsDAG &)>;
     virtual void forEachActionsDAG(const ActionsDAGVisitor & /*visitor*/) const {}

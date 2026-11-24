@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+message Inner {
+  uint32 x = 1;
+  string s = 2;
+}
+
+message Row {
+  repeated uint32 a = 1;
+  Inner t = 2;
+  map<string, uint32> m = 3;
+  repeated Inner n = 4;
+  uint32 o = 5;
+  string d = 6;
+}

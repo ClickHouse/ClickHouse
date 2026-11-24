@@ -2,7 +2,7 @@
 
 -- A subquery in the `ON` section of an `IE JOIN` names the step that reads it.
 --
--- The conjuncts beyond the two inequalities become the residual condition of `IEJoinStep`, which
+-- The conjuncts beyond the two inequalities become the residual condition of `InequalityJoinStep`, which
 -- keeps them in an `ExpressionActions` of its own rather than in a `Filter` step above the join.
 -- Steps are asked for the `ActionsDAG`s they own, so that residual is reached like any other
 -- expression; a step that answered for nothing would capture and time the sub-plan while no step

@@ -321,7 +321,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
             if (execute_for_exists)
             {
-                if (optimizePlanForExists(query_plan))
+                if (optimizePlanForExists(query_plan, /*is_correlated=*/false))
                     skip_execution_for_exists = true;
                 else
                 {
@@ -425,7 +425,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
                 else
                 {
-                    auto block = executor->getHeader().cloneWithColumns(chunk.getColumns());
+                    /// Detach columns from the chunk so that the resulting block holds
+                    /// uniquely-owned columns. `wrap_with_nullable_or_tuple` calls
+                    /// `materializeBlock` (which goes through `IColumn::mutate` for
+                    /// `Const` / `LowCardinality` columns) and may construct a
+                    /// `ColumnTuple`, both of which require `use_count() == 1` for
+                    /// the inputs in debug/sanitizer builds.
+                    auto block = executor->getHeader().cloneWithColumns(chunk.detachColumns());
                     wrap_with_nullable_or_tuple(block);
                     scalar_block = std::move(block);
                 }

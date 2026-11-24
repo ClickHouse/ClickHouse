@@ -1,4 +1,5 @@
 #include <Common/CompactSymbols.h>
+#include <base/sanitizer_defs.h>
 
 #include <algorithm>
 #include <array>
@@ -101,6 +102,8 @@ size_t maximumFrameContentSize(size_t compressed_size)
     return compressed_size * max_expansion_ratio;
 }
 
+/// `ZSTD_CONTENTSIZE_ERROR` is defined as `(0ULL - 2)`, which wraps around on purpose.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 size_t frameContentSize(std::string_view input)
 {
     uint64_t decompressed_size = ZSTD_getFrameContentSize(input.data(), input.size());
