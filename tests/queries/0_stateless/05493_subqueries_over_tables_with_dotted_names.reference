@@ -9,3 +9,5 @@ remote	2	4
 two dotted databases	1	2
 temporary table scalar	1	2
 temporary table in	0	1
+aliased temporary table scalar	2	1
+aliased temporary table in	1	0

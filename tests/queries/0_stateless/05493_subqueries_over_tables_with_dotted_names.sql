@@ -41,6 +41,11 @@ INSERT INTO `db_05493.tt` VALUES (1);
 SELECT 'temporary table scalar', (SELECT max(x) FROM `db_05493.tt`), (SELECT max(x) FROM db_05493.tt);
 SELECT 'temporary table in', 2 IN (SELECT x FROM `db_05493.tt`), 2 IN (SELECT x FROM db_05493.tt);
 
+CREATE TEMPORARY TABLE tt (x UInt64) ENGINE = Memory;
+INSERT INTO tt VALUES (0), (1);
+SELECT 'aliased temporary table scalar', (SELECT max(x) FROM db_05493.tt), (SELECT max(x) FROM tt AS db_05493);
+SELECT 'aliased temporary table in', 2 IN (SELECT x FROM db_05493.tt), 2 IN (SELECT x FROM tt AS db_05493);
+
 DROP DATABASE db_05493;
 DROP DATABASE `db_05493.inner`;
 DROP DATABASE `db_05493.p`;

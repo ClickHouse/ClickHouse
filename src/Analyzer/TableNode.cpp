@@ -228,6 +228,8 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
         if (storage_id.hasDatabase())
         {
+            /// 0 is never the length of an alias or a table name, so an aliased table cannot hash like a qualified one.
+            state.update(size_t{0});
             state.update(storage_id.database_name.size());
             state.update(storage_id.database_name);
         }
