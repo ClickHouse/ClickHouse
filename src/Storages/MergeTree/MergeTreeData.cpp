@@ -14115,7 +14115,6 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 
         /// The members of a flattened Nested read their array sizes as the group's `size0`, so no member can have that name.
         /// A column of type `Nested` has no shared offsets: its own `size0` is resolved like any other name.
-        /// Rejected on attach too, as such a table cannot read the array sizes of its members.
         auto physical_names = physical_columns.getNameSet();
         for (const auto & column : columns_list)
         {
@@ -14123,12 +14122,18 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
                 continue;
 
             const auto & member_names = assert_cast<const DataTypeNestedCustomName &>(*column.type->getCustomName()).getNames();
-            if (std::ranges::find(member_names, "size0") != member_names.end())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Column '{}' is named like the array sizes the columns of Nested '{}' share (setting 'share_nested_offsets'). "
-                    "Rename it with a server version that still attaches the table",
-                    Nested::concatenateName(column.name, "size0"), column.name);
+            if (std::ranges::find(member_names, "size0") == member_names.end())
+                continue;
+
+            String message = fmt::format(
+                "Column '{}' is named like the array sizes the columns of Nested '{}' share (setting 'share_nested_offsets'). "
+                "Reading the array sizes of the other columns of '{}' fails until it is renamed",
+                Nested::concatenateName(column.name, "size0"), column.name, column.name);
+
+            if (throw_on_error)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+            LOG_ERROR(log, "Table definition is incorrect. {}", message);
         }
     }
 

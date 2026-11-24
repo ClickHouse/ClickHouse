@@ -47,6 +47,7 @@ namespace
 }
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -491,7 +492,19 @@ bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage
         return false;
 
     auto nested_column = part_columns.tryGetColumn(GetColumnsOptions::All, split.first);
-    return nested_column && isNested(nested_column->type);
+    if (!nested_column || !isNested(nested_column->type))
+        return false;
+
+    /// A column named `size0` takes the name of the shared array sizes. Read under any other name, they would be consumed
+    /// once per reader of the shared stream. Only a table attached with such a column has one, see `MergeTreeData`.
+    const auto & member_names = typeid_cast<const DataTypeNestedCustomName &>(*nested_column->type->getCustomName()).getNames();
+    if (std::ranges::find(member_names, "size0") != member_names.end())
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot read '{}': column '{}' is named like the array sizes the columns of Nested '{}' share, rename it",
+            required_column.name, Nested::concatenateName(split.first, "size0"), split.first);
+
+    return true;
 }
 
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
