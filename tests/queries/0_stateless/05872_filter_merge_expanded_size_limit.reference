@@ -16,3 +16,11 @@ Expression
       Filter
         Expression
           ReadFromSystemNumbers
+Expression
+  Aggregating
+    Expression
+      Filter
+        Filter
+          ReadFromSystemNumbers
+Condition: true
+└──ReadFromMergeTree (default.t_05872)

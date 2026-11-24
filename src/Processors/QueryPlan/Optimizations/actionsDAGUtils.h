@@ -209,7 +209,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 bool allOutputsDependsOnlyOnAllowedNodes(
     const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches, const ActionsDAG::Node * node, NodeMap & visited);
 
-/// The number of nodes of the tree that `node` expands to, as counted for `max_expanded_ast_elements`, capped at `limit + 1`.
+/// The number of nodes of the tree that `node` expands to (an alias counts as its argument), capped at `limit + 1`.
 size_t getExpandedTreeSize(const ActionsDAG::Node & node, size_t limit);
 /// The same for `node` of `second` after `ActionsDAG::merge(first, second)`, computed without merging.
 size_t getExpandedTreeSizeAfterMerge(const ActionsDAG & first, const ActionsDAG & second, const ActionsDAG::Node & node, size_t limit);
