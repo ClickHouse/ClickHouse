@@ -1350,7 +1350,12 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
         result_aggregate_function_name = result_aggregate_function_name.substr(0, prefix_length) + "DistinctIf";
     }
 
-    bool need_add_or_null = settings[Setting::aggregate_functions_null_for_empty] && !result_aggregate_function_name.ends_with("OrNull");
+    static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
+
+    /// Must be idempotent: shards and parallel replicas resolve the already rewritten names (sumOrNullIf) again.
+    bool need_add_or_null = settings[Setting::aggregate_functions_null_for_empty] && !result_aggregate_function_name.ends_with("OrNull")
+        && std::ranges::none_of(suffixes_to_replace, [&](std::string_view suffix)
+            { return result_aggregate_function_name.ends_with("OrNull" + String(suffix)); });
     if (need_add_or_null)
     {
         auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
@@ -1370,7 +1375,6 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
         {
             size_t function_name_size = result_aggregate_function_name.size();
 
-            static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
             for (const auto & suffix : suffixes_to_replace)
             {
                 auto suffix_string_value = String(suffix);
