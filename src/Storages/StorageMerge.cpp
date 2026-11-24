@@ -1895,7 +1895,8 @@ String childOutputNameOfVirtualColumn(const String & column_name)
 }
 
 /// The name of the column in a column identifier that the planner created for a table expression with a
-/// generated alias (`__table1.x`), if the name is such an identifier.
+/// generated alias (`__table1.x`), if the name is such an identifier. The name is returned as the planner
+/// rendered it, i.e. quoted if needed, see `GlobalPlannerContext::createColumnIdentifier`.
 std::optional<String> tryGetColumnNameFromColumnIdentifier(const String & name)
 {
     static constexpr std::string_view prefix = "__table";
@@ -3350,17 +3351,26 @@ void ReadFromMerge::convertAndFilterSourceStream(
         /// under, so the expressions find their inputs.
         if (!aliases.empty())
         {
-            const NameSet requested_names(column_names_read.begin(), column_names_read.end());
+            /// The column identifier contains the name of the column as the planner renders it, i.e. quoted
+            /// if needed (`__table1.\`a.k\`` for a subcolumn `a.k`), so the names are matched in that form.
+            std::unordered_map<String, String> requested_names_by_rendered_name;
+            for (const auto & column_name : column_names_read)
+                requested_names_by_rendered_name.emplace(backQuoteIfNeed(column_name), column_name);
+
             ActionsDAG rename_dag(before_block_header->getColumnsWithTypeAndName());
             auto & outputs = rename_dag.getOutputs();
             bool has_renamed_columns = false;
             for (auto & output : outputs)
             {
-                auto requested_name = tryGetColumnNameFromColumnIdentifier(output->result_name);
-                if (!requested_name || !requested_names.contains(*requested_name) || before_block_header->has(*requested_name))
+                auto rendered_name = tryGetColumnNameFromColumnIdentifier(output->result_name);
+                if (!rendered_name)
                     continue;
 
-                output = &rename_dag.addAlias(*output, *requested_name);
+                auto requested_name_it = requested_names_by_rendered_name.find(*rendered_name);
+                if (requested_name_it == requested_names_by_rendered_name.end() || before_block_header->has(requested_name_it->second))
+                    continue;
+
+                output = &rename_dag.addAlias(*output, requested_name_it->second);
                 has_renamed_columns = true;
             }
 

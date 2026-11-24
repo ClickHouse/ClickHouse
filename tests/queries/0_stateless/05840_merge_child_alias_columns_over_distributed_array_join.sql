@@ -36,3 +36,39 @@ SELECT _table, y, d, z FROM merge_alias_aj ARRAY JOIN [1] AS one ORDER BY z;
 DROP TABLE merge_alias_aj;
 DROP TABLE merge_alias_aj_dist;
 DROP TABLE merge_alias_aj_child;
+
+-- A column identifier contains the name of the column quoted if needed: a subcolumn of a tuple (`a.k`)
+-- or a name that is not an identifier (`a b`). Such columns are inputs of the `ALIAS` expressions as well.
+
+DROP TABLE IF EXISTS merge_alias_quoted;
+DROP TABLE IF EXISTS merge_alias_quoted_dist;
+DROP TABLE IF EXISTS merge_alias_quoted_child;
+
+CREATE TABLE merge_alias_quoted_child
+(
+    a Tuple(k UInt8),
+    `a b` UInt8,
+    y UInt8 ALIAS a.k + 1,
+    z UInt8 ALIAS `a b` + 10
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO merge_alias_quoted_child (a, `a b`) VALUES ((1), 3), ((2), 4);
+CREATE TABLE merge_alias_quoted_dist AS merge_alias_quoted_child ENGINE = Distributed(test_shard_localhost, currentDatabase(), merge_alias_quoted_child);
+CREATE TABLE merge_alias_quoted (a Tuple(k UInt8), `a b` UInt8, y UInt8, z UInt8) ENGINE = Merge(currentDatabase(), '^merge_alias_quoted_dist$');
+
+SET prefer_localhost_replica = 0;
+
+SELECT _table, y FROM merge_alias_quoted ORDER BY y;
+SELECT _table, y FROM merge_alias_quoted ARRAY JOIN [1] AS one ORDER BY y;
+SELECT z FROM merge_alias_quoted ARRAY JOIN [1] AS one ORDER BY z;
+SELECT _table, a.k, y, `a b`, z, a FROM merge_alias_quoted ARRAY JOIN [1] AS one ORDER BY y;
+SELECT y, z FROM merge_alias_quoted AS l INNER JOIN (SELECT 1 AS one) AS r ON 1 = r.one ORDER BY y;
+
+SET prefer_localhost_replica = 1;
+
+SELECT _table, y, z FROM merge_alias_quoted ARRAY JOIN [1] AS one ORDER BY y;
+SELECT y, z FROM merge_alias_quoted AS l INNER JOIN (SELECT 1 AS one) AS r ON 1 = r.one ORDER BY y;
+
+DROP TABLE merge_alias_quoted;
+DROP TABLE merge_alias_quoted_dist;
+DROP TABLE merge_alias_quoted_child;
