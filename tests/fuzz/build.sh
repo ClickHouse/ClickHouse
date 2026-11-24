@@ -10,6 +10,14 @@
 cp $SRC/tests/fuzz/*.dict $OUT/
 cp $SRC/tests/fuzz/*.options $OUT/
 
+# Preserve committed target-specific seeds before adding generated SQL corpora.
+mkdir -p "$BIN/tests/fuzz"
+for corpus in "$SRC"/tests/fuzz/*_fuzzer.in; do
+    if [ -d "$corpus" ]; then
+        cp -r "$corpus" "$BIN/tests/fuzz/"
+    fi
+done
+
 # prepare corpus dirs
 mkdir -p $BIN/tests/fuzz/lexer_fuzzer.in/
 mkdir -p $BIN/tests/fuzz/select_parser_fuzzer.in/
@@ -20,9 +28,7 @@ cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/lexer_fuzzer.in/
 cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/select_parser_fuzzer.in/
 cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/create_parser_fuzzer.in/
 
-# committed binary seed corpora (protobuf inputs cannot be derived from SQL files at build time)
-cp -r $SRC/tests/fuzz/json_ast_sql_parser_fuzzer.in $BIN/tests/fuzz/
-# the execution fuzzer consumes the same protobuf inputs
+# the execution fuzzer consumes the same protobuf inputs as the parser fuzzer (copied above with the other committed seeds)
 cp -r $SRC/tests/fuzz/json_ast_sql_parser_fuzzer.in $BIN/tests/fuzz/json_ast_sql_execution_fuzzer.in
 
 # build corpus archives

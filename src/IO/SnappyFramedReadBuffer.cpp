@@ -10,6 +10,7 @@
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
 #include <base/unaligned.h>
+#include <base/arithmeticOverflow.h>
 #include <bit>
 
 namespace DB
@@ -39,7 +40,7 @@ constexpr size_t MAX_UNCOMPRESSED_CHUNK_SIZE = 65536;
 uint32_t maskedCrc32c(const char * data, size_t size)
 {
     uint32_t crc = crc32c::Crc32c(data, size);
-    return std::rotr(crc, 15) + 0xa282ead8;
+    return common::addIgnoreOverflow(std::rotr(crc, 15), 0xa282ead8u);
 }
 
 }
@@ -187,7 +188,7 @@ bool SnappyFramedReadBuffer::nextImpl()
             if (uncompressed_length == 0)
                 continue;
 
-            working_buffer = Buffer(decompress_buffer.data(), decompress_buffer.data() + uncompressed_length);
+            working_buffer = WorkingBuffer::fromPaddedStorage(decompress_buffer, 0, uncompressed_length);
             return true;
         }
 
@@ -225,7 +226,7 @@ bool SnappyFramedReadBuffer::nextImpl()
             if (payload_size == 0)
                 continue;
 
-            working_buffer = Buffer(decompress_buffer.data(), decompress_buffer.data() + payload_size);
+            working_buffer = WorkingBuffer::fromPaddedStorage(decompress_buffer, 0, payload_size);
             return true;
         }
 

@@ -14,6 +14,8 @@ then
         # Check avx2 as a proxy, since every real CPU with AVX2 also has the other v3 features.
         if grep -q avx2 /proc/cpuinfo
         then
+            # The `amd64musl` path is kept for release branches built before the switch to the
+            # static musl binary, which publish a glibc binary under `amd64`.
             if ldd --version 2>&1 | grep -q musl
             then
                 DIR="amd64musl"
@@ -84,7 +86,10 @@ do
     i=$(($i+1))
 done
 
-if [ -z "${CLICKHOUSE_BRANCH}" ]
+# The `master` build by default. `CLICKHOUSE_BRANCH=latest` selects the newest release branch,
+# any other value names a folder on builds.clickhouse.com, such as `26.10`.
+CLICKHOUSE_BRANCH="${CLICKHOUSE_BRANCH:-master}"
+if [ "${CLICKHOUSE_BRANCH}" = "latest" ]
 then
     CLICKHOUSE_BRANCH=$(curl -fsSL https://clickhouse.com/data/version_date.tsv | sed -n 's/^v\([0-9]*\.[0-9]*\)\..*/\1/p' | sort -uV | tail -n 1)
     [ -n "${CLICKHOUSE_BRANCH}" ] || { echo "Cannot find the latest release branch in version_date.tsv."; exit 1; }

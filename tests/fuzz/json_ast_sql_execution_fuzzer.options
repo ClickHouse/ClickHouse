@@ -17,6 +17,9 @@ detect_leaks = 0
 # (`base/base/sanitizer_options.h` sets `allocator_may_return_null=1`), so that libfuzzer saves the reproducer.
 max_allocation_size_mb = 4096
 allocator_may_return_null = 0
+# Every distinct allocation and free stack is kept for the whole run, and the in-process `clickhouse local` keeps
+# producing new ones; packing them keeps a 5 hour run under the RSS limit (see serialization_dynamic_fuzzer.options).
+compress_stack_depot = 2
 
 [fuzzer_arguments]
 --output-format=Null
