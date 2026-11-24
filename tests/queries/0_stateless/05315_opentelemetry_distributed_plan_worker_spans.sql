@@ -168,7 +168,7 @@ FROM chain
 WHERE next_span_id = 0 OR next_span_id NOT IN (SELECT span_id FROM spans)
 ORDER BY ALL;
 
-SELECT 'spans dispatched by the local execution:', countIf(operation_name = 'StatelessWorkerClient::sendTask'), countIf(operation_name = 'InterserverIOHTTPHandler')
+SELECT 'spans dispatched by the local execution:', countIf(operation_name LIKE 'StatelessWorkerClient::%'), countIf(operation_name = 'InterserverIOHTTPHandler')
 FROM spans WHERE label = 'local execution';
 
 DROP TABLE t_dp_otel;

@@ -5,8 +5,8 @@ OpenTelemetry trace propagation from the initiator of a distributed plan query
 The initiator (node1) samples a trace and dispatches the tasks to node1 and node2 over HTTP with
 W3C `traceparent` headers. node2 must record the `InterserverIOHTTPHandler` request spans and the
 `DistributedPlanTask::execute` task spans under the initiator's trace id, and the request spans'
-parents must be the `StatelessWorkerClient::sendTask` spans recorded on node1: that is the hop
-the header carries.
+parents must be the `StatelessWorkerClient::sendTaskBatch` spans recorded on node1: that is the
+hop the header carries.
 """
 
 import time
@@ -103,15 +103,15 @@ def test_worker_task_spans_join_initiator_trace(started_cluster):
 
     trace_id = _wait_until(initiator_trace_id)
 
-    # One CLIENT dispatch span per task on the initiator, at least one of them aimed at node2.
+    # One CLIENT dispatch span per batch of tasks on the initiator, at least one of them aimed at node2.
     def dispatch_span_ids():
         rows = _span_rows(
             INITIATOR,
             trace_id,
             "span_id, attribute['clickhouse.target_host']",
-            f"""operation_name = 'StatelessWorkerClient::sendTask' AND kind = 'CLIENT'
+            f"""operation_name = 'StatelessWorkerClient::sendTaskBatch' AND kind = 'CLIENT'
                 AND attribute['clickhouse.initial_query_id'] = '{query_id}'
-                AND attribute['clickhouse.distributed.task_id'] != ''""",
+                AND toUInt64OrZero(attribute['clickhouse.distributed.task_count']) > 0""",
         )
         if not any(target_host.startswith("node2") for _, target_host in rows):
             return None
