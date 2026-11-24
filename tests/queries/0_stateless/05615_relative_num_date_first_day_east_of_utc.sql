@@ -1,3 +1,5 @@
+-- Random settings limits: merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=(0, 0)
+-- `PartsSplitter` fault injection reads the granule on each layer border twice, which breaks the `max_rows_to_read` bounds below.
 -- The Date 1970-01-01 starts before the Unix epoch in a time zone east of UTC.
 SET session_timezone = 'Europe/Berlin';
 
