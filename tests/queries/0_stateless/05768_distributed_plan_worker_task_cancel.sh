@@ -27,9 +27,9 @@ function wait_for()
 $CLICKHOUSE_CLIENT --query "CREATE TABLE t_worker_task_cancel (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY v"
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_worker_task_cancel SELECT number % 100, number FROM numbers(100000)"
 
-# 4 readers sleeping 10 s in all feed 2 aggregation tasks and `main`.
+# 4 readers sleeping 100 s in all feed 2 aggregation tasks and `main`, so only the kill ends them.
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" --query "SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_worker_task_cancel
-    WHERE sleepEachRow(0.0001) = 0 GROUP BY k)
+    WHERE sleepEachRow(0.001) = 0 GROUP BY k)
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 0, distributed_plan_fallback_to_local_execution = 0,
     distributed_plan_force_shuffle_aggregation = 1, distributed_plan_default_reader_bucket_count = 4,
     distributed_plan_default_shuffle_join_bucket_count = 2, enable_analyzer = 1, enable_parallel_replicas = 0,
