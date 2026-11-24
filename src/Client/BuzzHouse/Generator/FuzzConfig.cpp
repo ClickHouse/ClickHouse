@@ -722,8 +722,17 @@ ORDER BY event_time_microseconds LIMIT 1 BY normalized_query_hash LIMIT 10 {2})"
         LOG_INFO(log, "Distributed shapes reach: SYSTEM FLUSH LOGS failed");
         return;
     }
+    /// Queries the automatic mode could not pair with their parallel replicas plan, as in the bug the shapes target
+    static const String not_comparable = fmt::format(R"(SELECT count() AS queries, any(substring(query, 1, 1500))
+{1} AND {0} AND ProfileEvents['AutoParallelReplicasPlansNotComparable'] > 0
+GROUP BY normalized_query_hash ORDER BY queries DESC LIMIT 10 {2})", bundled, from_log, settings);
     const std::vector<std::pair<String, String>> queries
-        = {{"logged", logged}, {"reach", reach}, {"errors", errors}, {"sources", sources}, {"missed", missed}};
+        = {{"logged", logged},
+           {"reach", reach},
+           {"errors", errors},
+           {"sources", sources},
+           {"missed", missed},
+           {"not comparable", not_comparable}};
 
     for (const auto & [name, query] : queries)
     {
