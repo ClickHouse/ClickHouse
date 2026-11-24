@@ -6,6 +6,7 @@
 #include <base/DayNum.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -62,7 +63,19 @@ public:
     /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
     /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
     void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
+
+    /// Set the ranges of the block columns whose stored values `part` invalidates (see
+    /// `IMergeTreeDataPart::isSystemColumnInvalidated`) to the ones `load` gives them: the ranges of `min_block`
+    /// and `_part_offset` of a part with `rows_count` rows, which the reader returns instead. No-op for an
+    /// uninitialized index, and for the columns past its width.
+    void setInvalidatedBlockColumns(const IMergeTreeDataPart & part, size_t rows_count, const StorageMetadataPtr & metadata_snapshot);
     [[nodiscard]] Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
+
+    /// The range of `_block_number` or `_block_offset` in a part with `rows_count` rows that does not read the column
+    /// from disk: the reader returns `min_block` and `_part_offset` instead. `std::nullopt` for any other column, and
+    /// when a real column of the table overrides the virtual one.
+    [[nodiscard]] static std::optional<Range> getComputedBlockColumnRange(
+        const String & column_name, const IMergeTreeDataPart & part, size_t rows_count, const StorageInMemoryMetadata & metadata);
 
     /// The range of one column, as a `minmax_*.idx` file stores it. A non-nullable column cannot store a NULL or an infinite bound.
     static void writeRange(const Range & range, const IDataType & type, WriteBuffer & out);

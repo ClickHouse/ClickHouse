@@ -177,23 +177,13 @@ void MergeTreePartMinMaxIndex::load(const IMergeTreeDataPart & part)
 
     for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings))
     {
-        const bool synth_block_number = (fill_virtuals || part.isSystemColumnInvalidated(BlockNumberColumn::name)) && metadata_snapshot->isVirtualColumn(BlockNumberColumn::name) && column_name == BlockNumberColumn::name;
-        const bool synth_block_offset = (fill_virtuals || part.isSystemColumnInvalidated(BlockOffsetColumn::name)) && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name) && column_name == BlockOffsetColumn::name;
-
-        if (synth_block_number)
+        if (fill_virtuals || part.isSystemColumnInvalidated(column_name))
         {
-            const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
-            hyperrectangle.emplace_back(block_number, true, block_number, true);
-            continue;
-        }
-
-        if (synth_block_offset)
-        {
-            if (part.rows_count == 0)
-                hyperrectangle.emplace_back(Range::createWholeUniverse());
-            else
-                hyperrectangle.emplace_back(Field(UInt64(0)), true, Field(UInt64(part.rows_count - 1)), true);
-            continue;
+            if (auto range = getComputedBlockColumnRange(column_name, part, part.rows_count, *metadata_snapshot))
+            {
+                hyperrectangle.push_back(std::move(*range));
+                continue;
+            }
         }
 
         const String file_name = "minmax_" + getFileColumnName(column_name, part.checksums) + ".idx";
@@ -429,6 +419,49 @@ void MergeTreePartMinMaxIndex::repairInheritedBlockColumns(const IMergeTreeDataP
             if (column_name == BlockOffsetColumn::name && metadata_snapshot->isVirtualColumn(BlockOffsetColumn::name)
                 && source_offsets_are_whole_block)
                 hyperrectangle[i] = Range(Field(UInt64(0)), true, Field(UInt64(source_part.rows_count - 1)), true);
+        }
+
+        ++i;
+    }
+}
+
+std::optional<Range> MergeTreePartMinMaxIndex::getComputedBlockColumnRange(
+    const String & column_name, const IMergeTreeDataPart & part, size_t rows_count, const StorageInMemoryMetadata & metadata)
+{
+    if (!metadata.isVirtualColumn(column_name))
+        return std::nullopt;
+
+    if (column_name == BlockNumberColumn::name)
+    {
+        const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, part);
+        return Range(block_number, true, block_number, true);
+    }
+
+    if (column_name == BlockOffsetColumn::name)
+    {
+        if (rows_count == 0)
+            return Range::createWholeUniverse();
+        return Range(Field(UInt64(0)), true, Field(UInt64(rows_count - 1)), true);
+    }
+
+    return std::nullopt;
+}
+
+void MergeTreePartMinMaxIndex::setInvalidatedBlockColumns(const IMergeTreeDataPart & part, size_t rows_count, const StorageMetadataPtr & metadata_snapshot)
+{
+    if (!initialized)
+        return;
+
+    size_t i = 0;
+    for (const auto & [column_name, _] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, part.storage.getSettings()))
+    {
+        if (i >= hyperrectangle.size())
+            break;
+
+        if (part.isSystemColumnInvalidated(column_name))
+        {
+            if (auto range = getComputedBlockColumnRange(column_name, part, rows_count, *metadata_snapshot))
+                hyperrectangle[i] = std::move(*range);
         }
 
         ++i;

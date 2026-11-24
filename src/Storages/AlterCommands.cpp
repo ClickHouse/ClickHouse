@@ -871,6 +871,10 @@ void AlterCommand::apply(
     }
     else if (type == DROP_COLUMN)
     {
+        /// The table keeps the virtual columns, and so their implicit indices.
+        if (isClearOfBlockColumns(metadata))
+            return;
+
         metadata.dropImplicitIndicesForColumn(column_name);
 
         /// Otherwise just clear data on disk
@@ -1705,7 +1709,8 @@ MutationStageDecision AlterCommand::getMutationStageDecision(
 
     if (type == DROP_COLUMN)
     {
-        decision.requires_mutation = metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
+        decision.requires_mutation = metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name)
+            || isClearOfBlockColumns(metadata);
         return decision;
     }
 
@@ -1773,6 +1778,11 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
 bool AlterCommand::isRemovingProperty() const
 {
     return to_remove != RemoveProperty::NO_PROPERTY;
+}
+
+bool AlterCommand::isClearOfBlockColumns(const StorageInMemoryMetadata & metadata) const
+{
+    return type == DROP_COLUMN && clear && DB::isClearOfBlockColumns(column_name, metadata);
 }
 
 bool AlterCommand::isDropOrRename() const
@@ -2222,7 +2232,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                 || command.type == AlterCommand::COMMENT_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN)
         {
-            if (!has_column && command.if_exists)
+            if (!has_column && command.if_exists && !command.isClearOfBlockColumns(metadata))
                 command.ignore = true;
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
@@ -2535,7 +2545,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
+            if (command.isClearOfBlockColumns(*metadata))
+            {
+                /// Nothing to check: the columns stay in the table, and the mutation only invalidates their stored values.
+            }
+            else if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {

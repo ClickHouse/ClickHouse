@@ -1,4 +1,6 @@
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ParserAlterQuery.h>
@@ -55,6 +57,21 @@ bool MutationCommand::affectsAllColumns() const
     return type == DELETE
         || type == APPLY_DELETED_MASK
         || type == REWRITE_PARTS;
+}
+
+bool MutationCommand::isClearOfBlockColumns(const StorageInMemoryMetadata & metadata) const
+{
+    return type == DROP_COLUMN && clear && DB::isClearOfBlockColumns(column_name, metadata);
+}
+
+bool isClearOfBlockColumns(const String & column_name, const StorageInMemoryMetadata & metadata)
+{
+    if (column_name != BlockNumberColumn::name && column_name != BlockOffsetColumn::name)
+        return false;
+
+    /// A real column of the table overrides the virtual one.
+    return !metadata.columns.has(column_name)
+        && metadata.virtuals.tryGetDescription(column_name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All) != nullptr;
 }
 
 namespace

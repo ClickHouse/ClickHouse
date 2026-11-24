@@ -898,7 +898,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::REWRITE_PARTS)
             has_rewrite_parts = true;
 
-        if (command.type == MutationCommand::DROP_COLUMN && command.clear)
+        if (command.type == MutationCommand::DROP_COLUMN && command.clear && !command.isClearOfBlockColumns(*metadata_snapshot))
         {
             has_clear_column = true;
             clear_column_names.insert(command.column_name);
@@ -1699,6 +1699,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
             }
+        }
+        else if (command.isClearOfBlockColumns(*metadata_snapshot))
+        {
+            /// `MutateTask` only marks the stored values of `_block_number` and `_block_offset` as invalidated
+            /// in the new part, which then ignores the indices and projections that use them. Rebuilding
+            /// dependents with the default value of the column, as below, would make them wrong instead.
+            continue;
         }
         else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
         {

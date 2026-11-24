@@ -862,6 +862,35 @@ static NameSet collectIndicesRebuiltByMutation(
     return rebuilt;
 }
 
+/// Whether the part reads `_block_number` or `_block_offset` from disk: it stores the column and does not
+/// invalidate it. Otherwise the reader already returns `min_block` and `_part_offset`, and `CLEAR COLUMN` of
+/// these columns (see `isClearOfBlockColumns`) has nothing to change in the part.
+static bool readsStoredBlockColumns(const IMergeTreeDataPart & part)
+{
+    for (const auto & column_name : {BlockNumberColumn::name, BlockOffsetColumn::name})
+    {
+        if (part.getColumns().contains(column_name) && !part.isSystemColumnInvalidated(column_name))
+            return true;
+    }
+    return false;
+}
+
+static bool hasClearOfBlockColumns(const MutationCommands & commands, const StorageInMemoryMetadata & metadata)
+{
+    return std::ranges::any_of(commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(metadata); });
+}
+
+/// Applies `CLEAR COLUMN` of `_block_number` / `_block_offset` to the new part. It keeps the values the source part
+/// stores, but marks them as invalidated, so that the reader returns `min_block` and `_part_offset` instead, as for
+/// an attached part. The next merge drops or rewrites the stored values.
+static void invalidateBlockColumns(IMergeTreeDataPart & new_part, const WriteSettings & write_settings)
+{
+    auto columns = IMergeTreeDataPart::getSystemColumnsToInvalidate(new_part.info);
+    columns.insert(new_part.invalidated_system_columns.begin(), new_part.invalidated_system_columns.end());
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(new_part.getDataPartStorage(), "", columns, write_settings);
+    new_part.invalidated_system_columns = std::move(columns);
+}
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -907,6 +936,10 @@ static void splitAndModifyMutationCommands(
 
         for (const auto & command : commands)
         {
+            /// Applied to the new part by `invalidateBlockColumns`: the stored values are copied as they are.
+            if (command.isClearOfBlockColumns(*metadata_snapshot))
+                continue;
+
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 auto marker_name = nameInPart(command.column_name);
@@ -1241,6 +1274,10 @@ static void splitAndModifyMutationCommands(
 
         for (const auto & command : commands)
         {
+            /// Applied to the new part by `invalidateBlockColumns`: the stored values are hardlinked as they are.
+            if (command.isClearOfBlockColumns(*metadata_snapshot))
+                continue;
+
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 auto marker_name = nameInPart(command.column_name);
@@ -1424,7 +1461,8 @@ static void splitAndModifyMutationCommands(
     }
 
     /// Any mutation that processes data through the interpreter also materializes `_block_number` and `_block_offset` columns when they are enabled.
-    if (!for_interpreter.empty())
+    /// Not when it clears them: the column would be read from the stored values of the other one, which the new part invalidates.
+    if (!for_interpreter.empty() && !hasClearOfBlockColumns(commands, *metadata_snapshot))
     {
         const auto data_settings = part->storage.getSettings();
 
@@ -2800,6 +2838,9 @@ static void finalizeMutatedPart(
             /// The mutated part keeps the block range of the source part's name, so repairing against the
             /// source part re-derives exactly the ranges the new part's own name would give.
             minmax_index->repairInheritedBlockColumns(*source_part, metadata_snapshot);
+            /// The ranges of the stored values, which the new part may invalidate, can be narrower than the ones of
+            /// the values the reader returns, and would skip the part wrongly. A mutation keeps the rows of the part.
+            minmax_index->setInvalidatedBlockColumns(*new_data_part, source_part->rows_count, metadata_snapshot);
 
             auto files = minmax_index->store(
                 metadata_snapshot,
@@ -3036,6 +3077,8 @@ struct MutationContext
     bool changes_storage_type{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
     bool recalculate_ttl_only = false;
+    /// The mutation clears `_block_number` and `_block_offset` stored in the source part, see `invalidateBlockColumns`.
+    bool clears_block_columns = false;
 
     MergeTreeTransactionPtr txn;
 
@@ -3875,6 +3918,10 @@ private:
             if (removed_projections.contains(projection.name))
                 continue;
 
+            /// It would be built from or keep the stored values of the block columns, which the new part invalidates.
+            if (ctx->clears_block_columns && (projection.with_block_number || projection.with_block_offset))
+                continue;
+
             bool need_recalculate =
                 (ctx->materialized_projections.contains(projection.name)
                 || (!is_per_file_compatible_part_storage
@@ -4068,6 +4115,14 @@ private:
 
     void finalize()
     {
+        if (ctx->clears_block_columns)
+        {
+            MutationHelpers::invalidateBlockColumns(*ctx->new_data_part, ctx->context->getWriteSettings());
+            /// The index was built from the stored values. The mutation may drop rows, so the range of
+            /// `_part_offset` in the source part covers the one in the new part.
+            ctx->minmax_idx->setInvalidatedBlockColumns(*ctx->new_data_part, ctx->source_part->rows_count, ctx->metadata_snapshot);
+        }
+
         bool noop = false;
         ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
@@ -4284,6 +4339,8 @@ private:
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
+        if (ctx->clears_block_columns)
+            MutationHelpers::invalidateBlockColumns(*ctx->new_data_part, ctx->context->getWriteSettings());
 
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
         /// the inherited skp_idx.packed entry must not survive untouched into the new part's
@@ -4939,6 +4996,9 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.type == MutationCommand::APPLY_PATCHES)
         return true;
 
+    if (command.isClearOfBlockColumns(*metadata_snapshot) && !MutationHelpers::readsStoredBlockColumns(*part))
+        return true;
+
     if (command.type == MutationCommand::APPLY_DELETED_MASK && !part->hasLightweightDelete())
         return true;
 
@@ -5266,6 +5326,8 @@ bool MutateTask::prepare()
         if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
+
+    ctx->clears_block_columns = MutationHelpers::hasClearOfBlockColumns(ctx->commands_for_part, *ctx->metadata_snapshot);
 
     auto updated_columns_in_patches = alter_conversions->getColumnsUpdatedInPatches();
 
@@ -5675,6 +5737,11 @@ bool MutateTask::prepare()
                 ctx->metadata_snapshot,
                 ctx->materialized_projections);
 
+            /// It would be built from the stored values of the block columns, which the new part invalidates. The
+            /// hardlinked projection is not loaded for such a part (see `IMergeTreeDataPart::loadProjections`).
+            if (ctx->clears_block_columns)
+                std::erase_if(ctx->projections_to_recalc, [](const auto * projection) { return projection->with_block_number || projection->with_block_offset; });
+
             projections_to_skip.assign(ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end());
         }
         else
@@ -5723,6 +5790,10 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+
+        /// `invalidateBlockColumns` writes a new one: writing through a hardlink would change the source part.
+        if (ctx->clears_block_columns)
+            ctx->files_to_skip.insert(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
         /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
         /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a
