@@ -3230,47 +3230,6 @@ static bool executeDeterministicDag(
 }
 
 
-/// Applies a deterministic key-transform DAG to `in_column` and writes the transformed column/type to
-/// `out_column`/`out_type`.
-/// Intended for transforming constants (or IN-set elements) into "key space", so that the transformed
-/// values can be compared against key marks directly.
-///
-/// The function is intentionally conservative and returns false if the transformation cannot be proven
-/// safe for all values in `in_column`. In particular, it will fail if:
-/// - A required type conversion cannot be applied accurately for all values (casts that would produce NULLs).
-/// - Executing the DAG throws for some value from `in_column`.
-/// - The output contains NULLs (Nullable output is allowed only if it contains no NULLs; it is then unwrapped).
-///
-/// If `in_type` differs from `dag.input_type`, `in_column` is cast to `dag.input_type` (without introducing
-/// NULLs) before the DAG is executed.
-///
-/// Examples:
-/// - DAG `p -> cityHash64(p)`:
-///   input:  `['abc']`  type `String`
-///   output: `[cityHash64('abc')]`  type `UInt64`
-/// - DAG `p -> CAST(p, 'UInt8')`:
-///   input:  `['123']`  type `String`
-///   output: `[123]`  type `UInt8`
-static bool applyDeterministicDagToColumn(
-    const ColumnPtr & in_column,
-    const DataTypePtr & in_type,
-    const String & input_name,
-    const DeterministicKeyTransformDag & dag,
-    ColumnPtr & out_column,
-    DataTypePtr & out_type,
-    bool & out_cast_is_exact)
-{
-    ColumnPtr transform_input_column;
-    DataTypePtr transform_input_type;
-
-    if (!convertColumnForDeterministicDag(
-            in_column, in_type, dag, transform_input_column, transform_input_type, out_cast_is_exact))
-        return false;
-
-    return executeDeterministicDag(dag, transform_input_column, transform_input_type, input_name, out_column, out_type);
-}
-
-
 /// Whether a value of `input_type`, the column a deterministic key expression consumes, may hold a `NULL`
 /// that the key value of `key_type` no longer reveals: a top-level `NULL` mapped to a non-`Nullable` key,
 /// or a `NULL` nested in a `Tuple`. `toString` of a `Tuple(Nullable(Int32), Int32)` turns `(NULL, 1)`
