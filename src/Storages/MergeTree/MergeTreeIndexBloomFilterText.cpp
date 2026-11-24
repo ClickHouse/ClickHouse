@@ -608,7 +608,7 @@ bool normalizeConstantForIndexDomain(
     const auto primitive_type = BloomFilter::getPrimitiveType(indexed_type);
     if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(primitive_type.get()))
     {
-        value.resize(value.find_last_not_of('\0') + 1);
+        trimRight(value, '\0');
         /// A constant longer than the column equals no stored value, so its own tokens are the most selective probe.
         if (value.size() <= fixed_string_type->getN())
             value.resize(fixed_string_type->getN(), '\0');
@@ -621,7 +621,7 @@ bool normalizeConstantForIndexDomain(
         || !isFixedString(removeNullable(removeLowCardinality(constant_type))))
         return true;
 
-    value.resize(value.find_last_not_of('\0') + 1);
+    trimRight(value, '\0');
     /// A matching stored value may then carry zero bytes the constant lacks, which can change its last token.
     return padding == ConstantPadding::Stripped || tokensSurviveTrailingNuls(tokenizer.getType(), value);
 }
