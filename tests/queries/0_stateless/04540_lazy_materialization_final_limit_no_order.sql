@@ -12,7 +12,7 @@ INSERT INTO t_lazy_final_limit SELECT number, if(number < 1000, 7, 999), 'v1_' |
 INSERT INTO t_lazy_final_limit SELECT number, if(number < 1000, 7, 999), 'v2_' || toString(number) FROM numbers(100000);
 
 -- The test relies on settings that are randomized by the test runner: pin them.
-SET enable_analyzer = 1, max_threads = 4;
+SET max_threads = 4;
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000;
 SET optimize_move_to_prewhere = 1;
 

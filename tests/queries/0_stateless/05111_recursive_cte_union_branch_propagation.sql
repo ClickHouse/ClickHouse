@@ -5,7 +5,6 @@
 -- enclosing CTE of the same name existed, that one instead, which returned a wrong value with no error.
 -- CREATE VIEW stored the copied branch without RECURSIVE too, making the loss durable.
 
-SET enable_analyzer = 1;
 SET enable_global_with_statement = 1;
 
 -- The recursive CTE used throughout yields ids 1, 2, 3, so sum(id) = 6 and count() = 3. Branches that must

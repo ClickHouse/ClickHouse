@@ -2,7 +2,6 @@
 
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
 #include <Core/PlainRanges.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -12,6 +11,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/Logger_fwd.h>
 
 
 namespace DB
@@ -19,6 +20,10 @@ namespace DB
 
 struct Range;
 using Ranges = VectorWithMemoryTracking<Range>;
+
+struct NonClearableSet;
+template <typename Variant> struct SetVariantsTemplate;
+using SetVariants = SetVariantsTemplate<NonClearableSet>;
 
 class Context;
 class IFunctionBase;
@@ -113,6 +118,7 @@ public:
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromColumns(const Columns & columns);
+    bool insertFromColumns(const Columns & columns, size_t max_keys, size_t & rows_taken);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
 
     void fillSetElements();
@@ -129,8 +135,6 @@ public:
     bool isTruncated() const { return is_truncated.load(); }
 
     void checkIsCreated() const;
-
-    void processDateTime64Column(const ColumnWithTypeAndName & column_to_cast, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -150,7 +154,7 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data->getTotalRowCount()); }
+    bool hasExplicitSetElements() const;
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
@@ -161,6 +165,10 @@ public:
     /// Returns null for a multi-column (tuple) set, which has no single-column range representation.
     std::shared_ptr<const PlainRanges> getPlainRanges() const;
 
+    /// The explicit elements sorted by their columns in order (ascending, NULLs last), as `MergeTreeSetIndex` orders them.
+    /// The copy is shared while someone holds it; the set keeps it only weakly.
+    std::shared_ptr<const Columns> getSortedSetElements() const;
+
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -170,7 +178,15 @@ public:
     /// Limitations on the maximum size of the set
     const SizeLimits limits;
 
-    /// If true, insert NULL values to set.
+    /** With `transform_null_in = 0`, an outer NULL in any key component excludes the row from the set
+      * and never matches on lookup. With `transform_null_in = 1`, NULLs match in nullable key components.
+      * A NULL field inside a non-null tuple is part of that component's value in either mode.
+      *
+      * A more standard-compliant behavior would return NULL if the left-hand side is NULL and the set is not
+      * empty, or if the left-hand side is not in the set but the set contains at least one NULL. It is more
+      * complicated with tuples: `(1, NULL, 2) IN ((1, NULL, 3))` must return 0, but
+      * `(1, NULL, 2) IN ((1, 1111, 2))` must return NULL. Such behavior is not implemented.
+      */
     const bool transform_null_in;
 
     const size_t max_elements_to_fill;
@@ -182,7 +198,7 @@ private:
     /// This holds the keys in memory. Spilling releases the table and its arena. Spilling while the set is
     /// used changes how the set stores its keys but not which keys it has, so `execute` stays `const`, and
     /// the members that `spillAfterBuild` replaces are `mutable`.
-    mutable std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
+    mutable std::unique_ptr<SetVariants> data;
 
     /// They are kept after the build, so the set can spill while it is used.
     SetSpillSettings spill_settings;
@@ -199,21 +215,6 @@ private:
     /// that lookup spills the set.
     mutable std::atomic<bool> spill_after_build_started = false;
 
-    /** How IN works with Nullable types.
-      *
-      * For simplicity reasons, all NULL values and any tuples with at least one NULL element are ignored in the Set.
-      * And for left hand side values, that are NULLs or contain any NULLs, we return 0 (means that element is not in Set).
-      *
-      * If we want more standard compliant behaviour, we must return NULL
-      *  if lhs is NULL and set is not empty or if lhs is not in set, but set contains at least one NULL.
-      * It is more complicated with tuples.
-      * For example,
-      *      (1, NULL, 2) IN ((1, NULL, 3)) must return 0,
-      *  but (1, NULL, 2) IN ((1, 1111, 2)) must return NULL.
-      *
-      * We have not implemented such sophisticated behaviour.
-      */
-
     /** The data types from which the set was created.
       * When checking for belonging to a set, the types of columns to be checked must match with them.
       */
@@ -226,6 +227,10 @@ private:
 
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements = false;
+
+    /// Whether `insertFromColumns` finds the keys a block adds with a filter of all its rows, which is cheaper when most of
+    /// them are new, or with the numbers of the rows that add a key. Decided by the previous block.
+    bool find_new_set_elements_by_filter = true;
 
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
@@ -240,6 +245,9 @@ private:
     mutable std::shared_ptr<const PlainRanges> plain_ranges;
     mutable OnceFlag plain_ranges_once;
 
+    mutable std::mutex sorted_set_elements_mutex;
+    mutable std::weak_ptr<const Columns> sorted_set_elements;
+
     /// Protects the keys of the set. `insertFromBlock` takes it exclusively and `execute` shares it; they
     /// run at the same time only for `StorageSet`, whose inserts can run while queries use the set.
     /// Scheduler spills also take it exclusively while building, including explicit-element updates.
@@ -250,26 +258,36 @@ private:
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
-    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
+    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys, size_t & rows_taken);
     ProcessorMemoryStats getMemoryStatsUnlocked() const;
 
-    template <typename Method>
-    void insertFromBlockImpl(
-        Method & method,
-        const ColumnRawPtrs & key_columns,
-        size_t rows,
-        SetVariants & variants,
-        ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+    /// Casts the probe `column` to the type of the key `key` as the set stores it, see `insertFromColumns`,
+    /// and adds the rows that cannot be members of the set to `non_member_rows`: the NULLs that match
+    /// nothing, the values that do not fit the key type, and the `DateTime64` values that the key type does
+    /// not hold exactly.
+    ColumnPtr castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const;
 
-    template <typename Method, bool has_null_map, bool build_filter>
-    void insertFromBlockImplCase(
+    template <typename Method>
+    size_t insertFromBlockImpl(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+        ColumnUInt8::Container * out_filter,
+        ColumnUInt64::Container * out_new_rows,
+        size_t max_keys);
+
+    template <typename Method, bool has_null_map, bool build_filter, bool collect_new_rows>
+    size_t insertFromBlockImplCase(
+        Method & method,
+        const ColumnRawPtrs & key_columns,
+        size_t rows,
+        SetVariants & variants,
+        ConstNullMapPtr null_map,
+        ColumnUInt8::Container * out_filter,
+        ColumnUInt64::Container * out_new_rows,
+        size_t max_keys);
 
     template <typename Method>
     void executeImpl(
@@ -368,23 +386,29 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(
+        const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set = nullptr);
 
-    size_t size() const { return ordered_set.at(0)->size(); }
+    [[nodiscard]] size_t size() const { return ordered_set.at(0)->size(); }
 
-    bool hasMonotonicFunctionsChain() const;
+    [[nodiscard]] bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+    [[nodiscard]] BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, size_t first_function_number, bool single_point = false) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
     /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
     /// See KeyCondition::checkInRange for explanation of relevant parameters.
-    BoolMask checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point = false) const;
+    [[nodiscard]] BoolMask checkInRange(
+        const std::vector<int> & key_col_to_sparse_pos,
+        const Ranges & sparse_key_ranges,
+        const DataTypes & sparse_data_types,
+        size_t first_function_number,
+        bool single_point = false) const;
 
-    const Columns & getOrderedSet() const { return ordered_set; }
+    [[nodiscard]] const Columns & getOrderedSet() const { return ordered_set; }
 
-    const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
+    [[nodiscard]] const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
 
 private:
     /** Class that represents single value with possible infinities.
@@ -397,9 +421,9 @@ private:
             : column(std::move(column_)), block_memory_tracker(block_memory_tracker_) {}
         void update(const Field & x);
 
-        bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
-        bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
-        bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
+        [[nodiscard]] bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
+        [[nodiscard]] bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
+        [[nodiscard]] bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
 
         Field value; // Null, -Inf, +Inf
 
@@ -435,6 +459,8 @@ private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
+    /// Keeps the sorted copy shared with the source set alive while this index uses it.
+    std::shared_ptr<const Columns> shared_ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
     const UInt64 instance_id;
     /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
