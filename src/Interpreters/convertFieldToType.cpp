@@ -3,6 +3,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
+#include <Columns/ColumnVariant.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
@@ -29,6 +31,7 @@
 
 #include <Functions/DateTimeTransforms.h>
 
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
@@ -1433,15 +1436,35 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (src.isNull())
             return src;
 
+        /// A `Bool` alternative is a plain `ColumnUInt8`, so `ColumnVariant::insert` can put an integer `Field`
+        /// into it as a raw byte, and the alternative is chosen again whenever the returned `Field` is inserted.
+        /// So a `Bool` alternative is only a valid target for a `Bool` `Field`; any other value is converted.
+        const bool is_bool_field = src.getType() == Field::Types::Bool;
+
         /// If we have type hint and Variant contains such type, no need to convert field.
-        if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
-            return src;
+        if (from_type_hint)
+        {
+            if (auto discr = type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
+            {
+                const auto & hinted_variant = type_variant->getVariant(*discr);
+                /// An untagged integer of a `Bool` source becomes a `Bool` `Field`, so that it is not taken by an
+                /// integer alternative.
+                if (!is_bool_field && isBool(hinted_variant))
+                    return convertFieldToType(src, *hinted_variant, nullptr, format_settings, strict, convert_inexact_floats);
+                return src;
+            }
+        }
 
         /// Create temporary column and check if we can insert this field to the variant.
-        /// If we can insert, no need to convert anything.
+        /// If we can insert, no need to convert anything - unless it would be stored in a `Bool` alternative.
         auto col = type_variant->createColumn();
         if (col->tryInsert(src))
-            return src;
+        {
+            const auto & col_variant = assert_cast<const ColumnVariant &>(*col);
+            const auto global_discr = col_variant.globalDiscriminatorAt(0);
+            if (is_bool_field || global_discr == ColumnVariant::NULL_DISCRIMINATOR || !isBool(type_variant->getVariant(global_discr)))
+                return src;
+        }
 
         /// Note: the exact-alternative preference below applies only to fields that fall through to
         /// the conversion loop. A field accepted by the two fast paths above keeps `ColumnVariant`'s

@@ -510,13 +510,42 @@ bool ColumnVariant::tryInsert(const DB::Field & x)
         return true;
     }
 
+    /// A `Bool` alternative is stored as a plain `ColumnUInt8`, whose `tryInsert` accepts any integer in 0..255
+    /// and stores it as a raw byte. The alternatives are sorted by type name and `Bool` sorts before every
+    /// integer type, so a plain scan in order would put an integer such as 2 into the `Bool` alternative even
+    /// when a real integer alternative (e.g. `UInt32`) exists. So, unless the field is a `Bool`, try the
+    /// `ColumnUInt8` alternatives only after all others, and among them take the last one in the sorted order:
+    /// the types stored as `ColumnUInt8` are `Bool` and `UInt8`, and `UInt8` sorts after `Bool`.
+    const bool is_bool_field = x.getType() == Field::Types::Bool;
+    bool has_deferred_uint8_variant = false;
     for (Discriminator i = 0; i != variants.size(); ++i)
     {
+        if (!is_bool_field && typeid_cast<const ColumnUInt8 *>(variants[i].get()))
+        {
+            has_deferred_uint8_variant = true;
+            continue;
+        }
+
         if (variants[i]->tryInsert(x))
         {
             getLocalDiscriminators().push_back(i);
             getOffsets().push_back(variants[i]->size() - 1);
             return true;
+        }
+    }
+
+    if (has_deferred_uint8_variant)
+    {
+        for (size_t global_discr = variants.size(); global_discr-- != 0;)
+        {
+            const Discriminator local_discr = localDiscriminatorByGlobal(static_cast<Discriminator>(global_discr));
+            auto & variant = variants[local_discr];
+            if (typeid_cast<const ColumnUInt8 *>(variant.get()) && variant->tryInsert(x))
+            {
+                getLocalDiscriminators().push_back(local_discr);
+                getOffsets().push_back(variant->size() - 1);
+                return true;
+            }
         }
     }
 
