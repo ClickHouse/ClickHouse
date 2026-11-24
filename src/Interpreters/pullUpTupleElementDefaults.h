@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <base/types.h>
 
 #include <functional>
 
