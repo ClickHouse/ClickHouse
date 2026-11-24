@@ -48,7 +48,7 @@ private:
 
     struct Files : public std::map<String, FileDataPtr>
     {
-        auto find(const String & path, bool is_file) const
+        [[nodiscard]] auto find(const String & path, bool is_file) const
         {
             if (is_file)
                 return std::map<String, FileDataPtr>::find(path);
@@ -110,7 +110,6 @@ public:
         return 1;
     }
 
-    bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return true; }
     bool isRemote() const override { return true; }

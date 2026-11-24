@@ -265,7 +265,7 @@ SQLQueryPiece applyFunctionOverRange(
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(argument, context);
 
     const auto * fixed_at_node = getFixedAtModifier(argument);
-    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+    const auto aggregation_range = getRangeAggregationRange(argument, node_range, context);
 
     /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.

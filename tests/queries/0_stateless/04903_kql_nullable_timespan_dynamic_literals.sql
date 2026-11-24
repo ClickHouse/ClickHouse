@@ -1,7 +1,7 @@
 -- Nullable timespans must retain their interval overloads, and typed literals in a dynamic
 -- array must fold to values before the array literal is constructed.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- nullable timespan multiplication --';

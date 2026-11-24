@@ -128,7 +128,7 @@ def _create_clickhouse_table_for_paimon_incremental_read(
             keeper_path=keeper_path,
             refresh_interval_sec=refresh_interval_sec,
         ),
-        settings={"allow_experimental_paimon_storage_engine": 1},
+        settings={"enable_paimon_storage_engine": 1},
     )
 
 
@@ -1047,6 +1047,10 @@ def test_paimon_incremental_read_expired_snapshot_is_skipped(started_cluster):
     _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=3)
     _warehouse_shell(
         writer_container_id, f"rm -f {snapshot_dir}/snapshot-1 {snapshot_dir}/snapshot-2"
+    )
+    # A lower id in a subdirectory of `snapshot/` is not one of the table's snapshots and must not move earliest back.
+    _warehouse_shell(
+        writer_container_id, f"mkdir -p {snapshot_dir}/backup && printf garbage > {snapshot_dir}/backup/snapshot-1"
     )
 
     zk = cluster.get_kazoo_client("zoo1")

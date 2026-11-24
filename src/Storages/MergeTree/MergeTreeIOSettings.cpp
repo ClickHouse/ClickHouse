@@ -43,6 +43,8 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
+    extern const SettingsBool use_page_cache_lookahead_for_text_index;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
 
 namespace MergeTreeSetting
@@ -73,6 +75,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 map_buckets_min_avg_size;
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
+    extern const MergeTreeSettingsNonZeroUInt64 adaptive_codec_selection_period;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -119,9 +122,11 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
-    , max_memory_ratio_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::max_memory_ratio_to_activate_adaptive_write_buffer])
+    , max_memory_ratio_to_activate_adaptive_write_buffer(query_write_settings_.allow_adaptive_write_buffer_by_memory_ratio
+        ? static_cast<float>((*storage_settings)[MergeTreeSetting::max_memory_ratio_to_activate_adaptive_write_buffer]) : 0.f)
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
     , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::enable_adaptive_codec_selection])
+    , adaptive_codec_selection_period(isCompactPart(data_part) ? 1 : (*storage_settings)[MergeTreeSetting::adaptive_codec_selection_period])
 {
 }
 
@@ -137,7 +142,9 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
         && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
     result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
-    result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
+    /// With `force_enable` every function is executed lazily, so any condition can be guarded by the preceding PREWHERE steps.
+    result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters]
+        || settings[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::FORCE_ENABLE;
     /// `apply_deleted_mask = 0` reads deleted rows, so its entries and those of normal reads are not
     /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
@@ -159,6 +166,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
+    result.use_page_cache_lookahead_for_text_index = settings[Setting::use_page_cache_lookahead_for_text_index];
     return result;
 }
 

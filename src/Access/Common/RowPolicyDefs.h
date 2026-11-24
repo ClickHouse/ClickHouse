@@ -15,9 +15,9 @@ struct RowPolicyName
     String database;
     String table_name;
 
-    bool empty() const { return short_name.empty(); }
-    String toString() const;
-    auto toTuple() const { return std::tie(short_name, database, table_name); }
+    [[nodiscard]] bool empty() const { return short_name.empty(); }
+    [[nodiscard]] String toString() const;
+    [[nodiscard]] auto toTuple() const { return std::tie(short_name, database, table_name); }
     friend bool operator ==(const RowPolicyName & left, const RowPolicyName & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator !=(const RowPolicyName & left, const RowPolicyName & right) { return left.toTuple() != right.toTuple(); }
 };
