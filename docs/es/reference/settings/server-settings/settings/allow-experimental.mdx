@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="allow_experimental_executable_udf_drivers">
-  ## allow_experimental_executable_udf_drivers
-</div>
+## allow_experimental_cluster_discovery {#allow_experimental_cluster_discovery}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />La detección de clústeres ya no es experimental y está siempre habilitada para los clústeres que incluyen la sección `discovery` en `remote_servers`. Esta configuración está obsoleta y no tiene ningún efecto. Se mantiene como `String` para que se siga aceptando cualquier valor admitido anteriormente, incluida una etiqueta vacía.
+
+## allow_experimental_executable_udf_drivers {#allow_experimental_executable_udf_drivers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Habilita la compatibilidad experimental con drivers para funciones ejecutables definidas por el usuario, declaradas mediante `user_defined_executable_function_drivers_config`. Un driver convierte un fragmento de código de usuario proporcionado en `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en una UDF ejecutable.
 
-<div id="allow_experimental_webassembly_udf">
-  ## allow_experimental_webassembly_udf
-</div>
+## allow_experimental_webassembly_udf {#allow_experimental_webassembly_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Activa la compatibilidad experimental para UDFs de WebAssembly
 
-<div id="allow_experimental_webterminal">
-  ## allow_experimental_webterminal
-</div>
+## allow_experimental_webterminal {#allow_experimental_webterminal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Nombre anterior (experimental) de `enable_webterminal`. Se sigue admitiendo por compatibilidad con versiones anteriores cuando `enable_webterminal` no está configurado. Esta configuración está obsoleta.
 

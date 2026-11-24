@@ -4,8 +4,10 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
 #include <Common/ErrorCodes.h>
-#include <Common/ProfileEventsScope.h>
+#include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -21,6 +23,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char mt_mutate_task_pause_before_rename_part[];
 }
 
 
@@ -39,11 +46,11 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
-    task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        task_context);
+        task_context,
+        thread_group);
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -56,7 +63,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -72,9 +79,10 @@ void MutatePlainMergeTreeTask::prepare()
     if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
     {
         /// If we have a prepared sets cache for this mutations, we will use it.
+        /// The task gets a cache of its own on top of it, so that it never waits for a set that it builds itself.
         auto mutation_id = future_part->part_info.mutation;
         auto prepared_sets_cache_for_mutation = storage.getPreparedSetsCache(mutation_id);
-        task_context->setPreparedSetsCache(prepared_sets_cache_for_mutation);
+        task_context->setPreparedSetsCache(std::make_shared<PreparedSetsCache>(prepared_sets_cache_for_mutation));
     }
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
@@ -91,13 +99,15 @@ void MutatePlainMergeTreeTask::finish()
 bool MutatePlainMergeTreeTask::executeStep()
 {
     auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
-    /// Metrics will be saved in the local profile_counters.
-    ProfileEventsScope profile_events_scope(&profile_counters);
+
+    if (!thread_group)
+    {
+        task_context = createTaskContext();
+        thread_group = ThreadGroup::createForMergeMutate(task_context);
+    }
 
     /// Make out memory tracker a parent of current thread memory tracker
-    std::optional<ThreadGroupSwitcher> switcher;
-    if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     switch (state)
     {
@@ -114,13 +124,15 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (mutate_task->execute())
                     return true;
 
-                new_part = mutate_task->getFuture().get();
+                new_part = mutate_task->takeResultPart();
                 auto & data_part_storage = new_part->getDataPartStorage();
 #if CLICKHOUSE_CLOUD
                 data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
 #endif
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.commitTransaction();
+
+                FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_rename_part);
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
 

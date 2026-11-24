@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/scatterByPartition.h>
@@ -38,6 +39,10 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
     if (pipeline.getNumStreams() > max_scatter_streams)
         pipeline.resize(max_scatter_streams);
 
+    /// Combine small chunks: every chunk becomes one packet for each destination. This is ahead of the
+    /// scatter, so a destination that does not read cannot hold back the rows that the transform keeps.
+    ProgressiveSquashingChunksTransform::addToPipeline(pipeline, settings.max_block_size);
+
     /// Serialize on every stream ahead of the merge into the one sink of a bucket; otherwise that
     /// sink would serialize its whole bucket alone.
     auto serializer = [&](const SharedHeader & header) -> ProcessorPtr
@@ -69,7 +74,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);
         ++bucket;
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id));
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id), /*advisory*/ false);
     });
 
     if (bucket != num_buckets)

@@ -17,7 +17,7 @@ CREATE TABLE t_plain_key (a Int) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(type = 'local', path = 'disk_function_key_without_value/', equals(name)); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE t_nested (a Int) ENGINE = MergeTree ORDER BY a
-SETTINGS disk = disk(type = 'cache', max_size = '1Mi', path = 'disk_function_key_without_value_cache/', disk = disk(equals(password))); -- { serverError BAD_ARGUMENTS }
+SETTINGS disk = disk(type = 'cache', max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = 'disk_function_key_without_value_cache/', disk = disk(equals(password))); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE t_positional (a Int) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(type = 'local', path = 'disk_function_malformed_canary/', 1); -- { serverError BAD_ARGUMENTS }
