@@ -1,3 +1,20 @@
+# The debug sections of the separate files are compressed: nfpm cannot package files over 4 GiB into rpm.
+# zlib is the fallback for an objcopy built without zstd.
+if (SPLIT_DEBUG_SYMBOLS)
+    set (SPLIT_DEBUG_COMPRESSION_PROBE "${CMAKE_CURRENT_BINARY_DIR}/objcopy_zstd_probe")
+    execute_process (
+        COMMAND "${OBJCOPY_PATH}" --compress-debug-sections=zstd "${OBJCOPY_PATH}" "${SPLIT_DEBUG_COMPRESSION_PROBE}"
+        RESULT_VARIABLE OBJCOPY_ZSTD_RESULT
+        OUTPUT_QUIET ERROR_QUIET)
+    file (REMOVE "${SPLIT_DEBUG_COMPRESSION_PROBE}")
+    if (OBJCOPY_ZSTD_RESULT EQUAL 0)
+        set (SPLIT_DEBUG_COMPRESSION "zstd")
+    else ()
+        set (SPLIT_DEBUG_COMPRESSION "zlib")
+    endif ()
+    message (STATUS "Compressing debug sections of split debug symbols with ${SPLIT_DEBUG_COMPRESSION}")
+endif ()
+
 # Generates a separate file with debug symbols while stripping it from the main binary.
 # This is needed for Debian packages.
 macro(clickhouse_split_debug_symbols)
@@ -19,10 +36,11 @@ macro(clickhouse_split_debug_symbols)
 
    set(COMPACT_SYMBOLS_COMMANDS)
    if (SYMBOL_SECTIONS STREQUAL "compact")
+       # Use the native-build tool only when actually cross-compiling (host != target), matching the
+       # native-build guard in the root CMakeLists.txt and utils/compact-symbols/CMakeLists.txt.
        if (NOT(
            CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
            AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-           AND NOT USE_MUSL
        ))
            set(COMPACT_SYMBOLS_TOOL "${PROJECT_BINARY_DIR}/native/utils/compact-symbols/compact-symbols")
        else()
@@ -65,8 +83,8 @@ macro(clickhouse_split_debug_symbols)
    add_custom_command(TARGET ${STRIP_TARGET} POST_BUILD
        COMMAND mkdir -p "${STRIP_DESTINATION_DIR}/lib/debug/bin"
        COMMAND mkdir -p "${STRIP_DESTINATION_DIR}/bin"
-       # Splits debug symbols into separate file, leaves the binary untouched:
-       COMMAND "${OBJCOPY_PATH}" --only-keep-debug "${STRIP_BINARY_PATH}" "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
+       # Splits debug symbols into separate file, leaves the binary untouched.
+       COMMAND "${OBJCOPY_PATH}" --only-keep-debug "--compress-debug-sections=${SPLIT_DEBUG_COMPRESSION}" "${STRIP_BINARY_PATH}" "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
        COMMAND chmod 0644 "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
        # Strips binary, sections '.note' & '.comment' are removed in line with Debian's stripping policy: www.debian.org/doc/debian-policy/ch-files.html, section '.clickhouse.hash' is needed for integrity check.
        # Also, after we disabled the export of symbols for dynamic linking, we still to keep a static symbol table for good stack traces.
@@ -80,33 +98,4 @@ macro(clickhouse_split_debug_symbols)
 
    unset(GNU_DEBUGDATA_COMMANDS)
    unset(MINI_DEBUGINFO_PATH)
-
-   install(PROGRAMS ${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-   cmake_path(SET DEBUG_PATH NORMALIZE "${CMAKE_INSTALL_LIBDIR}/debug/${CMAKE_INSTALL_FULL_BINDIR}")
-   install(FILES ${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug DESTINATION ${DEBUG_PATH} COMPONENT clickhouse)
-endmacro()
-
-
-macro(clickhouse_make_empty_debug_info_for_nfpm)
-   set(oneValueArgs TARGET BINARY DESTINATION_DIR)
-   cmake_parse_arguments(EMPTY_DEBUG "" "${oneValueArgs}" "" ${ARGN})
-
-   if (NOT DEFINED EMPTY_DEBUG_TARGET)
-       message(FATAL_ERROR "A target name must be provided for stripping binary")
-   endif()
-   if (NOT DEFINED EMPTY_DEBUG_BINARY)
-       message(FATAL_ERROR "A binary name must be provided for stripping binary")
-   endif()
-   if (NOT DEFINED EMPTY_DEBUG_DESTINATION_DIR)
-       message(FATAL_ERROR "Destination directory for empty debug must be provided")
-   endif()
-
-   add_custom_command(TARGET ${EMPTY_DEBUG_TARGET} POST_BUILD
-       COMMAND mkdir -p "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug"
-       COMMAND touch "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug/${EMPTY_DEBUG_BINARY}.debug"
-       COMMENT "Adding empty debug info for NFPM" VERBATIM
-   )
-
-   cmake_path(SET DEBUG_PATH NORMALIZE "${CMAKE_INSTALL_LIBDIR}/debug/${CMAKE_INSTALL_FULL_BINDIR}")
-   install(FILES "${EMPTY_DEBUG_DESTINATION_DIR}/lib/debug/${EMPTY_DEBUG_BINARY}.debug" DESTINATION ${DEBUG_PATH} COMPONENT clickhouse)
 endmacro()
