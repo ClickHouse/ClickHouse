@@ -11,6 +11,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Functions/indexHint.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
@@ -1120,8 +1121,10 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
 }
 
 using ExpandedTreeSizes = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t>;
+using ImpliedHintInputSizes = UnorderedMapWithMemoryTracking<std::string_view, size_t>;
 
-static void computeExpandedTreeSizes(const ActionsDAG::NodeRawConstPtrs & roots, ExpandedTreeSizes & sizes, size_t limit)
+static void computeExpandedTreeSizes(
+    const ActionsDAG::NodeRawConstPtrs & roots, ExpandedTreeSizes & sizes, size_t limit, const ImpliedHintInputSizes * implied_hint_inputs)
 {
     const size_t cap = std::min(limit, std::numeric_limits<size_t>::max() / 4) + 1;
     visitNodesPostOrder(
@@ -1132,6 +1135,22 @@ static void computeExpandedTreeSizes(const ActionsDAG::NodeRawConstPtrs & roots,
             size_t size = node->type == ActionsDAG::ActionType::ALIAS ? 0 : 1;
             for (const auto * child : node->children)
                 size = std::min(size + sizes.at(child), cap);
+
+            /// The condition of an `indexHint` is not among its children, but index analysis walks it too.
+            const auto * index_hint = node->type == ActionsDAG::ActionType::FUNCTION ? FunctionIndexHint::tryGet(node->function_base) : nullptr;
+            if (index_hint)
+            {
+                const auto & hint_actions = index_hint->getActions();
+                if (implied_hint_inputs && index_hint->isImplied())
+                    for (const auto * input : hint_actions.getInputs())
+                        if (auto it = implied_hint_inputs->find(input->result_name); it != implied_hint_inputs->end())
+                            sizes.emplace(input, it->second);
+
+                computeExpandedTreeSizes(hint_actions.getOutputs(), sizes, limit, implied_hint_inputs);
+                for (const auto * output : hint_actions.getOutputs())
+                    size = std::min(size + sizes.at(output), cap);
+            }
+
             sizes.emplace(node, size);
         },
         [&](const ActionsDAG::Node * node) { return sizes.contains(node); });
@@ -1140,19 +1159,23 @@ static void computeExpandedTreeSizes(const ActionsDAG::NodeRawConstPtrs & roots,
 size_t getExpandedTreeSize(const ActionsDAG::Node & node, size_t limit)
 {
     ExpandedTreeSizes sizes;
-    computeExpandedTreeSizes({&node}, sizes, limit);
+    computeExpandedTreeSizes({&node}, sizes, limit, nullptr);
     return sizes.at(&node);
 }
 
 size_t getExpandedTreeSizeAfterMerge(const ActionsDAG & first, const ActionsDAG & second, const ActionsDAG::Node & node, size_t limit)
 {
     ExpandedTreeSizes sizes;
-    computeExpandedTreeSizes(first.getOutputs(), sizes, limit);
+    computeExpandedTreeSizes(first.getOutputs(), sizes, limit, nullptr);
 
-    /// Bind the inputs of `second` to the outputs of `first` as `ActionsDAG::mergeInplace` does.
+    /// Bind the inputs of `second`, and of its implied hints, to the outputs of `first` as `ActionsDAG::mergeInplace` does.
     UnorderedMapWithMemoryTracking<std::string_view, ListWithMemoryTracking<const ActionsDAG::Node *>> first_outputs;
+    ImpliedHintInputSizes implied_hint_inputs;
     for (const auto * output : first.getOutputs())
+    {
         first_outputs[output->result_name].push_back(output);
+        implied_hint_inputs.emplace(output->result_name, sizes.at(output));
+    }
 
     for (const auto * input : second.getInputs())
     {
@@ -1163,7 +1186,7 @@ size_t getExpandedTreeSizeAfterMerge(const ActionsDAG & first, const ActionsDAG 
         it->second.pop_front();
     }
 
-    computeExpandedTreeSizes({&node}, sizes, limit);
+    computeExpandedTreeSizes({&node}, sizes, limit, &implied_hint_inputs);
     return sizes.at(&node);
 }
 
