@@ -40,8 +40,8 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
-#include <Storages/System/tryGetOwnerTable.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/tryGetOwnerTable.h>
 #include <Storages/StorageProxy.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>

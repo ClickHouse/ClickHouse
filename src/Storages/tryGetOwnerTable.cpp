@@ -1,4 +1,4 @@
-#include <Storages/System/tryGetOwnerTable.h>
+#include <Storages/tryGetOwnerTable.h>
 
 #include <Databases/IDatabase.h>
 #include <IO/ReadHelpers.h>
