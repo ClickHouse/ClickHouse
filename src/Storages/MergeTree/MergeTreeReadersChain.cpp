@@ -714,7 +714,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         const auto & columns_in_part = merge_tree_reader->getColumnsToRead();
         const auto & requested_columns = merge_tree_reader->getColumns();
         /// Applying a patch reader writes all its columns, so the defaults are saved before any reader is applied.
-        std::vector<std::vector<std::pair<size_t, DataTypePtr>>> converted_columns(patch_readers.size());
+        VectorWithMemoryTracking<VectorWithMemoryTracking<std::pair<size_t, DataTypePtr>>> converted_columns(patch_readers.size());
         VectorWithMemoryTracking<MapWithMemoryTracking<size_t, NameAndTypePair>> parent_of(patch_readers.size());
         Columns defaults;
         for (size_t i = 0; i < patch_readers.size(); ++i)
@@ -776,7 +776,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
             Block header = result_header;
             Columns current(read_columns.size());
-            std::vector<IColumn::Versions> versions_before;
+            VectorWithMemoryTracking<IColumn::Versions> versions_before;
             for (const auto & [pos, type_in_patch] : converted_columns[i])
             {
                 size_t num_rows = read_columns[pos]->size();
