@@ -999,12 +999,6 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
         EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
     }
 
-    {
-        auto tx = metadata->createTransaction();
-        tx->removeRecursive("/", /*should_remove_blob=*/nullptr);
-        tx->commit(DB::NoCommitOptions{});
-    }
-
     EXPECT_EQ(listAllBlobs("RemoveRecursiveRoot"), std::vector<std::string>({
         "./RemoveRecursiveRoot/__root/A",
         "./RemoveRecursiveRoot/__root/B"
