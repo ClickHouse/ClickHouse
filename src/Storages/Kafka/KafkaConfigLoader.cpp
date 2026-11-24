@@ -411,7 +411,7 @@ std::string_view namedCollectionPropertyKey(std::string_view key)
         key.remove_prefix(key.find('.') + 1);
 
     /// Both `kafka_<topic>` and `kafka_topic` (possibly indexed) are topic sections.
-    if (const auto dot = key.find('.'); dot != key.npos && key.starts_with("kafka_"))
+    if (const auto dot = key.find('.'); dot != std::string_view::npos && key.starts_with("kafka_"))
     {
         const auto section = key.substr(0, dot);
         key.remove_prefix(dot + 1);
