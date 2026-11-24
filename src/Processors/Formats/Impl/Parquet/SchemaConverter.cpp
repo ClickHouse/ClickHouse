@@ -816,7 +816,7 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     /// But hudi writes arrays differently, without the inner group:
     ///   required/optional group `name` (List):
     ///     repeated <recurse> "array"
-    /// This probably makes it indinsinguishable from a single-element tuple.
+    /// With one field, such a group is told apart from the inner group by its annotation or name, see below.
 
     if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
         return false;
@@ -835,7 +835,10 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
 
     /// A repeated group annotated with `FILE` is the element itself (a two-level list), even if it has
     /// only one field: the middle level of a three-level list has no annotation.
-    bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE;
+    /// So is an unannotated one named `array` or `<list name>_tuple` (rule 4 of the LIST backward-compatibility rules).
+    bool is_two_level_element = !child.__isset.logicalType && !child.__isset.converted_type
+        && (child.name == "array" || child.name == node.element->name + "_tuple");
+    bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE && !is_two_level_element;
 
     TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
     processSubtree(subnode);
