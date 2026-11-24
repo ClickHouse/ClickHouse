@@ -2743,3 +2743,345 @@ def test_geo_types_opt_in_per_query(started_cluster):
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     result = node.query(f"SHOW CREATE TABLE {table_ref}", settings={"allow_geo_types_in_iceberg": 1})
     assert "`geom` Geometry" in result, result
+
+
+def _glue_client(started_cluster):
+    return boto3.client("glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster))
+
+
+def _glue_metadata_location(started_cluster, namespace_name, table_name):
+    table_info = _glue_client(started_cluster).get_table(DatabaseName=namespace_name, Name=table_name)["Table"]
+    return table_info["Parameters"].get("metadata_location")
+
+
+def _s3_uri_exists(minio_client, s3_uri):
+    assert s3_uri.startswith("s3://"), s3_uri
+    bucket, key = s3_uri[len("s3://") :].split("/", 1)
+    try:
+        minio_client.stat_object(bucket, key)
+        return True
+    except Exception:
+        return False
+
+
+def _glue_manifest_lists(started_cluster, metadata_location):
+    # Manifest lists next to the table's metadata file. Cleaning up a commit removes its own.
+    bucket, key = metadata_location[len("s3://") :].split("/", 1)
+    prefix = key.rsplit("/", 1)[0] + "/"
+    objects = started_cluster.minio_client.list_objects(bucket, prefix=prefix, recursive=True)
+    return sorted(o.object_name for o in objects if o.object_name.rsplit("/", 1)[-1].startswith("snap-"))
+
+
+def _setup_glue_commit_table(started_cluster, node, test_ref):
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    # The commit failpoints are process-global, so no other commit may be in flight when an arm
+    # arms them: wait for each insert instead of letting it complete asynchronously.
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "2"
+
+    return root_namespace, table_name, table_ref, write_settings
+
+
+def test_glue_commit_response_lost_keeps_committed_pointer(started_cluster):
+    # UpdateTable applied the change and only the response was lost, so the read-back confirms it
+    # and the INSERT succeeds with its files intact.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_lost_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+
+    metadata_location = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert metadata_location, "glue lost the table's metadata_location"
+    assert _s3_uri_exists(started_cluster.minio_client, metadata_location), metadata_location
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
+
+
+def test_glue_commit_unknown_keeps_files(started_cluster):
+    # The read-back cannot resolve, so the outcome is unknown: the query fails and nothing is
+    # deleted.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_unknown_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    # The original glue error must still be readable, so the user keeps the actionable detail.
+    assert "Injected lost response" in error, error
+
+    # The commit did land, so the pointer names the new metadata file; it must still exist.
+    metadata_location = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert metadata_location, "glue lost the table's metadata_location"
+    assert _s3_uri_exists(started_cluster.minio_client, metadata_location), metadata_location
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
+
+
+def test_glue_commit_read_back_raising_keeps_files(started_cluster):
+    # Same unknown outcome when the read-back raises instead of answering: an exception there says
+    # nothing about whether UpdateTable applied, so it must not reach the caller as its own error,
+    # which the caller would read as a proven failure and delete the committed snapshot's files.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_read_back_raises_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_throw")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_throw")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    # The read-back's own error must not replace the glue error the user can act on.
+    assert "Injected lost response" in error, error
+
+    # The commit did land, so the pointer names the new metadata file; it must still exist.
+    metadata_location = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert metadata_location, "glue lost the table's metadata_location"
+    assert _s3_uri_exists(started_cluster.minio_client, metadata_location), metadata_location
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
+
+
+@pytest.mark.parametrize(
+    "failpoint", ["iceberg_catalog_commit_rejected", "iceberg_catalog_commit_auth_rejected"]
+)
+def test_glue_commit_definite_rejection_keeps_error(started_cluster, failpoint):
+    # Glue (access denied) or AWS authentication (unrecognized client) refused the only attempt, so
+    # the update cannot have applied: the original error survives and the files staged for the
+    # commit are cleaned up, like the REST twin test_catalog_commit_definite_rejection_keeps_error.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_rejected_{uuid.uuid4()}"
+    )
+    before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    manifest_lists_before = _glue_manifest_lists(started_cluster, before)
+
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
+    assert "Injected glue error" in error, error
+
+    # The pointer never advanced, the previous snapshot is untouched and the commit's manifest list is gone.
+    after = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert after == before, (before, after)
+    assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert _glue_manifest_lists(started_cluster, after) == manifest_lists_before
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+
+def _check_glue_commit_unknown_keeps_files(started_cluster, test_ref, failpoints, injected_message):
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"{test_ref}_{uuid.uuid4()}"
+    )
+    before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    manifest_lists_before = _glue_manifest_lists(started_cluster, before)
+
+    try:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    assert injected_message in error, error
+
+    # The pointer is not ours, which is also what "committed, then superseded" looks like, so the
+    # staged manifest list must still be there. Reconciling from object storage instead would find
+    # the staged metadata file and wrongly report success.
+    after = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert after == before, (before, after)
+    assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert len(_glue_manifest_lists(started_cluster, after)) == len(manifest_lists_before) + 1
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+
+def test_glue_commit_retried_rejection_keeps_files(started_cluster):
+    # The SDK retried, so the rejection describes a later attempt and an earlier one may have
+    # applied the update: the outcome is unknown.
+    _check_glue_commit_unknown_keeps_files(
+        started_cluster,
+        "test_glue_commit_retried_rejection",
+        ["iceberg_catalog_commit_retried", "iceberg_catalog_commit_rejected"],
+        "Injected glue error",
+    )
+
+
+def test_glue_commit_timeout_keeps_files(started_cluster):
+    # A timed out operation is no answer, although the SDK reports it as non-retryable.
+    _check_glue_commit_unknown_keeps_files(
+        started_cluster,
+        "test_glue_commit_timeout",
+        ["iceberg_catalog_commit_timed_out"],
+        "Injected glue error",
+    )
+
+
+def test_glue_commit_update_throw_keeps_files(started_cluster):
+    # An exception raised by the UpdateTable call itself is not evidence that the update was
+    # rejected: the SDK may already have retried an attempt that applied. So it must be reconciled
+    # like any other failed outcome, and when the read-back cannot resolve it the outcome is
+    # unknown and the staged files are kept.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_update_throws_{uuid.uuid4()}"
+    )
+    before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+
+    try:
+        # Only the throw: the real UpdateTable never runs, so the pointer cannot advance.
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_update_throw")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_update_throw")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    # The thrown error's own text must survive, so the user keeps the actionable detail.
+    assert "Injected update throw" in error, error
+
+    # The pointer never advanced, and the previous snapshot's metadata file is untouched.
+    after = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert after == before, (before, after)
+    assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+
+def test_glue_commit_update_throw_applied_keeps_committed_pointer(started_cluster):
+    # The throw happens after UpdateTable applied, which is why an exception from the call cannot be
+    # read as a rejection: reconciled through the read-back, the update is confirmed and the INSERT
+    # succeeds with its files intact. Treating the throw as proof of failure would delete them.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_update_applied_{uuid.uuid4()}"
+    )
+    before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+
+    try:
+        # Only the throw: the read-back must be allowed to answer, which is what resolves it.
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_update_throw_post_dispatch")
+        node.query(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_update_throw_post_dispatch")
+
+    after = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert after, "glue lost the table's metadata_location"
+    assert after != before, (before, after)
+    assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
+
+
+def test_glue_commit_unknown_after_retried_conflict_keeps_files(started_cluster):
+    # The SDK retried an UpdateTable that the stale VersionId then refused, so an earlier attempt may have
+    # applied it. The pointer now names a commit not built on ours, which says nothing about whether ours
+    # landed first, so the outcome is unknown and the staged files are kept.
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    test_ref = uuid.uuid4().hex
+    db_name = f"glue_cas_unknown_{test_ref}"
+    root_namespace = f"cas_{test_ref}"
+    # The table location is derived from the name alone, so it must not be shared with other tests.
+    table_name = f"t_{test_ref}"
+    table_ref = f"{db_name}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+    pause = "glue_catalog_pause_before_update_table"
+    retried = "iceberg_catalog_commit_retried"
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        create_clickhouse_glue_table(
+            started_cluster, node, root_namespace, table_name, "(x String)", catalog_name=db_name
+        )
+        glue_client = _glue_client(started_cluster)
+
+        node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+        base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        base_location = base["Parameters"]["metadata_location"]
+        external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
+        manifest_lists_before = _glue_manifest_lists(started_cluster, base_location)
+
+        def s3_url(location):
+            return "http://minio1:9001/" + location.split("://", 1)[1]
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {pause}")
+        node.query(f"SYSTEM ENABLE FAILPOINT {retried}")
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            paused_insert = executor.submit(
+                node.query_and_get_error, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {pause} PAUSE", timeout=60)
+
+            # Another engine commits a copy of the base after the insert has read the `VersionId` it sends.
+            node.query(
+                f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+                f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+            )
+            glue_client.update_table(
+                DatabaseName=root_namespace,
+                TableInput={
+                    "Name": table_name,
+                    "TableType": base["TableType"],
+                    "StorageDescriptor": {
+                        "Location": base["StorageDescriptor"]["Location"],
+                        "Columns": base["StorageDescriptor"]["Columns"],
+                    },
+                    "Parameters": {
+                        **base["Parameters"],
+                        "metadata_location": external_location,
+                        "previous_metadata_location": base_location,
+                    },
+                },
+            )
+
+            node.query(f"SYSTEM DISABLE FAILPOINT {pause}")
+            error = paused_insert.result(timeout=120)
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {pause}")
+            node.query(f"SYSTEM DISABLE FAILPOINT {retried}")
+            executor.shutdown(wait=False)
+
+        assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+        assert "Unknown outcome of commit" in error, error
+        injected = started_cluster.exec_in_container(
+            proxy, ["curl", "-s", f"http://localhost:8081/injected/{root_namespace}"]
+        )
+        assert int(injected) == 1
+
+        after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        assert after["Parameters"]["metadata_location"] == external_location
+        # The other commit copies the base, so the only new manifest list is the one staged by the insert.
+        assert len(_glue_manifest_lists(started_cluster, external_location)) == len(manifest_lists_before) + 1
+        assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
