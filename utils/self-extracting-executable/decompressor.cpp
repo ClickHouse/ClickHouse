@@ -195,22 +195,54 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
         return 1;
     }
 
+    auto fail_corrupted = [&](const char * reason)
+    {
+        std::cerr << "Error: the self-extracting executable is corrupted: " << reason << std::endl;
+        if (0 != munmap(input, info_in.st_size))
+            perror("munmap");
+        return 1;
+    };
+
+    const size_t input_size = static_cast<size_t>(info_in.st_size);
+    if (input_size < sizeof(MetaData))
+        return fail_corrupted("file is too small to contain metadata");
+
     /// Read metadata from end of file (memcpy because the data may be unaligned)
     MetaData metadata;
-    memcpy(&metadata, input + info_in.st_size - sizeof(MetaData), sizeof(MetaData));
+    const size_t end_of_files_data = input_size - sizeof(MetaData);
+    memcpy(&metadata, input + end_of_files_data, sizeof(MetaData));
+
+    const size_t start_of_files_data = le64toh(metadata.start_of_files_data);
+    if (start_of_files_data > end_of_files_data)
+        return fail_corrupted("start of files data is out of bounds");
 
     /// Prepare to read information about files and decompress them
-    off_t files_pointer = le64toh(metadata.start_of_files_data);
+    off_t files_pointer = start_of_files_data;
     size_t decompressed_full_size = 0;
 
-    /// Read files metadata and check if decompression is possible
-    off_t check_pointer = le64toh(metadata.start_of_files_data);
+    /// Read files metadata, validate it, and check if decompression is possible.
+    /// The loop below that decompresses the files relies on this validation.
+    size_t check_pointer = start_of_files_data;
     for (size_t i = 0; i < le64toh(metadata.number_of_files); ++i)
     {
+        if (end_of_files_data - check_pointer < sizeof(FileData))
+            return fail_corrupted("file header is out of bounds");
         FileData data;
         memcpy(&data, input + check_pointer, sizeof(FileData));
+        check_pointer += sizeof(FileData);
+
+        /// The stored name includes the terminating NUL and must not contain other NULs.
+        const size_t name_length = le64toh(data.name_length);
+        if (name_length == 0 || name_length > end_of_files_data - check_pointer
+            || strnlen(input + check_pointer, name_length) != name_length - 1)
+            return fail_corrupted("file name is malformed");
+        check_pointer += name_length;
+
+        /// Compressed data is stored before the files data.
+        if (le64toh(data.start) > le64toh(data.end) || le64toh(data.end) > start_of_files_data)
+            return fail_corrupted("compressed data is out of bounds");
+
         decompressed_full_size += le64toh(data.uncompressed_size);
-        check_pointer += sizeof(FileData) + le64toh(data.name_length);
     }
 
     /// Check free space
