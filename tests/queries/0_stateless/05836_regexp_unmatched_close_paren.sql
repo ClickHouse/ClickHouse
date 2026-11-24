@@ -30,6 +30,7 @@ SELECT fullMatch(')', '[[:alpha:])]'), fullMatch('x)', '[[:alpha:])]');
 SELECT fullMatch('ab', '(a)b'), fullMatch('xab', '(a)b');
 SELECT fullMatch('a)', '\\Qa)\\E'), fullMatch('xa)', '\\Qa)\\E');
 SELECT fullMatch('b', 'a|(b)'), fullMatch('xb', 'a|(b)');
+SELECT fullMatch('Ba:]]', '[A-[:](a:]])'), fullMatch('xBa:]]', '[A-[:](a:]])');
 
 -- The invalid regexp must not be hidden by a skip index that prunes every granule.
 DROP TABLE IF EXISTS t;

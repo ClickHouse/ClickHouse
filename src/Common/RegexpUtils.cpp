@@ -342,6 +342,7 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
     size_t depth = 0;
     bool in_class = false;
     bool in_quote = false;
+    bool uncertain_depth = false;
     bool top_level_alternation = false;
     bool top_level_multiline = false;
     bool ends_with_anchor = false;
@@ -375,7 +376,12 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
                 /// A POSIX named class such as `[:alpha:]` is a part of the enclosing class, its `]` does not close it.
                 /// RE2 treats `[:` without a following `:]` as literal characters.
                 if (size_t end_of_named_class = regexp.find(":]", pos + 2); end_of_named_class != String::npos)
+                {
+                    /// After `-`, RE2 may read this `[` as the end of a range (`[A-[:]`), so the class may end earlier.
+                    if (regexp[pos - 1] == '-')
+                        uncertain_depth = true;
                     pos = end_of_named_class + 1;
+                }
             }
         }
         else if (c == '[')
@@ -414,9 +420,10 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
         else if (c == ')')
         {
             /// A `)` that closes no group makes the regex invalid; the group added below could balance it (`a)|b(`).
-            if (depth == 0)
+            if (depth == 0 && !uncertain_depth)
                 return String{regexp};
-            --depth;
+            if (depth > 0)
+                --depth;
         }
         else if (c == '|' && depth == 0)
             top_level_alternation = true;
