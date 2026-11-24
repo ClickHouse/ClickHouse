@@ -48,7 +48,8 @@ enum class ColumnStatsOrigin : UInt8
     /// column, see the setting `estimate_distinct_values_from_metadata`. It approximates the effective number of
     /// distinct values, which can be far below the actual one for a skewed column, so it gives no guarantee, and
     /// the estimate of an equi-join takes the row count of a key without a distinct count along with it, see
-    /// `KeyDistinctValues`.
+    /// `KeyDistinctValues`. It is not the number of groups either: an aggregation or a `DISTINCT` takes a key of this
+    /// origin as one without a distinct count.
     EstimatedFromMetadata,
     /// A fact from test-only statistics hints or randomization. A distinct count of this origin is trusted as if
     /// measured; a value range of this origin gives no guarantee, so only readers that ignore provenance use it.

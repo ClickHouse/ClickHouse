@@ -1,7 +1,7 @@
 -- The estimate of the number of distinct values from the compressed size of a column (`estimate_distinct_values_from_metadata`):
 -- it takes the effective codec of a column without one (the default codec of the table), it is not made for adaptive
--- codecs and columns of the sorting key, and a key with this estimate keeps its provenance through joins and aggregations,
--- also in the Cascades optimizer.
+-- codecs and columns of the sorting key, and a key with this estimate keeps its provenance through joins, also in the
+-- Cascades optimizer.
 
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
