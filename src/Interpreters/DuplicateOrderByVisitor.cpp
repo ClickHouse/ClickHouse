@@ -1,6 +1,7 @@
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -31,9 +32,13 @@ public:
     bool & is_stateful;
     void visit(ASTFunction & ast_function, ASTPtr &)
     {
-        auto aggregate_function_properties
-            = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.getNullsAction());
+        if (WindowFunctionFactory::instance().isWindowFunctionName(ast_function.name))
+        {
+            is_stateful = true;
+            return;
+        }
 
+        const auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.getNullsAction());
         if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
         {
             is_stateful = true;
@@ -41,7 +46,6 @@ public:
         }
 
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, context);
-
         if (function && function->isStateful())
         {
             is_stateful = true;

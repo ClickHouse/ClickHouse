@@ -18,6 +18,10 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET automatic_parallel_replicas_min_bytes_per_replica = 0, serialize_query_plan = 0, max_rows_to_read = 0;
+-- Pinned to the query-based implementation: the plan-based one cannot ship a read that uses direct read from a text
+-- index, so the plan has no read from the other replicas and no statistics are collected. Drop this pin once
+-- https://github.com/ClickHouse/ClickHouse/issues/116360 is fixed.
+SET parallel_replicas_plan_based = 0;
 -- The postings cache serves a posting list without reading it.
 SET use_query_condition_cache = 0, use_text_index_postings_cache = 0, use_skip_indexes = 1,
     query_plan_direct_read_from_text_index = 1;

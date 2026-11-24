@@ -88,9 +88,8 @@ public:
         /// Deltas of the open block's finished documents, then the open document's raw positions.
         PaddedPODArray<UInt32, 64> values;
         size_t open_document_begin = 0;
-        /// One per document of the open block.
-        PODArray<UInt32, 64> frequencies_minus_one;
-        bool has_frequency_run = false;
+        /// (local rank, freq - 1) of the open block's documents with more than one position.
+        PODArray<UInt32, 16> frequency_exceptions;
         size_t docs_in_block = 0;
         /// Payloads of the sealed blocks.
         PaddedPODArray<UInt8> staged;

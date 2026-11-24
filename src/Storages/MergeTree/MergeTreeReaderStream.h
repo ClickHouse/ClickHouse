@@ -9,6 +9,7 @@
 #include <Common/HashTable/Hash.h>
 #include <absl/container/flat_hash_map.h>
 
+#include <atomic>
 #include <mutex>
 
 
@@ -24,9 +25,9 @@ class CachedCompressedReadBuffer;
 struct RuntimeDataflowStatisticsBlock;
 
 /// The ranges of the files the readers of a read load, counted into its statistics, each range once however many readers
-/// load it. The ranges kept for that are reserved from `automatic_parallel_replicas_max_counted_ranges` before they are
-/// kept; past it, the counting stops and the statistics record that the input was not measured. The ranges still kept
-/// unmerged are counted when the registry is destroyed, before the statistics are, since it holds them.
+/// load it. The memory the ranges hold is charged to `automatic_parallel_replicas_max_counted_ranges` as it grows; past
+/// it, the counting stops, the ranges are freed, and the statistics record that the input was not measured. The ranges
+/// still kept unmerged are counted when the registry is destroyed, before the statistics are, since it holds them.
 class ReadRangesRegistry
 {
 public:
@@ -62,8 +63,6 @@ public:
     struct Batch
     {
         size_t bytes = 0;
-        /// Reserved from the limit and not taken by the ranges yet, released by `commit`.
-        size_t reserved = 0;
     };
 
     /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet, to `batch`.
@@ -81,6 +80,10 @@ private:
     /// Reserves `units` of the limit; past it, stops the counting instead.
     bool reserve(size_t units);
 
+    static void release(ReadRanges & read_ranges);
+    /// Frees the ranges of all the files, once the counting stopped. The files stay, as the readers refer to them.
+    void releaseAll();
+
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
 
@@ -93,6 +96,7 @@ private:
         std::equal_to<>,
         AllocatorWithMemoryTracking<std::pair<const UInt128, std::unique_ptr<ReadRanges>>>>
         read_ranges_by_path TSA_GUARDED_BY(mutex);
+    std::atomic_bool all_released{false};
     /// Given out for the files looked up once the counting stopped, which then keep nothing.
     static ReadRanges not_registered;
 };
