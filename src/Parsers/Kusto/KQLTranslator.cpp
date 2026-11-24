@@ -9,6 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -798,6 +799,29 @@ private:
         }
 
         builder.addJoin(asTableExpression(*op.inputs.front(), fmt::format("kql_right_{}", join_ordinal)), table_join);
+
+        /// Semi and anti joins return only the columns of the side they keep.
+        String kept_side;
+        switch (op.join_kind)
+        {
+            case KQLJoinKind::LeftSemi:
+            case KQLJoinKind::LeftAnti:
+                kept_side = fmt::format("kql_left_{}", join_ordinal);
+                break;
+            case KQLJoinKind::RightSemi:
+            case KQLJoinKind::RightAnti:
+                kept_side = fmt::format("kql_right_{}", join_ordinal);
+                break;
+            default:
+                break;
+        }
+        if (!kept_side.empty())
+        {
+            auto qualified = make_intrusive<ASTQualifiedAsterisk>();
+            qualified->qualifier = ident(kept_side);
+            qualified->children.push_back(qualified->qualifier);
+            builder.setProjection({qualified});
+        }
     }
 
     size_t join_ordinal = 0;
