@@ -175,6 +175,36 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(candidates.empty() ? columns_in_data_file : candidates).name);
         }
 
+        /// `AddingDefaultsTransform` evaluates the default of a column missing in a file from the columns read,
+        /// so the inputs of the defaults of the columns to read have to be read too (transitively).
+        {
+            const auto & column_defaults = storage_snapshot->metadata->getColumns().getDefaults();
+            NameSet column_names_in_file;
+            for (const auto & column : columns_in_data_file)
+                column_names_in_file.insert(column.name);
+            NameSet already_read(columns_to_read.begin(), columns_to_read.end());
+            Strings names_to_visit = columns_to_read;
+            while (!names_to_visit.empty())
+            {
+                String name = std::move(names_to_visit.back());
+                names_to_visit.pop_back();
+                auto default_it = column_defaults.find(name);
+                if (default_it == column_defaults.end() || default_it->second.kind != ColumnDefaultKind::Default || !default_it->second.expression)
+                    continue;
+                RequiredSourceColumnsVisitor::Data columns_context;
+                auto expression = default_it->second.expression->clone();
+                RequiredSourceColumnsVisitor(columns_context).visit(expression);
+                for (const auto & input : columns_context.requiredColumns())
+                {
+                    if (column_names_in_file.contains(input) && already_read.insert(input).second)
+                    {
+                        columns_to_read.push_back(input);
+                        names_to_visit.push_back(input);
+                    }
+                }
+            }
+        }
+
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
     else
