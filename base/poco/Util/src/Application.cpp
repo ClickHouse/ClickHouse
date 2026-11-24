@@ -95,7 +95,6 @@ void Application::setup()
 
 #if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
 	_workingDirAtLaunch = Path::current();
-	/// Poco::SignalHandler is not installed: its handler aborts, replacing the sanitizer's and the default fault actions.
 #else
 	setUnixOptions(false);
 #endif

@@ -347,6 +347,7 @@ void HandledSignals::addSignalHandler(
             throw Poco::Exception("Cannot set signal handler.");
 #endif
 
+    handled_signals.reserve(handled_signals.size() + signals.size());
     for (auto signal : signals)
     {
         struct sigaction previous{};
