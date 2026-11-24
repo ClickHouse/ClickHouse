@@ -1,0 +1,9 @@
+horizontal	88	11	1
+vertical	88	11	1
+dedup	100	1
+dedup_batch	Horizontal
+dedup_default	Horizontal
+lwd_h_batch	Horizontal
+lwd_h_default	Horizontal
+lwd_v_batch	Vertical
+lwd_v_default	Vertical
