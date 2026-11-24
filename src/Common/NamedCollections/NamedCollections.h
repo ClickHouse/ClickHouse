@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/NamedCollections/NamedCollections_fwd.h>
-#include <Common/SecretString.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 
@@ -48,7 +47,7 @@ public:
 
     template <typename T> T get(const Key & key) const;
 
-    template <typename T> T getOrDefault(const Key & key, const T & default_value = {}) const;
+    template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
 
     template <typename T> T getAny(const std::initializer_list<Key> & keys) const;
 
@@ -138,9 +137,7 @@ public:
 private:
     explicit NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_);
 
-    /// SecretString instead of an AST, so that the collection values which may contain secrets
-    /// do not rest in core-dumpable memory.
-    SecretString create_query;
+    ASTCreateNamedCollectionQuery create_query_ptr;
 };
 
 class NamedCollectionFromConfig final : public NamedCollection

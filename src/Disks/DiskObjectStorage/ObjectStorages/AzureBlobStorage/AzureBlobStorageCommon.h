@@ -16,6 +16,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <mutex>
+#include <string_view>
 
 namespace DB
 {
@@ -72,7 +73,7 @@ struct Endpoint
     std::optional<bool> container_already_exists;
     std::optional<bool> add_account_name_to_url;
 
-    [[nodiscard]] String getContainerEndpoint() const
+    String getContainerEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -93,7 +94,7 @@ struct Endpoint
         return url;
     }
 
-    [[nodiscard]] String getServiceEndpoint() const
+    String getServiceEndpoint() const
     {
         String url = storage_account_url;
 
@@ -108,8 +109,6 @@ struct Endpoint
 
         return url;
     }
-
-    bool operator==(const Endpoint &) const = default;
 };
 
 #if USE_AZURE_BLOB_STORAGE
@@ -132,15 +131,15 @@ class ContainerClientWrapper
 public:
     ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
 
-    [[nodiscard]] bool IsClientForDisk() const;
-    [[nodiscard]] BlobClient GetBlobClient(const String & blob_name) const;
-    [[nodiscard]] BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
-    [[nodiscard]] BlobContainerPropertiesRespones GetProperties() const;
-    [[nodiscard]] ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+    bool IsClientForDisk() const;
+    BlobClient GetBlobClient(const String & blob_name) const;
+    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    BlobContainerPropertiesRespones GetProperties() const;
+    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
-    [[nodiscard]] BlobContainerBatch CreateBatch() const;
-    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
-    [[nodiscard]] String GetBlobPath(const String & blob_name) const;
+    BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
+    String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;
@@ -157,46 +156,13 @@ struct ConnectionParams
     AuthMethod auth_method;
     BlobClientOptions client_options;
 
-    /// When true, the client must not authenticate with the AKS workload identity or the machine's managed identity.
-    bool forbid_implicit_credentials = true;
-
-    /// With `forbid_implicit_credentials`, build a client with no credentials instead of throwing.
-    bool anonymous_fallback_for_server_credentials = false;
-
-    /// A storage defined in user SQL, whose client follows the restriction of each accessing session. Not a disk, or a
-    /// table on a disk, whose configuration comes from the server.
-    bool follows_session_restriction = false;
-
-    /// `client_id` and `tenant_id` of a `WorkloadIdentityCredential` in `auth_method` given in `extra_credentials`,
-    /// which the credential does not expose. Empty when the credential takes them from the environment
-    /// (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`). Used to pass the same identity to `delta-kernel-rs`.
-    String workload_identity_client_id;
-    String workload_identity_tenant_id;
-
-    [[nodiscard]] String getContainer() const { return endpoint.container_name; }
-    [[nodiscard]] String getConnectionURL() const;
+    String getContainer() const { return endpoint.container_name; }
+    String getConnectionURL() const;
     /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
-    [[nodiscard]] String getConnectionURLWithoutQuery() const;
+    String getConnectionURLWithoutQuery() const;
 
-    [[nodiscard]] std::unique_ptr<ServiceClient> createForService() const;
-    [[nodiscard]] std::unique_ptr<ContainerClient> createForContainer() const;
-
-    /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
-    bool checkOrDropServerManagedCredentials() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
-
-    /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
-    [[nodiscard]] bool usesServerManagedCredentials() const;
-
-    /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
-    [[nodiscard]] AuthMethod getPermittedAuthMethod() const;
-
-    /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
-    /// is restricted. Does not change the parameters, so a client kept for others is not affected.
-    void checkSessionMayUseServerIdentity(bool restrict_server_credentials) const;
-
-    /// Like `checkSessionMayUseServerIdentity`, but does not read `forbid_implicit_credentials`, which every session
-    /// overwrites in `applyNewSettings`. For delta-kernel, which builds its credentials from these parameters.
-    void checkSessionMayUseServerIdentityIgnoringSharedFlag(bool restrict_server_credentials) const;
+    std::unique_ptr<ServiceClient> createForService() const;
+    std::unique_ptr<ContainerClient> createForContainer() const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
@@ -209,32 +175,42 @@ BlobClientOptions getClientOptions(
     const RequestSettings & request_settings,
     bool for_disk);
 
-/// The config keys the credential is built from. Kept apart from `AuthMethod` because the credential objects of
-/// the Azure SDK cannot be compared (e.g. the shared key cannot be read back), while
-/// `AzureObjectStorage::applyNewSettings` has to know whether the credential changed.
-struct AuthConfig
-{
-    std::optional<String> account_name;
-    std::optional<String> account_key;
-    std::optional<String> connection_string;
-    bool use_workload_identity = false;
-
-    bool operator==(const AuthConfig &) const = default;
-};
-
-AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 /// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the
-/// tag is absent - in release builds too, because `AZURE_ASSERT_MSG` expands to a bare `std::abort`
-/// under `NDEBUG`. Never call it directly on a value that comes from a remote endpoint; use this
-/// function instead.
-///
-/// Azure Blob Storage and every known compatible implementation send a non-empty header in every
-/// `GetProperties`, `ListBlobs` and `Download` answer, so an absent or empty header means the endpoint
-/// is not behaving correctly.
-String getETag(const Azure::ETag & etag, const String & blob_path);
+/// tag is absent - in release builds too, because `AZURE_ASSERT_MSG` is not compiled out with
+/// `NDEBUG`. Never call it directly on a value that comes from a remote endpoint: the endpoint is
+/// under no obligation to send the header, and one that does not must not take the server down.
+inline String getETagOrEmpty(const Azure::ETag & etag)
+{
+    return etag.HasValue() ? etag.ToString() : "";
+}
+
+/// The same `ETag` reaches us in two spellings: the `Etag` element of a blob listing carries the
+/// bare tag (`0x8D...`), while the `ETag` header of a download or a `HEAD` response carries it
+/// quoted (`"0x8D..."`), as RFC 7232 requires of an entity-tag. Comparing the two spellings
+/// literally would report every object as replaced during the read, so the tag is reduced to its
+/// opaque part first: the surrounding quotes and a `W/` weak-validator prefix are dropped.
+inline String normalizeETag(const String & etag)
+{
+    std::string_view tag = etag;
+    if (tag.starts_with("W/"))
+        tag.remove_prefix(2);
+    if (tag.size() >= 2 && tag.front() == '"' && tag.back() == '"')
+    {
+        tag.remove_prefix(1);
+        tag.remove_suffix(1);
+    }
+    return String(tag);
+}
+
+/// The quoted entity-tag form of `etag`, which is the form a conditional header such as
+/// `If-Match` requires: an `ETag` taken from a listing is bare and must be quoted before it goes
+/// into a request.
+inline String toQuotedETag(const String & etag)
+{
+    return "\"" + normalizeETag(etag) + "\"";
+}
 
 #endif
 

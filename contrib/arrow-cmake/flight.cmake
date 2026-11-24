@@ -11,13 +11,13 @@ if(NOT ENABLE_GRPC)
     return()
 endif()
 
-# The Arrow Flight server and client of ClickHouse are implemented on top of gRPC and the native Arrow IPC code
-# (`src/Processors/Formats/Impl/ArrowIPC`). Only the protocol is needed from Arrow: the messages and the service
-# generated from `Flight.proto`, and the messages of Arrow Flight SQL from `FlightSql.proto`.
+set(GRPC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc/include)
+
+set(ARROW_FLIGHT_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow/flight)
+set(ARROW_FLIGHT_SQL_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow/flight/sql)
 set(ARROW_FLIGHT_PROTO_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/format)
-set(ARROW_FLIGHT_PROTO_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/flight_proto)
-set(ARROW_FLIGHT_GENERATED_SRC_DIR ${ARROW_FLIGHT_PROTO_INCLUDE_DIR}/arrow/flight)
-set(ARROW_FLIGHT_SQL_GENERATED_SRC_DIR ${ARROW_FLIGHT_PROTO_INCLUDE_DIR}/arrow/flight/sql)
+set(ARROW_FLIGHT_GENERATED_SRC_DIR ${ARROW_GENERATED_SRC_DIR}/arrow/flight)
+set(ARROW_FLIGHT_SQL_GENERATED_SRC_DIR ${ARROW_GENERATED_SRC_DIR}/arrow/flight/sql)
 
 set(PROTOBUF_IMPORT_DIRS ${ARROW_FLIGHT_PROTO_DIR} ${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src)
 
@@ -37,10 +37,42 @@ PROTOBUF_GENERATE_GRPC_CPP(
     ${ARROW_FLIGHT_PROTO_DIR}/FlightSql.proto
 )
 
-add_library(_arrow_flight_proto ${flight_sources} ${flight_sql_sources})
-add_library(ch_contrib::arrow_flight_proto ALIAS _arrow_flight_proto)
+# NOTE: we do not compile the ${ARROW_FLIGHT_GENERATED_SRCS} directly, instead
+# compiling then via protocol_internal.cc which contains some gRPC template
+# overrides to enable Flight-specific optimizations. See comments in
+# protobuf-internal.cc
+set(ARROW_FLIGHT_SRCS
+        ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc
+        ${ARROW_FLIGHT_SQL_GENERATED_SRC_DIR}/FlightSql.pb.cc
+        ${ARROW_FLIGHT_SRC_DIR}/client.cc
+        ${ARROW_FLIGHT_SRC_DIR}/client_cookie_middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/client_tracing_middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/cookie_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/serialization_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server_auth.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server_tracing_middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport_server.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/grpc_client.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/grpc_server.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/protocol_grpc_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/serialization_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/util_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/types.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/client.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/column_metadata.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/protocol_internal.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/server_session_middleware.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/server.cc
+        ${ARROW_FLIGHT_SQL_SRC_DIR}/sql_info_internal.cc
+)
 
-add_dependencies(_arrow_flight_proto _protoc grpc_cpp_plugin)
-target_link_libraries(_arrow_flight_proto PUBLIC _protobuf grpc++)
-# The generated `Flight.grpc.pb.cc` includes "Flight.pb.h" from its own directory.
-target_include_directories(_arrow_flight_proto SYSTEM PUBLIC ${ARROW_FLIGHT_PROTO_INCLUDE_DIR} ${ARROW_FLIGHT_GENERATED_SRC_DIR})
+add_library(_arrow_flight ${ARROW_FLIGHT_SRCS})
+add_library(ch_contrib::arrow_flight ALIAS _arrow_flight)
+
+add_dependencies(_arrow_flight _protoc grpc_cpp_plugin)
+target_link_libraries(_arrow_flight PUBLIC _arrow)
+target_link_libraries(_arrow_flight PRIVATE _protobuf grpc++)
+target_include_directories(_arrow_flight PUBLIC ${ARROW_GENERATED_SRC_DIR})

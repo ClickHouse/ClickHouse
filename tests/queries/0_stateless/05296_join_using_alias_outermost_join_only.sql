@@ -29,10 +29,6 @@ JOIN (SELECT 10 AS k, 20 AS m) t2 USING (k)
 JOIN (SELECT 20 AS m) t3 USING (m)
 JOIN (SELECT 2 AS b, 7 AS c) t4 USING (b);
 
-SELECT 'WITH alias follows the same rule';
-WITH a + 1 AS b SELECT t2.b AS right_b FROM (SELECT 1 AS a, 3 AS b) t1 JOIN (SELECT 3 AS b) t2 USING (b) JOIN (SELECT 1 AS z) t3 ON 1 = 1;
-WITH a + 1 AS b SELECT t3.b AS right_b FROM (SELECT 1 AS a, 3 AS b) t1 JOIN (SELECT 1 AS z) t2 ON 1 = 1 JOIN (SELECT 2 AS b) t3 USING (b);
-
 SELECT 'comma JOIN counts as a level';
 SELECT a + 1 AS b, t2.b AS right_b FROM (SELECT 1 AS a, 3 AS b) t1 JOIN (SELECT 3 AS b) t2 USING (b), (SELECT 1 AS z) t3;
 

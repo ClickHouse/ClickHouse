@@ -1,19 +1,15 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
@@ -23,24 +19,21 @@ namespace DB
 /// Fallback implementation rule for steps not handled by specialized rules.
 /// Creates a single implementation at {1 node} without distribution propagation.
 /// Distributed execution of these steps is handled by dedicated rules
-/// (`AggregationImplementation`, `DistinctImplementation`, `SortingEnforcer`, etc.).
+/// (`AggregationImplementation`, `SortingEnforcer`, etc.).
 ///
-/// Steps that run on any split of their input (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`,
-/// a preliminary `DistinctStep`) are excluded and handled by `DistributionPassthrough` instead.
+/// Stateless per-row steps (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`)
+/// are excluded and handled by `DistributionPassthrough` instead.
 class DefaultImplementation : public IOptimizationRule
 {
 public:
-    [[nodiscard]] String getName() const override { return "DefaultImplementation"; }
+    String getName() const override { return "DefaultImplementation"; }
 
-    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         const auto * step = expression->getQueryPlanStep();
         /// Steps with specialized implementation rules.
         if (typeid_cast<const AggregatingStep *>(step) != nullptr
-            || typeid_cast<const DistinctStep *>(step) != nullptr
-            || typeid_cast<const MergingAggregatedStep *>(step) != nullptr
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
-            || typeid_cast<const WindowStep *>(step) != nullptr
             || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)
             return false;
         /// A top-N sort is handled by `TopNImplementation`; any other sort left in the memo
@@ -53,11 +46,11 @@ public:
         return true;
     }
 
-    [[nodiscard]] Promise getPromise() const override { return 1; }
-    [[nodiscard]] bool isTransformation() const override { return false; }
+    Promise getPromise() const override { return 1; }
+    bool isTransformation() const override { return false; }
 
 protected:
-    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
         /// No distribution propagation: output stays at default {1 node}.

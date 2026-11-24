@@ -1,6 +1,8 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
+SET enable_analyzer = 1;
+
 SYSTEM DROP QUERY CACHE;
 DROP TABLE IF EXISTS eligible_test;
 DROP TABLE IF EXISTS eligible_test2;
@@ -48,7 +50,7 @@ EXISTS TABLE eligible_test SETTINGS use_query_cache = true, query_cache_for_subq
 SELECT COUNT(*) FROM system.query_cache;
 
 -- KILL
-KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true, query_cache_for_subqueries = true, kill_throw_if_noop = false;
+KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- OPTIMIZE

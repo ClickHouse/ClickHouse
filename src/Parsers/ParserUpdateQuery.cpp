@@ -6,6 +6,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserPartition.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -105,13 +107,25 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-std::map<String, Documentation> ParserUpdateQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["UPDATE"] =
+namespace DB
+{
+
+void registerStatementUpdate(StatementFactory & factory)
+{
+    factory.registerStatement("UPDATE",
     {
         .description = R"DOCS_MD(
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge/>
+
+<Note>
+Lightweight updates are currently beta.
+If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
+</Note>
+
 The lightweight `UPDATE` statement updates rows in a table `[db.]table` that match the expression `filter_expr`.
 It is called "lightweight update" to contrast it to the [`ALTER TABLE ... UPDATE`](/reference/statements/alter/update) query, which is a heavyweight process that rewrites entire columns in data parts.
 It is only available for the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) table engine family.
@@ -229,9 +243,7 @@ The join mode is slower and requires more memory than the merge mode, but it is 
 UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 )",
         .related = {"ALTER TABLE ... UPDATE", "ALTER TABLE ... APPLY PATCHES", "DELETE", "INSERT INTO"},
-    };
-
-    return documentation;
+    });
 }
 
 }

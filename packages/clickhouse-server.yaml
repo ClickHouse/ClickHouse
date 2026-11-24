@@ -1,3 +1,4 @@
+# package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-server"
 description: |
@@ -39,29 +40,22 @@ overrides:
     - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
 
 contents:
-- src: ../programs/server/config.xml
+- src: root/etc/clickhouse-server/config.xml
   dst: /etc/clickhouse-server/config.xml
   type: config|noreplace
-  file_info:
-    mode: 0644
-- src: ../programs/server/users.xml
+- src: root/etc/clickhouse-server/users.xml
   dst: /etc/clickhouse-server/users.xml
   type: config|noreplace
-  file_info:
-    mode: 0644
 - src: clickhouse-server.init
   dst: /etc/init.d/clickhouse-server
 - src: clickhouse-server.service
   dst: /lib/systemd/system/clickhouse-server.service
-- src: clickhouse
+- src: root/usr/bin/clickhouse-server
   dst: /usr/bin/clickhouse-server
-  type: symlink
 # clickhouse-keeper part
-- src: ../programs/keeper/keeper_config.xml
+- src: root/etc/clickhouse-keeper/keeper_config.xml
   dst: /etc/clickhouse-keeper/keeper_config.xml
   type: config|noreplace
-  file_info:
-    mode: 0644
 - src: clickhouse-keeper.service
   dst: /lib/systemd/system/clickhouse-keeper.service
 - src: clickhouse

@@ -512,7 +512,7 @@ inline void NetworkInterfaceImpl::setMACAddress(const void *addr, std::size_t le
 //
 
 
-[[clang::no_destroy]] FastMutex NetworkInterface::_mutex;
+FastMutex NetworkInterface::_mutex;
 
 
 NetworkInterface::NetworkInterface(unsigned index):
