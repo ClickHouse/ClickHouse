@@ -1448,10 +1448,10 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
 {
     auto it = granules.find(index_read_task.index.index->index.name);
 
-    /// A read task passes the granule of its part, usually the one the reader already holds: then the state of the reader
-    /// stays valid from one task to the next: `readRows` resets the cursors when a task starts before the previous one, and
-    /// `updateAllMarkRanges` drops the posting blocks outside the ranges of the new task. A different granule drops all the
-    /// state keyed into the previous one.
+    /// The read tasks of a part usually pass the same granule, and the state of the reader stays valid from one task
+    /// to the next: `readRows` resets the cursors when a task starts before the previous one, and
+    /// `updateAllMarkRanges` drops the posting blocks outside the ranges of the new task.
+    /// A different granule invalidates all the state keyed into the previous one.
     if (it != granules.end() && it->second && it->second != granule)
     {
         resetCursors();
