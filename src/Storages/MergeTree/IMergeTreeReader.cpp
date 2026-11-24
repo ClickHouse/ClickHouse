@@ -220,6 +220,11 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
 }
 
+bool IMergeTreeReader::isColumnFrozen(size_t pos) const
+{
+    return std::ranges::any_of(frozen_columns, [pos](const FrozenColumn & frozen) { return frozen.index == pos; });
+}
+
 bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
 {
     return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());

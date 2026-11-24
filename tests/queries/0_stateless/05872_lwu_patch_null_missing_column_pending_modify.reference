@@ -100,6 +100,8 @@ dropreadd other v1	3	abc
 dropreadd other v1 nodefault	1	
 dropreadd other v1 nodefault	2	u
 dropreadd other v1 nodefault	3	
+omitted frozen v1 stored	0
+omitted stored v1 stored	1
 pending s v2	1	0
 s v2	1	abc
 s v2	2	u
@@ -202,3 +204,5 @@ dropreadd other v2	3	abc
 dropreadd other v2 nodefault	1	
 dropreadd other v2 nodefault	2	u
 dropreadd other v2 nodefault	3	
+omitted frozen v2 stored	0
+omitted stored v2 stored	1
