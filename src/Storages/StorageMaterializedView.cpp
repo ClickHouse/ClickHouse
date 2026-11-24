@@ -1210,7 +1210,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         auto rename = make_intrusive<ASTRenameQuery>();
         rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_target_table_name);
 
-        InterpreterRenameQuery(rename, getContext()).execute();
+        InterpreterRenameQuery interpreter(rename, getContext());
+        interpreter.setSkipDatabaseLocks(true);
+        interpreter.execute();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
     }
 
