@@ -172,3 +172,7 @@ strengthen_no_conflict
 SELECT count() AS `count()`\nFROM numbers(10) AS __table1\nWHERE and(less(__table1.number, 3), greaterOrEquals(__table1.number, 1))\nSETTINGS optimize_redundant_comparisons = 1
 2
 2
+derived_from_depth_two
+1
+1
+1

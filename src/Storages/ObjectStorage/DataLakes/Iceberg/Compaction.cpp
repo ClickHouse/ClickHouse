@@ -199,7 +199,7 @@ static Plan getPlan(
     Plan plan;
     plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, _, _2] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -213,7 +213,7 @@ static Plan getPlan(
     plan.generator.setVersion(metadata_version + 1);
 
     Poco::JSON::Object::Ptr initial_metadata_object
-        = deepCopy(getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -338,9 +338,6 @@ static void writeDataFiles(
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
                 column_mapper = createColumnMapper(schema_object);
-                const auto & metadata_object = initial_plan.initial_metadata_object;
-                if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
-                    column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
                 break;
             }
         }
@@ -377,8 +374,6 @@ static void writeDataFiles(
             settings,
             /*num_streams_=*/1);
 
-        auto input_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
-        input_format_filter_info->need_row_numbers = delete_file_transform != nullptr;
         auto input_format = FormatFactory::instance().getInput(
             data_file->data_object_info->getFileFormat().value_or(write_format),
             *read_buffer,
@@ -387,7 +382,7 @@ static void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            input_format_filter_info,
+            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);
@@ -441,6 +436,7 @@ static void writeDataFiles(
 static bool writeConsolidatedManifestFile(
     int metadata_version,
     Poco::JSON::Object::Ptr metadata_object,
+    const String & base_catalog_metadata_location,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
     SharedHeader sample_block_,
@@ -983,9 +979,11 @@ static bool writeConsolidatedManifestFile(
             {
                 auto catalog_filename = path_resolver.resolveForCatalog(generated_metadata_info.path);
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot.snapshot, metadata_object))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
+                    if (!catalog_writes_metadata_file)
+                        removeRejectedMetadataFile(path_resolver, generated_metadata_info, object_storage);
                     cleanup();
                     return false;
                 }
@@ -1420,7 +1418,7 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
+        const auto [metadata_version, metadata_file_path, _, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage_,
             catalog,
             table_id.getTableName(),
@@ -1433,14 +1431,14 @@ void compactIcebergManifests(
             persistent_table_components.metadata_compression_method,
             /* ignore_metadata_pointer_overrides */ true);
 
-        auto metadata_object = deepCopy(getMetadataJSONObject(
+        auto metadata_object = getMetadataJSONObject(
             metadata_file_path,
             object_storage_,
             persistent_table_components.metadata_cache,
             context_,
             log,
             persistent_table_components.metadata_compression_method,
-            persistent_table_components.table_uuid));
+            persistent_table_components.table_uuid);
 
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
         const Int32 format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
@@ -1466,6 +1464,7 @@ void compactIcebergManifests(
         if (writeConsolidatedManifestFile(
                 metadata_version,
                 metadata_object,
+                base_catalog_metadata_location,
                 persistent_table_components,
                 object_storage_,
                 context_,

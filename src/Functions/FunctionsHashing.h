@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int OPENSSL_ERROR;
@@ -309,7 +310,6 @@ struct SipHash128Impl
 
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2); }
     static UInt128 apply(const char * data, const size_t size) { return sipHash128(data, size); }
-    static UInt128 applyPadded(const char * data, const size_t size) { return sipHash128Padded(data, size); }
 
     static constexpr bool use_int_hash_for_pods = false;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
@@ -857,9 +857,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(NumberRepresentable) -> " + DataTypeNumber<typename Impl::ReturnType>{}.getName();
+        if (!arguments[0]->isValueRepresentedByNumber())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -1211,7 +1215,7 @@ private:
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
                         key = Impl::getKey(key_cols, i);
-                const ToType hash = applyPadded(key,
+                const ToType hash = apply(key,
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset);
 
@@ -1234,7 +1238,7 @@ private:
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
                         key = Impl::getKey(key_cols, i);
-                const ToType hash = applyPadded(key, reinterpret_cast<const char *>(&data[i * n]), n);
+                const ToType hash = apply(key, reinterpret_cast<const char *>(&data[i * n]), n);
                 if constexpr (first)
                     vec_to[i] = hash;
                 else
@@ -1561,32 +1565,6 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    String getSignatureString() const override
-    {
-        /// backward-compatible: UInt128 hashes serialize to FixedString(16) unless the trait
-        /// opts into returning UInt128 directly. Functions in this family are variadic;
-        /// individual implementations may reject zero arguments at execute time.
-        const String ret = (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
-            ? "FixedString(16)"
-            : DataTypeNumber<ToType>{}.getName();
-        return "([Any], ...) -> " + ret;
-    }
-
-    /// Keep the type-aware override so master's per-Impl `check_all_arguments_are_strings` validation is
-    /// still enforced (the declarative `[Any]` signature above cannot express a per-Impl compile-time
-    /// constraint, so it remains documentation-only for this family). The `ColumnsWithTypeAndName`
-    /// overload must also be overridden: otherwise the base-class overload would apply the `[Any]`
-    /// signature on the normal resolution path and skip this validation, letting e.g. an `Array`
-    /// argument reach `xxHash64Spark`, whose `combineHashes` throws `LOGICAL_ERROR` and aborts
-    /// builds with assertions enabled.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            types[i] = arguments[i].type;
-        return getReturnTypeImpl(types);
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if constexpr (requires { Impl::check_all_arguments_are_strings; })
@@ -1679,15 +1657,6 @@ public:
             return Impl::applyKeyed(key, begin, size);
         else
             return Impl::apply(begin, size);
-    }
-
-    /// For data that is followed by at least 7 readable bytes, such as a value of a padded column.
-    static ToType applyPadded(const KeyType & key, const char * begin, size_t size)
-    {
-        if constexpr (!Keyed && requires { Impl::applyPadded(begin, size); })
-            return Impl::applyPadded(begin, size);
-        else
-            return apply(key, begin, size);
     }
 
     static ToType combineHashes(const KeyType & key, ToType h1, ToType h2)
@@ -1881,9 +1850,25 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String, [Integer]) -> UInt64";
+        const auto arg_count = arguments.size();
+        if (arg_count != 1 && arg_count != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
+                "passed {}, should be 1 or 2.", getName(), arg_count);
+
+        const auto * first_arg = arguments.front().get();
+        if (!WhichDataType(first_arg).isString())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", first_arg->getName(), getName());
+
+        if (arg_count == 2)
+        {
+            const auto & second_arg = arguments.back();
+            if (!isInteger(second_arg))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", second_arg->getName(), getName());
+        }
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

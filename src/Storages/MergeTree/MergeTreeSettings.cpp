@@ -261,20 +261,6 @@ bytes) with some gap to avoid filesystem errors.
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
     Minimal number of rows to use full type of storage for data part instead of packed
     )", 0) \
-    DECLARE(UInt64, max_bytes_to_buffer_for_packed_part, 0, R"(
-    Maximum amount of memory taken by the buffered data of a packed data part while it is written
-    by an insert, a merge or a mutation. A packed part keeps the data of all its files in memory until
-    the part is finalized. Once the buffered data exceeds this limit, the data of the largest files is
-    moved to temporary files in the server temporary storage (`tmp_path`, `tmp_policy` or
-    `temporary_data_in_cache`) and read back on finalization. The temporary files are accounted by
-    `max_temporary_data_on_disk_size_for_query` and `max_temporary_data_on_disk_size_for_user`.
-    The last block (up to 64 KiB) of each file that is still being written cannot be moved, so a part
-    with many files written at once, such as a wide part with many columns, can take more memory.
-    The data of a part is moved to one temporary file, whose write buffers (about 2 MiB with the default
-    `temporary_files_buffer_size`) stay in memory until the part is finalized.
-    The limit applies separately to the part and to each of its projections. 0 means unlimited.
-    )", 0, \
-        {"26.11", 0, 0, "New setting. Bounds the memory taken by the buffered data of a packed part being written by moving it to temporary data. 0 keeps all the data in memory, as before."}) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal number of bytes to write in a
 single stripe in compact parts
@@ -432,7 +418,7 @@ Serialization version of the typed shared data inside JSON data type: the struct
 Possible values:
 - `v1` - for each granule the data of every `SHARED` path in path order, with the start of every path's data recorded in a marks stream, so that a read of some paths decodes only them.
 )", 0, \
-        {"26.11", "v1", "v1", "New setting"}) \
+        {"26.10", "v1", "v1", "New setting"}) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.
 
@@ -682,7 +668,8 @@ Wide part with Full storage. The persisted mutation commands and their
 versions are unchanged.
 Set to false to execute each command separately.
 )", 0, \
-        {"26.10", false, true, "Enable row-mask update coalescing by default"}) \
+        {"26.10", true, true, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", false, true, "Enable row-mask update coalescing by default"}) \
     DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
 Maximum number of keys in one coalesced row-mask update. The effective limit
 also respects `max_rows_in_set` in the background query settings. Values below
@@ -798,33 +785,7 @@ a local file on a disk rather than to ClickHouse Keeper.
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
 Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
 OPTIMIZE FINAL query.
-
-Also lowered automatically when merging that many parts of this table would not fit in memory, see
-`merge_memory_estimate_per_source_part_column`.
 )", 0) \
-    DECLARE(UInt64, merge_memory_estimate_per_source_part_column, 4096, R"(
-Estimated memory, in bytes, that a merge needs per (source part, column) regardless of how much data the
-parts hold, used to lower `max_parts_to_merge_at_once` so that one merge takes at most a sixteenth of the
-server's memory limit (`max_server_memory_usage`).
-
-A merge keeps one block from every source part alive at the same time, and every column of every one of
-those blocks costs at least a minimum allocation even when the block holds a handful of rows. For a table
-with thousands of columns - `system.metric_log` has over two thousand - merging the default 100 parts at
-once takes hundreds of megabytes before a single row is read. On a server with little memory the merge
-then fails with `MEMORY_LIMIT_EXCEEDED`, its source parts stay where they were, and the next selection
-round picks the same parts again, so the table stops compacting altogether.
-
-A merge that runs through the vertical algorithm (see `enable_vertical_merge_algorithm`) holds only the
-key columns of every source part at once and gathers the other columns one at a time, so it is priced by
-its key columns alone and keeps its full width on a small server. Whether a merge will be vertical is
-predicted from the table definition and the rows and bytes of the candidate parts the same way the merge
-decides it; where the prediction is unsure it prices the merge as a horizontal one. `OPTIMIZE ... DEDUPLICATE`
-always merges horizontally and is priced as such. The projection parts that a merge keeps are merged by
-child merges after it, and the merge is narrowed to fit each of them as well.
-
-Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alone.
-)", 0, \
-        {"26.11", 0, 4096, "New setting. Lowers `max_parts_to_merge_at_once` when merging that many parts of a very wide table would not fit in memory, so that such merges stop failing with `MEMORY_LIMIT_EXCEEDED` on small servers. The previous value disables the estimate, preserving pre-26.11 behavior."}) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
@@ -1533,20 +1494,6 @@ Possible values:
 - 1 - always enabled
 )", 0, \
         {"26.1", 500, 500, "New setting"}) \
-    DECLARE(Float, max_memory_ratio_to_activate_adaptive_write_buffer, 1.f / 32, R"(
-Also activate adaptive write buffers when the buffers a wide part preallocates would take at least this
-fraction of the server's memory limit (`max_server_memory_usage`), regardless of
-`min_columns_to_activate_adaptive_write_buffer`.
-
-A wide part preallocates two buffers of `max_compress_block_size` for every stream it writes - the file
-buffer and the compressor's block buffer - so a table with many columns reserves hundreds of megabytes
-before writing a single byte, and every concurrent merge reserves it again. That is negligible on a large
-server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
-`MEMORY_LIMIT_EXCEEDED`.
-
-Set to `0` to disable this trigger and select adaptive write buffers by column count only.
-)", 0, \
-        {"26.11", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.11 behavior."}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
 Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
 
@@ -2323,9 +2270,6 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
-A writable disk holds the data of only one table: the other tables over the same path,
-or over a path inside or above it, have to use a read-only disk.
-`ALTER` cannot change the disk of a table with this setting.
 The parts already present under the path are trusted to match the columns and the sorting
 key this table declares. Nothing records the sorting key a part was written with, so a
 table declaring a different one over the same parts returns wrong results or an error.
@@ -2514,8 +2458,8 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0, \
-        {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
-        {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \
+        {"26.7", "basic, uniq_v2", "basic, uniq_v2", "26.7 replaced `minmax, uniq` with `basic, uniq_v2` (`basic` is a superset of the deprecated `minmax`, `uniq_v2` has less overhead on inserts, merges and memory). The change is recorded at 26.4, so that `compatibility` with 26.4 to 26.6 does not bring back `minmax, uniq`."}, \
+        {"26.4", "", "basic, uniq_v2", "Enable auto statistics by default. 26.4 to 26.6 shipped `minmax, uniq`, but `compatibility` with these versions gives `basic, uniq_v2`: statistics affect only query planning, not results, and merging the large `uniq` states of every part makes query planning many times slower in newer versions."}, \
         {"25.10", "", "", "New setting"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -2727,10 +2671,9 @@ Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/fu
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \
         {"25.1", false, false, "Cloud sync"}) \
-    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 16, R"(
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
 )", 0, \
-        {"26.11", 1, 16, "Increase the default", CompatibilitySetting::Ignore}, \
         {"25.8", 1, 1, "New setting"}) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
@@ -2792,7 +2735,7 @@ memory usage by not loading useless columns of the primary key.
     merges, fetches and on startup of server. Without it the statistics of a part
     are loaded into the cache by the first query that needs them.
 )", 0, \
-        {"26.11", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
+        {"26.10", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 )", 0) \
@@ -3008,7 +2951,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
@@ -3046,7 +2989,8 @@ static void validateTableDisk(const DiskPtr & disk)
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettingsImpl::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     if (storage_def.settings)
     {
@@ -3058,7 +3002,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             DiskPtr disk;
 
             auto changes = storage_def.settings->changes;
-            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
+            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 
             for (const auto & [name, value, _] : changes)
             {
@@ -3424,13 +3368,15 @@ void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr con
     impl->applyChange(resolved_change);
 }
 
-void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::resolveDiskSetting(
+    SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     for (auto & change : changes)
-        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database);
+        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 }
 
-void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::resolveDiskSetting(
+    SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
     if (change.name != "disk")
         return;
@@ -3442,7 +3388,8 @@ void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr co
 
     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
     {
-        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
+        auto disk_name = DiskFromAST::createCustomDisk(
+            value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
         change.value = disk_name;
     }
@@ -3564,9 +3511,10 @@ SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+void MergeTreeSettings::loadFromQuery(
+    ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database, bool stored_definition)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database, stored_definition);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)

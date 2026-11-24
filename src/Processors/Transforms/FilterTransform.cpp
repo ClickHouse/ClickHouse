@@ -35,7 +35,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int LOGICAL_ERROR;
 }
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
@@ -81,13 +80,21 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
+#if USE_EMBEDDED_COMPILER
+    if (node->is_function_compiled)
+    {
+        auto conjuncts = ActionsDAG::getCompiledConjuncts(*node);
+        return std::any_of(conjuncts.begin(), conjuncts.end(), isAlwaysFalseByEmptySet);
+    }
+#endif
+
     const auto & function_name = node->function_base->getName();
 
     if (function_name == "and")
         return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
 
-    /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold
-    if (function_name != "in" && function_name != "globalIn")
+    /// The negative variants never make the filter always false, and the -IgnoreSet variants must not fold
+    if (function_name != "in" && function_name != "globalIn" && function_name != "nullIn" && function_name != "globalNullIn")
         return false;
 
     const IColumn * set_column = node->children[1]->column.get();
@@ -102,7 +109,8 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
         return false;
 
     auto future_set = column_set->getData();
-    if (!future_set)
+    /// The set of an `ENGINE = Set` table can still grow while the query runs.
+    if (!future_set || future_set->isMutableDuringQuery())
         return false;
 
     auto set = future_set->get();
@@ -298,21 +306,6 @@ void updateRowNumbersInfo(const Chunk & chunk, const IColumn::Filter & filter)
     }
 }
 
-/// After this filter removes some rows, the rows of the chunk are no longer at the positions given by
-/// `MarkRangesInfo::rows_per_mark`, e.g. for the next filter of a split `AND` chain (`FilterStep`).
-void markRangesInfoPartiallyFiltered(Chunk & chunk)
-{
-    auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>();
-    if (!mark_ranges_info || !mark_ranges_info->rows_per_mark)
-        return;
-
-    /// `ChunkInfo` objects are held by `shared_ptr` and may be aliased, so don't mutate in place.
-    auto updated_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
-    updated_info->rows_per_mark = 0;
-    chunk.getChunkInfos().extract<MarkRangesInfo>();
-    chunk.getChunkInfos().add(std::move(updated_info));
-}
-
 }
 
 void FilterTransform::doTransform(Chunk & chunk)
@@ -430,12 +423,6 @@ void FilterTransform::doTransform(Chunk & chunk)
         return;
     }
 
-    if (num_filtered_rows != num_rows_before_filtration)
-    {
-        writeMarksWithoutMatchesIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>(), *filter_description);
-        markRangesInfoPartiallyFiltered(chunk);
-    }
-
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
     {
@@ -475,57 +462,6 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     removeFilterIfNeed(columns);
     chunk.setColumns(std::move(columns), num_filtered_rows);
-}
-
-void FilterTransform::writeMarksWithoutMatchesIntoQueryConditionCache(
-    const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description)
-{
-    if (!query_condition_cache || !mark_ranges_info || !mark_ranges_info->rows_per_mark || mark_ranges_info->has_dropped_rows)
-        return;
-
-    const auto * description = typeid_cast<const FilterDescription *>(&filter_description);
-    if (!description || !description->data)
-        return;
-
-    const auto & filter = *description->data;
-    const size_t rows_per_mark = mark_ranges_info->rows_per_mark;
-
-    /// Only the last mark can have fewer rows.
-    size_t num_marks = 0;
-    for (const auto & range : mark_ranges_info->mark_ranges)
-        num_marks += range.end - range.begin;
-    if (num_marks == 0 || filter.size() <= (num_marks - 1) * rows_per_mark || filter.size() > num_marks * rows_per_mark)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "The chunk with {} rows does not consist of {} marks of {} rows for the query condition cache",
-            filter.size(), num_marks, rows_per_mark);
-
-    MarkRanges marks_without_matches;
-    size_t row = 0;
-    for (const auto & range : mark_ranges_info->mark_ranges)
-    {
-        for (size_t mark = range.begin; mark < range.end; ++mark)
-        {
-            const size_t end = std::min(row + rows_per_mark, filter.size());
-            if (memoryIsZero(filter.data(), row, end))
-            {
-                if (!marks_without_matches.empty() && marks_without_matches.back().end == mark)
-                    ++marks_without_matches.back().end;
-                else
-                    marks_without_matches.emplace_back(mark, mark + 1);
-            }
-            row = end;
-        }
-    }
-
-    if (!marks_without_matches.empty())
-        query_condition_cache->write(
-            mark_ranges_info->table_uuid,
-            mark_ranges_info->part_name,
-            condition->first,
-            condition->second,
-            marks_without_matches,
-            mark_ranges_info->marks_count,
-            /*has_final_mark=*/ false);
 }
 
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)

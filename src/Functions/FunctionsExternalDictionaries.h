@@ -93,19 +93,14 @@ class FunctionDictHelper
 public:
     explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
 
-    const ContextPtr & getContext() const { return context; }
+    [[nodiscard]] const ContextPtr & getContext() const { return context; }
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
-
-        if (!access_checked)
-        {
-            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
-            access_checked = true;
-        }
-
-        return dict;
+        /// Check access before loading the dictionary, because loading contacts the dictionary source,
+        /// and load the dictionary that passed the check.
+        const auto & external_loader = context->getExternalDictionariesLoader();
+        return external_loader.getDictionary(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context), context);
     }
 
     std::shared_ptr<const IDictionary> getDictionary(const ColumnPtr & column)
@@ -165,17 +160,16 @@ public:
         return getDictionary(dictionary_name)->isInjective(attribute_name);
     }
 
-    DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
+    DictionaryStructure getDictionaryStructure(const String & dictionary_name)
     {
-        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        /// Check access before reading the definition, so that a user without access learns nothing about the dictionary.
+        const auto & external_loader = context->getExternalDictionariesLoader();
+        return external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context));
     }
 
     const ContextPtr context;
 
 private:
-    /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
-    std::atomic<bool> access_checked = false;
-
     /// We must not cache dictionary or dictionary's structure here, because there are places
     /// where ExpressionActionsPtr is cached (StorageDistributed caching it for sharding_key_expr and
     /// optimize_skip_unused_shards), and if the dictionary will be cached within "query" then
@@ -210,9 +204,20 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(const String, Any, ...) -> UInt8";
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Wrong argument count for function {}",
+                getName());
+
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a string",
+                arguments[0]->getName(),
+                getName());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -375,18 +380,6 @@ public:
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
         return helper.isDictGetFunctionInjective(sample_columns);
-    }
-
-    /// Documentation-only — the result type comes from the dictionary
-    /// schema's `attribute_name` column, which can't be expressed in the
-    /// DSL since it requires runtime access to the dictionary registry.
-    String getSignatureString() const override
-    {
-        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
-            return "(const String, const String | Tuple, Any, Any) -> Any";
-        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
-            return "(const String, const String | Tuple, Any, [UInt64]) -> Array(Any)";
-        return "(const String, const String | Tuple, Any) -> Any";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -919,17 +912,16 @@ private:
         return impl.isInjective(sample_columns);
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        /// dictGetUInt8/Int64/Date/UUID/IPv4/String/... - the typed variants always return
-        /// the type embedded in the function name. Arguments mirror dictGet: at minimum
-        /// (dict, attr, key); a default-value tuple may follow.
         DataTypePtr result;
+
         if constexpr (IsDataTypeDecimal<DataType>)
             result = std::make_shared<DataType>(DataType::maxPrecision(), 0);
         else
             result = std::make_shared<DataType>();
-        return "(const String, const String, Any, ...) -> " + result->getName();
+
+        return result;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -1054,13 +1046,6 @@ private:
     bool isDeterministic() const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
-
-    /// Documentation-only — same shape as `dictGet`, with `Nullable` result
-    /// (or `Tuple(Nullable, ...)` when multiple attributes are requested).
-    String getSignatureString() const override
-    {
-        return "(const String, const String | Tuple, Any) -> Nullable(Any)";
-    }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
@@ -1231,14 +1216,6 @@ private:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
     bool isDeterministic() const override { return false; }
 
-    /// Documentation-only — returns an array of ancestor keys from a
-    /// hierarchical dictionary. The key column type matches the dictionary's
-    /// hierarchical-attribute type (typically `UInt64`).
-    String getSignatureString() const override
-    {
-        return "(const String, UInt64) -> Array(UInt64)";
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         String dictionary_name;
@@ -1379,9 +1356,15 @@ private:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(const String, Any, Any) -> UInt8";
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of first argument of function {}. Expected String. Actual type {}",
+                getName(),
+                arguments[0]->getName());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     bool isDeterministic() const override { return false; }
@@ -1519,15 +1502,6 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
     bool isDeterministic() const override { return false; }
-
-    /// Documentation-only — covers `dictGetDescendants` (variadic, with
-    /// optional const-UInt level) and `dictGetChildren` (fixed level=1).
-    String getSignatureString() const override
-    {
-        if constexpr (Strategy::is_variadic)
-            return "(const String, UInt64, [const UInt]) -> Array(UInt64)";
-        return "(const String, UInt64) -> Array(UInt64)";
-    }
 
     explicit FunctionDictGetDescendantsOverloadResolverImpl(ContextPtr context)
         : dictionary_helper(std::make_shared<FunctionDictHelper>(std::move(context)))

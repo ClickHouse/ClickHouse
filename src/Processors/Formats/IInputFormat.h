@@ -137,6 +137,8 @@ public:
 
     virtual void needOnlyCount() { need_only_count = true; }
 
+    virtual void prefetch() {}
+
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
     /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
@@ -148,8 +150,6 @@ public:
     virtual bool isTopKFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
-    /// Called after the file was read, if its version provably did not change during the read.
-    virtual void cacheFilterColumnStatistics() {}
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

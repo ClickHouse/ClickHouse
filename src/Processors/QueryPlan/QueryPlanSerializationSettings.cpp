@@ -33,7 +33,7 @@ namespace DB
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, "Preferred block size in bytes for spill files used by external `ORDER BY` and `DISTINCT`.", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, "If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, "The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.", 0) \
-    DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.", 0) \
+    DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., "If memory usage after remerge does not reduced by this ratio, remerge will be disabled.", 0) \
     DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.", 0) \
     \
@@ -46,7 +46,6 @@ namespace DB
     DECLARE(UInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.", 0) \
     DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, "From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, "If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
-    DECLARE(UInt64, min_bytes_before_external_group_by, 0, "The minimum size in bytes of the aggregation state of one thread before external GROUP BY writes it to disk.", 0) \
     DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.", 0) \
     DECLARE(Bool, compile_aggregate_expressions, true, "Compile aggregate functions to native code.", 0) \
     DECLARE(UInt64, min_count_to_compile_aggregate_expression, 3, "The number of identical aggregate expressions before they are JIT-compiled", 0) \
@@ -62,7 +61,6 @@ namespace DB
     DECLARE(Bool, enable_adaptive_aggregator, false, "Enable the adaptive GROUP BY algorithm: each thread's local hash table freezes once it reaches adaptive_aggregator_freeze_threshold keys or adaptive_aggregator_freeze_threshold_bytes of memory, and new keys are aggregated exactly once, inside the bucket-parallel merge.", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 0, "The number of keys at which the adaptive aggregator freezes a thread's local hash table.", 0) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 0, "The memory size at which the adaptive aggregator freezes a thread's local hash table, whichever of this and the key-count threshold is reached first; 0 disables the byte bound.", 0) \
-    DECLARE(Bool, adaptive_aggregator_disable_thaw, false, "Keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \

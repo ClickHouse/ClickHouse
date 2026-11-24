@@ -3,6 +3,7 @@
 #if USE_MINIZIP
 #include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/quoteString.h>
 #include <base/errnoToString.h>
 
@@ -179,6 +180,10 @@ namespace
             {
                 if (strm.at_end)
                     return 0;
+                /// minizip computes the size as `int32_t` from sizes stored in the archive, and a negative one
+                /// arrives here converted to a huge number.
+                if (size > static_cast<unsigned long>(std::numeric_limits<int32_t>::max())) // NOLINT(google-runtime-int)
+                    throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Invalid size of a read from a zip archive: {}", size);
                 return strm.read_buffer->read(reinterpret_cast<char *>(buf), size);
             }
             catch (...)
@@ -852,6 +857,8 @@ void ZipArchiveReader::releaseRawHandle(RawHandleWithStream handle_info)
     }
 
     std::lock_guard lock{mutex};
+    /// Called from ~HandleHolder, so growing the pool must not throw MEMORY_LIMIT_EXCEEDED.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     free_handles.push_back(handle_info);
 }
 

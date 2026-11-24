@@ -6,6 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
@@ -357,15 +358,13 @@ struct IMergeTreeIndex
     /// never schedule it for recalculation, otherwise those operations get wedged.
     virtual bool isInert() const { return false; }
 
-    /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
-    /// slows down reading it. The blocks of such an index that the part's codec does not compress well
-    /// are written with codec `NONE`.
-    virtual bool isCompressible() const { return true; }
-
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
     NameSet getColumnsShadowingMapSubcolumns() const;
+
+    /// Tells whether a name that looks like a subcolumn of a `JSON` column can belong to another column.
+    IsShadowingJSONSubcolumn getJSONSubcolumnShadowingCheck() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;

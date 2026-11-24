@@ -253,7 +253,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
             /// `symbolizeTrace` and `StackTrace::forEachFrame`: DWARF line resolution does not depend
             /// on the symbol table, so each column defaults to an empty string only when its own
             /// lookup fails.
-            if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
+            if (const auto * symbol = symbol_index.findSymbolByAddress(reinterpret_cast<const void *>(trace[frame])))
             {
                 auto demangled = tryDemangle(symbol->name);
                 if (demangled)

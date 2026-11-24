@@ -149,7 +149,8 @@ public:
     BoolMask checkInHyperrectangle(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_data_types) const;
+        const DataTypes & sparse_data_types,
+        const DataTypes & key_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -176,6 +177,7 @@ public:
     ///      Information about the entire prefix covered by `equal_boundaries_mask` must be specified.
     /// `sparse_left_keys` and `sparse_right_keys` contain only 3 fields each, corresponding to columns (1, 3, 4).
     /// `sparse_data_types` contain only 3 data types each, corresponding to columns (1, 3, 4).
+    /// `key_types` are the types of all key columns, indexed by key column position.
     /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
     /// partition minmax), indexed by full key column position. A key without a bound defaults to (-inf, +inf).
     /// `sparse_key_indices` may also contain indices >= `equal_boundaries_mask.size()` (e.g. key columns not
@@ -187,6 +189,7 @@ public:
         const FieldRef * sparse_left_keys,
         const FieldRef * sparse_right_keys,
         const DataTypes & sparse_data_types,
+        const DataTypes & key_types,
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
         const Hyperrectangle * key_bounds = nullptr) const;
@@ -266,7 +269,6 @@ public:
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
-        size_t first_function_number,
         DataTypePtr current_type,
         bool single_point = false);
 
@@ -430,10 +432,6 @@ public:
         /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
 
-        /// The number of the first function of `monotonic_functions_chain`, or of the chains of `set_index` in mapping
-        /// order. Assigned when the condition is built, it names the cached results of the functions (see `applyFunction`).
-        size_t first_function_number = 0;
-
         std::optional<BloomFilterData> bloom_filter_data;
     };
 
@@ -562,7 +560,7 @@ private:
     bool mayReadNullKeyValue(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_key_types) const;
+        const DataTypes & key_types) const;
 
     /// The atoms extracted from one predicate leaf, which become one element of the RPN: none makes
     /// `FUNCTION_UNKNOWN`, one is the element itself, and several make a `FUNCTION_ATOM_GROUP` (see
@@ -905,7 +903,6 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetAtomCandidate candidate,
-        bool allow_relaxed_pruning,
         const DataTypePtr & has_element_type);
 
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side
@@ -1032,4 +1029,13 @@ private:
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
 };
+
+/// Whether a float among the values of `column` can equal a value of `key_expression_input_type` other than its
+/// cast to that type, when the two are compared in `comparison_type`. See the definition.
+bool floatValuesMissKeyValues(
+    ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type, const DataTypePtr & comparison_type);
+
+/// Errors that must still fail the query when an index evaluates an expression on values the query did not ask about.
+bool isQueryOuterGuardError(int code);
+
 }

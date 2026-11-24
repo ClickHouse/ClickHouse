@@ -280,6 +280,9 @@ public:
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Throws if an index in `force_data_skipping_indices` is not among the useful ones.
+    static void checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings);
+
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
         RangesInDataParts & parts_with_ranges,
@@ -327,7 +330,7 @@ public:
 
     /// Calculate row limits for reading based on settings and query info.
     /// Returns limits and leaf_limits that should be applied during part processing.
-    static RowLimits getRowLimits(const Context & context, const SelectQueryInfo & query_info);
+    static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
 
     static MarkRanges mergePartialResultsForDisjunctions(
         const IMergeTreeDataPartInfoForReader & part_info,

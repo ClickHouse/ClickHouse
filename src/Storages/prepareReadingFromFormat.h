@@ -35,6 +35,9 @@ namespace DB
         NamesAndTypesList requested_columns;
         /// The list of requested virtual columns.
         NamesAndTypesList requested_virtual_columns;
+        /// Columns of `source_header` that the format reads under other names (the physical names of a Delta
+        /// Lake table with column mapping). `format_header` can have another column under such a name.
+        NameSet columns_read_under_other_names;
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
@@ -65,12 +68,6 @@ namespace DB
         const Block & source_header,
         const PrewhereInfoPtr & prewhere_info,
         const FilterDAGInfoPtr & row_level_filter);
-
-    /// Whether reading `format_name` pushes the filter down to a `KeyCondition` that needs the
-    /// IN-subquery sets to be materialised before the read starts. Every read step over a file-like
-    /// storage must agree on this, otherwise the pushdown silently becomes a no-op on one
-    /// entrypoint while working on another.
-    bool formatNeedsEagerKeyConditionSets(const String & format_name);
 
     /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
     void prepareEagerKeyConditionSets(

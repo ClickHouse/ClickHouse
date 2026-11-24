@@ -25,7 +25,7 @@ class IWindowFunction
 public:
     virtual ~IWindowFunction() = default;
 
-    /// Inserts the result for the current row.
+    // Must insert the result for current_row.
     virtual void windowInsertResultInto(const WindowTransform * transform, size_t function_index) const = 0;
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
@@ -51,6 +51,10 @@ struct WindowFunctionWorkspace
 
     // Will not be initialized for a pure window function.
     mutable AlignedBuffer aggregate_function_state;
+
+    /// False after the state is destroyed until it is created again, so a throwing `create` does not lead to a second
+    /// `destroy`.
+    bool aggregate_function_state_created = false;
 
     // Argument columns. Be careful, this is a per-block cache.
     VectorWithMemoryTracking<const IColumn *> argument_columns;

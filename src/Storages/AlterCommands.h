@@ -87,9 +87,6 @@ struct AlterCommand
 
     String column_name;
 
-    /// For MODIFY_COLUMN of a subcolumn: its name relative to `column_name`, set by `prepare`. Empty for a column.
-    String subcolumn_name;
-
     /// For DROP/CLEAR COLUMN/INDEX ... IN PARTITION
     ASTPtr partition;
 
@@ -98,8 +95,6 @@ struct AlterCommand
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
-    /// The expression of an `EPHEMERAL` column was not written by the user, so it is not formatted back.
-    bool ephemeral_default = false;
 
     /// For COMMENT column or table
     std::optional<String> comment;
@@ -266,6 +261,9 @@ public:
         ContextPtr context,
         bool share_nested_offsets = true,
         const MergeTreeSettings * settings_defaults = nullptr) const;
+
+    /// Indices the commands actually add: `ADD INDEX IF NOT EXISTS` of an existing name adds nothing.
+    NameSet getAddedIndexNames(const IndicesDescription & existing) const;
 
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;

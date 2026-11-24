@@ -137,6 +137,8 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
+        if (logical->getPlannedAlgorithm() == JoinAlgorithm::FULL_SORTING_MERGE)
+            return true;
         return std::ranges::any_of(logical->getJoinSettings().join_algorithms, [](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE
@@ -432,7 +434,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
                     *merge,
                     *preserved_input_node);
 
-                const bool read_blocks_pass2 = order_info && !merge->canReadInOrder(*order_info);
+                const bool read_blocks_pass2 = order_info && !merge->canReadInOrder(order_info->direction);
 
                 if (order_info && !read_blocks_pass2)
                     return 0;

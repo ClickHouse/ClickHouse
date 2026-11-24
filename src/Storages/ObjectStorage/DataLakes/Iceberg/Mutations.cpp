@@ -275,8 +275,10 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                 if (delete_bytes == 0)
                     delete_bytes = object_storage->getObjectMetadata(
                         path_resolver.resolve(delete_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
-                delete_data_result[partition_key].total_bytes = delete_bytes;
+                delete_data_result[partition_key].total_bytes = static_cast<Int32>(delete_bytes);
             }
+            delete_data_writers[partition_key].reset();
+            delete_data_write_buffers[partition_key].reset();
         }
     }
 
@@ -349,8 +351,10 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                 if (update_bytes == 0)
                     update_bytes = object_storage->getObjectMetadata(
                         path_resolver.resolve(update_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
-                update_data_result[partition_key].total_bytes = update_bytes;
+                update_data_result[partition_key].total_bytes = static_cast<Int32>(update_bytes);
             }
+            update_data_writers[partition_key].reset();
+            update_data_write_buffers[partition_key].reset();
         }
     }
 
@@ -374,6 +378,7 @@ static bool writeMetadataFiles(
     std::shared_ptr<DataLake::ICatalog> catalog,
     StorageID table_id,
     Poco::JSON::Object::Ptr metadata,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
@@ -579,8 +584,10 @@ static bool writeMetadataFiles(
         {
             auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
             {
+                if (!catalog_writes_metadata_file)
+                    removeRejectedMetadataFile(path_resolver, metadata_info, object_storage);
                 cleanup();
                 return false;
             }
@@ -701,7 +708,7 @@ void mutate(
     {
         auto log = getLogger("IcebergMutations");
 
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
@@ -717,7 +724,7 @@ void mutate(
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
         const auto format_version = metadata->getValue<Int32>(f_format_version);
         if (format_version < 2)
@@ -799,6 +806,7 @@ void mutate(
                     catalog,
                     storage_id,
                     metadata,
+                    base_catalog_metadata_location,
                     partititon_spec,
                     static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
@@ -830,7 +838,7 @@ void alter(
     while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
@@ -846,7 +854,7 @@ void alter(
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
@@ -911,8 +919,10 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_schema, previous_schema_id))
             {
+                if (!catalog_writes_metadata_file)
+                    removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
                 ++i;
                 continue;
             }

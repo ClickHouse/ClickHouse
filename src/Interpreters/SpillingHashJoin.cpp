@@ -507,9 +507,4 @@ IBlocksStreamPtr SpillingHashJoin::getDelayedBlocks()
     return chosen_join->getDelayedBlocks();
 }
 
-bool SpillingHashJoin::isDelayedBlocksProcessingEnabled() const
-{
-    return state.load(std::memory_order_acquire) != State::IN_MEMORY_JOIN;
-}
-
 }

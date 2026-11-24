@@ -174,7 +174,6 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
-/// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
 String encodeNamespaceForURI(const String & namespace_name)
 {
     String encoded;
@@ -183,7 +182,7 @@ String encodeNamespaceForURI(const String & namespace_name)
         if (ch == '.')
             encoded += "%1F";
         else
-            Poco::URI::encode(String(1, ch), "#&+/:;=?@", encoded);
+            encoded.push_back(ch);
     }
     return encoded;
 }
@@ -1656,7 +1655,7 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
             /// Here name encoded back to 'foo%2Fbar' format
             const auto table_name_raw = current_table_json->get("name").extract<String>();
             std::string table_name;
-            Poco::URI::encode(table_name_raw, "/?#", table_name);
+            Poco::URI::encode(table_name_raw, "/", table_name);
 
             tables.push_back(base_namespace + "." + table_name);
             if (limit && tables.size() >= limit)
@@ -2027,7 +2026,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 }
 
 
-bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
@@ -2229,6 +2228,7 @@ bool RestCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {

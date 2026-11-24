@@ -37,10 +37,6 @@ The analyzer is the query analysis and planning infrastructure that has been the
 
 Allow to clean up old data files during Iceberg compaction.
 
-The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
-way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
-of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
-
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge/>

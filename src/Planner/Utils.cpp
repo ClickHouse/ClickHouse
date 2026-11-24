@@ -338,8 +338,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        if (context.getClientInfo().distributed_depth > 0)
-            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};
@@ -588,9 +587,6 @@ NameSet checkAccessRights(
     if (typeid_cast<const StorageDummy *>(storage.get()))
         return {};
 
-    if (isInsertedDataOfTableFunction(storage, storage_id, query_context))
-        return {};
-
     if (column_names.empty())
     {
         NameSet accessible_columns;
@@ -698,6 +694,7 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
+        bool view_source_in_subqueries,
         bool check_access_rights)
 {
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
@@ -733,14 +730,16 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
 
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
-    QueryAnalysisPass query_analysis_pass(table_expression);
+    /// The filter reads the source table only in its subqueries, which read the view source iff `view_source_in_subqueries`.
+    auto view_source = getViewSourceIfRead(query_context, view_source_in_subqueries);
+    QueryAnalysisPass query_analysis_pass(table_expression, /*only_analyze_=*/ false, view_source, view_source_in_subqueries);
     query_analysis_pass.run(filter_query_tree, query_context);
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
 
     /// The inner query of an ordinary view reads the table itself, not the inserted block.
-    if (auto view_source = query_context->getViewSource(); view_source && !query_context->isViewInnerQuery())
+    if (view_source)
         replaceStorageInQueryTree(filter_query_tree, query_context, view_source);
 
     return filter_query_tree;
@@ -753,7 +752,8 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         bool check_access_rights)
 {
     const auto & query_context = planner_context->getQueryContext();
-    auto filter_query_tree = buildFilterQueryTree(std::move(filter_expression), table_expression, query_context, check_access_rights);
+    auto filter_query_tree = buildFilterQueryTree(
+        std::move(filter_expression), table_expression, query_context, planner_context->isViewSourceInSubqueries(), check_access_rights);
 
     return buildFilterInfo(
         std::move(filter_query_tree),
@@ -902,23 +902,34 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
     return conjuncts;
 }
 
-bool optimizePlanForExists(QueryPlan & query_plan)
+bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated)
 {
     auto * node = query_plan.getRootNode();
+    /// `arrayJoin` can make the result empty, so the plan is kept from the topmost such step.
+    QueryPlan::Node * changes_number_of_rows = nullptr;
     while (true)
     {
-        if (typeid_cast<ExpressionStep *>(node->step.get()))
+        if (auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
         {
+            if (!changes_number_of_rows && !expression->getTransformTraits().preserves_number_of_rows)
+                changes_number_of_rows = node;
             node = node->children[0];
             continue;
         }
         if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
         {
             const auto & params = aggregation->getParams();
-            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+            bool always_one_row = params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set;
+            /// Decorrelation loses the row of an empty input of a keyless aggregate and applies `max_rows_to_group_by`
+            /// to all outer rows at once, so for a correlated subquery the steps above such an aggregate are ignored.
+            if (is_correlated && (always_one_row || params.max_rows_to_group_by != 0))
+                changes_number_of_rows = nullptr;
+            if (always_one_row)
             {
-                /// Subquery will always produce at least one row
-                return true;
+                /// Subquery will always produce at least one row.
+                if (!changes_number_of_rows)
+                    return true;
+                break;
             }
             node = node->children[0];
             continue;
@@ -937,6 +948,9 @@ bool optimizePlanForExists(QueryPlan & query_plan)
         }
         break;
     }
+
+    if (changes_number_of_rows)
+        node = changes_number_of_rows;
 
     if (node != query_plan.getRootNode())
     {

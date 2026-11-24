@@ -82,12 +82,10 @@ Expression ((Project names + Projection))
 -- complete stage: the shuffle scatter stays
 GatherExchange
   Expression ((Project names + Projection))
-    MergingAggregated (merge)
+    Aggregating
       ShuffleExchange (by hash([__table1.k]))
-        Aggregating (partial)
-          ShuffleExchange (any)
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-              ReadFromMergeTree (default.t_shuffle_bucket_order)
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_shuffle_bucket_order)
 -- complete stage under the force setting: the shuffle scatter stays
 GatherExchange
   Expression ((Project names + Projection))

@@ -283,7 +283,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
+    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -305,16 +306,6 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     }
 
     StorageID storage_id(database_name, table_name);
-
-    /// The destination of `INSERT INTO FUNCTION ... RETURNING` is not in the database catalog,
-    /// and the RETURNING query reads the inserted data from the view source.
-    if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
-        && view_source->getStorageID().database_name == database_name
-        && view_source->getStorageID().table_name == table_name
-        && !DatabaseCatalog::instance().isDatabaseExist(database_name))
-        return std::make_shared<TableNode>(view_source, context);
-
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
@@ -370,6 +361,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage)
         return {};
 
+
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
@@ -379,9 +371,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// converted to; the catalog table may have been altered since. Take the types from it, but
     /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
-    /// The inner query of an ordinary view reads the table itself.
+    /// An analysis that does not swap it in (`replaced_storage`), like the inner query of an ordinary view, reads the table itself.
     if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
+        view_source && view_source == replaced_storage && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
         metadata_snapshot = view_source->getInMemoryMetadataPtr(context, false);
 
@@ -417,9 +409,6 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     if (!storage_id.hasDatabase())
         return;
 
-    if (isInsertedDataOfTableFunction(table_node.getStorage(), storage_id, context))
-        return;
-
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
@@ -437,9 +426,10 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     context->checkAccess(AccessType::SELECT, storage_id);
 }
 
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, replaced_storage))
     {
         checkAccessToTableMetadata(*result, context);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };

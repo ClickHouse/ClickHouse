@@ -239,10 +239,6 @@ public:
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
-    /// Whether borrowed key bytes survive later `getKeyHolder` calls and key discards within this block.
-    /// Methods that reuse serialization scratch or roll back key allocations override this contract.
-    bool keyViewsAreBlockStable() const { return true; }
-
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
@@ -615,11 +611,6 @@ protected:
     const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
-    }
-
-    const ColumnRawPtrs & getNullMaps() const
-    {
-        return null_maps;
     }
 
     /// Create a bitmap that indicates whether, for a particular row,
