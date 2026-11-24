@@ -48,7 +48,7 @@ KILL_PID=$!
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT stateless_worker_pause_task_cancel PAUSE"
 
 # Another query starts, runs and ends its tasks on the same worker meanwhile.
-timeout -s KILL 20 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_cancel_outside_lock GROUP BY k)
+timeout --kill-after=1 20 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_cancel_outside_lock GROUP BY k)
     SETTINGS $SETTINGS, max_execution_time = 20" 2>&1 | head -n1 | cut -f1-2
 
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT stateless_worker_pause_task_cancel"
