@@ -22,7 +22,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -38,10 +37,10 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/System/tryGetOwnerTable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/StorageProxy.h>
 #include <Common/StringUtils.h>
@@ -1093,7 +1092,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    const String owner_table = getOwnerTable(database, StorageID{database_name, table_name, tables_it.uuid()});
+                    const String owner_table = tryGetOwnerTable(database, table_name, context);
                     if (!owner_table.empty() && is_dependency_visible(StorageID{database_name, owner_table}))
                         res_columns[res_index++]->insert(owner_table);
                     else
@@ -1113,52 +1112,6 @@ protected:
         return Chunk(std::move(res_columns), num_rows);
     }
 private:
-    /// Returns the materialized view or the `TimeSeries` table owning the inner table `table_id`, or an empty string. The owner is
-    /// found by its UUID or name in the inner table's name (see `StorageMaterializedView::generateInnerTableName`, `getTimeSeriesInnerTableName`).
-    String getOwnerTable(const DatabasePtr & database, const StorageID & table_id) const
-    {
-        std::string_view name = table_id.table_name;
-        StoragePtr owners[2];
-        if (name.starts_with(".inner_id."))
-        {
-            /// `.inner_id.<uuid>` or `.inner_id.<kind>.<uuid>`
-            UUID uuid;
-            if (name.size() >= 36 && tryParse(uuid, name.substr(name.size() - 36)) && uuid != UUIDHelpers::Nil)
-                owners[0] = DatabaseCatalog::instance().tryGetByUUID(uuid).second;
-        }
-        else if (name.starts_with(".inner."))
-        {
-            /// `.inner.<name>` or `.inner.<kind>.<name>`
-            name.remove_prefix(strlen(".inner."));
-            owners[0] = database->tryGetTable(String{name}, context);
-            if (size_t pos = name.find('.'); pos != std::string_view::npos)
-                owners[1] = database->tryGetTable(String{name.substr(pos + 1)}, context);
-        }
-
-        for (const auto & owner : owners)
-        {
-            if (owner && ownsInnerTable(*owner, table_id))
-                return owner->getStorageID().table_name;
-        }
-        return {};
-    }
-
-    bool ownsInnerTable(const IStorage & owner, const StorageID & table_id) const
-    {
-        if (const auto * view = owner.as<StorageMaterializedView>())
-            return view->hasInnerTable() && table_id == view->getTargetTableId();
-
-        if (const auto * time_series = owner.as<StorageTimeSeries>())
-        {
-            for (auto target_kind : StorageTimeSeries::getTargetKinds())
-            {
-                if (time_series->isInnerTable(target_kind) && table_id == time_series->tryGetTargetTableID(target_kind, context))
-                    return true;
-            }
-        }
-        return false;
-    }
-
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
     DatabaseTablesCursor databases_cursor;

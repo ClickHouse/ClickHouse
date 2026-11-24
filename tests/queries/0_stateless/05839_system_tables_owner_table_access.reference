@@ -1,0 +1,39 @@
+--- default user: the moved inner tables have no owner ---
+.inner_id.<mv>	mv
+.inner_id.<private_mv>	
+.inner_id.metricfamilies.<metrics>	metrics
+.inner_id.metricfamilies.<private_metrics>	
+.inner_id.recentsamples.<metrics>	metrics
+.inner_id.recentsamples.<private_metrics>	
+.inner_id.samples.<metrics>	metrics
+.inner_id.samples.<private_metrics>	
+.inner_id.tags.<metrics>	metrics
+.inner_id.tags.<private_metrics>	
+.inner_id.timeranges.<metrics>	metrics
+.inner_id.timeranges.<private_metrics>	
+--- no grant on metrics: its name is hidden, and so are the names of the owners in the other database ---
+.inner_id.<mv>	mv
+.inner_id.<private_mv>	
+.inner_id.metricfamilies.<metrics>	
+.inner_id.metricfamilies.<private_metrics>	
+.inner_id.recentsamples.<metrics>	
+.inner_id.recentsamples.<private_metrics>	
+.inner_id.samples.<metrics>	
+.inner_id.samples.<private_metrics>	
+.inner_id.tags.<metrics>	
+.inner_id.tags.<private_metrics>	
+.inner_id.timeranges.<metrics>	
+.inner_id.timeranges.<private_metrics>	
+--- grant on metrics ---
+.inner_id.<mv>	mv
+.inner_id.<private_mv>	
+.inner_id.metricfamilies.<metrics>	metrics
+.inner_id.metricfamilies.<private_metrics>	
+.inner_id.recentsamples.<metrics>	metrics
+.inner_id.recentsamples.<private_metrics>	
+.inner_id.samples.<metrics>	metrics
+.inner_id.samples.<private_metrics>	
+.inner_id.tags.<metrics>	metrics
+.inner_id.tags.<private_metrics>	
+.inner_id.timeranges.<metrics>	metrics
+.inner_id.timeranges.<private_metrics>	
