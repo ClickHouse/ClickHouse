@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Columns/ColumnsNumber.h>
@@ -40,6 +41,7 @@ namespace ProfileEvents
     extern const Event TextIndexPhraseSearches;
     extern const Event TextIndexPhraseCursorSearches;
     extern const Event TextIndexPhraseFallbacks;
+    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
 }
 
 namespace DB
@@ -686,6 +688,7 @@ void MergeTreeReaderTextIndex::registerReadRanges()
     if (!read_ranges_registry)
         return;
 
+    ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
     for (auto & [_, stream] : postings_streams)
         stream->recordBytesConsumed();
     if (positions_stream)
