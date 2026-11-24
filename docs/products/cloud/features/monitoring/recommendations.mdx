@@ -10,12 +10,15 @@ import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/Pr
 
 <PrivatePreviewBadge />
 
-ClickHouse Cloud reads your query traffic and table schemas and recommends changes. The tests are deterministic. They are not written by a model, and they do not use compute on your service.
+ClickHouse Cloud examines your query traffic and table schemas, generating recommendations for performance improvement. The tests are deterministic, without usage of LLMs, and they do not execute on your services.
 
-Recommendations are one of two kinds. Schema recommendations appear on **Monitoring** > **Tables**. Query recommendations appear on **Monitoring** > **Query performance**, when you open a query.
+Recommendations are one of two kinds:
+- Schema recommendations appear on **Monitoring** > **Tables** and are related to changes you can make to your table schemas. 
+- Query recommendations appear on **Monitoring** > **Query performance**, when you open a query, and are related to changes you can make to your queries.
+It's possible that some schema and query recommendations overlap, giving you different ways to resolve either via your query pattern or your table schema.
 
 <Warning>
-Recommendations are a preview. They may change, and they are not covered by the standard ClickHouse Cloud SLA.
+Recommendations are in preview. They may change, and they are not covered by the standard ClickHouse Cloud SLA.
 </Warning>
 
 ## Schema recommendations {#schema-recommendations}
