@@ -945,6 +945,25 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+/// The same for the elements of a set of `IN`. Set membership is not the numeric comparison `equals`
+/// does: `Set::castToKeyType` converts the left-hand side to the type of the set, and a conversion to
+/// `Bool` collapses every non-zero number to `true`, so `2 IN (SELECT true)` holds while casting the
+/// set back to the index type hashes only `1`. In the other direction casting an integer set to a
+/// `Bool` index collapses the element `2` to `1`, while the stored byte `2` matches it at runtime.
+/// Even a `Bool` set over a `Bool` index is not exact, because a `Bool` column can hold a byte other
+/// than 0 and 1 (e.g. through `reinterpret`). The index declines whenever a `Bool` is involved.
+static bool bloomFilterSetHashDomainMatches(const DataTypePtr & set_type, const DataTypePtr & nested_type)
+{
+    if (!set_type)
+        return false;
+
+    auto has_bool = [](const IDataType & type) { return isBool(type.getPtr()); };
+    if (anyInTypeTree(*set_type, has_bool) || anyInTypeTree(*nested_type, has_bool))
+        return false;
+
+    return bloomFilterHashDomainMatches(set_type, nested_type);
+}
+
 /// The recipe `equals` uses to hash a constant against an index element: the comparison is
 /// padding-aware for the string family while the hash is over the exact bytes, so a constant that
 /// cannot be brought to the element's exact byte form has to make the index decline instead of
@@ -980,6 +999,24 @@ static Field coerceConstantForBloomFilterHash(
         WriteBufferFromOwnString buf;
         DataTypeIPv6().getDefaultSerialization()->serializeBinary(value_field, buf, {});
         return buf.str();
+    }
+
+    /// `equals` compares a `DateTime64` with a floating-point constant by converting both sides to
+    /// `Float64`, so several stored ticks can compare equal to one constant: a `DateTime64` is stored
+    /// in up to 18 digits, more than a `Float64` keeps, and both `1767225600.000000000` and
+    /// `1767225600.000000001` of a `DateTime64(9)` equal `toFloat64(1767225600)`. Converting the
+    /// constant yields only one of them, and the granules holding the others would be pruned.
+    if (value_field.getType() == Field::Types::Float64 && WhichDataType(actual_type).isDateTime64())
+        return {};
+
+    /// `equals` compares an `IPv4` constant with an integer numerically, while `convertFieldToType`
+    /// throws `TYPE_MISMATCH` for an `IPv4` `Field` and a numeric type. Hash the number that is
+    /// compared; for any other type that is not an `IPv4` itself the index declines.
+    if (value_field.getType() == Field::Types::IPv4 && !WhichDataType(actual_type).isIPv4())
+    {
+        if (!isNativeInteger(actual_type) || isBool(actual_type))
+            return {};
+        return convertFieldToType(Field(static_cast<UInt64>(value_field.safeGet<IPv4>().toUnderType())), *actual_type);
     }
 
     /// `equals` compares a `DateTime` with a signed integer numerically, while `convertFieldToType`
@@ -1197,7 +1234,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         /// so the hash would match no granule and every granule would be pruned. `traverseTreeEquals`
         /// guards the same way. A literal `IN` list is coerced to the left-hand-side type at set build
         /// and is byte-exact already.
-        if (!bloomFilterHashDomainMatches(type, index_type))
+        if (!bloomFilterSetHashDomainMatches(type, index_type))
             return false;
 
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
@@ -1375,7 +1412,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             /// Same as for a set over a plain column above: the set keeps its own element type, and
             /// `castColumn` of a `FixedString` element to the map's `String` value type strips the
             /// trailing zeros the comparison honours, so the hash would match no granule.
-            if (!bloomFilterHashDomainMatches(type, array_nested_type))
+            if (!bloomFilterSetHashDomainMatches(type, array_nested_type))
                 return false;
 
             /// Same as for a set over a plain column above: a NULL of a subquery or table set does not
@@ -1421,7 +1458,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & array_nested_type = array_type->getNestedType();
-    if (!bloomFilterHashDomainMatches(type, array_nested_type))
+    if (!bloomFilterSetHashDomainMatches(type, array_nested_type))
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
