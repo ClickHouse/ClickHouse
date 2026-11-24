@@ -7,7 +7,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
+#include <limits>
 #include <numeric>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -20,6 +22,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -58,26 +61,44 @@ struct QuantileExactWeighted
             ++map[x];
     }
 
+    /// The weight is the number of occurrences of a value, so a sum that does not fit `Weight` cannot be represented.
+    static Weight addWeights(Weight lhs, Weight rhs)
+    {
+        Weight sum = 0;
+        if (common::addOverflow(lhs, rhs, sum))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in an exact weighted quantile does not fit UInt64");
+        return sum;
+    }
+
     void add(const Value & x, Weight weight)
     {
         if constexpr (!interpolated)
         {
             /// Keep compatibility for function quantilesExactWeighted.
             if (!isNaN(x))
-                map[x] += weight;
+            {
+                auto & value_weight = map[x];
+                value_weight = addWeights(value_weight, weight);
+            }
         }
         else
         {
             /// Ignore values with zero weight in function quantilesExactWeightedInterpolated.
             if (!isNaN(x) && weight)
-                map[x] += weight;
+            {
+                auto & value_weight = map[x];
+                value_weight = addWeights(value_weight, weight);
+            }
         }
     }
 
     void merge(const QuantileExactWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.getKey()] += pair.getMapped();
+        {
+            auto & value_weight = map[pair.getKey()];
+            value_weight = addWeights(value_weight, pair.getMapped());
+        }
     }
 
     void serialize(WriteBuffer & buf) const
@@ -91,6 +112,11 @@ struct QuantileExactWeighted
         while (reader.next())
         {
             const auto & pair = reader.get();
+            /// `add` ignores values with zero weight in `quantilesExactWeightedInterpolated`, so a state that
+            /// holds them was not produced by it; skip them so that a state of only zero weights is empty.
+            if constexpr (interpolated)
+                if (!pair.second)
+                    continue;
             map[pair.first] = pair.second;
         }
     }
@@ -316,7 +342,9 @@ private:
         }
 
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-        std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
+        std::partial_sum(array, array + size, array,
+            [](const Pair & acc, const Pair & p) { return Pair(p.first, addWeights(acc.second, p.second)); });
+        /// `add` and `deserialize` keep only positive weights, so the total weight is at least 1.
         return array[size - 1].second - 1;
     }
 
@@ -400,17 +428,27 @@ private:
         Float64 higher_coef;
     };
 
-    /// The `Float64 -> size_t` position casts below are undefined for a weight sum near
-    /// `UInt64::max`.
-    InterpolationEndpoints NO_SANITIZE_UNDEFINED
-    interpolationEndpoints(const Pair * array, size_t size, Float64 position) const
+    /// A rank as `size_t`, saturated: a weight sum near the maximum of `UInt64` rounds up to 2^64 as `Float64`, which a
+    /// plain conversion cannot represent.
+    static size_t rankFromPosition(Float64 position)
+    {
+        if (!(position > 0))
+            return 0;
+        if (position >= static_cast<Float64>(std::numeric_limits<size_t>::max()))
+            return std::numeric_limits<size_t>::max();
+        return static_cast<size_t>(position);
+    }
+
+    [[nodiscard]] InterpolationEndpoints interpolationEndpoints(const Pair * array, size_t size, Float64 position) const
     requires interpolated
     {
-        size_t lower = static_cast<size_t>(std::floor(position));
-        size_t higher = static_cast<size_t>(std::ceil(position));
+        size_t lower = rankFromPosition(std::floor(position));
+        size_t higher = rankFromPosition(std::ceil(position));
 
-        const auto * lower_it = std::lower_bound(array, array + size, lower + 1, [](const Pair & a, size_t b) { return a.second < b; });
-        const auto * higher_it = std::lower_bound(array, array + size, higher + 1, [](const Pair & a, size_t b) { return a.second < b; });
+        /// The first cumulative weight above the rank, as `a.second < rank + 1` without the addition, which wraps for the
+        /// maximum rank.
+        const auto * lower_it = std::lower_bound(array, array + size, lower, [](const Pair & a, size_t b) { return a.second <= b; });
+        const auto * higher_it = std::lower_bound(array, array + size, higher, [](const Pair & a, size_t b) { return a.second <= b; });
         if (lower_it == array + size)
             lower_it = array + size - 1;
         if (higher_it == array + size)
