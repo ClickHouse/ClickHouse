@@ -9,6 +9,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/StringUtils.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Macros.h>
@@ -595,8 +597,43 @@ void DatabaseMaterializedPostgreSQL::checkTableCanBeDetachedPermanently(const St
 }
 
 
+/// The column projections of a tables list (`table1(col1, col2), table2` -> `table1` -> `(col1, col2)`), by the
+/// table name as it is spelled in the list. The list is in the form the user wrote it (not yet quoted by
+/// `PostgreSQLReplicationHandler::fetchRequiredTables`), so a bracket always delimits a column list.
+static MapWithMemoryTracking<String, String> parseTablesListColumnProjections(std::string_view tables_list)
+{
+    MapWithMemoryTracking<String, String> projections;
+    size_t pos = 0;
+    while (pos < tables_list.size())
+    {
+        const size_t name_end = tables_list.find_first_of("(,", pos);
+        if (name_end == std::string_view::npos || tables_list[name_end] == ',')
+        {
+            pos = name_end == std::string_view::npos ? tables_list.size() : name_end + 1;
+            continue;
+        }
+
+        size_t projection_end = tables_list.find(')', name_end);
+        projection_end = projection_end == std::string_view::npos ? tables_list.size() : projection_end + 1;
+
+        projections.emplace(
+            String(trimWhitespace(tables_list.substr(pos, name_end - pos))),
+            String(tables_list.substr(name_end, projection_end - name_end)));
+        pos = projection_end;
+    }
+    return projections;
+}
+
+
 String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & except) const
 {
+    /// A table replicated with a column subset (`table(col1, col2)`) must keep it in the rewritten list. Its
+    /// nested table has only these columns, so without the subset the next startup would fetch the full
+    /// PostgreSQL structure, fail to match it with the nested table, and leave the table out of the consumer
+    /// while the replication slot keeps advancing.
+    const auto projections = parseTablesListColumnProjections(
+        (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value);
+
     String tables_list;
     for (const auto & table : materialized_tables)
     {
@@ -607,6 +644,8 @@ String DatabaseMaterializedPostgreSQL::getFormattedTablesList(const String & exc
             tables_list += ',';
 
         tables_list += table.first;
+        if (auto it = projections.find(table.first); it != projections.end())
+            tables_list += it->second;
     }
     return tables_list;
 }

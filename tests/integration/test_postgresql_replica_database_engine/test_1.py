@@ -1951,6 +1951,70 @@ def test_materialized_postgresql_tables_list_with_schema_keeps_columns(started_c
         cursor.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
 
 
+def test_permanent_detach_keeps_column_subset_of_remaining_tables(started_cluster):
+    # `DETACH TABLE ... PERMANENTLY` rewrites `materialized_postgresql_tables_list` without the detached
+    # table. The column subset of a remaining table has to stay in the rewritten list: its nested table
+    # has only these columns, so without the subset the next startup fetches the full PostgreSQL
+    # structure, the consumer refuses the table, and its changes are acknowledged without being applied.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    conn = get_postgres_conn(ip=ip, port=port, database=True)
+    cursor = conn.cursor()
+
+    restricted = "detach_subset_cols"
+    detached = "detach_subset_other"
+
+    try:
+        cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
+        cursor.execute(f"DROP TABLE IF EXISTS {detached}")
+        cursor.execute(
+            f"CREATE TABLE {restricted} "
+            "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
+        )
+        cursor.execute(
+            f"CREATE TABLE {detached} (key integer PRIMARY KEY, val integer)"
+        )
+        cursor.execute(
+            f"INSERT INTO {restricted} SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i"
+        )
+        cursor.execute(
+            f"INSERT INTO {detached} SELECT i, 200 + i FROM generate_series(0, 2) AS i"
+        )
+
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{restricted}(key, val), {detached}'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, restricted)
+        assert_nested_table_is_created(instance, detached)
+        wait_for_replicated_rows(f"`test_database`.`{restricted}`", 5)
+        wait_for_replicated_rows(f"`test_database`.`{detached}`", 3)
+
+        instance.query(f"DETACH TABLE test_database.{detached} PERMANENTLY")
+        assert (
+            f"materialized_postgresql_tables_list = \\'{restricted}(key, val)\\'"
+            in instance.query("SHOW CREATE DATABASE test_database")
+        )
+
+        instance.stop_clickhouse()
+        # Written while the server is down, so it can only arrive through ongoing replication after
+        # the restart: the snapshot is not reloaded while the replication slot is intact.
+        cursor.execute(f"INSERT INTO {restricted} VALUES (5, 105, 905)")
+        instance.start_clickhouse()
+
+        wait_for_replicated_rows(f"`test_database`.`{restricted}`", 6)
+        assert replicated_columns(restricted) == ["_sign", "_version", "key", "val"]
+    finally:
+        pg_manager.drop_materialized_db()
+        cursor.execute(f"DROP TABLE IF EXISTS {restricted}")
+        cursor.execute(f"DROP TABLE IF EXISTS {detached}")
+
+
 def test_materialized_postgresql_tables_list_rejects_empty_element(started_cluster):
     # `materialized_postgresql_tables_list` is split on commas without dropping empty tokens, so a
     # doubled comma leaves an element with no bytes while the quoting pass reads that element's last
