@@ -121,6 +121,14 @@ static NameSet inputsOfOutputs(const ActionsDAG & dag, const NameSet & names)
     return inputs;
 }
 
+static bool outputsAreDeterministic(const ActionsDAG & dag, const NameSet & names)
+{
+    for (const auto & name : names)
+        if (const auto * output = dag.tryFindInOutputs(name); output && !VirtualColumnUtils::isDeterministic(output))
+            return false;
+    return true;
+}
+
 static UInt64 groupByTopKPlanHash(
     const String & key_name,
     const DataTypePtr & key_type,
@@ -174,7 +182,7 @@ static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
     int nulls_direction,
     UInt64 plan_hash,
     const NameSet & columns_deciding_threshold,
-    bool has_non_deterministic_filter,
+    bool has_non_deterministic_expression,
     const Optimization::ExtraSettings & settings,
     const LoggerPtr & log)
 {
@@ -213,12 +221,12 @@ static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
         return nullptr;
     }
 
-    if (has_non_deterministic_filter)
+    if (has_non_deterministic_expression)
     {
         auto * read_from_object_storage = typeid_cast<ReadFromObjectStorageStep *>(source_step);
         if (!read_from_object_storage)
         {
-            LOG_TRACE(log, "No dynamic filter: a filter between the read and the aggregation is not deterministic");
+            LOG_TRACE(log, "No dynamic filter: an expression between the read and the aggregation is not deterministic");
             return nullptr;
         }
         read_from_object_storage->disableTopKQueryConditionCache();
@@ -284,7 +292,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// A filter that is deterministic only within one query (a join runtime filter `__applyFilter` pushed below
     /// the aggregation, `now`) changes which rows reach the heap, and so the boundary, but its contents are not
     /// part of the query condition cache key.
-    bool has_non_deterministic_filter = false;
+    bool has_non_deterministic_expression = false;
     /// The expressions between the read and the aggregation, for the query condition cache salt below.
     VectorWithMemoryTracking<const ActionsDAG *> path_expressions;
     const auto & aggregation_keys = aggregating_step.getParams().keys;
@@ -310,6 +318,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             }
             key_name = std::move(*input_name);
             path_expressions.push_back(&expression_step->getExpression());
+            if (!outputsAreDeterministic(expression_step->getExpression(), columns_deciding_threshold))
+                has_non_deterministic_expression = true;
             columns_deciding_threshold = inputsOfOutputs(expression_step->getExpression(), columns_deciding_threshold);
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
@@ -331,12 +341,14 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             key_name = std::move(*input_name);
             closest_filter_step = filter_step;
             path_expressions.push_back(&filter_step->getExpression());
+            if (!outputsAreDeterministic(filter_step->getExpression(), columns_deciding_threshold))
+                has_non_deterministic_expression = true;
             columns_deciding_threshold.insert(filter_step->getFilterColumnName());
             columns_deciding_threshold = inputsOfOutputs(filter_step->getExpression(), columns_deciding_threshold);
 
             const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
             if (!filter_node || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(filter_node))
-                has_non_deterministic_filter = true;
+                has_non_deterministic_expression = true;
         }
         else if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         {
@@ -351,7 +363,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
                 num_key_columns, limit, aggregating_step, path_expressions, directions, nulls_directions);
             return tryAttachFormatDynamicFilter(
                 *node->step, key_name, direction, nulls_direction, plan_hash, columns_deciding_threshold,
-                has_non_deterministic_filter, settings, log);
+                has_non_deterministic_expression, settings, log);
         }
         else
         {
@@ -454,7 +466,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
 
     /// This pass runs after `disableTopKQueryConditionCacheUnderNonDeterministicFilters`, so it applies the same
     /// protection itself: under such a filter the boundary-dependent PREWHERE entries must be neither reused nor written.
-    if (has_non_deterministic_filter)
+    if (has_non_deterministic_expression)
         read_step->disableTopKPrewhereQueryConditionCache();
 
     /// `updateQueryConditionCache` tagged the WHERE filter with the hash of the plain predicate. Under the running
@@ -463,7 +475,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// dropped when the cache is not to be used for top-K reads at all or a filter above the read is not deterministic.
     if (closest_filter_step && closest_filter_step->hasConditionForQueryConditionCache())
     {
-        if (settings.use_query_condition_cache_for_top_k && !has_non_deterministic_filter)
+        if (settings.use_query_condition_cache_for_top_k && !has_non_deterministic_expression)
             closest_filter_step->saltConditionForQueryConditionCache(read_step->getTopKFilterInfo()->condition_hash);
         else
             closest_filter_step->resetConditionForQueryConditionCache();
