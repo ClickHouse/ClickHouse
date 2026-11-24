@@ -162,9 +162,9 @@ So an `Array` returns its length, and a `JSON` value returns `NULL`.
     )";
     FunctionDocumentation::Syntax syntax = "JSONArrayLength(json)";
     FunctionDocumentation::Arguments arguments = {
-        {"json", "String with valid JSON.", {"String", "Array", "JSON", "Dynamic", "Any"}}
+        {"json", "JSON text as a `String`, or a value of any other type.", {"String", "Array", "JSON", "Dynamic", "Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of array elements if `json` is a valid JSON array string, otherwise returns `NULL`.", {"Nullable(UInt64)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of array elements if `json` is a valid JSON array, otherwise returns `NULL`.", {"Nullable(UInt64)"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

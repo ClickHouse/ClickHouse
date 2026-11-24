@@ -63,3 +63,15 @@ SELECT toTypeName(x), JSONArrayLength(x) FROM (SELECT arrayJoin([NULL, '{"a":1}'
 SELECT JSONArrayLength('{"a":[1,2]}'::JSON), JSONArrayLength(materialize('{"a":[1,2]}'::JSON));
 
 SELECT toTypeName(JSONArrayLength('{}'::JSON)), toTypeName(JSONArrayLength([1])), toTypeName(JSONArrayLength(('{"d":[1]}'::JSON).d));
+
+-- { echoOff }
+
+SELECT 'query condition cache keeps the format settings apart';
+DROP TABLE IF EXISTS t_qcc;
+CREATE TABLE t_qcc (id UInt64, t Tuple(x UInt8, y String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_qcc SELECT number, (1, 'a') FROM numbers(20000);
+SELECT count() FROM t_qcc WHERE JSONArrayLength(t) IS NULL
+SETTINGS use_query_condition_cache = 1, output_format_json_named_tuples_as_objects = 0;
+SELECT count() FROM t_qcc WHERE JSONArrayLength(t) IS NULL
+SETTINGS use_query_condition_cache = 1, output_format_json_named_tuples_as_objects = 1;
+DROP TABLE t_qcc;

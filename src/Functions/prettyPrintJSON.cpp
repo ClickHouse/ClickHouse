@@ -183,7 +183,7 @@ Such a value is converted to JSON first, as `toJSONString` does, so `prettyPrint
     )";
     FunctionDocumentation::Syntax syntax = "prettyPrintJSON(json [, indent])";
     FunctionDocumentation::Arguments arguments = {
-        {"json", "A valid JSON string to format.", {"String", "JSON", "Dynamic", "Any"}},
+        {"json", "JSON text as a `String`, or a value of any other type.", {"String", "JSON", "Dynamic", "Any"}},
         {"indent", "Number of spaces per indentation level. Default: 4. Max: 32", {"UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"A pretty-printed JSON string.", {"String"}};
