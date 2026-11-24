@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
@@ -29,6 +30,7 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -42,6 +44,21 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
+}
+
+namespace
+{
+
+ASTPtr groupByKeyToAST(const QueryTreeNodePtr & key, const ConvertToASTOptions & options)
+{
+    auto key_ast = key->toAST(options);
+    /// The analyzer expands a `tuple` GROUP BY key into its arguments, so wrap it to keep it as one key.
+    const auto * function_node = key->as<FunctionNode>();
+    if (function_node && function_node->isResolved() && function_node->getFunctionName() == "tuple")
+        return makeASTFunction("tuple", std::move(key_ast));
+    return key_ast;
+}
+
 }
 
 QueryNode::QueryNode(
@@ -604,7 +621,30 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST(options));
 
     if (!is_group_by_all && hasGroupBy())
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST(options));
+    {
+        auto keys_to_ast = [&options](const ListNode & keys)
+        {
+            auto keys_ast = make_intrusive<ASTExpressionList>();
+            keys_ast->children.reserve(keys.getNodes().size());
+            for (const auto & key : keys)
+                keys_ast->children.push_back(groupByKeyToAST(key, options));
+            return keys_ast;
+        };
+
+        ASTPtr group_by_ast;
+        if (is_group_by_with_grouping_sets)
+        {
+            auto grouping_sets_ast = make_intrusive<ASTExpressionList>();
+            grouping_sets_ast->children.reserve(getGroupBy().getNodes().size());
+            for (const auto & grouping_set : getGroupBy())
+                grouping_sets_ast->children.push_back(keys_to_ast(grouping_set->as<const ListNode &>()));
+            group_by_ast = std::move(grouping_sets_ast);
+        }
+        else
+            group_by_ast = keys_to_ast(getGroupBy());
+
+        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_ast));
+    }
 
     if (hasHaving())
         select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST(options));
