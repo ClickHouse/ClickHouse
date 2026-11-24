@@ -243,25 +243,12 @@ protected:
         const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode);
 
     /// Returns the body of the response, empty with `ignore_result`.
-    String sendRequest(
-        const CatalogState & catalog_state,
-        const String & endpoint,
-        Poco::JSON::Object::Ptr request_body,
-        const String & method,
-        bool ignore_result) const
-    {
-        size_t sent_requests = 0;
-        return sendRequest(catalog_state, endpoint, request_body, method, ignore_result, sent_requests);
-    }
-
-    /// Also counts in `sent_requests` the requests with the body sent, including the retries of the transport.
     virtual String sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method,
-        bool ignore_result,
-        size_t & sent_requests) const;
+        bool ignore_result) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 

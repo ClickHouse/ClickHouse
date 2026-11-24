@@ -2563,40 +2563,6 @@ def test_writes_schema_evolution(started_cluster):
     )
 
 
-def test_writes_catalog_commit_outcome_unknown(started_cluster):
-    """A catalog commit that landed, but whose response was lost, must keep the files it references,
-    and a retry of the commit that conflicts with its own landed attempt must succeed."""
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_writes_catalog_commit_outcome_unknown_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
-    node.query(f"INSERT INTO {table_ref} VALUES ('a', 1);", settings=write_settings)
-
-    try:
-        node.query("SYSTEM ENABLE FAILPOINT iceberg_rest_catalog_lose_commit_response")
-        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('b', 2);", settings=write_settings)
-        assert "the response to the commit" in error, error
-    finally:
-        node.query("SYSTEM DISABLE FAILPOINT iceberg_rest_catalog_lose_commit_response")
-
-    # The failed insert has kept the data files, the manifests and the manifest list of the landed commit.
-    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY ALL", settings=write_settings) == "a\t1\nb\t2\n"
-
-    try:
-        node.query("SYSTEM ENABLE FAILPOINT iceberg_rest_catalog_resend_commit")
-        node.query(f"INSERT INTO {table_ref} VALUES ('c', 3);", settings=write_settings)
-    finally:
-        node.query("SYSTEM DISABLE FAILPOINT iceberg_rest_catalog_resend_commit")
-
-    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY ALL", settings=write_settings) == "a\t1\nb\t2\nc\t3\n"
-
-
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     node = started_cluster.instances["node1"]
 

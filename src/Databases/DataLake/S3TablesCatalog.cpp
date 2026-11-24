@@ -336,8 +336,7 @@ String S3TablesCatalog::sendRequest(
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
     const String & method,
-    bool ignore_result,
-    size_t & sent_requests) const
+    bool ignore_result) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -349,11 +348,7 @@ String S3TablesCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str, &sent_requests](DB::WriteBuffer & out)
-        {
-            ++sent_requests;
-            DB::writeString(body_str, out);
-        };
+        out_stream_callback = [body_str](DB::WriteBuffer & out) { DB::writeString(body_str, out); };
     }
 
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'

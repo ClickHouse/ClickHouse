@@ -60,14 +60,12 @@ protected:
         const DB::HTTPHeaderEntries & headers,
         const std::optional<DB::HTTPHeaderEntries> & auth_headers) const override;
 
-    using RestCatalog::sendRequest;
     String sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method,
-        bool ignore_result,
-        size_t & sent_requests) const override;
+        bool ignore_result) const override;
 
 private:
     const String region;
