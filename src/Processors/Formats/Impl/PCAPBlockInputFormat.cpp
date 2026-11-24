@@ -1401,16 +1401,16 @@ Parsing is performed with the `libtins` library, which reads the capture
 container through `libpcap`. Only reading of capture files is supported; live
 capture is not.
 
-:::note
+<Note>
 `pcapng` support is limited to the subset that `libpcap` accepts: every
 interface description block in the file must declare the same link type and
 the same snapshot length. A capture that mixes interfaces with different link
 types or snapshot lengths - for example one produced by `dumpcap -i eth0 -i
 lo` - is rejected with an error, either when the file is opened or when the
 differing interface description block is reached while reading.
-:::
+</Note>
 
-:::note
+<Note>
 Frames are dissected according to the link type of the capture. The supported
 link types are Ethernet (`LINKTYPE_ETHERNET`), Linux cooked capture
 (`LINKTYPE_LINUX_SLL`), BSD loopback (`LINKTYPE_NULL`), PPI (`LINKTYPE_PPI`),
@@ -1425,9 +1425,9 @@ header when both SAPs are `0xAA`; the protocol named in the `SNAP` header, for
 example IP, is dissected further. Frames of any other link type are not dissected: they still produce rows with the capture
 metadata and `raw`, but `link_type` is `RAW`, `protocols` is `['RAW']`, and the
 layer-specific columns are empty.
-:::
+</Note>
 
-:::note
+<Note>
 When the snapshot length cuts a frame inside a header that has to be complete
 to be decoded, such as an IP header or an 802.1Q tag, an Ethernet, Linux
 cooked capture, BSD loopback or PPI frame is still dissected up to its last
@@ -1435,9 +1435,9 @@ complete outer header, and the rest is kept raw. IEEE 802.11 frames, with or
 without a radiotap header, are not: such a cut 802.11 frame produces a row like
 a frame of an unsupported link type, where `link_type` is `RAW`, `protocols` is
 `['RAW']`, and the layer-specific columns are empty.
-:::
+</Note>
 
-:::info
+<Info>
 A capture file is a sequence of packet records. Each record stores the
 capture timestamp, the number of bytes that were actually saved
 (`capture_length`), the packet's true size on the wire (`original_length`),
@@ -1445,13 +1445,13 @@ and the captured bytes themselves. When a capture is taken with a *snapshot
 length* smaller than the packets (for example `tcpdump -s 96`), only the first
 bytes of each packet are saved, so `capture_length` is smaller than
 `original_length`. For a full capture the two are equal.
-:::
+</Info>
 
-:::note
+<Note>
 Capture files are read with microsecond timestamp precision. The `timestamp`
 column has a nanosecond-scale type (`DateTime64(9)`) for future compatibility,
 but nanosecond-resolution captures are currently truncated to microseconds.
-:::
+</Note>
 
 ## Columns {#columns}
 
