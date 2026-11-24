@@ -494,6 +494,14 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     if (isFixedString(removeLowCardinalityAndNullable(from_type)) && isString(removeLowCardinalityAndNullable(expr_type)))
         return std::nullopt;
 
+    /// The same holds for a `FixedString` inside a composite constant, such as `[toFixedString('a', 2)]` compared
+    /// with an `Array(String)`: the comparison is zero-padded element by element, so the converted constant
+    /// is only one of the values it matches. An `Enum` element is compared without the trailing zero bytes of
+    /// the constant, which the conversion of the whole constant does not remove.
+    if (!isFixedString(removeLowCardinalityAndNullable(from_type))
+        && anyInTypeTree(*from_type, [](const IDataType & type) { return isFixedString(type); }))
+        return std::nullopt;
+
     /// The constant becomes a bound the fold compares exactly, so a lossy conversion forgoes the fold.
     auto converted = tryConvertFieldToTypeExact(
         fixedStringConstantAsComparedWith(constant_node->getValue(), from_type, expr_type), *expr_type, from_type.get());
