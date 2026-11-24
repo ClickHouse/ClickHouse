@@ -24,7 +24,6 @@ public:
     BlockIO execute() override;
 
     [[nodiscard]] bool ignoreQuota() const override { return true; }
-    [[nodiscard]] bool ignoreLimits() const override { return true; }
 
     static ASTPtr getCreateQuery(const IAccessEntity & entity, const AccessControl & access_control);
     static ASTPtr getAttachQuery(const IAccessEntity & entity);
