@@ -1,7 +1,7 @@
 -- Hash join range tables whose probe prefetches. 200000 keys pass the size rule on an L2 cache of up to 3 MiB, and about 96-98%
--- of the probe keys are in the range, so most blocks prefetch. Half of the `kh` keys are outside the range, so a block stops
--- prefetching after its first rows, and blocks of 1001 rows end inside a batch of prefetched rows. Each query runs on the
--- range table and on the hash table.
+-- of the probe keys are in the range, so most blocks prefetch. Half of the `kh` keys are outside the range, so the `left half`
+-- blocks do not prefetch. Blocks of 1001 rows split the sample into strata of unequal size. Each query runs on the range table
+-- and on the hash table.
 
 SET join_algorithm = 'hash', hash_join_layout = 'serial', max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0;
 SET query_plan_join_swap_table = false, query_plan_optimize_join_order_randomize = 0;
