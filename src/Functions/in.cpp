@@ -198,15 +198,16 @@ namespace
         || (isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right));
 }
 
-[[nodiscard]] bool matchesSetFieldConversion(
-    const IColumn & left, const IColumn & source, size_t row, const DataTypePtr & left_type)
+[[nodiscard]] bool matchesSetColumnConversion(
+    const IColumn & left, const IColumn & source, size_t row,
+    const DataTypePtr & left_type, const DataTypePtr & source_type)
 {
-    const auto converted = tryConvertFieldToType(source[row], *left_type, nullptr, {}, /*strict=*/true);
-    if (converted.isNull())
-        return false;
-    auto converted_column = left_type->createColumn();
-    converted_column->insert(converted);
-    return left.compareAt(row, 0, *converted_column, 1) == 0;
+    /// The source column type restores nested `Bool` tags while retaining
+    /// `FixedString` padding when the compound value is converted.
+    auto source_row = source.cut(row, 1);
+    auto converted = tryConvertColumnToTypeOrNull(
+        *source_row, source_type, left_type, {}, /*strict=*/true);
+    return converted && left.compareAt(row, 0, *converted, 1) == 0;
 }
 
 [[nodiscard]] bool hasCompoundCarrierForIn(const DataTypePtr & left_type, const DataTypePtr & right_type, bool nested = false)
@@ -561,7 +562,7 @@ public:
             }
             if (isMap(source_type) && hasCompoundStringConversionLeaf(map_type, source_type))
             {
-                values[row] = matchesSetFieldConversion(*maps, *sources, row, map_type);
+                values[row] = matchesSetColumnConversion(*maps, *sources, row, map_type, arguments[1].type);
                 continue;
             }
             auto converted = tryConvertColumnToTypeOrNull(
@@ -644,7 +645,7 @@ public:
             {
                 if (isArray(source_type) && hasCompoundStringConversionLeaf(left_type, source_type))
                 {
-                    values[row] = matchesSetFieldConversion(*left_values, *sources, row, left_type);
+                    values[row] = matchesSetColumnConversion(*left_values, *sources, row, left_type, arguments[1].type);
                     continue;
                 }
                 auto source_row = sources->cut(row, 1);
@@ -964,6 +965,8 @@ public:
             const bool mixed_temporal_types = !left_type->equals(*key_type)
                 && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_type)
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
+            const bool mixed_nested_calendar_types = (isArray(left_type) || isMap(left_type) || isTuple(left_type))
+                && hasNestedCalendarDateInComparison(left_type, key_type);
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !left_type->equals(*key_type);
             /// A set containing only `NULL` has no key whose type-sensitive hash
@@ -982,7 +985,7 @@ public:
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
                     left_arg.type->getName(), set_types[0]->getName(), getName());
-            if (mixed_temporal_types && !only_null_key)
+            if ((mixed_temporal_types || mixed_nested_calendar_types) && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",

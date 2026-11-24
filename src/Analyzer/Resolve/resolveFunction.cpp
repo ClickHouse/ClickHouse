@@ -3829,7 +3829,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 return ProjectionNames{proj};
                             }
                             if (needsExactCompoundNumericInComparison(
-                                in_first_argument->getResultType(), non_const_set_candidate->getResultType()))
+                                    in_first_argument->getResultType(), non_const_set_candidate->getResultType())
+                                || (in_first_argument->getResultType()->equals(*non_const_set_candidate->getResultType())
+                                    && hasCompoundFloatLeaf(in_first_argument->getResultType())))
                             {
                                 node = buildExactCompoundNumericInComparison(
                                     fn_args[0], fn_args[1], in_first_argument->getResultType(), non_const_set_candidate->getResultType());

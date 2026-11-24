@@ -36,3 +36,17 @@ WHERE m IN map('a', toFixedString('a', 2));
 
 SELECT count() FROM (SELECT map('a', 'a') AS m)
 WHERE m IN materialize(map('a', toFixedString('a', 2)));
+
+SELECT
+    map('a', 'true') IN map('a', CAST(1 AS Bool)),
+    map('a', 'true') IN materialize(map('a', CAST(1 AS Bool)));
+
+SELECT
+    ['true'] IN [CAST(1 AS Bool)],
+    ['true'] IN materialize([CAST(1 AS Bool)]);
+
+SELECT count() FROM (SELECT map('a', 'true') AS m)
+WHERE m IN map('a', CAST(1 AS Bool));
+
+SELECT count() FROM (SELECT map('a', 'true') AS m)
+WHERE m IN materialize(map('a', CAST(1 AS Bool)));

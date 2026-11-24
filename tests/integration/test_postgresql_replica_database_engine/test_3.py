@@ -35,6 +35,14 @@ instance2 = cluster.add_instance(
     stay_alive=True,
 )
 
+instance_in_null = cluster.add_instance(
+    "instance_in_null",
+    main_configs=["configs/log_conf.xml", "configs/backups_disk.xml"],
+    user_configs=["configs/users_in_null_as_unknown.xml"],
+    with_postgres=True,
+    stay_alive=True,
+)
+
 
 pg_manager = PostgresManager()
 pg_manager2 = PostgresManager()
@@ -415,6 +423,47 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
         instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
         == "2\t30000\tnew key\n"
     )
+
+
+def test_toast_with_in_null_profile(started_cluster):
+    table = "test_toast_with_in_null_profile"
+    database = "test_database_in_null"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        '''CREATE TABLE "{}" (id1 integer, id2 integer, txt text, other text, PRIMARY KEY (id1, id2))''',
+    )
+    pg_manager.execute(f"ALTER TABLE {table} ALTER COLUMN txt SET STORAGE EXTERNAL")
+
+    instance_in_null.query(
+        f"CREATE DATABASE {database} ENGINE = MaterializedPostgreSQL("
+        f"'{started_cluster.postgres_ip}:{started_cluster.postgres_port}', "
+        f"'{pg_manager.get_default_database()}', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_tables_list = '{table}', "
+        "materialized_postgresql_backoff_min_ms = 100, "
+        "materialized_postgresql_backoff_max_ms = 100"
+    )
+    try:
+        pg_manager.execute(
+            f"INSERT INTO {table} (id1, id2, txt, other) VALUES (1, 2, repeat('x', 30000), 'original')"
+        )
+        assert_eq_with_retry(
+            instance_in_null,
+            f"SELECT id1, id2, length(txt), other FROM {database}.{table}",
+            "1\t2\t30000\toriginal\n",
+            retry_count=50,
+        )
+
+        # The unchanged toasted value requires the generated tuple-key lookup.
+        pg_manager.execute(f"UPDATE {table} SET other = 'updated' WHERE id1 = 1 AND id2 = 2")
+        assert_eq_with_retry(
+            instance_in_null,
+            f"SELECT id1, id2, length(txt), other FROM {database}.{table}",
+            "1\t2\t30000\tupdated\n",
+            retry_count=50,
+        )
+    finally:
+        instance_in_null.query(f"DROP DATABASE IF EXISTS {database} SYNC")
 
 
 def test_toast_in_replica_identity(started_cluster):

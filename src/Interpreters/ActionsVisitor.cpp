@@ -708,7 +708,13 @@ ASTPtr makeExactCompoundValueInComparison(
     ASTPtr left, ASTPtr right, const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     ASTPtr equal;
-    if (needsExactCompoundNumericInComparison(left_type, right_type))
+    if (needsExactCompoundNumericInComparison(left_type, right_type)
+        || ((isArray(removeNullable(removeLowCardinality(left_type)))
+                || isMap(removeNullable(removeLowCardinality(left_type)))
+                || isTuple(removeNullable(removeLowCardinality(left_type))))
+            && removeNullable(removeLowCardinality(left_type))->equals(
+                *removeNullable(removeLowCardinality(right_type)))
+            && hasCompoundFloatLeaf(left_type)))
         equal = makeExactCompoundNumericInComparison(left->clone(), right->clone(), left_type, right_type);
     else if ((isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(left_type)))
             && isNumber(removeNullable(removeLowCardinality(right_type))))
@@ -1968,14 +1974,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             return needs_complex_candidate_rewrite(type)
                                 || needsExactCompoundNumericInComparison(left_argument_type, type)
                                 || hasCompoundCarrierForIn(left_argument_type, type)
-                                || hasCompoundStringConversionLeaf(left_argument_type, type);
+                                || hasCompoundStringConversionLeaf(left_argument_type, type)
+                                || (removeNullable(removeLowCardinality(left_argument_type))->equals(
+                                        *removeNullable(removeLowCardinality(type)))
+                                    && hasCompoundFloatLeaf(left_argument_type));
                         });
                     const bool compare_complex_array_sources = use_standard_null_semantics && right_argument_is_array && left_is_complex
                         && right_array_type
                         && (needs_complex_candidate_rewrite(right_array_type->getNestedType())
                             || needsExactCompoundNumericInComparison(left_argument_type, right_array_type->getNestedType())
                             || hasCompoundCarrierForIn(left_argument_type, right_array_type->getNestedType())
-                            || hasCompoundStringConversionLeaf(left_argument_type, right_array_type->getNestedType()));
+                            || hasCompoundStringConversionLeaf(left_argument_type, right_array_type->getNestedType())
+                            || (removeNullable(removeLowCardinality(left_argument_type))->equals(
+                                    *removeNullable(removeLowCardinality(right_array_type->getNestedType())))
+                                && hasCompoundFloatLeaf(left_argument_type)));
                     const bool choose_carrier_array_shape = use_standard_null_semantics && right_argument_is_array && left_is_complex
                         && isArray(left_bare_type) && right_array_type
                         && typeid_cast<const DataTypeArray *>(left_bare_type.get())->getNumberOfDimensions()
