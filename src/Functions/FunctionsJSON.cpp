@@ -55,6 +55,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromStringWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include "config.h"
 
@@ -2044,7 +2045,7 @@ private:
     void walkSerializedValue(const IColumn & column, size_t row, const IDataType & type, String & path, IColumn & dest, const FormatSettings & format_settings)
     {
         {
-            WriteBufferFromString buf(serialized_value);
+            WriteBufferFromStringWithMemoryTracking buf(serialized_value);
             type.getDefaultSerialization()->serializeTextJSON(column, row, buf, getFixedFormatSettings());
         }
 
@@ -2191,7 +2192,7 @@ private:
 
     /// For the `JSON` input only.
     JSONParser value_parser;
-    String serialized_value;
+    StringWithMemoryTracking serialized_value;
     std::array<MutableColumnPtr, 256> simple_type_columns;
 };
 
