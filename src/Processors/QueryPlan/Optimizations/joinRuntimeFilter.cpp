@@ -3,6 +3,7 @@
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -538,7 +539,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         DataTypePtr common_type = join_key_build_side.type;
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
-            common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
+            common_type = tryGetLeastSupertype(
+                DataTypes{removeSimpleAggregateFunction(join_key_build_side.type), removeSimpleAggregateFunction(join_key_probe_side.type)});
             if (!common_type)
             {
                 /// The keys still can be joined by the values that they have in common, see

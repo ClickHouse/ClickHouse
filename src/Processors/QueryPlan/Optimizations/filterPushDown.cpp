@@ -14,6 +14,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/indexHint.h>
@@ -828,7 +829,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (!JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
                 return;
 
-            auto supertype = tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
+            auto supertype = tryGetLeastSupertype(
+                DataTypes{removeSimpleAggregateFunction(lhs.getType()), removeSimpleAggregateFunction(rhs.getType())});
             if (!supertype)
                 return;
 

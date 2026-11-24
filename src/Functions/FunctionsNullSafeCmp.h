@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
@@ -50,6 +51,12 @@ private:
             }
         }
         return false;
+    }
+
+    /// `Nullable` cannot wrap a `SimpleAggregateFunction`, so the operands are compared in their storage types.
+    static DataTypePtr tryGetCommonType(const DataTypePtr & left, const DataTypePtr & right)
+    {
+        return tryGetLeastSupertype(DataTypes{removeSimpleAggregateFunction(left), removeSimpleAggregateFunction(right)});
     }
 
 public:
@@ -132,7 +139,7 @@ public:
             return std::make_shared<DataTypeUInt8>();
         }
 
-        if (!tryGetLeastSupertype(arguments))
+        if (!tryGetCommonType(left_ele_type, right_ele_type))
         {
             /// A `String`/`FixedString` on one side aligned with a non-string type on the other (at
             /// any nesting depth) can never be compared null-safely
@@ -297,7 +304,7 @@ public:
         }
 
         // get common type for null-safe comparison
-        DataTypePtr common_type = tryGetLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
+        DataTypePtr common_type = tryGetCommonType(arguments[0].type, arguments[1].type);
         auto left_nested_type = removeLowCardinalityAndNullable(arguments[0].type);
         auto right_nested_type = removeLowCardinalityAndNullable(arguments[1].type);
         // an aligned string-vs-non-string element cannot take the no-supertype nested path below

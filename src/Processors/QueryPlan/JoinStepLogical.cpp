@@ -22,6 +22,7 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -963,17 +964,22 @@ static void predicateOperandsToCommonType(
     if (left_type->equals(*right_type))
         return;
 
+    /// `Nullable` cannot wrap a `SimpleAggregateFunction`, so such a key converts to its storage type.
+    const auto left_storage_type = removeSimpleAggregateFunction(left_type);
+    const auto right_storage_type = removeSimpleAggregateFunction(right_type);
+
     DataTypePtr common_type;
     bool cast_to_subtype = false;
     try
     {
-        common_type = JoinCommon::compareBoolKeysAsUInt8(getLeastSupertype(DataTypes{left_type, right_type}), left_type, right_type);
+        common_type = JoinCommon::compareBoolKeysAsUInt8(
+            getLeastSupertype(DataTypes{left_storage_type, right_storage_type}), left_type, right_type);
     }
     catch (Exception & ex)
     {
         if (allow_conversion_to_subtype)
         {
-            if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
+            if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_storage_type, right_storage_type))
             {
                 /// A converted key must report a NULL at the top level; see `removeNullableInsideTuple`.
                 subtype = JoinCommon::removeNullableInsideTuple(JoinCommon::compareBoolKeysAsUInt8(subtype, left_type, right_type));
@@ -1327,7 +1333,8 @@ tryGetInequalityJoinKeyCondition(const JoinActionRef & condition)
     const auto & rhs_type = rhs.getType();
     if (hasInequalityJoinIncompatibleComparison(lhs_type) || hasInequalityJoinIncompatibleComparison(rhs_type))
         return {};
-    if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
+    if (!lhs_type->equals(*rhs_type)
+        && !tryGetLeastSupertype(DataTypes{removeSimpleAggregateFunction(lhs_type), removeSimpleAggregateFunction(rhs_type)}))
         return {};
 
     return inequality;

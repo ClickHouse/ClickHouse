@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -186,7 +187,8 @@ public:
             bool is_useful = false;
 
             DataTypes key_types = {lhs_equi_argument->getResultType(), rhs_equi_argument->getResultType()};
-            DataTypePtr common_key_type = tryGetLeastSupertype(key_types);
+            DataTypePtr common_key_type
+                = tryGetLeastSupertype(DataTypes{removeSimpleAggregateFunction(key_types[0]), removeSimpleAggregateFunction(key_types[1])});
 
             /// The planner rejects a `Dynamic` JOIN key unless `allow_dynamic_type_in_join_keys` is set.
             bool dynamic_key_rejected = !getSettings()[Setting::allow_dynamic_type_in_join_keys]

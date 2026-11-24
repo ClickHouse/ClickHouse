@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -328,7 +329,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
 
     if (is_numeric_or_string)
     {
-        auto type_nullable_nested = makeNullable(type_nested);
+        auto type_nullable_nested = makeNullable(removeSimpleAggregateFunction(type_nested));
         nullable_return_type = std::make_shared<DataTypeArray>(type_nullable_nested);
     }
 
@@ -509,7 +510,9 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
         if (mode == ArraySetMode::Intersect && !nested_return_type->onlyNull()
             && typeid_cast<const DataTypeArray &>(*arguments[i].type).getNestedType()->onlyNull())
             continue;
-        data_types.push_back(arguments[i].type);
+        /// `Nullable` cannot wrap a `SimpleAggregateFunction` element, so the conversion target uses its storage type.
+        const auto & nested_type = typeid_cast<const DataTypeArray &>(*arguments[i].type).getNestedType();
+        data_types.push_back(std::make_shared<DataTypeArray>(removeSimpleAggregateFunction(nested_type)));
     }
 
     DataTypePtr return_type_with_nulls;

@@ -64,3 +64,17 @@ SELECT accurateCastOrNull(tuple('true'), 'Tuple(SimpleAggregateFunction(sumWithO
 SELECT k, (SELECT count() FROM numbers(5) WHERE number = b.v) FROM b ORDER BY k;
 SELECT accurateCastOrNull(CAST([1., 2.], 'Array(Dynamic)'), 'QBit(SimpleAggregateFunction(max, Float32), 2)'), accurateCastOrNull(CAST([1., 'a'], 'Array(Variant(Float64, String))'), 'QBit(SimpleAggregateFunction(max, Float32), 2)');
 SELECT CAST('{"a":"2020-01-01 00:00:00.123"}'::JSON(a DateTime64(3)) AS JSON(a SimpleAggregateFunction(any, DateTime))) SETTINGS json_use_optimized_type_conversion = 1;
+SELECT arrayIntersect(a, a), arrayUnion(a, a), arraySymmetricDifference(a, a), arrayIntersect(a, [toNullable(toUInt64(1)), NULL]), arrayJaccardIndex(a, [toNullable(toUInt64(1))]) FROM (SELECT [CAST(1, 'SimpleAggregateFunction(sum, UInt64)')] AS a);
+SELECT m <=> toNullable(toUInt64(40)), m IS DISTINCT FROM toNullable(toUInt64(40)) FROM t;
+CREATE TABLE jn (k UInt32, x Nullable(UInt64)) ENGINE = Memory;
+INSERT INTO jn VALUES (1, 40), (1, 30), (1, NULL);
+CREATE TABLE ju (u UInt32) ENGINE = MergeTree ORDER BY u;
+INSERT INTO ju VALUES (30), (40);
+SELECT count() FROM t AS l JOIN jn AS r ON l.m = r.x SETTINGS query_plan_join_swap_table = 'false';
+SELECT count() FROM t AS l JOIN jn AS r ON l.m = r.x SETTINGS query_plan_join_swap_table = 'true', enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
+SELECT count() FROM t AS l JOIN jn AS r ON l.m = r.x JOIN ju ON ju.u = r.x;
+SELECT count() FROM t AS l, jn AS r WHERE l.m = r.x;
+SELECT count() FROM t AS l JOIN jn AS r ON l.k = r.k WHERE l.m = r.x;
+SELECT count() FROM t AS l JOIN jn AS r ON l.k = r.k AND l.m > r.x SETTINGS query_plan_join_swap_table = 'false';
+SELECT count() FROM t AS l ASOF JOIN jn AS r ON l.k = r.k AND l.m >= r.x;
+SELECT count() FROM t AS l JOIN jn AS r ON l.m <=> r.x;
