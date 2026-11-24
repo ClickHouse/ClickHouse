@@ -13,7 +13,7 @@ INSERT INTO t_memory SELECT number FROM numbers(10);
 CREATE TEMPORARY VIEW v_temporary AS SELECT a FROM t_regular;
 
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0;
 
 SELECT sum(a) FROM t_temporary SETTINGS parallel_replicas_local_plan = 1;
 SELECT sum(a) FROM t_temporary SETTINGS parallel_replicas_local_plan = 0;

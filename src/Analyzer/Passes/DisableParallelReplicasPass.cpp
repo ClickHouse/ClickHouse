@@ -20,11 +20,14 @@ namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
+/// Plan-based parallel replicas keep the read of a temporary table on the initiator.
 static bool canUseParallelReplicas(const ContextPtr & context)
 {
-    return context->canUseParallelReplicasOnInitiator() || context->canUseParallelReplicasCustomKey();
+    return (context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::parallel_replicas_plan_based])
+        || context->canUseParallelReplicasCustomKey();
 }
 
 /// Only `Memory` temporary tables are sent to the replicas.
