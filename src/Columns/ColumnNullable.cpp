@@ -841,8 +841,8 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
     {
         /// Shift all NULL values to the beginning.
 
-        ssize_t read_idx = res.size() - 1;
-        ssize_t write_idx = res.size() - 1;
+        ssize_t read_idx = static_cast<ssize_t>(res.size()) - 1;
+        ssize_t write_idx = static_cast<ssize_t>(res.size()) - 1;
 
         while (read_idx >= 0 && !isNullAt(res[read_idx]))
         {
@@ -952,8 +952,8 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             if (limit && first > limit)
                 break;
 
-            ssize_t read_idx = last - 1;
-            ssize_t write_idx = last - 1;
+            ssize_t read_idx = static_cast<ssize_t>(last) - 1;
+            ssize_t write_idx = static_cast<ssize_t>(last) - 1;
             ssize_t begin_idx = static_cast<ssize_t>(first) - 1;
 
             while (read_idx > begin_idx && !isNullAt(res[read_idx]))
