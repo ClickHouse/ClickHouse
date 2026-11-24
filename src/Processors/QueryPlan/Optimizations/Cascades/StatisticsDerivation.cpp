@@ -699,7 +699,7 @@ static std::pair<Float64, Float64> estimateGroupCount(const Names & columns, con
 DistinctValuesOfStates estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
 {
     DistinctValuesOfStates result;
-    for (const auto & aggregate : aggregating_step.getAggregatorParameters().aggregates)
+    for (const auto & aggregate : aggregating_step.getParams().aggregates)
     {
         if (aggregate.function->getName() != "uniqExact")
             continue;
