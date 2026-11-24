@@ -2425,7 +2425,7 @@ void FileCache::loadMetadataImpl()
 
 void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginInfo & origin_info, LoadMetadataProgress & progress)
 {
-    const auto key = Key::fromKeyString(key_directory.filename().string());
+    const auto key_string = key_directory.filename().string();
 
     /// Open the directory once and reuse the iterator for the scan below.
     /// `fs::is_empty` would open the directory just to test for emptiness,
@@ -2433,10 +2433,18 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     fs::directory_iterator offset_it{key_directory};
     if (offset_it == fs::directory_iterator())
     {
+        /// An empty directory which is not named by a key cannot be queued by key, so it is removed here.
+        if (key_string.size() != Key::KEY_STRING_SIZE)
+        {
+            if (fs::remove(key_directory))
+                LOG_DEBUG(log, "Removed empty key directory: {}", key_directory.string());
+            return;
+        }
+
         /// Not removed here: with many such directories the removal takes most of the load time.
         try
         {
-            metadata.addEmptyKeyDirectoryFromStartup(key_directory.parent_path().string(), key);
+            metadata.addEmptyKeyDirectoryFromStartup(key_directory.parent_path().string(), Key::fromKeyString(key_string));
             ++progress.empty_key_directories;
         }
         catch (const Exception & e)
@@ -2445,12 +2453,16 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             /// here: the load gets slower, but it does not fail and leaves no directory behind.
             if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 throw;
-            fs::remove(key_directory);
-            ++progress.empty_key_directories_removed_over_memory_limit;
+            if (fs::remove(key_directory))
+            {
+                LOG_DEBUG(log, "Removed empty key directory: {}", key_directory.string());
+                ++progress.empty_key_directories_removed_over_memory_limit;
+            }
         }
         return;
     }
 
+    const auto key = Key::fromKeyString(key_string);
     auto key_metadata = metadata.getKeyMetadata(
         key,
         CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY,

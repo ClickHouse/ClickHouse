@@ -5000,6 +5000,61 @@ TEST_F(FileCacheTest, LoadMetadataLeavesEmptyKeyDirectoriesToCleanupThread)
     ASSERT_EQ(countFilesInKeyDirectories(), num_loaded_keys + 1);
 }
 
+TEST_F(FileCacheTest, LoadMetadataRemovesEmptyKeyDirectoriesOverMemoryLimit)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_empty_keys = 5;
+    std::vector<fs::path> empty_key_directories;
+    for (size_t i = 0; i < num_empty_keys; ++i)
+    {
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromPath("empty_" + std::to_string(i))));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    setupLogs("debug");
+    std::string log_output;
+    testing::internal::CaptureStderr();
+    {
+        SCOPE_EXIT({ log_output = testing::internal::GetCapturedStderr(); });
+
+        /// The fail point makes queueing of each empty key directory throw `MEMORY_LIMIT_EXCEEDED`.
+        const String fail_point = "file_cache_empty_key_directory_queue_memory_limit";
+        DB::FailPointInjection::enableFailPoint(fail_point);
+        SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(fail_point); });
+
+        auto cache = DB::FileCache("RemovesEmptyKeyDirectoriesOverMemoryLimit", getSettingsForLoadTests(/* max_size */ 1000));
+        cache.initialize();
+
+        /// The cache is still alive, so the directories were removed by the load and not by the cleanup.
+        for (const auto & directory : empty_key_directories)
+            ASSERT_FALSE(fs::exists(directory)) << directory;
+    }
+
+    ASSERT_TRUE(log_output.contains(", 0 empty key directories left for background cleanup")) << log_output;
+    ASSERT_TRUE(log_output.contains(", 5 empty key directories removed during the load because of the memory limit")) << log_output;
+    for (const auto & directory : empty_key_directories)
+        ASSERT_TRUE(log_output.contains("Removed empty key directory: " + directory.string())) << log_output;
+}
+
+TEST_F(FileCacheTest, LoadMetadataRemovesEmptyDirectoryWhichIsNotNamedByKey)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const auto key_directory = getKeyDirectory(FileCacheKey::fromPath("empty"));
+    const auto other_directory = key_directory.parent_path() / "tmp";
+    fs::create_directories(key_directory);
+    fs::create_directories(other_directory);
+
+    auto cache = DB::FileCache("RemovesEmptyDirectoryWhichIsNotNamedByKey", getSettingsForLoadTests(/* max_size */ 1000));
+    cache.initialize();
+
+    /// The cache is still alive, so the directory was removed by the load and not by the cleanup.
+    ASSERT_FALSE(fs::exists(other_directory));
+}
+
 TEST_F(FileCacheTest, LoadMetadataCountsKeysWithoutFileSegments)
 {
     ServerUUID::setRandomForUnitTests();
