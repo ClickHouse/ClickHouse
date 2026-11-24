@@ -214,6 +214,11 @@ public:
 
     [[nodiscard]] UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
 
+    /// The physical join finds its columns by name. Where a side has several columns named as an input a join
+    /// condition reads, it takes the first of them, whichever one the condition reads. Returns the inputs that
+    /// read such columns: the join computes what its expressions say only where they all are one value.
+    [[nodiscard]] UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getConditionInputsWithRepeatedNames() const;
+
     /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
     /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
     /// stands such a column - NULL where it is Nullable, the default otherwise - so a `Nullable` column

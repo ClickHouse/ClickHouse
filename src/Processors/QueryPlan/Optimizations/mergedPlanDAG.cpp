@@ -250,6 +250,24 @@ const ActionsDAG::Node * cloneOf(const ActionsDAG::NodeMapping & clone_mapping, 
     return it->second;
 }
 
+/// Whether the join computes what its expressions say, see `JoinStepLogical::getConditionInputsWithRepeatedNames`:
+/// the same-named columns its conditions read are one value below it, under one alias or another.
+bool readsOneValuePerRepeatedName(const JoinStepLogical & join_step, const ActionsDAG::NodeMapping & clone_mapping)
+{
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> value_of_name;
+    for (const auto * input : join_step.getConditionInputsWithRepeatedNames())
+    {
+        const auto * value = cloneOf(clone_mapping, input);
+        while (value->type == ActionsDAG::ActionType::ALIAS)
+            value = value->children.front();
+
+        const auto [it, inserted] = value_of_name.emplace(input->result_name, value);
+        if (!inserted && it->second != value)
+            return false;
+    }
+    return true;
+}
+
 /// Unites what the right side of a join built into what the left side built; the sources of the right side are numbered
 /// after the ones of the left side. The join reads the left header first, so uniting in that order lines the columns up
 /// with its inputs, including the columns both sides happen to name alike.
@@ -496,6 +514,9 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, VectorWithMemoryTr
 
     ActionsDAG::NodeMapping clone_mapping;
     if (!mergeAndTrack(built, step_dag, clone_mapping))
+        return {};
+
+    if (!readsOneValuePerRepeatedName(*join_step, clone_mapping))
         return {};
 
     trackPreJoinNodes(built, *join_step, clone_mapping, join_padded_sides);

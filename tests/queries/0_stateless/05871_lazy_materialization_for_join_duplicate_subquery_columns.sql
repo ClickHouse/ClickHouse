@@ -1,7 +1,8 @@
 -- A subquery that selects the join key several times gives the join an input with a repeated name. The join keeps
 -- the columns of that name as they are, and prunes its other columns, so lazy materialization applies over it as it
--- does when the key is selected once. Every query is followed by the number of lazy reads in its plan, and the results
--- are compared with the optimization disabled.
+-- does when the key is selected once. A join over same-named columns with different values is left as it is. Every
+-- query is followed by the number of lazy reads in its plan, and the results are compared with the optimization
+-- disabled.
 
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
@@ -57,6 +58,14 @@ SELECT '-- the key and the payload of the lazily read side selected twice';
 SELECT l.id, s.payload FROM t_lazy_dup_l AS l JOIN (SELECT l_id, l_id, v, payload, payload FROM t_lazy_dup_r) AS s ON s.l_id = l.id ORDER BY s.v LIMIT 5;
 SELECT l.id, s.payload FROM t_lazy_dup_l AS l JOIN (SELECT l_id, l_id, v, payload, payload FROM t_lazy_dup_r) AS s ON s.l_id = l.id ORDER BY s.v LIMIT 5 SETTINGS query_plan_lazy_materialization_for_join = 0;
 SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') FROM (EXPLAIN SELECT l.id, s.payload FROM t_lazy_dup_l AS l JOIN (SELECT l_id, l_id, v, payload, payload FROM t_lazy_dup_r) AS s ON s.l_id = l.id ORDER BY s.v LIMIT 5);
+
+SELECT '-- same-named key columns with different values: the join is not entered, nothing is read lazily';
+SELECT l_id, r.payload FROM (SELECT toUInt8(number) AS l_id, * FROM (SELECT number, toUInt8(number + 10) AS l_id FROM numbers(3))) AS s JOIN t_lazy_dup_r AS r USING (l_id) ORDER BY r.v LIMIT 5;
+SELECT l_id, r.payload FROM (SELECT toUInt8(number) AS l_id, * FROM (SELECT number, toUInt8(number + 10) AS l_id FROM numbers(3))) AS s JOIN t_lazy_dup_r AS r USING (l_id) ORDER BY r.v LIMIT 5 SETTINGS query_plan_lazy_materialization_for_join = 0;
+SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') FROM (EXPLAIN SELECT l_id, r.payload FROM (SELECT toUInt8(number) AS l_id, * FROM (SELECT number, toUInt8(number + 10) AS l_id FROM numbers(3))) AS s JOIN t_lazy_dup_r AS r USING (l_id) ORDER BY r.v LIMIT 5);
+SELECT r.l_id, r.payload FROM (SELECT toUInt8(number) AS l_id, * FROM (SELECT number, toUInt8(number + 10) AS l_id FROM numbers(3))) AS s JOIN t_lazy_dup_r AS r ON s.l_id = r.l_id ORDER BY r.v LIMIT 5;
+SELECT r.l_id, r.payload FROM (SELECT toUInt8(number) AS l_id, * FROM (SELECT number, toUInt8(number + 10) AS l_id FROM numbers(3))) AS s JOIN t_lazy_dup_r AS r ON s.l_id = r.l_id ORDER BY r.v LIMIT 5 SETTINGS query_plan_lazy_materialization_for_join = 0;
+SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') FROM (EXPLAIN SELECT r.l_id, r.payload FROM (SELECT toUInt8(number) AS l_id, * FROM (SELECT number, toUInt8(number + 10) AS l_id FROM numbers(3))) AS s JOIN t_lazy_dup_r AS r ON s.l_id = r.l_id ORDER BY r.v LIMIT 5);
 
 SELECT '-- same-named columns with different values: the join reads the first one, whether or not it is returned';
 SELECT * FROM (SELECT 1 AS a, 1 AS a UNION ALL SELECT 2, 3) AS s ORDER BY ALL;

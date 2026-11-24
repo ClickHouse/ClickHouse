@@ -399,11 +399,7 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
     return true;
 }
 
-/// The physical join finds its columns by name. Where a side has several columns named as an input a join
-/// condition reads, it takes the first of them, whichever one the condition reads, so all of them have to
-/// stay for it to keep taking the same one. Returns the inputs that read such columns.
-static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findConditionInputsWithRepeatedNames(
-    const JoinOperator & join_operator, const JoinExpressionActions & expression_actions, const SharedHeaders & input_headers)
+UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> JoinStepLogical::getConditionInputsWithRepeatedNames() const
 {
     /// The names of the inputs the join conditions read, of each side.
     std::array<UnorderedSetWithMemoryTracking<std::string_view>, 2> condition_input_names;
@@ -468,8 +464,9 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
     /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
     const SetWithMemoryTracking<size_t> unneeded_positions_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
 
-    /// Such inputs stay as they are, and so does what the join outputs of them.
-    const auto inputs_with_repeated_names = findConditionInputsWithRepeatedNames(join_operator, expression_actions, input_headers);
+    /// All of them have to stay for the physical join to keep taking the same one, and so does what the join
+    /// outputs of them.
+    const auto inputs_with_repeated_names = getConditionInputsWithRepeatedNames();
     const auto reads_input_with_repeated_name = [&](const ActionsDAG::Node * output)
     {
         return !inputs_with_repeated_names.empty()
