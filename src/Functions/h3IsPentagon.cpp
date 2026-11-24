@@ -5,12 +5,19 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
@@ -23,6 +30,8 @@ class FunctionH3IsPentagon final : public IFunction
 {
 public:
     static constexpr auto name = "h3IsPentagon";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
     H3Validator validator;
 
@@ -114,7 +123,6 @@ In the H3 grid system, most cells are hexagonal, but there are exactly 12 pentag
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3IsPentagon>(documentation);
-    factory.registerResultSettings(FunctionH3IsPentagon::name, {"functions_h3_default_if_invalid"});
 }
 
 }

@@ -36,6 +36,8 @@ class FunctionParseQueryToJSON : public IFunction
 {
 public:
     static constexpr auto name = "parseQueryToJSON";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::implicit_select, Setting::allow_settings_after_format_in_insert};
     static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionParseQueryToJSON>(context);
@@ -146,7 +148,6 @@ session settings.
     FunctionDocumentation documentation = {description, syntax, func_arguments, {}, returned_value, examples, {26, 8}, category};
 
     factory.registerFunction<FunctionParseQueryToJSON>(documentation);
-    factory.registerResultSettings(FunctionParseQueryToJSON::name, {"implicit_select", "allow_settings_after_format_in_insert"});
 }
 
 }

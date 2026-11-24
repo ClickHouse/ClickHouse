@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
 namespace DB
@@ -6,6 +8,13 @@ namespace DB
 
 struct NameModuloOrNull { static constexpr auto name = "moduloOrNull"; };
 using FunctionModuloOrNull = BinaryArithmeticOverloadResolver<ModuloOrNullImpl, NameModuloOrNull, false>;
+
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
 
 REGISTER_FUNCTION(ModuloOrNull)
 {
@@ -32,8 +41,7 @@ when the divisor is zero, or, for integer arguments, when computing the minimal 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionModuloOrNull>(documentation);
-    factory.registerResultSettings(NameModuloOrNull::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameModuloOrNull::name, &FunctionModuloOrNull::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
     factory.registerAlias("modOrNull", "moduloOrNull", FunctionFactory::Case::Insensitive);
 }
 
@@ -68,8 +76,7 @@ for integer arguments, when computing the minimal negative value modulo `-1`.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionPositiveModuloOrNll>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerResultSettings(NamePositiveModuloOrNull::name, {"decimal_check_overflow"});
+    factory.registerFunction(NamePositiveModuloOrNull::name, &FunctionPositiveModuloOrNll::create, documentation, FunctionFactory::Case::Insensitive, result_settings);
 
     factory.registerAlias("positive_modulo_or_null", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);
     factory.registerAlias("pmodOrNull", "positiveModuloOrNull", FunctionFactory::Case::Insensitive);

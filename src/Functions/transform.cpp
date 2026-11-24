@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -860,6 +861,7 @@ namespace
     class FunctionTransformOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
+        static constexpr FunctionResultSetting result_settings[] = {Setting::optimize_if_transform_const_strings_to_lowcardinality, Setting::optimize_if_transform_strings_to_enum};
         static constexpr auto name = "transform";
         static FunctionOverloadResolverPtr create(ContextPtr context)
         {
@@ -1131,7 +1133,6 @@ LIMIT 10
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionTransformOverloadResolver>(documentation);
-    factory.registerResultSettings(FunctionTransformOverloadResolver::name, {"optimize_if_transform_const_strings_to_lowcardinality", "optimize_if_transform_strings_to_enum"});
 }
 
 }

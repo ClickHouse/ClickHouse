@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionToStartOfHour = FunctionDateOrDateTimeToDateTimeOrDateTime64<ToStartOfHourImpl>;
 
+constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
+
 REGISTER_FUNCTION(ToStartOfHour)
 {
     FunctionDocumentation::Description description = R"(
@@ -39,8 +41,7 @@ SELECT
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfHour>(documentation);
-    factory.registerResultSettings(FunctionToStartOfHour::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToStartOfHour::name, &FunctionToStartOfHour::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
 }
 
 }

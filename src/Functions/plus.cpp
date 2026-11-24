@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -10,6 +11,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+extern const SettingsBool decimal_check_overflow;
 }
 
 FormatSettingsEnums::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context)
@@ -74,6 +76,8 @@ struct PlusImpl
 struct NamePlus { static constexpr auto name = "plus"; };
 using FunctionPlus = BinaryArithmeticOverloadResolver<PlusImpl, NamePlus>;
 
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow, Setting::date_time_overflow_behavior};
+
 REGISTER_FUNCTION(Plus)
 {
     FunctionDocumentation::Description description = R"(
@@ -102,8 +106,7 @@ with the maximum scale of the two arguments.
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionPlus>(documentation);
-    factory.registerResultSettings(NamePlus::name, {"decimal_check_overflow", "date_time_overflow_behavior"});
+    factory.registerFunction(NamePlus::name, &FunctionPlus::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 }

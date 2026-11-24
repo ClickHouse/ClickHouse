@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Functions/FunctionResultSetting.h>
+
 #include <limits>
 #include <type_traits>
 #include <Columns/ColumnConst.h>
@@ -126,6 +128,11 @@ private:
 
 public:
     static constexpr auto name = Impl::name;
+
+    static constexpr FunctionResultSetting configurable_order_result_settings[] = {Setting::function_locate_has_mysql_compatible_argument_order};
+    static constexpr FunctionResultSettings result_settings = haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes
+        ? FunctionResultSettings(configurable_order_result_settings)
+        : FunctionResultSettings();
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionsStringSearch>(context); }
 

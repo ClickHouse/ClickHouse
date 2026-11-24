@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatSettings.h>
 #include <Columns/ColumnsNumber.h>
@@ -32,6 +33,7 @@ private:
     UInt64 behavior;
 
 public:
+    static constexpr FunctionResultSetting result_settings[] = {Setting::function_visible_width_behavior};
     static constexpr auto name = "visibleWidth";
     static FunctionPtr create(ContextPtr context)
     {
@@ -134,7 +136,6 @@ SELECT visibleWidth(NULL)
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionVisibleWidth>(documentation);
-    factory.registerResultSettings(FunctionVisibleWidth::name, {"function_visible_width_behavior"});
 }
 
 }

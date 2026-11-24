@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Names.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 
@@ -65,7 +66,7 @@ enum class ConversionResultKind : uint8_t
     Cast,
 };
 
-/// The settings that change what a conversion function returns, by the type it converts to, for `FunctionFactory::registerResultSettings`.
-Names getConversionResultSettings(ConversionResultKind kind);
+/// The settings that change what a conversion function returns, by the type it converts to.
+FunctionResultSettings getConversionResultSettings(ConversionResultKind kind);
 
 }

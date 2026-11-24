@@ -1,10 +1,17 @@
 #include <Functions/array/arrayIndex.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/FunctionDocumentation.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool type_json_skip_null_typed_paths;
+}
+
 struct NameIndexOfAssumeSorted { static constexpr auto name = "indexOfAssumeSorted"; };
 
 /// indexOfAssumeSorted(arr, x) - returns the index of the element x (starting with 1), if it exists in the array, or 0 if it
@@ -33,7 +40,7 @@ ascending order. If the array is not sorted, results are undefined.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<FunctionIndexOfAssumeSorted>(documentation);
-    factory.registerResultSettings(FunctionIndexOfAssumeSorted::name, {"type_json_skip_null_typed_paths"});
+    static constexpr FunctionResultSetting result_settings[] = {Setting::type_json_skip_null_typed_paths};
+    factory.registerFunction(FunctionIndexOfAssumeSorted::name, &FunctionIndexOfAssumeSorted::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 }

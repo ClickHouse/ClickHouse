@@ -42,7 +42,8 @@ void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionCreator creator,
     FunctionDocumentation documentation,
-    Case case_sensitiveness)
+    Case case_sensitiveness,
+    FunctionResultSettings result_settings_)
 {
     if (!functions.emplace(name, FunctionFactoryData{creator, documentation}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is not unique", name);
@@ -59,18 +60,22 @@ void FunctionFactory::registerFunction(
                 name);
         case_insensitive_name_mapping[function_name_lowercase] = name;
     }
+
+    if (!result_settings_.empty())
+        registerResultSettings(name, result_settings_);
 }
 
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionSimpleCreator creator,
     FunctionDocumentation documentation,
-    Case case_sensitiveness)
+    Case case_sensitiveness,
+    FunctionResultSettings result_settings_)
 {
     registerFunction(name, [my_creator = std::move(creator)](ContextPtr context)
     {
         return std::make_unique<FunctionToOverloadResolverAdaptor>(my_creator(context));
-    }, std::move(documentation), std::move(case_sensitiveness));
+    }, std::move(documentation), std::move(case_sensitiveness), result_settings_);
 }
 
 
@@ -80,24 +85,24 @@ const SecretArgumentsSpec * FunctionFactory::tryGetSecretArgumentsSpec(const std
     return it == secret_arguments.end() ? nullptr : &it->second;
 }
 
-void FunctionFactory::registerResultSettings(const std::string & name, Names settings)
+void FunctionFactory::registerResultSettings(const std::string & name, FunctionResultSettings settings)
 {
     auto function = functions.find(name);
-    if (function == functions.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: result settings of the unknown function '{}'", name);
+    chassert(function != functions.end());
 
     ResultSettings entry;
     for (const auto & setting : settings)
     {
-        if (!Settings::hasBuiltin(setting))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: unknown result setting '{}' of the function '{}'", setting, name);
-        entry.indices.push_back(Settings::getIndexOfBuiltin(setting));
+        size_t index = Settings::getIndexOfBuiltinByOffset(*setting.offset);
+        if (std::ranges::contains(entry.indices, index))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the result setting '{}' of the function '{}' is repeated",
+                Settings::getNameOfBuiltin(index), name);
+        entry.indices.push_back(index);
+        entry.names.emplace_back(Settings::getNameOfBuiltin(index));
     }
-    entry.names = std::move(settings);
 
     auto [it, inserted] = result_settings.emplace(name, std::move(entry));
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: result settings of the function '{}' are already registered", name);
+    chassert(inserted);
     result_settings_by_creator.emplace(&function->second.first, &it->second);
 }
 

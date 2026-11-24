@@ -1,6 +1,7 @@
 #include <Functions/pointInPolygon.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/PolygonUtils.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -974,6 +975,8 @@ void clearPointInPolygonCache()
     preprocessedPolygonsCache<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>().clear();
 }
 
+constexpr FunctionResultSetting result_settings[] = {Setting::validate_polygons};
+
 REGISTER_FUNCTION(PointInPolygon)
 {
     FunctionDocumentation::Description description = R"(
@@ -1021,8 +1024,12 @@ Checks whether the point belongs to the polygon on the plane.
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>>(documentation);
-    factory.registerResultSettings("pointInPolygon", {"validate_polygons"});
+    factory.registerFunction(
+        "pointInPolygon",
+        &FunctionPointInPolygon<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>::create,
+        documentation,
+        FunctionFactory::Case::Sensitive,
+        result_settings);
 }
 
 }

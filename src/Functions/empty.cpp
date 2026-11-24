@@ -270,11 +270,9 @@ The function is also available for [arrays](/reference/functions/regular-functio
     FunctionDocumentation documentation_empty_string = {description_empty_string, syntax_empty_string, arguments_string, {}, returned_value_empty_string, examples_empty_string, introduced_in, category_string};
     FunctionDocumentation documentation_not_empty_string = {description_not_empty_string, syntax_not_empty_string, arguments_string, {}, returned_value_not_empty_string, examples_not_empty_string, introduced_in, category_string};
 
-    factory.registerFunction("notEmpty", [](ContextPtr context){ return FunctionEmptyOverloadResolver::create(context, true, "notEmpty"); }, documentation_not_empty);
-    factory.registerFunction("empty", [](ContextPtr context){ return FunctionEmptyOverloadResolver::create(context, false, "empty"); }, documentation_empty);
-    for (const auto * name : {"notEmpty", "empty"})
-        factory.registerResultSettings(name, {"type_json_skip_null_typed_paths"});
-
+    static constexpr FunctionResultSetting result_settings[] = {Setting::type_json_skip_null_typed_paths};
+    factory.registerFunction("notEmpty", [](ContextPtr context){ return FunctionEmptyOverloadResolver::create(context, true, "notEmpty"); }, documentation_not_empty, FunctionFactory::Case::Sensitive, result_settings);
+    factory.registerFunction("empty", [](ContextPtr context){ return FunctionEmptyOverloadResolver::create(context, false, "empty"); }, documentation_empty, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 }

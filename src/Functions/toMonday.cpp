@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionToMonday = FunctionDateOrDateTimeToDateOrDate32<ToMondayImpl>;
 
+constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
+
 REGISTER_FUNCTION(ToMonday)
 {
     FunctionDocumentation::Description description = R"(
@@ -41,8 +43,7 @@ toMonday(toDate('2023-04-24'));              -- Already a Monday
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToMonday>(documentation);
-    factory.registerResultSettings(FunctionToMonday::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToMonday::name, &FunctionToMonday::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
 }
 
 }

@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
 #include <Functions/divideImpl.h>
@@ -150,6 +152,13 @@ template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, I
 struct NameIntDiv { static constexpr auto name = "intDiv"; };
 using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, NameIntDiv, false>;
 
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
+
 REGISTER_FUNCTION(IntDiv)
 {
     FunctionDocumentation::Description description = R"(
@@ -191,8 +200,7 @@ large number: While processing intDiv(1, 0.001) AS res, toTypeName(res).
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIntDiv>(documentation);
-    factory.registerResultSettings(NameIntDiv::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameIntDiv::name, &FunctionIntDiv::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 struct NameIntDivOrNull { static constexpr auto name = "intDivOrNull"; };
@@ -220,7 +228,6 @@ minimal negative number by minus one.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIntDivOrNull>(documentation);
-    factory.registerResultSettings(NameIntDivOrNull::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameIntDivOrNull::name, &FunctionIntDivOrNull::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 }

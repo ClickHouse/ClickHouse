@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionToLastDayOfMonth = FunctionDateOrDateTimeToDateOrDate32<ToLastDayOfMonthImpl>;
 
+constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
+
 REGISTER_FUNCTION(ToLastDayOfMonth)
 {
     FunctionDocumentation::Description description = R"(
@@ -38,8 +40,7 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToLastDayOfMonth>(documentation);
-    factory.registerResultSettings(FunctionToLastDayOfMonth::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToLastDayOfMonth::name, &FunctionToLastDayOfMonth::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
 
     /// MySQL compatibility alias.
     factory.registerAlias("LAST_DAY", "toLastDayOfMonth", FunctionFactory::Case::Insensitive);

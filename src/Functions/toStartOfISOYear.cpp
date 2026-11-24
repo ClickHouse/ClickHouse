@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionToStartOfISOYear = FunctionDateOrDateTimeToDateOrDate32<ToStartOfISOYearImpl>;
 
+constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
+
 REGISTER_FUNCTION(ToStartOfISOYear)
 {
     FunctionDocumentation::Description description = R"(
@@ -38,8 +40,7 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfISOYear>(documentation);
-    factory.registerResultSettings(FunctionToStartOfISOYear::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToStartOfISOYear::name, &FunctionToStartOfISOYear::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
 }
 
 }

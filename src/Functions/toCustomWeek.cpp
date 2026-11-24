@@ -13,6 +13,8 @@ using FunctionToYearWeek = FunctionCustomWeekToSomething<DataTypeUInt32, ToYearW
 using FunctionToStartOfWeek = FunctionCustomWeekToDateOrDate32<ToStartOfWeekImpl>;
 using FunctionToLastDayOfWeek = FunctionCustomWeekToDateOrDate32<ToLastDayOfWeekImpl>;
 
+constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
+
 REGISTER_FUNCTION(ToCustomWeek)
 {
     FunctionDocumentation::Description description_toWeek = R"(
@@ -143,8 +145,7 @@ toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
     FunctionDocumentation::IntroducedIn introduced_in_to_start_of_week = {20, 1};
     FunctionDocumentation::Category category_to_start_of_week = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_to_start_of_week = {description_to_start_of_week, syntax_to_start_of_week, arguments_to_start_of_week, {}, returned_value_to_start_of_week, examples_to_start_of_week, introduced_in_to_start_of_week, category_to_start_of_week};
-    factory.registerFunction<FunctionToStartOfWeek>(documentation_to_start_of_week);
-    factory.registerResultSettings(FunctionToStartOfWeek::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToStartOfWeek::name, &FunctionToStartOfWeek::create, documentation_to_start_of_week, FunctionFactory::Case::Sensitive, extended_results_settings);
 
     FunctionDocumentation::Description description_to_last_day_of_week = R"(
 Rounds a date or date with time up to the nearest Saturday or Sunday.
@@ -182,8 +183,7 @@ toLastDayOfWeek(toDate('2023-04-23'), 1):              2023-04-23
     FunctionDocumentation::IntroducedIn introduced_in_to_last_day_of_week = {23, 5};
     FunctionDocumentation::Category category_to_last_day_of_week = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_to_last_day_of_week = {description_to_last_day_of_week, syntax_to_last_day_of_week, arguments_to_last_day_of_week, {}, returned_value_to_last_day_of_week, examples_to_last_day_of_week, introduced_in_to_last_day_of_week, category_to_last_day_of_week};
-    factory.registerFunction<FunctionToLastDayOfWeek>(documentation_to_last_day_of_week);
-    factory.registerResultSettings(FunctionToLastDayOfWeek::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToLastDayOfWeek::name, &FunctionToLastDayOfWeek::create, documentation_to_last_day_of_week, FunctionFactory::Case::Sensitive, extended_results_settings);
 
     /// Compatibility aliases for mysql.
     factory.registerAlias("week", "toWeek", FunctionFactory::Case::Insensitive);

@@ -115,6 +115,8 @@ public:
 
 using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
 
+constexpr FunctionResultSetting split_result_settings[] = {Setting::splitby_max_substrings_includes_remaining_string};
+
 }
 
 REGISTER_FUNCTION(SplitByChar)
@@ -154,8 +156,7 @@ Empty substrings may be selected when:
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSplitByChar>(documentation);
-    factory.registerResultSettings(FunctionSplitByChar::name, {"splitby_max_substrings_includes_remaining_string"});
+    factory.registerFunction(FunctionSplitByChar::name, &FunctionSplitByChar::create, documentation, FunctionFactory::Case::Sensitive, split_result_settings);
 }
 
 }

@@ -5,6 +5,12 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool function_json_value_return_type_allow_complex;
+    extern const SettingsBool function_json_value_return_type_allow_nullable;
+}
+
 REGISTER_FUNCTION(SQLJSON)
 {
     /// JSON_EXISTS
@@ -120,9 +126,11 @@ world
         FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        factory.registerFunction<FunctionSQLJSON<NameJSONValue, JSONValueImpl>>(documentation);
-        factory.registerResultSettings(
-            NameJSONValue::name, {"function_json_value_return_type_allow_complex", "function_json_value_return_type_allow_nullable"});
+        static constexpr FunctionResultSetting result_settings[]
+            = {Setting::function_json_value_return_type_allow_complex, Setting::function_json_value_return_type_allow_nullable};
+        using FunctionJSONValue = FunctionSQLJSON<NameJSONValue, JSONValueImpl>;
+        factory.registerFunction(
+            FunctionJSONValue::name, &FunctionJSONValue::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
     }
 }
 

@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -389,6 +390,8 @@ private:
     std::unique_ptr<IFunction> impl;
 };
 
+constexpr FunctionResultSetting geo_distance_result_settings[] = {Setting::geo_distance_returns_float64_on_float64_arguments};
+
 }
 
 REGISTER_FUNCTION(GeoDistance)
@@ -420,8 +423,7 @@ This function returns the angle in degrees between two points on a sphere.
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        factory.registerFunction("greatCircleAngle", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_DEGREES>>(std::move(context));}, documentation);
-        factory.registerResultSettings("greatCircleAngle", {"geo_distance_returns_float64_on_float64_arguments"});
+        factory.registerFunction("greatCircleAngle", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_DEGREES>>(std::move(context));}, documentation, FunctionFactory::Case::Sensitive, geo_distance_result_settings);
     }
     {
         FunctionDocumentation::Description description = R"(
@@ -449,8 +451,7 @@ Calculates the distance between two points on the Earth's surface using [the gre
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        factory.registerFunction("greatCircleDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context));}, documentation);
-        factory.registerResultSettings("greatCircleDistance", {"geo_distance_returns_float64_on_float64_arguments"});
+        factory.registerFunction("greatCircleDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context));}, documentation, FunctionFactory::Case::Sensitive, geo_distance_result_settings);
     }
     {
         FunctionDocumentation::Description description = R"(
@@ -481,8 +482,7 @@ Technical note: for close enough points it calculates the distance using planar 
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        factory.registerFunction("geoDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::WGS84_METERS>>(std::move(context));}, documentation);
-        factory.registerResultSettings("geoDistance", {"geo_distance_returns_float64_on_float64_arguments"});
+        factory.registerFunction("geoDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::WGS84_METERS>>(std::move(context));}, documentation, FunctionFactory::Case::Sensitive, geo_distance_result_settings);
     }
 }
 

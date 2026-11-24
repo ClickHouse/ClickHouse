@@ -647,6 +647,13 @@ namespace
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
 
+        static constexpr FunctionResultSetting mysql_result_settings[]
+            = {Setting::formatdatetime_parsedatetime_m_is_month_name,
+               Setting::parsedatetime_parse_without_leading_zeros,
+               Setting::parsedatetime_e_requires_space_padding};
+        static constexpr FunctionResultSettings result_settings
+            = parse_syntax == ParseSyntax::MySQL ? FunctionResultSettings(mysql_result_settings) : FunctionResultSettings();
+
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
             , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
@@ -2830,13 +2837,6 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
     factory.registerFunction<FunctionParseDateTime64>(parseDateTime64_documentation);
     factory.registerFunction<FunctionParseDateTime64OrZero>(parseDateTime64OrZero_documentation);
     factory.registerFunction<FunctionParseDateTime64OrNull>(parseDateTime64OrNull_documentation);
-
-    for (const auto * name : {FunctionParseDateTime::name, FunctionParseDateTimeOrZero::name, FunctionParseDateTimeOrNull::name,
-                              FunctionParseDateTime64::name, FunctionParseDateTime64OrZero::name, FunctionParseDateTime64OrNull::name})
-        factory.registerResultSettings(
-            name,
-            {"formatdatetime_parsedatetime_m_is_month_name", "parsedatetime_parse_without_leading_zeros",
-             "parsedatetime_e_requires_space_padding"});
 }
 
 

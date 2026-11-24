@@ -106,6 +106,8 @@ public:
 
 using FunctionSplitByNonAlpha = FunctionTokens<SplitByNonAlphaImpl>;
 
+constexpr FunctionResultSetting split_result_settings[] = {Setting::splitby_max_substrings_includes_remaining_string};
+
 }
 
 REGISTER_FUNCTION(SplitByNonAlpha)
@@ -136,8 +138,7 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSplitByNonAlpha>(documentation);
-    factory.registerResultSettings(FunctionSplitByNonAlpha::name, {"splitby_max_substrings_includes_remaining_string"});
+    factory.registerFunction(FunctionSplitByNonAlpha::name, &FunctionSplitByNonAlpha::create, documentation, FunctionFactory::Case::Sensitive, split_result_settings);
 }
 
 }

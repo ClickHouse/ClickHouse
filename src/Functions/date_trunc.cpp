@@ -27,6 +27,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
     extern const SettingsUInt64 function_date_trunc_return_type_behavior;
 }
 
@@ -98,6 +99,9 @@ class FunctionDateTruncOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "dateTrunc";
+
+    static constexpr FunctionResultSetting result_settings[]
+        = {Setting::function_date_trunc_return_type_behavior, Setting::enable_extended_results_for_datetime_functions};
 
     explicit FunctionDateTruncOverloadResolver(ContextPtr context)
         /// `dateTrunc` has its own result type, and its results must not depend on `to_start_of_interval_preserves_argument_type`,
@@ -331,8 +335,6 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDateTruncOverloadResolver>(documentation);
-    factory.registerResultSettings(
-        FunctionDateTruncOverloadResolver::name, {"function_date_trunc_return_type_behavior", "enable_extended_results_for_datetime_functions"});
 
     /// Compatibility alias.
     factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::Case::Insensitive);

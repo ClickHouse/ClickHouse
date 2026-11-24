@@ -1,5 +1,6 @@
 #include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Columns/ColumnNullable.h>
@@ -64,6 +65,7 @@ namespace
 class FunctionMultiIf final : public FunctionIfBase
 {
 public:
+    static constexpr FunctionResultSetting result_settings[] = {Setting::optimize_if_transform_const_strings_to_lowcardinality, Setting::optimize_if_transform_strings_to_enum};
     static constexpr auto name = "multiIf";
     static FunctionPtr create(ContextPtr context_)
     {
@@ -824,7 +826,6 @@ FROM LEFT_RIGHT;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiIf>(documentation);
-    factory.registerResultSettings(FunctionMultiIf::name, {"optimize_if_transform_const_strings_to_lowcardinality", "optimize_if_transform_strings_to_enum"});
 
     /// These are obsolete function names.
     factory.registerAlias("caseWithoutExpr", "multiIf");

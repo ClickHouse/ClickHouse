@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionToStartOfFiveMinutes = FunctionDateOrDateTimeToDateTimeOrDateTime64<ToStartOfFiveMinutesImpl>;
 
+constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
+
 REGISTER_FUNCTION(ToStartOfFiveMinutes)
 {
     FunctionDocumentation::Description description = R"(
@@ -43,8 +45,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfFiveMinutes>(documentation);
-    factory.registerResultSettings(FunctionToStartOfFiveMinutes::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToStartOfFiveMinutes::name, &FunctionToStartOfFiveMinutes::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
     factory.registerAlias("toStartOfFiveMinute", FunctionToStartOfFiveMinutes::name);
 }
 

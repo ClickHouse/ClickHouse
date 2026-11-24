@@ -141,6 +141,8 @@ public:
 
 using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
 
+constexpr FunctionResultSetting split_result_settings[] = {Setting::splitby_max_substrings_includes_remaining_string};
+
 }
 
 REGISTER_FUNCTION(SplitByString)
@@ -189,8 +191,7 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSplitByString>(documentation);
-    factory.registerResultSettings(FunctionSplitByString::name, {"splitby_max_substrings_includes_remaining_string"});
+    factory.registerFunction(FunctionSplitByString::name, &FunctionSplitByString::create, documentation, FunctionFactory::Case::Sensitive, split_result_settings);
 }
 
 }

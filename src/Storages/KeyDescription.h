@@ -20,7 +20,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class IAST;
 
-/// Adds the result settings (see `FunctionFactory::registerResultSettings`) of the functions called in `ast`, with their
+/// Adds the result settings (see `FunctionFactory::registerFunction`) of the functions called in `ast`, with their
 /// values in `settings`, to `result_settings`.
 void collectResultSettings(const IAST & ast, const Settings & settings, SettingsChanges & result_settings);
 
@@ -59,7 +59,7 @@ struct KeyDescription
     /// but added to expression_list_ast and all its derivatives.
     NamesAndTypesList additional_columns;
 
-    /// For every key column, the result settings (see `FunctionFactory::registerResultSettings`) of the functions in its
+    /// For every key column, the result settings (see `FunctionFactory::registerFunction`) of the functions in its
     /// expression, with the values the key was built with.
     std::vector<SettingsChanges> result_settings;
 

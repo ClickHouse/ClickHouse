@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionToStartOfMonth = FunctionDateOrDateTimeToDateOrDate32<ToStartOfMonthImpl>;
 
+constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
+
 REGISTER_FUNCTION(ToStartOfMonth)
 {
     FunctionDocumentation::Description description = R"(
@@ -38,8 +40,7 @@ SELECT toStartOfMonth(toDateTime('2023-04-21 10:20:30'))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfMonth>(documentation);
-    factory.registerResultSettings(FunctionToStartOfMonth::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToStartOfMonth::name, &FunctionToStartOfMonth::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
 }
 
 }

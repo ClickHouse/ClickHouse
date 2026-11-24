@@ -423,6 +423,8 @@ private:
 
 REGISTER_FUNCTION(JSONPaths)
 {
+    static constexpr FunctionResultSetting result_settings[] = {Setting::type_json_skip_null_typed_paths};
+
     /// JSONAllPaths
     {
         FunctionDocumentation::Description description = R"(
@@ -453,8 +455,12 @@ SELECT json, JSONAllPaths(json) FROM test;
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        factory.registerFunction<FunctionJSONPaths<JSONAllPathsImpl>>(documentation);
-        factory.registerResultSettings(FunctionJSONPaths<JSONAllPathsImpl>::name, {"type_json_skip_null_typed_paths"});
+        factory.registerFunction(
+            FunctionJSONPaths<JSONAllPathsImpl>::name,
+            &FunctionJSONPaths<JSONAllPathsImpl>::create,
+            documentation,
+            FunctionFactory::Case::Sensitive,
+            result_settings);
     }
 
     /// JSONAllPathsWithTypes
@@ -487,8 +493,12 @@ SELECT json, JSONAllPathsWithTypes(json) FROM test;
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        factory.registerFunction<FunctionJSONPaths<JSONAllPathsWithTypesImpl>>(documentation);
-        factory.registerResultSettings(FunctionJSONPaths<JSONAllPathsWithTypesImpl>::name, {"type_json_skip_null_typed_paths"});
+        factory.registerFunction(
+            FunctionJSONPaths<JSONAllPathsWithTypesImpl>::name,
+            &FunctionJSONPaths<JSONAllPathsWithTypesImpl>::create,
+            documentation,
+            FunctionFactory::Case::Sensitive,
+            result_settings);
     }
 
     /// JSONDynamicPaths

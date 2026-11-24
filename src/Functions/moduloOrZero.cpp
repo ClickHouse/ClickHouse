@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
 
@@ -46,6 +48,13 @@ using FunctionModuloOrZero = BinaryArithmeticOverloadResolver<ModuloOrZeroImpl, 
 
 }
 
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
+
 REGISTER_FUNCTION(ModuloOrZero)
 {
     FunctionDocumentation::Description description = R"(
@@ -70,8 +79,7 @@ For floating-point results, a zero divisor produces `NaN`.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionModuloOrZero>(documentation);
-    factory.registerResultSettings(NameModuloOrZero::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameModuloOrZero::name, &FunctionModuloOrZero::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 }

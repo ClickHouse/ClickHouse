@@ -14,9 +14,16 @@
 #include <Functions/castTypeToEither.h>
 #include <Functions/checkLpNormPArgument.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool qbit_one_bit_symmetric_distance;
+}
 
 namespace ErrorCodes
 {
@@ -1901,6 +1908,8 @@ using TupleOrArrayFunctionL2DistanceTransposedQuantized = TupleOrArrayFunction<L
 using TupleOrArrayFunctionCosineDistanceTransposedQuantized = TupleOrArrayFunction<CosineDistanceTransposedQuantizedTraits>;
 using TupleOrArrayFunctionDotProductTransposedQuantized = TupleOrArrayFunction<DotProductTransposedQuantizedTraits>;
 
+constexpr FunctionResultSetting qbit_result_settings[] = {Setting::qbit_one_bit_symmetric_distance};
+
 REGISTER_FUNCTION(VectorFunctions)
 {
     /// tuplePlus documentation
@@ -2691,7 +2700,7 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
            introduced_in_l2_distance_transposed,
            category_l2_distance_transposed};
 
-    factory.registerFunction<TupleOrArrayFunctionL2DistanceTransposed>(documentation_l2_distance_transposed);
+    factory.registerFunction(TupleOrArrayFunctionL2DistanceTransposed::name, &TupleOrArrayFunctionL2DistanceTransposed::create, documentation_l2_distance_transposed, FunctionFactory::Case::Sensitive, qbit_result_settings);
 
     /// CosineDistanceTransposed documentation
     FunctionDocumentation::Description description_cosine_distance_transposed = R"(
@@ -2742,7 +2751,7 @@ SELECT round(cosineDistanceTransposed(vec, array(1, 2), 16), 6) FROM qbit;
            introduced_in_cosine_distance_transposed,
            category_cosine_distance_transposed};
 
-    factory.registerFunction<TupleOrArrayFunctionCosineDistanceTransposed>(documentation_cosine_distance_transposed);
+    factory.registerFunction(TupleOrArrayFunctionCosineDistanceTransposed::name, &TupleOrArrayFunctionCosineDistanceTransposed::create, documentation_cosine_distance_transposed, FunctionFactory::Case::Sensitive, qbit_result_settings);
 
     /// DotProductTransposed documentation
     FunctionDocumentation::Description description_dot_product_transposed = R"(
@@ -2788,7 +2797,7 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
            introduced_in_dot_product_transposed,
            category_dot_product_transposed};
 
-    factory.registerFunction<TupleOrArrayFunctionDotProductTransposed>(documentation_dot_product_transposed);
+    factory.registerFunction(TupleOrArrayFunctionDotProductTransposed::name, &TupleOrArrayFunctionDotProductTransposed::create, documentation_dot_product_transposed, FunctionFactory::Case::Sensitive, qbit_result_settings);
 
     /// Quantized transposed distance functions. These operate on a QBit(Int8) whose codes were produced by the
     /// quantizeBFloat16ToInt8 Lloyd-Max codec. Because the quantizer is non-linear, the codes are dequantized on the fly to
@@ -2863,7 +2872,7 @@ SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM q
            introduced_in_transposed_quantized,
            category_transposed_quantized};
 
-    factory.registerFunction<TupleOrArrayFunctionL2DistanceTransposedQuantized>(documentation_l2_distance_transposed_quantized);
+    factory.registerFunction(TupleOrArrayFunctionL2DistanceTransposedQuantized::name, &TupleOrArrayFunctionL2DistanceTransposedQuantized::create, documentation_l2_distance_transposed_quantized, FunctionFactory::Case::Sensitive, qbit_result_settings);
 
     /// CosineDistanceTransposedQuantized documentation
     FunctionDocumentation::Description description_cosine_distance_transposed_quantized
@@ -2907,7 +2916,7 @@ SELECT round(cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32),
            introduced_in_transposed_quantized,
            category_transposed_quantized};
 
-    factory.registerFunction<TupleOrArrayFunctionCosineDistanceTransposedQuantized>(documentation_cosine_distance_transposed_quantized);
+    factory.registerFunction(TupleOrArrayFunctionCosineDistanceTransposedQuantized::name, &TupleOrArrayFunctionCosineDistanceTransposedQuantized::create, documentation_cosine_distance_transposed_quantized, FunctionFactory::Case::Sensitive, qbit_result_settings);
 
     /// DotProductTransposedQuantized documentation
     FunctionDocumentation::Description description_dot_product_transposed_quantized
@@ -2949,7 +2958,7 @@ SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM q
            introduced_in_transposed_quantized,
            category_transposed_quantized};
 
-    factory.registerFunction<TupleOrArrayFunctionDotProductTransposedQuantized>(documentation_dot_product_transposed_quantized);
+    factory.registerFunction(TupleOrArrayFunctionDotProductTransposedQuantized::name, &TupleOrArrayFunctionDotProductTransposedQuantized::create, documentation_dot_product_transposed_quantized, FunctionFactory::Case::Sensitive, qbit_result_settings);
 
     // Register aliases for distance functions
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
@@ -2961,10 +2970,6 @@ SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM q
     factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("scalarProductTransposed", DotProductTransposedName, FunctionFactory::Case::Insensitive);
-
-    for (const auto * name : {L2DistanceTransposedName, CosineDistanceTransposedName, DotProductTransposedName, "L2DistanceTransposedQuantized",
-                              "cosineDistanceTransposedQuantized", "dotProductTransposedQuantized"})
-        factory.registerResultSettings(name, {"qbit_one_bit_symmetric_distance"});
 
     /// L1Normalize documentation
     FunctionDocumentation::Description description_l1_normalize = R"(

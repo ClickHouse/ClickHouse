@@ -224,8 +224,9 @@ struct Settings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
-    /// The index of the built-in setting `name` for `getByIndex`. Throws if there is no such setting.
-    static size_t getIndexOfBuiltin(std::string_view name);
+    /// The index for `getByIndex` of the built-in setting with this offset (`SettingIndex::offset`). Throws if there is none.
+    static size_t getIndexOfBuiltinByOffset(size_t offset);
+    static std::string_view getNameOfBuiltin(size_t index);
     static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);

@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/FunctionExactDivide.h>
 
@@ -210,6 +212,13 @@ private:
     FunctionOverloadResolverPtr integral;
 };
 
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
+
 REGISTER_FUNCTION(Divide)
 {
     FunctionDocumentation::Description description = R"(
@@ -240,8 +249,7 @@ Floating-point division by `0` returns `inf`, `-inf`, or `nan`. `Decimal` divisi
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDivideLegacy>(documentation);
-    factory.registerResultSettings(NameDivide::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameDivide::name, &FunctionDivideLegacy::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 
     FunctionDocumentation::Description exact_description = R"(
 Calculates the quotient of `x` and `y`. When both arguments are integers, the quotient is computed without conversion to floating point and truncated toward zero.
@@ -267,8 +275,7 @@ Existing stored `/` and `divide` expressions retain their historical behavior.
     FunctionDocumentation exact_documentation =
     {
         exact_description, exact_syntax, arguments, {}, exact_returned_value, exact_examples, exact_introduced_in, category};
-    factory.registerFunction<FunctionDivideExact>(exact_documentation);
-    factory.registerResultSettings("divideExact", {"decimal_check_overflow"});
+    factory.registerFunction("divideExact", &FunctionDivideExact::create, exact_documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 struct NameDivideOrNull { static constexpr auto name = "divideOrNull"; };
@@ -291,8 +298,7 @@ The `sql_compatible_division_for_integers` setting does not affect this function
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDivideOrNull>(documentation);
-    factory.registerResultSettings(NameDivideOrNull::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameDivideOrNull::name, &FunctionDivideOrNull::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 }

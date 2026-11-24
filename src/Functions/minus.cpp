@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <base/arithmeticOverflow.h>
 
@@ -51,6 +53,14 @@ struct MinusImpl
 struct NameMinus { static constexpr auto name = "minus"; };
 using FunctionMinus = BinaryArithmeticOverloadResolver<MinusImpl, NameMinus>;
 
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow, Setting::date_time_overflow_behavior};
+
 REGISTER_FUNCTION(Minus)
 {
     FunctionDocumentation::Description description = R"(
@@ -77,8 +87,7 @@ with the maximum scale of the two arguments.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionMinus>(documentation);
-    factory.registerResultSettings(NameMinus::name, {"decimal_check_overflow", "date_time_overflow_behavior"});
+    factory.registerFunction(NameMinus::name, &FunctionMinus::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 }

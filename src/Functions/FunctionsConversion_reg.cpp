@@ -3,6 +3,18 @@
 namespace DB
 {
 
+namespace
+{
+
+template <typename Function>
+void registerConversion(FunctionFactory & factory, FunctionDocumentation documentation, ConversionResultKind kind)
+{
+    factory.registerFunction(
+        Function::name, &Function::create, std::move(documentation), FunctionFactory::Case::Sensitive, getConversionResultSettings(kind));
+}
+
+}
+
 REGISTER_FUNCTION(Conversion)
 {
     /// toUInt8 documentation
@@ -117,8 +129,8 @@ toUInt16('16'):  16
     FunctionDocumentation::Category toUInt16_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toUInt16_documentation = {toUInt16_description, toUInt16_syntax, toUInt16_arguments, {}, toUInt16_returned_value, toUInt16_examples, toUInt16_introduced_in, toUInt16_category};
 
-    factory.registerFunction<detail::FunctionToUInt8>(toUInt8_documentation);
-    factory.registerFunction<detail::FunctionToUInt16>(toUInt16_documentation);
+    registerConversion<detail::FunctionToUInt8>(factory, toUInt8_documentation, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionToUInt16>(factory, toUInt16_documentation, ConversionResultKind::OverflowOnly);
 
     /// toUInt32 documentation
     FunctionDocumentation::Description toUInt32_description = R"(
@@ -176,7 +188,7 @@ toUInt32('32'):  32
     FunctionDocumentation::Category toUInt32_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toUInt32_documentation = {toUInt32_description, toUInt32_syntax, toUInt32_arguments, {}, toUInt32_returned_value, toUInt32_examples, toUInt32_introduced_in, toUInt32_category};
 
-    factory.registerFunction<detail::FunctionToUInt32>(toUInt32_documentation);
+    registerConversion<detail::FunctionToUInt32>(factory, toUInt32_documentation, ConversionResultKind::OverflowOnly);
 
     /// toUInt64 documentation
     FunctionDocumentation::Description toUInt64_description = R"(
@@ -234,7 +246,7 @@ toUInt64('64'):  64
     FunctionDocumentation::Category toUInt64_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toUInt64_documentation = {toUInt64_description, toUInt64_syntax, toUInt64_arguments, {}, toUInt64_returned_value, toUInt64_examples, toUInt64_introduced_in, toUInt64_category};
 
-    factory.registerFunction<detail::FunctionToUInt64>(toUInt64_documentation);
+    registerConversion<detail::FunctionToUInt64>(factory, toUInt64_documentation, ConversionResultKind::OverflowOnly);
 
     /// toUInt128 documentation
     FunctionDocumentation::Description toUInt128_description = R"(
@@ -288,7 +300,7 @@ toUInt128('128'): 128
     FunctionDocumentation::Category toUInt128_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toUInt128_documentation = {toUInt128_description, toUInt128_syntax, toUInt128_arguments, {}, toUInt128_returned_value, toUInt128_examples, toUInt128_introduced_in, toUInt128_category};
 
-    factory.registerFunction<detail::FunctionToUInt128>(toUInt128_documentation);
+    registerConversion<detail::FunctionToUInt128>(factory, toUInt128_documentation, ConversionResultKind::OverflowOnly);
     FunctionDocumentation::Description toUInt256_description = R"(
 Converts an input value to a value of type UInt256.
 Throws an exception in case of an error.
@@ -340,7 +352,7 @@ toUInt256('256'):   256
     FunctionDocumentation::Category toUInt256_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toUInt256_documentation = {toUInt256_description, toUInt256_syntax, toUInt256_arguments, {}, toUInt256_returned_value, toUInt256_examples, toUInt256_introduced_in, toUInt256_category};
 
-    factory.registerFunction<detail::FunctionToUInt256>(toUInt256_documentation);
+    registerConversion<detail::FunctionToUInt256>(factory, toUInt256_documentation, ConversionResultKind::OverflowOnly);
 
     /// toInt8 documentation
     FunctionDocumentation::Description toInt8_description = R"(
@@ -398,7 +410,7 @@ toInt8('-8'): -8
     FunctionDocumentation::Category toInt8_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt8_documentation = {toInt8_description, toInt8_syntax, toInt8_arguments, {}, toInt8_returned_value, toInt8_examples, toInt8_introduced_in, toInt8_category};
 
-    factory.registerFunction<detail::FunctionToInt8>(toInt8_documentation);
+    registerConversion<detail::FunctionToInt8>(factory, toInt8_documentation, ConversionResultKind::OverflowOnly);
 
     /// toInt16 documentation
     FunctionDocumentation::Description toInt16_description = R"(
@@ -456,7 +468,7 @@ toInt16('-16'):  -16
     FunctionDocumentation::Category toInt16_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt16_documentation = {toInt16_description, toInt16_syntax, toInt16_arguments, {}, toInt16_returned_value, toInt16_examples, toInt16_introduced_in, toInt16_category};
 
-    factory.registerFunction<detail::FunctionToInt16>(toInt16_documentation);
+    registerConversion<detail::FunctionToInt16>(factory, toInt16_documentation, ConversionResultKind::OverflowOnly);
 
     /// toInt32 documentation
     FunctionDocumentation::Description toInt32_description = R"(
@@ -514,7 +526,7 @@ toInt32('-32'):  -32
     FunctionDocumentation::Category toInt32_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt32_documentation = {toInt32_description, toInt32_syntax, toInt32_arguments, {}, toInt32_returned_value, toInt32_examples, toInt32_introduced_in, toInt32_category};
 
-    factory.registerFunction<detail::FunctionToInt32>(toInt32_documentation);
+    registerConversion<detail::FunctionToInt32>(factory, toInt32_documentation, ConversionResultKind::OverflowOnly);
 
     /// toInt64 documentation
     FunctionDocumentation::Description toInt64_description = R"(
@@ -572,7 +584,7 @@ toInt64('-64'):  -64
     FunctionDocumentation::Category toInt64_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt64_documentation = {toInt64_description, toInt64_syntax, toInt64_arguments, {}, toInt64_returned_value, toInt64_examples, toInt64_introduced_in, toInt64_category};
 
-    factory.registerFunction<detail::FunctionToInt64>(toInt64_documentation);
+    registerConversion<detail::FunctionToInt64>(factory, toInt64_documentation, ConversionResultKind::OverflowOnly);
 
     /// toInt128 documentation
     FunctionDocumentation::Description toInt128_description = R"(
@@ -626,7 +638,7 @@ toInt128('-128'): -128
     FunctionDocumentation::Category toInt128_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt128_documentation = {toInt128_description, toInt128_syntax, toInt128_arguments, {}, toInt128_returned_value, toInt128_examples, toInt128_introduced_in, toInt128_category};
 
-    factory.registerFunction<detail::FunctionToInt128>(toInt128_documentation);
+    registerConversion<detail::FunctionToInt128>(factory, toInt128_documentation, ConversionResultKind::OverflowOnly);
 
     /// toInt256 documentation
     FunctionDocumentation::Description toInt256_description = R"(
@@ -680,7 +692,7 @@ toInt256('-256'):   -256
     FunctionDocumentation::Category toInt256_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt256_documentation = {toInt256_description, toInt256_syntax, toInt256_arguments, {}, toInt256_returned_value, toInt256_examples, toInt256_introduced_in, toInt256_category};
 
-    factory.registerFunction<detail::FunctionToInt256>(toInt256_documentation);
+    registerConversion<detail::FunctionToInt256>(factory, toInt256_documentation, ConversionResultKind::OverflowOnly);
 
     /// toBFloat16 documentation
     FunctionDocumentation::Description toBFloat16_description = R"(
@@ -719,7 +731,7 @@ toBFloat16('42.7'):            42.5
     FunctionDocumentation::Category toBFloat16_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toBFloat16_documentation = {toBFloat16_description, toBFloat16_syntax, toBFloat16_arguments, {}, toBFloat16_returned_value, toBFloat16_examples, toBFloat16_introduced_in, toBFloat16_category};
 
-    factory.registerFunction<detail::FunctionToBFloat16>(toBFloat16_documentation);
+    registerConversion<detail::FunctionToBFloat16>(factory, toBFloat16_documentation, ConversionResultKind::Float);
 
     /// toFloat32 documentation
     FunctionDocumentation::Description toFloat32_description = R"(
@@ -768,7 +780,7 @@ toFloat32('NaN'):  nan
     FunctionDocumentation::Category toFloat32_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toFloat32_documentation = {toFloat32_description, toFloat32_syntax, toFloat32_arguments, {}, toFloat32_returned_value, toFloat32_examples, toFloat32_introduced_in, toFloat32_category};
 
-    factory.registerFunction<detail::FunctionToFloat32>(toFloat32_documentation);
+    registerConversion<detail::FunctionToFloat32>(factory, toFloat32_documentation, ConversionResultKind::Float);
 
     /// toFloat64 documentation
     FunctionDocumentation::Description toFloat64_description = R"(
@@ -817,7 +829,7 @@ toFloat64('NaN'):  nan
     FunctionDocumentation::Category toFloat64_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toFloat64_documentation = {toFloat64_description, toFloat64_syntax, toFloat64_arguments, {}, toFloat64_returned_value, toFloat64_examples, toFloat64_introduced_in, toFloat64_category};
 
-    factory.registerFunction<detail::FunctionToFloat64>(toFloat64_documentation);
+    registerConversion<detail::FunctionToFloat64>(factory, toFloat64_documentation, ConversionResultKind::Float);
 
     /// toDecimal64 documentation
     FunctionDocumentation::Description description_toDecimal64 = R"(
@@ -1045,10 +1057,10 @@ type_c: Decimal(76, 3)
     FunctionDocumentation::Category category_toDecimal256 = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal256 = {description_toDecimal256, syntax_toDecimal256, arguments_toDecimal256, {}, returned_value_toDecimal256, examples_toDecimal256, introduced_in_toDecimal256, category_toDecimal256};
 
-    factory.registerFunction<detail::FunctionToDecimal32>(documentation_toDecimal32);
-    factory.registerFunction<detail::FunctionToDecimal64>(documentation_toDecimal64);
-    factory.registerFunction<detail::FunctionToDecimal128>(documentation_toDecimal128);
-    factory.registerFunction<detail::FunctionToDecimal256>(documentation_toDecimal256);
+    registerConversion<detail::FunctionToDecimal32>(factory, documentation_toDecimal32, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionToDecimal64>(factory, documentation_toDecimal64, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionToDecimal128>(factory, documentation_toDecimal128, ConversionResultKind::OverflowOnly);
+    registerConversion<detail::FunctionToDecimal256>(factory, documentation_toDecimal256, ConversionResultKind::OverflowOnly);
 
     /// toDate documentation
     FunctionDocumentation::Description description_toDate = R"(
@@ -1094,7 +1106,7 @@ SELECT toDate(20297)
     FunctionDocumentation::Category category_toDate = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDate = {description_toDate, syntax_toDate, arguments_toDate, {}, returned_value_toDate, examples_toDate, introduced_in_toDate, category_toDate};
 
-    factory.registerFunction<detail::FunctionToDate>(documentation_toDate);
+    registerConversion<detail::FunctionToDate>(factory, documentation_toDate, ConversionResultKind::DateTime);
 
     /// MySQL compatibility alias. Cannot be registered as alias,
     /// because we don't want it to be normalized to toDate in queries,
@@ -1112,7 +1124,12 @@ Converts the argument to the Date data type. This is a MySQL compatibility alias
     FunctionDocumentation::IntroducedIn introduced_in_date = {21, 2};
     FunctionDocumentation documentation_date = {description_date, syntax_date, arguments_date, {}, returned_value_date, examples_date, introduced_in_date, category_date};
 
-    factory.registerFunction("DATE", &detail::FunctionToDate::create, documentation_date, FunctionFactory::Case::Insensitive);
+    factory.registerFunction(
+        "DATE",
+        &detail::FunctionToDate::create,
+        documentation_date,
+        FunctionFactory::Case::Insensitive,
+        getConversionResultSettings(ConversionResultKind::DateTime));
 
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(
@@ -1158,7 +1175,7 @@ toTypeName(value): Date32
     FunctionDocumentation::Category category_toDate32 = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDate32 = {description_toDate32, syntax_toDate32, arguments_toDate32, {}, returned_value_toDate32, examples_toDate32, introduced_in_toDate32, category_toDate32};
 
-    factory.registerFunction<detail::FunctionToDate32>(documentation_toDate32);
+    registerConversion<detail::FunctionToDate32>(factory, documentation_toDate32, ConversionResultKind::DateTime);
 
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
@@ -1221,7 +1238,7 @@ SELECT toTime(toDateTime(52225, 'UTC'))
     FunctionDocumentation::Category category_toTime = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, {}, returned_value_toTime, examples_toTime, introduced_in_toTime, category_toTime};
 
-    factory.registerFunction<detail::FunctionToTime>(documentation_toTime);
+    registerConversion<detail::FunctionToTime>(factory, documentation_toTime, ConversionResultKind::DateTime);
 
     FunctionDocumentation::Description description_toTime64 = R"(
 Converts an input value to type [Time64](/reference/data-types/time64).
@@ -1271,7 +1288,7 @@ SELECT toTime64(52225.123456, 6)
     FunctionDocumentation::Category category_toTime64 = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTime64 = {description_toTime64, syntax_toTime64, arguments_toTime64, {}, returned_value_toTime64, examples_toTime64, introduced_in_toTime64, category_toTime64};
 
-    factory.registerFunction<detail::FunctionToTime64>(documentation_toTime64);
+    registerConversion<detail::FunctionToTime64>(factory, documentation_toTime64, ConversionResultKind::DateTime);
 
     /// toDateTime documentation
     FunctionDocumentation::Description description_toDateTime = R"(
@@ -1311,7 +1328,7 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
     FunctionDocumentation::Category category_toDateTime = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateTime = {description_toDateTime, syntax_toDateTime, arguments_toDateTime, {}, returned_value_toDateTime, examples_toDateTime, introduced_in_toDateTime, category_toDateTime};
 
-    factory.registerFunction<detail::FunctionToDateTime>(documentation_toDateTime);
+    registerConversion<detail::FunctionToDateTime>(factory, documentation_toDateTime, ConversionResultKind::DateTime);
 
     /// toDateTime32 documentation
     FunctionDocumentation::Description description_toDateTime32 = R"(
@@ -1366,7 +1383,7 @@ SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName
     FunctionDocumentation::Category category_toDateTime32 = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateTime32 = {description_toDateTime32, syntax_toDateTime32, arguments_toDateTime32, {}, returned_value_toDateTime32, examples_toDateTime32, introduced_in_toDateTime32, category_toDateTime32};
 
-    factory.registerFunction<detail::FunctionToDateTime32>(documentation_toDateTime32);
+    registerConversion<detail::FunctionToDateTime32>(factory, documentation_toDateTime32, ConversionResultKind::DateTime);
 
     /// toDateTime64 documentation
     FunctionDocumentation::Description description_toDateTime64 = R"(
@@ -1424,7 +1441,7 @@ SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
     FunctionDocumentation::Category category_toDateTime64 = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateTime64 = {description_toDateTime64, syntax_toDateTime64, arguments_toDateTime64, {}, returned_value_toDateTime64, examples_toDateTime64, introduced_in_toDateTime64, category_toDateTime64};
 
-    factory.registerFunction<detail::FunctionToDateTime64>(documentation_toDateTime64);
+    registerConversion<detail::FunctionToDateTime64>(factory, documentation_toDateTime64, ConversionResultKind::DateTime);
 
     /// toUUID documentation
     FunctionDocumentation::Description description_toUUID = R"(
@@ -1507,7 +1524,7 @@ SELECT toIPv4(2130706433);
     FunctionDocumentation::Category category_toIPv4 = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_toIPv4 = {description_toIPv4, syntax_toIPv4, arguments_toIPv4, {}, returned_value_toIPv4, examples_toIPv4, introduced_in_toIPv4, category_toIPv4};
 
-    factory.registerFunction<detail::FunctionToIPv4>(documentation_toIPv4);
+    registerConversion<detail::FunctionToIPv4>(factory, documentation_toIPv4, ConversionResultKind::IPAddress);
 
     /// toIPv6 documentation
     FunctionDocumentation::Description description_toIPv6 = R"(
@@ -1553,7 +1570,7 @@ SELECT toIPv6('127.0.0.1');
     FunctionDocumentation::Category category_toIPv6 = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_toIPv6 = {description_toIPv6, syntax_toIPv6, arguments_toIPv6, {}, returned_value_toIPv6, examples_toIPv6, introduced_in_toIPv6, category_toIPv6};
 
-    factory.registerFunction<detail::FunctionToIPv6>(documentation_toIPv6);
+    registerConversion<detail::FunctionToIPv6>(factory, documentation_toIPv6, ConversionResultKind::IPAddress);
 
     FunctionDocumentation::Description toString_description = R"(
 Converts values to their string representation.
@@ -1592,7 +1609,7 @@ LIMIT 10
     FunctionDocumentation::Category toString_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toString_documentation = {toString_description, toString_syntax, toString_arguments, {}, toString_returned_value, toString_examples, toString_introduced_in, toString_category};
 
-    factory.registerFunction<detail::FunctionToString>(toString_documentation);
+    registerConversion<detail::FunctionToString>(factory, toString_documentation, ConversionResultKind::String);
 
     /// toUnixTimestamp documentation
     FunctionDocumentation::Description description_to_unix_timestamp = R"(
@@ -1637,7 +1654,7 @@ from_date32:     1509840000
     FunctionDocumentation::Category category_to_unix_timestamp = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_to_unix_timestamp = {description_to_unix_timestamp, syntax_to_unix_timestamp, arguments_to_unix_timestamp, {}, returned_value_to_unix_timestamp, examples_to_unix_timestamp, introduced_in_to_unix_timestamp, category_to_unix_timestamp};
 
-    factory.registerFunction<detail::FunctionToUnixTimestamp>(documentation_to_unix_timestamp);
+    registerConversion<detail::FunctionToUnixTimestamp>(factory, documentation_to_unix_timestamp, ConversionResultKind::DateTime);
 
     /// toUInt8OrZero documentation
     FunctionDocumentation::Description description_toUInt8OrZero = R"(
@@ -1686,7 +1703,7 @@ toUInt8OrZero('abc'): 0
     FunctionDocumentation::Category category_toUInt8OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt8OrZero = {description_toUInt8OrZero, syntax_toUInt8OrZero, arguments_toUInt8OrZero, {}, returned_value_toUInt8OrZero, examples_toUInt8OrZero, introduced_in_toUInt8OrZero, category_toUInt8OrZero};
 
-    factory.registerFunction<detail::FunctionToUInt8OrZero>(documentation_toUInt8OrZero);
+    registerConversion<detail::FunctionToUInt8OrZero>(factory, documentation_toUInt8OrZero, ConversionResultKind::OverflowOnly);
 
     /// toUInt16OrZero documentation
     FunctionDocumentation::Description description_toUInt16OrZero = R"(
@@ -1735,7 +1752,7 @@ toUInt16OrZero('abc'): 0
     FunctionDocumentation::Category category_toUInt16OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt16OrZero = {description_toUInt16OrZero, syntax_toUInt16OrZero, arguments_toUInt16OrZero, {}, returned_value_toUInt16OrZero, examples_toUInt16OrZero, introduced_in_toUInt16OrZero, category_toUInt16OrZero};
 
-    factory.registerFunction<detail::FunctionToUInt16OrZero>(documentation_toUInt16OrZero);
+    registerConversion<detail::FunctionToUInt16OrZero>(factory, documentation_toUInt16OrZero, ConversionResultKind::OverflowOnly);
 
     /// toUInt32OrZero documentation
     FunctionDocumentation::Description description_toUInt32OrZero = R"(
@@ -1784,7 +1801,7 @@ toUInt32OrZero('abc'): 0
     FunctionDocumentation::Category category_toUInt32OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt32OrZero = {description_toUInt32OrZero, syntax_toUInt32OrZero, arguments_toUInt32OrZero, {}, returned_value_toUInt32OrZero, examples_toUInt32OrZero, introduced_in_toUInt32OrZero, category_toUInt32OrZero};
 
-    factory.registerFunction<detail::FunctionToUInt32OrZero>(documentation_toUInt32OrZero);
+    registerConversion<detail::FunctionToUInt32OrZero>(factory, documentation_toUInt32OrZero, ConversionResultKind::OverflowOnly);
 
     /// toUInt64OrZero documentation
     FunctionDocumentation::Description description_toUInt64OrZero = R"(
@@ -1833,7 +1850,7 @@ toUInt64OrZero('abc'): 0
     FunctionDocumentation::Category category_toUInt64OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt64OrZero = {description_toUInt64OrZero, syntax_toUInt64OrZero, arguments_toUInt64OrZero, {}, returned_value_toUInt64OrZero, examples_toUInt64OrZero, introduced_in_toUInt64OrZero, category_toUInt64OrZero};
 
-    factory.registerFunction<detail::FunctionToUInt64OrZero>(documentation_toUInt64OrZero);
+    registerConversion<detail::FunctionToUInt64OrZero>(factory, documentation_toUInt64OrZero, ConversionResultKind::OverflowOnly);
 
     /// toUInt128OrZero documentation
     FunctionDocumentation::Description description_toUInt128OrZero = R"(
@@ -1882,7 +1899,7 @@ toUInt128OrZero('abc'): 0
     FunctionDocumentation::Category category_toUInt128OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt128OrZero = {description_toUInt128OrZero, syntax_toUInt128OrZero, arguments_toUInt128OrZero, {}, returned_value_toUInt128OrZero, examples_toUInt128OrZero, introduced_in_toUInt128OrZero, category_toUInt128OrZero};
 
-    factory.registerFunction<detail::FunctionToUInt128OrZero>(documentation_toUInt128OrZero);
+    registerConversion<detail::FunctionToUInt128OrZero>(factory, documentation_toUInt128OrZero, ConversionResultKind::OverflowOnly);
 
     /// toUInt256OrZero documentation
     FunctionDocumentation::Description description_toUInt256OrZero = R"(
@@ -1931,7 +1948,7 @@ toUInt256OrZero('abc'): 0
     FunctionDocumentation::Category category_toUInt256OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt256OrZero = {description_toUInt256OrZero, syntax_toUInt256OrZero, arguments_toUInt256OrZero, {}, returned_value_toUInt256OrZero, examples_toUInt256OrZero, introduced_in_toUInt256OrZero, category_toUInt256OrZero};
 
-    factory.registerFunction<detail::FunctionToUInt256OrZero>(documentation_toUInt256OrZero);
+    registerConversion<detail::FunctionToUInt256OrZero>(factory, documentation_toUInt256OrZero, ConversionResultKind::OverflowOnly);
 
     /// toInt8OrZero documentation
     FunctionDocumentation::Description description_toInt8OrZero = R"(
@@ -1980,7 +1997,7 @@ toInt8OrZero('abc'): 0
     FunctionDocumentation::Category category_toInt8OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt8OrZero = {description_toInt8OrZero, syntax_toInt8OrZero, arguments_toInt8OrZero, {}, returned_value_toInt8OrZero, examples_toInt8OrZero, introduced_in_toInt8OrZero, category_toInt8OrZero};
 
-    factory.registerFunction<detail::FunctionToInt8OrZero>(documentation_toInt8OrZero);
+    registerConversion<detail::FunctionToInt8OrZero>(factory, documentation_toInt8OrZero, ConversionResultKind::OverflowOnly);
 
     /// toInt16OrZero documentation
     FunctionDocumentation::Description description_toInt16OrZero = R"(
@@ -2029,7 +2046,7 @@ toInt16OrZero('abc'): 0
     FunctionDocumentation::Category category_toInt16OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt16OrZero = {description_toInt16OrZero, syntax_toInt16OrZero, arguments_toInt16OrZero, {}, returned_value_toInt16OrZero, examples_toInt16OrZero, introduced_in_toInt16OrZero, category_toInt16OrZero};
 
-    factory.registerFunction<detail::FunctionToInt16OrZero>(documentation_toInt16OrZero);
+    registerConversion<detail::FunctionToInt16OrZero>(factory, documentation_toInt16OrZero, ConversionResultKind::OverflowOnly);
 
     /// toInt32OrZero documentation
     FunctionDocumentation::Description description_toInt32OrZero = R"(
@@ -2078,7 +2095,7 @@ toInt32OrZero('abc'): 0
     FunctionDocumentation::Category category_toInt32OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt32OrZero = {description_toInt32OrZero, syntax_toInt32OrZero, arguments_toInt32OrZero, {}, returned_value_toInt32OrZero, examples_toInt32OrZero, introduced_in_toInt32OrZero, category_toInt32OrZero};
 
-    factory.registerFunction<detail::FunctionToInt32OrZero>(documentation_toInt32OrZero);
+    registerConversion<detail::FunctionToInt32OrZero>(factory, documentation_toInt32OrZero, ConversionResultKind::OverflowOnly);
 
     FunctionDocumentation::Description description_toInt64OrZero = R"(
 Converts an input value to type [Int64](/reference/data-types/int-uint) but returns `0` in case of an error.
@@ -2118,7 +2135,7 @@ SELECT toInt64OrZero('abc')
     FunctionDocumentation::Category category_toInt64OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt64OrZero = {description_toInt64OrZero, syntax_toInt64OrZero, arguments_toInt64OrZero, {}, returned_value_toInt64OrZero, examples_toInt64OrZero, introduced_in_toInt64OrZero, category_toInt64OrZero};
 
-    factory.registerFunction<detail::FunctionToInt64OrZero>(documentation_toInt64OrZero);
+    registerConversion<detail::FunctionToInt64OrZero>(factory, documentation_toInt64OrZero, ConversionResultKind::OverflowOnly);
 
     FunctionDocumentation::Description description_toInt128OrZero = R"(
 Converts an input value to type [Int128](/reference/data-types/int-uint) but returns `0` in case of an error.
@@ -2158,7 +2175,7 @@ SELECT toInt128OrZero('abc')
     FunctionDocumentation::Category category_toInt128OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt128OrZero = {description_toInt128OrZero, syntax_toInt128OrZero, arguments_toInt128OrZero, {}, returned_value_toInt128OrZero, examples_toInt128OrZero, introduced_in_toInt128OrZero, category_toInt128OrZero};
 
-    factory.registerFunction<detail::FunctionToInt128OrZero>(documentation_toInt128OrZero);
+    registerConversion<detail::FunctionToInt128OrZero>(factory, documentation_toInt128OrZero, ConversionResultKind::OverflowOnly);
 
     FunctionDocumentation::Description description_toInt256OrZero = R"(
 Converts an input value to type [Int256](/reference/data-types/int-uint) but returns `0` in case of an error.
@@ -2198,7 +2215,7 @@ SELECT toInt256OrZero('abc')
     FunctionDocumentation::Category category_toInt256OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt256OrZero = {description_toInt256OrZero, syntax_toInt256OrZero, arguments_toInt256OrZero, {}, returned_value_toInt256OrZero, examples_toInt256OrZero, introduced_in_toInt256OrZero, category_toInt256OrZero};
 
-    factory.registerFunction<detail::FunctionToInt256OrZero>(documentation_toInt256OrZero);
+    registerConversion<detail::FunctionToInt256OrZero>(factory, documentation_toInt256OrZero, ConversionResultKind::OverflowOnly);
 
     /// toBFloat16OrZero documentation
     FunctionDocumentation::Description toBFloat16OrZero_description = R"(
@@ -2242,7 +2259,7 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
     FunctionDocumentation::Category toBFloat16OrZero_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toBFloat16OrZero_documentation = {toBFloat16OrZero_description, toBFloat16OrZero_syntax, toBFloat16OrZero_arguments, {}, toBFloat16OrZero_returned_value, toBFloat16OrZero_examples, toBFloat16OrZero_introduced_in, toBFloat16OrZero_category};
 
-    factory.registerFunction<detail::FunctionToBFloat16OrZero>(toBFloat16OrZero_documentation);
+    registerConversion<detail::FunctionToBFloat16OrZero>(factory, toBFloat16OrZero_documentation, ConversionResultKind::Float);
 
     /// toFloat32OrZero documentation
     FunctionDocumentation::Description description_toFloat32OrZero = R"(
@@ -2280,7 +2297,7 @@ toFloat32OrZero('abc'):  0
     FunctionDocumentation::Category category_toFloat32OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toFloat32OrZero = {description_toFloat32OrZero, syntax_toFloat32OrZero, arguments_toFloat32OrZero, {}, returned_value_toFloat32OrZero, examples_toFloat32OrZero, introduced_in_toFloat32OrZero, category_toFloat32OrZero};
 
-    factory.registerFunction<detail::FunctionToFloat32OrZero>(documentation_toFloat32OrZero);
+    registerConversion<detail::FunctionToFloat32OrZero>(factory, documentation_toFloat32OrZero, ConversionResultKind::Float);
 
     /// toFloat64OrZero documentation
     FunctionDocumentation::Description description_toFloat64OrZero = R"(
@@ -2318,7 +2335,7 @@ toFloat64OrZero('abc'):  0
     FunctionDocumentation::Category category_toFloat64OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toFloat64OrZero = {description_toFloat64OrZero, syntax_toFloat64OrZero, arguments_toFloat64OrZero, {}, returned_value_toFloat64OrZero, examples_toFloat64OrZero, introduced_in_toFloat64OrZero, category_toFloat64OrZero};
 
-    factory.registerFunction<detail::FunctionToFloat64OrZero>(documentation_toFloat64OrZero);
+    registerConversion<detail::FunctionToFloat64OrZero>(factory, documentation_toFloat64OrZero, ConversionResultKind::Float);
 
     /// toDateOrZero documentation
     FunctionDocumentation::Description description_toDateOrZero = R"(
@@ -2352,7 +2369,7 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
     FunctionDocumentation::Category category_toDateOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateOrZero = {description_toDateOrZero, syntax_toDateOrZero, arguments_toDateOrZero, {}, returned_value_toDateOrZero, examples_toDateOrZero, introduced_in_toDateOrZero, category_toDateOrZero};
 
-    factory.registerFunction<detail::FunctionToDateOrZero>(documentation_toDateOrZero);
+    registerConversion<detail::FunctionToDateOrZero>(factory, documentation_toDateOrZero, ConversionResultKind::DateTime);
 
     /// toDate32OrZero documentation
     FunctionDocumentation::Description description_toDate32OrZero = R"(
@@ -2387,7 +2404,7 @@ SELECT toDate32OrZero('2025-01-01'), toDate32OrZero('')
     FunctionDocumentation::Category category_toDate32OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDate32OrZero = {description_toDate32OrZero, syntax_toDate32OrZero, arguments_toDate32OrZero, {}, returned_value_toDate32OrZero, examples_toDate32OrZero, introduced_in_toDate32OrZero, category_toDate32OrZero};
 
-    factory.registerFunction<detail::FunctionToDate32OrZero>(documentation_toDate32OrZero);
+    registerConversion<detail::FunctionToDate32OrZero>(factory, documentation_toDate32OrZero, ConversionResultKind::DateTime);
 
     /// toTimeOrZero documentation
     FunctionDocumentation::Description description_toTimeOrZero = R"(
@@ -2416,7 +2433,7 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
     FunctionDocumentation::Category category_toTimeOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTimeOrZero = {description_toTimeOrZero, syntax_toTimeOrZero, arguments_toTimeOrZero, {}, returned_value_toTimeOrZero, examples_toTimeOrZero, introduced_in_toTimeOrZero, category_toTimeOrZero};
 
-    factory.registerFunction<detail::FunctionToTimeOrZero>(documentation_toTimeOrZero);
+    registerConversion<detail::FunctionToTimeOrZero>(factory, documentation_toTimeOrZero, ConversionResultKind::DateTime);
 
     /// toTime64OrZero documentation
     FunctionDocumentation::Description description_toTime64OrZero = R"(
@@ -2451,7 +2468,7 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
     FunctionDocumentation::Category category_toTime64OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTime64OrZero = {description_toTime64OrZero, syntax_toTime64OrZero, arguments_toTime64OrZero, {}, returned_value_toTime64OrZero, examples_toTime64OrZero, introduced_in_toTime64OrZero, category_toTime64OrZero};
 
-    factory.registerFunction<detail::FunctionToTime64OrZero>(documentation_toTime64OrZero);
+    registerConversion<detail::FunctionToTime64OrZero>(factory, documentation_toTime64OrZero, ConversionResultKind::DateTime);
 
     /// toDateTimeOrZero documentation
     FunctionDocumentation::Description description_toDateTimeOrZero = R"(
@@ -2480,7 +2497,7 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
     FunctionDocumentation::Category category_toDateTimeOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateTimeOrZero = {description_toDateTimeOrZero, syntax_toDateTimeOrZero, arguments_toDateTimeOrZero, {}, returned_value_toDateTimeOrZero, examples_toDateTimeOrZero, introduced_in_toDateTimeOrZero, category_toDateTimeOrZero};
 
-    factory.registerFunction<detail::FunctionToDateTimeOrZero>(documentation_toDateTimeOrZero);
+    registerConversion<detail::FunctionToDateTimeOrZero>(factory, documentation_toDateTimeOrZero, ConversionResultKind::DateTime);
 
     /// toDateTime64OrZero documentation
     FunctionDocumentation::Description description_toDateTime64OrZero = R"(
@@ -2517,7 +2534,7 @@ SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invali
     FunctionDocumentation::Category category_toDateTime64OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateTime64OrZero = {description_toDateTime64OrZero, syntax_toDateTime64OrZero, arguments_toDateTime64OrZero, {}, returned_value_toDateTime64OrZero, examples_toDateTime64OrZero, introduced_in_toDateTime64OrZero, category_toDateTime64OrZero};
 
-    factory.registerFunction<detail::FunctionToDateTime64OrZero>(documentation_toDateTime64OrZero);
+    registerConversion<detail::FunctionToDateTime64OrZero>(factory, documentation_toDateTime64OrZero, ConversionResultKind::DateTime);
 
     /// toDecimal32OrZero documentation
     FunctionDocumentation::Description description_toDecimal32OrZero = R"(
@@ -2559,7 +2576,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
     FunctionDocumentation::Category category_toDecimal32OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal32OrZero = {description_toDecimal32OrZero, syntax_toDecimal32OrZero, arguments_toDecimal32OrZero, {}, returned_value_toDecimal32OrZero, examples_toDecimal32OrZero, introduced_in_toDecimal32OrZero, category_toDecimal32OrZero};
 
-    factory.registerFunction<detail::FunctionToDecimal32OrZero>(documentation_toDecimal32OrZero);
+    registerConversion<detail::FunctionToDecimal32OrZero>(factory, documentation_toDecimal32OrZero, ConversionResultKind::OverflowOnly);
 
     /// toDecimal64OrZero documentation
     FunctionDocumentation::Description description_toDecimal64OrZero = R"(
@@ -2606,7 +2623,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
     FunctionDocumentation::Category category_toDecimal64OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal64OrZero = {description_toDecimal64OrZero, syntax_toDecimal64OrZero, arguments_toDecimal64OrZero, {}, returned_value_toDecimal64OrZero, examples_toDecimal64OrZero, introduced_in_toDecimal64OrZero, category_toDecimal64OrZero};
 
-    factory.registerFunction<detail::FunctionToDecimal64OrZero>(documentation_toDecimal64OrZero);
+    registerConversion<detail::FunctionToDecimal64OrZero>(factory, documentation_toDecimal64OrZero, ConversionResultKind::OverflowOnly);
 
     /// toDecimal128OrZero documentation
     FunctionDocumentation::Description description_toDecimal128OrZero = R"(
@@ -2648,7 +2665,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
     FunctionDocumentation::Category category_toDecimal128OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal128OrZero = {description_toDecimal128OrZero, syntax_toDecimal128OrZero, arguments_toDecimal128OrZero, {}, returned_value_toDecimal128OrZero, examples_toDecimal128OrZero, introduced_in_toDecimal128OrZero, category_toDecimal128OrZero};
 
-    factory.registerFunction<detail::FunctionToDecimal128OrZero>(documentation_toDecimal128OrZero);
+    registerConversion<detail::FunctionToDecimal128OrZero>(factory, documentation_toDecimal128OrZero, ConversionResultKind::OverflowOnly);
 
     /// toDecimal256OrZero documentation
     FunctionDocumentation::Description description_toDecimal256OrZero = R"(
@@ -2695,7 +2712,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
     FunctionDocumentation::Category category_toDecimal256OrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal256OrZero = {description_toDecimal256OrZero, syntax_toDecimal256OrZero, arguments_toDecimal256OrZero, {}, returned_value_toDecimal256OrZero, examples_toDecimal256OrZero, introduced_in_toDecimal256OrZero, category_toDecimal256OrZero};
 
-    factory.registerFunction<detail::FunctionToDecimal256OrZero>(documentation_toDecimal256OrZero);
+    registerConversion<detail::FunctionToDecimal256OrZero>(factory, documentation_toDecimal256OrZero, ConversionResultKind::OverflowOnly);
 
     /// toUUIDOrZero documentation
     FunctionDocumentation::Description description_toUUIDOrZero = R"(
@@ -2868,7 +2885,7 @@ toUInt8OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::IntroducedIn introduced_in_toUInt8OrNull = {1, 1};
     FunctionDocumentation documentation_toUInt8OrNull = {description_toUInt8OrNull, syntax_toUInt8OrNull, arguments_toUInt8OrNull, {}, returned_value_toUInt8OrNull, examples_toUInt8OrNull, introduced_in_toUInt8OrNull, category_toUInt8OrNull};
 
-    factory.registerFunction<detail::FunctionToUInt8OrNull>(documentation_toUInt8OrNull);
+    registerConversion<detail::FunctionToUInt8OrNull>(factory, documentation_toUInt8OrNull, ConversionResultKind::OverflowOnly);
 
     /// toUInt16OrNull documentation
     FunctionDocumentation::Description description_toUInt16OrNull = R"(
@@ -2918,7 +2935,7 @@ toUInt16OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toUInt16OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt16OrNull = {description_toUInt16OrNull, syntax_toUInt16OrNull, arguments_toUInt16OrNull, {}, returned_value_toUInt16OrNull, examples_toUInt16OrNull, introduced_in_toUInt16OrNull, category_toUInt16OrNull};
 
-    factory.registerFunction<detail::FunctionToUInt16OrNull>(documentation_toUInt16OrNull);
+    registerConversion<detail::FunctionToUInt16OrNull>(factory, documentation_toUInt16OrNull, ConversionResultKind::OverflowOnly);
 
     /// toUInt32OrNull documentation
     FunctionDocumentation::Description description_toUInt32OrNull = R"(
@@ -2968,7 +2985,7 @@ toUInt32OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toUInt32OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt32OrNull = {description_toUInt32OrNull, syntax_toUInt32OrNull, arguments_toUInt32OrNull, {}, returned_value_toUInt32OrNull, examples_toUInt32OrNull, introduced_in_toUInt32OrNull, category_toUInt32OrNull};
 
-    factory.registerFunction<detail::FunctionToUInt32OrNull>(documentation_toUInt32OrNull);
+    registerConversion<detail::FunctionToUInt32OrNull>(factory, documentation_toUInt32OrNull, ConversionResultKind::OverflowOnly);
 
     /// toUInt64OrNull documentation
     FunctionDocumentation::Description description_toUInt64OrNull = R"(
@@ -3018,7 +3035,7 @@ toUInt64OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toUInt64OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt64OrNull = {description_toUInt64OrNull, syntax_toUInt64OrNull, arguments_toUInt64OrNull, {}, returned_value_toUInt64OrNull, examples_toUInt64OrNull, introduced_in_toUint64OrNull, category_toUInt64OrNull};
 
-    factory.registerFunction<detail::FunctionToUInt64OrNull>(documentation_toUInt64OrNull);
+    registerConversion<detail::FunctionToUInt64OrNull>(factory, documentation_toUInt64OrNull, ConversionResultKind::OverflowOnly);
 
     /// toUInt128OrNull documentation
     FunctionDocumentation::Description description_toUInt128OrNull = R"(
@@ -3068,7 +3085,7 @@ toUInt128OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toUInt128OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt128OrNull = {description_toUInt128OrNull, syntax_toUInt128OrNull, arguments_toUInt128OrNull, {}, returned_value_toUInt128OrNull, examples_toUInt128OrNull, introduced_in_toUInt128OrNull, category_toUInt128OrNull};
 
-    factory.registerFunction<detail::FunctionToUInt128OrNull>(documentation_toUInt128OrNull);
+    registerConversion<detail::FunctionToUInt128OrNull>(factory, documentation_toUInt128OrNull, ConversionResultKind::OverflowOnly);
 
     /// toUInt256OrNull documentation
     FunctionDocumentation::Description description_toUInt256OrNull = R"(
@@ -3118,7 +3135,7 @@ toUInt256OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toUInt256OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUInt256OrNull = {description_toUInt256OrNull, syntax_toUInt256OrNull, arguments_toUInt256OrNull, {}, returned_value_toUInt256OrNull, examples_toUInt256OrNull, introduced_in_toUInt256OrNull, category_toUInt256OrNull};
 
-    factory.registerFunction<detail::FunctionToUInt256OrNull>(documentation_toUInt256OrNull);
+    registerConversion<detail::FunctionToUInt256OrNull>(factory, documentation_toUInt256OrNull, ConversionResultKind::OverflowOnly);
 
     /// toInt8OrNull documentation
     FunctionDocumentation::Description description_toInt8OrNull = R"(
@@ -3168,7 +3185,7 @@ toInt8OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toInt8OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt8OrNull = {description_toInt8OrNull, syntax_toInt8OrNull, arguments_toInt8OrNull, {}, returned_value_toInt8OrNull, examples_toInt8OrNull, introduced_in_toInt8OrNull, category_toInt8OrNull};
 
-    factory.registerFunction<detail::FunctionToInt8OrNull>(documentation_toInt8OrNull);
+    registerConversion<detail::FunctionToInt8OrNull>(factory, documentation_toInt8OrNull, ConversionResultKind::OverflowOnly);
 
     /// toInt16OrNull documentation
     FunctionDocumentation::Description description_toInt16OrNull = R"(
@@ -3218,7 +3235,7 @@ toInt16OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toInt16OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt16OrNull = {description_toInt16OrNull, syntax_toInt16OrNull, arguments_toInt16OrNull, {}, returned_value_toInt16OrNull, examples_toInt16OrNull, introduced_in_toInt16OrNull, category_toInt16OrNull};
 
-    factory.registerFunction<detail::FunctionToInt16OrNull>(documentation_toInt16OrNull);
+    registerConversion<detail::FunctionToInt16OrNull>(factory, documentation_toInt16OrNull, ConversionResultKind::OverflowOnly);
 
     /// toInt32OrNull documentation
     FunctionDocumentation::Description description_toInt32OrNull = R"(
@@ -3268,7 +3285,7 @@ toInt32OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toInt32OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt32OrNull = {description_toInt32OrNull, syntax_toInt32OrNull, arguments_toInt32OrNull, {}, returned_value_toInt32OrNull, examples_toInt32OrNull, introduced_in_toInt32OrNull, category_toInt32OrNull};
 
-    factory.registerFunction<detail::FunctionToInt32OrNull>(documentation_toInt32OrNull);
+    registerConversion<detail::FunctionToInt32OrNull>(factory, documentation_toInt32OrNull, ConversionResultKind::OverflowOnly);
 
     /// toInt64OrNull documentation
     FunctionDocumentation::Description description_toInt64OrNull = R"(
@@ -3318,7 +3335,7 @@ toInt64OrNull('abc'): ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toInt64OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt64OrNull = {description_toInt64OrNull, syntax_toInt64OrNull, arguments_toInt64OrNull, {}, returned_value_toInt64OrNull, examples_toInt64OrNull, introduced_in_toInt64OrNull, category_toInt64OrNull};
 
-    factory.registerFunction<detail::FunctionToInt64OrNull>(documentation_toInt64OrNull);
+    registerConversion<detail::FunctionToInt64OrNull>(factory, documentation_toInt64OrNull, ConversionResultKind::OverflowOnly);
 
     /// toInt128OrNull documentation
     FunctionDocumentation::Description description_toInt128OrNull = R"(
@@ -3368,7 +3385,7 @@ toInt128OrNull('abc'):  ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toInt128OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt128OrNull = {description_toInt128OrNull, syntax_toInt128OrNull, arguments_toInt128OrNull, {}, returned_value_toInt128OrNull, examples_toInt128OrNull, introduced_in_toInt128OrNull, category_toInt128OrNull};
 
-    factory.registerFunction<detail::FunctionToInt128OrNull>(documentation_toInt128OrNull);
+    registerConversion<detail::FunctionToInt128OrNull>(factory, documentation_toInt128OrNull, ConversionResultKind::OverflowOnly);
 
     /// toInt256OrNull documentation
     FunctionDocumentation::Description description_toInt256OrNull = R"(
@@ -3418,7 +3435,7 @@ toInt256OrNull('abc'):  ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toInt256OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toInt256OrNull = {description_toInt256OrNull, syntax_toInt256OrNull, arguments_toInt256OrNull, {}, returned_value_toInt256OrNull, examples_toInt256OrNull, introduced_in_toInt256OrNull, category_toInt256OrNull};
 
-    factory.registerFunction<detail::FunctionToInt256OrNull>(documentation_toInt256OrNull);
+    registerConversion<detail::FunctionToInt256OrNull>(factory, documentation_toInt256OrNull, ConversionResultKind::OverflowOnly);
 
     /// toBFloat16OrNull documentation
     FunctionDocumentation::Description toBFloat16OrNull_description = R"(
@@ -3463,7 +3480,7 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
     FunctionDocumentation::Category toBFloat16OrNull_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toBFloat16OrNull_documentation = {toBFloat16OrNull_description, toBFloat16OrNull_syntax, toBFloat16OrNull_arguments, {}, toBFloat16OrNull_returned_value, toBFloat16OrNull_examples, toBFloat16OrNull_introduced_in, toBFloat16OrNull_category};
 
-    factory.registerFunction<detail::FunctionToBFloat16OrNull>(toBFloat16OrNull_documentation);
+    registerConversion<detail::FunctionToBFloat16OrNull>(factory, toBFloat16OrNull_documentation, ConversionResultKind::Float);
 
     /// toFloat32OrNull documentation
     FunctionDocumentation::Description description_toFloat32OrNull = R"(
@@ -3514,7 +3531,7 @@ toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toFloat32OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toFloat32OrNull = {description_toFloat32OrNull, syntax_toFloat32OrNull, arguments_toFloat32OrNull, {}, returned_value_toFloat32OrNull, examples_toFloat32OrNull, introduced_in_toFloat32OrNull, category_toFloat32OrNull};
 
-    factory.registerFunction<detail::FunctionToFloat32OrNull>(documentation_toFloat32OrNull);
+    registerConversion<detail::FunctionToFloat32OrNull>(factory, documentation_toFloat32OrNull, ConversionResultKind::Float);
 
     /// toFloat64OrNull documentation
     FunctionDocumentation::Description description_toFloat64OrNull = R"(
@@ -3565,7 +3582,7 @@ toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
     FunctionDocumentation::Category category_toFloat64OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toFloat64OrNull = {description_toFloat64OrNull, syntax_toFloat64OrNull, arguments_toFloat64OrNull, {}, returned_value_toFloat64OrNull, examples_toFloat64OrNull, introduced_in_toFloat64OrNull, category_toFloat64OrNull};
 
-    factory.registerFunction<detail::FunctionToFloat64OrNull>(documentation_toFloat64OrNull);
+    registerConversion<detail::FunctionToFloat64OrNull>(factory, documentation_toFloat64OrNull, ConversionResultKind::Float);
 
     /// toDateOrNull documentation
     FunctionDocumentation::Description description_toDateOrNull = R"(
@@ -3596,7 +3613,7 @@ SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
     FunctionDocumentation::Category category_toDateOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateOrNull = {description_toDateOrNull, syntax_toDateOrNull, arguments_toDateOrNull, {}, returned_value_toDateOrNull, examples_toDateOrNull, introduced_in_toDateOrNull, category_toDateOrNull};
 
-    factory.registerFunction<detail::FunctionToDateOrNull>(documentation_toDateOrNull);
+    registerConversion<detail::FunctionToDateOrNull>(factory, documentation_toDateOrNull, ConversionResultKind::DateTime);
 
     /// toDate32OrNull documentation
     FunctionDocumentation::Description description_toDate32OrNull = R"(
@@ -3626,7 +3643,7 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
     FunctionDocumentation::Category category_toDate32OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDate32OrNull = {description_toDate32OrNull, syntax_toDate32OrNull, arguments_toDate32OrNull, {}, returned_value_toDate32OrNull, examples_toDate32OrNull, introduced_in_toDate32OrNull, category_toDate32OrNull};
 
-    factory.registerFunction<detail::FunctionToDate32OrNull>(documentation_toDate32OrNull);
+    registerConversion<detail::FunctionToDate32OrNull>(factory, documentation_toDate32OrNull, ConversionResultKind::DateTime);
 
     /// toTimeOrNull documentation
     FunctionDocumentation::Description description_toTimeOrNull = R"(
@@ -3660,7 +3677,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
     FunctionDocumentation::Category category_toTimeOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTimeOrNull = {description_toTimeOrNull, syntax_toTimeOrNull, arguments_toTimeOrNull, {}, returned_value_toTimeOrNull, examples_toTimeOrNull, introduced_in_toTimeOrNull, category_toTimeOrNull};
 
-    factory.registerFunction<detail::FunctionToTimeOrNull>(documentation_toTimeOrNull);
+    registerConversion<detail::FunctionToTimeOrNull>(factory, documentation_toTimeOrNull, ConversionResultKind::DateTime);
 
     /// toTime64OrNull documentation
     FunctionDocumentation::Description description_toTime64OrNull = R"(
@@ -3695,7 +3712,7 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
     FunctionDocumentation::Category category_toTime64OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toTime64OrNull = {description_toTime64OrNull, syntax_toTime64OrNull, arguments_toTime64OrNull, {}, returned_value_toTime64OrNull, examples_toTime64OrNull, introduced_in_toTime64OrNull, category_toTime64OrNull};
 
-    factory.registerFunction<detail::FunctionToTime64OrNull>(documentation_toTime64OrNull);
+    registerConversion<detail::FunctionToTime64OrNull>(factory, documentation_toTime64OrNull, ConversionResultKind::DateTime);
 
     /// toDateTimeOrNull documentation
     FunctionDocumentation::Description description_toDateTimeOrNull = R"(
@@ -3738,7 +3755,7 @@ SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(429496729
     FunctionDocumentation::Category category_toDateTimeOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateTimeOrNull = {description_toDateTimeOrNull, syntax_toDateTimeOrNull, arguments_toDateTimeOrNull, {}, returned_value_toDateTimeOrNull, examples_toDateTimeOrNull, introduced_in_toDateTimeOrNull, category_toDateTimeOrNull};
 
-    factory.registerFunction<detail::FunctionToDateTimeOrNull>(documentation_toDateTimeOrNull);
+    registerConversion<detail::FunctionToDateTimeOrNull>(factory, documentation_toDateTimeOrNull, ConversionResultKind::DateTime);
 
     /// toDateTime64OrNull documentation
     FunctionDocumentation::Description description_toDateTime64OrNull = R"(
@@ -3771,7 +3788,7 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
     FunctionDocumentation::Category category_toDateTime64OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDateTime64OrNull = {description_toDateTime64OrNull, syntax_toDateTime64OrNull, arguments_toDateTime64OrNull, {}, returned_value_toDateTime64OrNull, examples_toDateTime64OrNull, introduced_in_toDateTime64OrNull, category_toDateTime64OrNull};
 
-    factory.registerFunction<detail::FunctionToDateTime64OrNull>(documentation_toDateTime64OrNull);
+    registerConversion<detail::FunctionToDateTime64OrNull>(factory, documentation_toDateTime64OrNull, ConversionResultKind::DateTime);
 
     /// toDecimal32OrNull documentation
     FunctionDocumentation::Description description_toDecimal32OrNull = R"(
@@ -3816,7 +3833,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
     FunctionDocumentation::Category category_toDecimal32OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal32OrNull = {description_toDecimal32OrNull, syntax_toDecimal32OrNull, arguments_toDecimal32OrNull, {}, returned_value_toDecimal32OrNull, examples_toDecimal32OrNull, introduced_in_toDecimal32OrNull, category_toDecimal32OrNull};
 
-    factory.registerFunction<detail::FunctionToDecimal32OrNull>(documentation_toDecimal32OrNull);
+    registerConversion<detail::FunctionToDecimal32OrNull>(factory, documentation_toDecimal32OrNull, ConversionResultKind::OverflowOnly);
 
     /// toDecimal64OrNull documentation
     FunctionDocumentation::Description description_toDecimal64OrNull = R"(
@@ -3861,7 +3878,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
     FunctionDocumentation::Category category_toDecimal64OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal64OrNull = {description_toDecimal64OrNull, syntax_toDecimal64OrNull, arguments_toDecimal64OrNull, {}, returned_value_toDecimal64OrNull, examples_toDecimal64OrNull, introduced_in_toDecimal64OrNull, category_toDecimal64OrNull};
 
-    factory.registerFunction<detail::FunctionToDecimal64OrNull>(documentation_toDecimal64OrNull);
+    registerConversion<detail::FunctionToDecimal64OrNull>(factory, documentation_toDecimal64OrNull, ConversionResultKind::OverflowOnly);
 
     /// toDecimal128OrNull documentation
     FunctionDocumentation::Description description_toDecimal128OrNull = R"(
@@ -3905,7 +3922,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
     FunctionDocumentation::Category category_toDecimal128OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal128OrNull = {description_toDecimal128OrNull, syntax_toDecimal128OrNull, arguments_toDecimal128OrNull, {}, returned_value_toDecimal128OrNull, examples_toDecimal128OrNull, introduced_in_toDecimal128OrNull, category_toDecimal128OrNull};
 
-    factory.registerFunction<detail::FunctionToDecimal128OrNull>(documentation_toDecimal128OrNull);
+    registerConversion<detail::FunctionToDecimal128OrNull>(factory, documentation_toDecimal128OrNull, ConversionResultKind::OverflowOnly);
 
     /// toDecimal256OrNull documentation
     FunctionDocumentation::Description description_toDecimal256OrNull = R"(
@@ -3950,7 +3967,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
     FunctionDocumentation::Category category_toDecimal256OrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toDecimal256OrNull = {description_toDecimal256OrNull, syntax_toDecimal256OrNull, arguments_toDecimal256OrNull, {}, returned_value_toDecimal256OrNull, examples_toDecimal256OrNull, introduced_in_toDecimal256OrNull, category_toDecimal256OrNull};
 
-    factory.registerFunction<detail::FunctionToDecimal256OrNull>(documentation_toDecimal256OrNull);
+    registerConversion<detail::FunctionToDecimal256OrNull>(factory, documentation_toDecimal256OrNull, ConversionResultKind::OverflowOnly);
 
     /// toUUIDOrNull documentation
     FunctionDocumentation::Description description_toUUIDOrNull = R"(
@@ -4142,7 +4159,7 @@ SELECT parseDateTimeBestEffort('1735689600') AS parseDateTimeBestEffort
     FunctionDocumentation::Category parseDateTimeBestEffort_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffort_documentation = {parseDateTimeBestEffort_description, parseDateTimeBestEffort_syntax, parseDateTimeBestEffort_arguments, {}, parseDateTimeBestEffort_returned_value, parseDateTimeBestEffort_examples, parseDateTimeBestEffort_introduced_in, parseDateTimeBestEffort_category};
 
-    factory.registerFunction<detail::FunctionParseDateTimeBestEffort>(parseDateTimeBestEffort_documentation);
+    registerConversion<detail::FunctionParseDateTimeBestEffort>(factory, parseDateTimeBestEffort_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTimeBestEffortOrZero documentation
     FunctionDocumentation::Description parseDateTimeBestEffortOrZero_description = R"(
@@ -4186,7 +4203,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
     FunctionDocumentation::Category parseDateTimeBestEffortOrZero_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortOrZero_documentation = {parseDateTimeBestEffortOrZero_description, parseDateTimeBestEffortOrZero_syntax, parseDateTimeBestEffortOrZero_arguments, {}, parseDateTimeBestEffortOrZero_returned_value, parseDateTimeBestEffortOrZero_examples, parseDateTimeBestEffortOrZero_introduced_in, parseDateTimeBestEffortOrZero_category};
 
-    factory.registerFunction<detail::FunctionParseDateTimeBestEffortOrZero>(parseDateTimeBestEffortOrZero_documentation);
+    registerConversion<detail::FunctionParseDateTimeBestEffortOrZero>(factory, parseDateTimeBestEffortOrZero_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTimeBestEffortOrNull documentation
     FunctionDocumentation::Description parseDateTimeBestEffortOrNull_description = R"(
@@ -4230,7 +4247,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
     FunctionDocumentation::Category parseDateTimeBestEffortOrNull_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortOrNull_documentation = {parseDateTimeBestEffortOrNull_description, parseDateTimeBestEffortOrNull_syntax, parseDateTimeBestEffortOrNull_arguments, {}, parseDateTimeBestEffortOrNull_returned_value, parseDateTimeBestEffortOrNull_examples, parseDateTimeBestEffortOrNull_introduced_in, parseDateTimeBestEffortOrNull_category};
 
-    factory.registerFunction<detail::FunctionParseDateTimeBestEffortOrNull>(parseDateTimeBestEffortOrNull_documentation);
+    registerConversion<detail::FunctionParseDateTimeBestEffortOrNull>(factory, parseDateTimeBestEffortOrNull_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTimeBestEffortUS documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUS_description = R"(
@@ -4264,7 +4281,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
     FunctionDocumentation::Category parseDateTimeBestEffortUS_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortUS_documentation = {parseDateTimeBestEffortUS_description, parseDateTimeBestEffortUS_syntax, parseDateTimeBestEffortUS_arguments, {}, parseDateTimeBestEffortUS_returned_value, parseDateTimeBestEffortUS_examples, parseDateTimeBestEffortUS_introduced_in, parseDateTimeBestEffortUS_category};
 
-    factory.registerFunction<detail::FunctionParseDateTimeBestEffortUS>(parseDateTimeBestEffortUS_documentation);
+    registerConversion<detail::FunctionParseDateTimeBestEffortUS>(factory, parseDateTimeBestEffortUS_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTimeBestEffortUSOrZero documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUSOrZero_description = R"(
@@ -4298,7 +4315,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
     FunctionDocumentation::Category parseDateTimeBestEffortUSOrZero_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortUSOrZero_documentation = {parseDateTimeBestEffortUSOrZero_description, parseDateTimeBestEffortUSOrZero_syntax, parseDateTimeBestEffortUSOrZero_arguments, {}, parseDateTimeBestEffortUSOrZero_returned_value, parseDateTimeBestEffortUSOrZero_examples, parseDateTimeBestEffortUSOrZero_introduced_in, parseDateTimeBestEffortUSOrZero_category};
 
-    factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrZero>(parseDateTimeBestEffortUSOrZero_documentation);
+    registerConversion<detail::FunctionParseDateTimeBestEffortUSOrZero>(factory, parseDateTimeBestEffortUSOrZero_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTimeBestEffortUSOrNull documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUSOrNull_description = R"(
@@ -4332,7 +4349,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
     FunctionDocumentation::Category parseDateTimeBestEffortUSOrNull_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeBestEffortUSOrNull_documentation = {parseDateTimeBestEffortUSOrNull_description, parseDateTimeBestEffortUSOrNull_syntax, parseDateTimeBestEffortUSOrNull_arguments, {}, parseDateTimeBestEffortUSOrNull_returned_value, parseDateTimeBestEffortUSOrNull_examples, parseDateTimeBestEffortUSOrNull_introduced_in, parseDateTimeBestEffortUSOrNull_category};
 
-    factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrNull>(parseDateTimeBestEffortUSOrNull_documentation);
+    registerConversion<detail::FunctionParseDateTimeBestEffortUSOrNull>(factory, parseDateTimeBestEffortUSOrNull_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime32BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffort = R"(
@@ -4390,7 +4407,7 @@ AS parseDateTime32BestEffort
     FunctionDocumentation::Category category_parseDateTime32BestEffort = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_parseDateTime32BestEffort = {description_parseDateTime32BestEffort, syntax_parseDateTime32BestEffort, arguments_parseDateTime32BestEffort, {}, returned_value_parseDateTime32BestEffort, examples_parseDateTime32BestEffort, introduced_in_parseDateTime32BestEffort, category_parseDateTime32BestEffort};
 
-    factory.registerFunction<detail::FunctionParseDateTime32BestEffort>(documentation_parseDateTime32BestEffort);
+    registerConversion<detail::FunctionParseDateTime32BestEffort>(factory, documentation_parseDateTime32BestEffort, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime32BestEffortOrZero documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffortOrZero = R"(
@@ -4423,7 +4440,7 @@ SELECT
     FunctionDocumentation::Category category_parseDateTime32BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_parseDateTime32BestEffortOrZero = {description_parseDateTime32BestEffortOrZero, syntax_parseDateTime32BestEffortOrZero, arguments_parseDateTime32BestEffortOrZero, {}, returned_value_parseDateTime32BestEffortOrZero, examples_parseDateTime32BestEffortOrZero, introduced_in_parseDateTime32BestEffortOrZero, category_parseDateTime32BestEffortOrZero};
 
-    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrZero>(documentation_parseDateTime32BestEffortOrZero);
+    registerConversion<detail::FunctionParseDateTime32BestEffortOrZero>(factory, documentation_parseDateTime32BestEffortOrZero, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime32BestEffortOrNull documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffortOrNull = R"(
@@ -4456,7 +4473,7 @@ SELECT
     FunctionDocumentation::Category category_parseDateTime32BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_parseDateTime32BestEffortOrNull = {description_parseDateTime32BestEffortOrNull, syntax_parseDateTime32BestEffortOrNull, arguments_parseDateTime32BestEffortOrNull, {}, returned_value_parseDateTime32BestEffortOrNull, examples_parseDateTime32BestEffortOrNull, introduced_in_parseDateTime32BestEffortOrNull, category_parseDateTime32BestEffortOrNull};
 
-    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrNull>(documentation_parseDateTime32BestEffortOrNull);
+    registerConversion<detail::FunctionParseDateTime32BestEffortOrNull>(factory, documentation_parseDateTime32BestEffortOrNull, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime64BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffort = R"(
@@ -4498,7 +4515,7 @@ FORMAT PrettyCompactMonoBlock
     FunctionDocumentation::Category category_parseDateTime64BestEffort = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffort_documentation = {description_parseDateTime64BestEffort, syntax_parseDateTime64BestEffort, arguments_parseDateTime64BestEffort, {}, returned_value_parseDateTime64BestEffort, examples_parseDateTime64BestEffort, introduced_in_parseDateTime64BestEffort, category_parseDateTime64BestEffort};
 
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffort>(parseDateTime64BestEffort_documentation);
+    registerConversion<detail::FunctionParseDateTime64BestEffort>(factory, parseDateTime64BestEffort_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime64BestEffortOrZero documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortOrZero = R"(
@@ -4531,7 +4548,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
     FunctionDocumentation::Category category_parseDateTime64BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortOrZero_documentation = {description_parseDateTime64BestEffortOrZero, syntax_parseDateTime64BestEffortOrZero, arguments_parseDateTime64BestEffortOrZero, {}, returned_value_parseDateTime64BestEffortOrZero, examples_parseDateTime64BestEffortOrZero, introduced_in_parseDateTime64BestEffortOrZero, category_parseDateTime64BestEffortOrZero};
 
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrZero>(parseDateTime64BestEffortOrZero_documentation);
+    registerConversion<detail::FunctionParseDateTime64BestEffortOrZero>(factory, parseDateTime64BestEffortOrZero_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime64BestEffortOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortOrNull = R"(
@@ -4564,7 +4581,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
     FunctionDocumentation::Category category_parseDateTime64BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortOrNull_documentation = {description_parseDateTime64BestEffortOrNull, syntax_parseDateTime64BestEffortOrNull, arguments_parseDateTime64BestEffortOrNull, {}, returned_value_parseDateTime64BestEffortOrNull, examples_parseDateTime64BestEffortOrNull, introduced_in_parseDateTime64BestEffortOrNull, category_parseDateTime64BestEffortOrNull};
 
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrNull>(parseDateTime64BestEffortOrNull_documentation);
+    registerConversion<detail::FunctionParseDateTime64BestEffortOrNull>(factory, parseDateTime64BestEffortOrNull_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime64BestEffortUS documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUS = R"(
@@ -4597,7 +4614,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
     FunctionDocumentation::Category category_parseDateTime64BestEffortUS = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUS_documentation = {description_parseDateTime64BestEffortUS, syntax_parseDateTime64BestEffortUS, arguments_parseDateTime64BestEffortUS, {}, returned_value_parseDateTime64BestEffortUS, examples_parseDateTime64BestEffortUS, introduced_in_parseDateTime64BestEffortUS, category_parseDateTime64BestEffortUS};
 
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUS>(parseDateTime64BestEffortUS_documentation);
+    registerConversion<detail::FunctionParseDateTime64BestEffortUS>(factory, parseDateTime64BestEffortUS_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime64BestEffortUSOrZero documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrZero = R"(
@@ -4630,7 +4647,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
     FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUSOrZero_documentation = {description_parseDateTime64BestEffortUSOrZero, syntax_parseDateTime64BestEffortUSOrZero, arguments_parseDateTime64BestEffortUSOrZero, {}, returned_value_parseDateTime64BestEffortUSOrZero, examples_parseDateTime64BestEffortUSOrZero, introduced_in_parseDateTime64BestEffortUSOrZero, category_parseDateTime64BestEffortUSOrZero};
 
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrZero>(parseDateTime64BestEffortUSOrZero_documentation);
+    registerConversion<detail::FunctionParseDateTime64BestEffortUSOrZero>(factory, parseDateTime64BestEffortUSOrZero_documentation, ConversionResultKind::OverflowOnly);
 
     /// parseDateTime64BestEffortUSOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrNull = R"(
@@ -4663,7 +4680,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
     FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUSOrNull_documentation = {description_parseDateTime64BestEffortUSOrNull, syntax_parseDateTime64BestEffortUSOrNull, arguments_parseDateTime64BestEffortUSOrNull, {}, returned_value_parseDateTime64BestEffortUSOrNull, examples_parseDateTime64BestEffortUSOrNull, introduced_in_parseDateTime64BestEffortUSOrNull, category_parseDateTime64BestEffortUSOrNull};
 
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrNull>(parseDateTime64BestEffortUSOrNull_documentation);
+    registerConversion<detail::FunctionParseDateTime64BestEffortUSOrNull>(factory, parseDateTime64BestEffortUSOrNull_documentation, ConversionResultKind::OverflowOnly);
 
     /// toIntervalSecond documentation
     FunctionDocumentation::Description description_toIntervalSecond = R"(
@@ -4995,32 +5012,6 @@ SELECT date + interval_to_year AS result
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalMonth, detail::PositiveMonotonicity>>(documentation_toIntervalMonth);
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalQuarter, detail::PositiveMonotonicity>>(documentation_toIntervalQuarter);
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalYear, detail::PositiveMonotonicity>>(documentation_toIntervalYear);
-
-    const auto register_conversions = [&](ConversionResultKind kind, std::initializer_list<const char *> targets, bool or_zero_or_null)
-    {
-        for (const auto * target : targets)
-        {
-            factory.registerResultSettings(std::string("to") + target, getConversionResultSettings(kind));
-            if (or_zero_or_null)
-                for (const auto * suffix : {"OrZero", "OrNull"})
-                    factory.registerResultSettings(std::string("to") + target + suffix, getConversionResultSettings(kind));
-        }
-    };
-    register_conversions(
-        ConversionResultKind::OverflowOnly,
-        {"UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "UInt256", "Int8", "Int16", "Int32", "Int64", "Int128", "Int256", "Decimal32",
-         "Decimal64", "Decimal128", "Decimal256"},
-        true);
-    register_conversions(ConversionResultKind::Float, {"BFloat16", "Float32", "Float64"}, true);
-    register_conversions(ConversionResultKind::DateTime, {"Date", "Date32", "Time", "Time64", "DateTime", "DateTime64"}, true);
-    register_conversions(ConversionResultKind::DateTime, {"DateTime32", "UnixTimestamp"}, false);
-    register_conversions(ConversionResultKind::IPAddress, {"IPv4", "IPv6"}, false);
-    register_conversions(ConversionResultKind::String, {"String"}, false);
-    factory.registerResultSettings("DATE", getConversionResultSettings(ConversionResultKind::DateTime));
-    for (const auto * prefix : {"parseDateTimeBestEffort", "parseDateTimeBestEffortUS", "parseDateTime32BestEffort", "parseDateTime64BestEffort",
-                                "parseDateTime64BestEffortUS"})
-        for (const auto * suffix : {"", "OrZero", "OrNull"})
-            factory.registerResultSettings(std::string(prefix) + suffix, getConversionResultSettings(ConversionResultKind::OverflowOnly));
 }
 
 }

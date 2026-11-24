@@ -1,4 +1,6 @@
 #include <Functions/tuple.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
@@ -14,9 +16,11 @@ FunctionPtr FunctionTuple::create(DB::ContextPtr context)
     return std::make_shared<FunctionTuple>(context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]);
 }
 
+constexpr FunctionResultSetting result_settings[] = {Setting::enable_named_columns_in_function_tuple};
+
 REGISTER_FUNCTION(Tuple)
 {
-    factory.registerFunction<FunctionTuple>(FunctionDocumentation{
+    factory.registerFunction(FunctionTuple::name, &FunctionTuple::create, FunctionDocumentation{
         .description = R"(
 Returns a tuple by grouping input arguments.
 
@@ -28,8 +32,9 @@ The function implements the operator `(x, y, ...)`.
         .syntax = "tuple([t1[, t2[ ...]])",
         .examples{{"typical", "SELECT tuple(1, 2)", "(1,2)"}},
         .introduced_in = {1, 1},
-        .category = FunctionDocumentation::Category::Tuple});
-    factory.registerResultSettings(FunctionTuple::name, {"enable_named_columns_in_function_tuple"});
+        .category = FunctionDocumentation::Category::Tuple},
+        FunctionFactory::Case::Sensitive,
+        result_settings);
 }
 
 }

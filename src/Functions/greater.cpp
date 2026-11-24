@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 
@@ -10,6 +12,17 @@ using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 
 /// Instantiated in equals.cpp.
 extern template class FunctionComparison<EqualsOp, NameEquals>;
+
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+extern const SettingsBool validate_enum_literals_in_operators;
+extern const SettingsBool use_variant_default_implementation_for_comparisons;
+extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow, Setting::validate_enum_literals_in_operators, Setting::use_variant_default_implementation_for_comparisons, Setting::cast_string_to_date_time_mode, Setting::date_time_overflow_behavior};
 
 REGISTER_FUNCTION(Greater)
 {
@@ -34,11 +47,7 @@ REGISTER_FUNCTION(Greater)
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionGreater>(documentation);
-    factory.registerResultSettings(
-        FunctionGreater::name,
-        {"decimal_check_overflow", "validate_enum_literals_in_operators", "use_variant_default_implementation_for_comparisons",
-         "cast_string_to_date_time_mode", "date_time_overflow_behavior"});
+    factory.registerFunction(FunctionGreater::name, &FunctionGreater::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 template <>

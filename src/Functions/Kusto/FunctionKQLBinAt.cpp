@@ -12,6 +12,8 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Functions/Kusto/KQLPlan.h>
 #include <Interpreters/Context.h>
@@ -22,6 +24,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+}
 
 namespace ErrorCodes
 {
@@ -40,6 +48,8 @@ class FunctionKQLDateTimeBinAt final : public IFunction
 {
 public:
     static constexpr auto name = "kqlDateTimeBinAt";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::date_time_overflow_behavior};
 
     explicit FunctionKQLDateTimeBinAt(ContextPtr context_)
         : overflow_behavior(getDateTimeOverflowBehavior(context_))
@@ -419,13 +429,14 @@ from SQL.
         .category = FunctionDocumentation::Category::Arithmetic,
     });
 
+    constexpr FunctionResultSetting bin_at_result_settings[] = {Setting::date_time_overflow_behavior, Setting::decimal_check_overflow};
+
     factory.registerFunction(
         FunctionKQLBinAtOverloadResolver::name,
         [](ContextPtr context) { return FunctionKQLBinAtOverloadResolver::create(std::move(context)); },
-        bin_at_documentation);
-
-    factory.registerResultSettings(FunctionKQLDateTimeBinAt::name, {"date_time_overflow_behavior"});
-    factory.registerResultSettings(FunctionKQLBinAtOverloadResolver::name, {"date_time_overflow_behavior", "decimal_check_overflow"});
+        bin_at_documentation,
+        FunctionFactory::Case::Sensitive,
+        bin_at_result_settings);
 }
 
 }

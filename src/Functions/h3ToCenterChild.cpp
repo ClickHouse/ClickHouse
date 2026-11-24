@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
@@ -14,6 +16,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -26,6 +33,8 @@ namespace
     {
     public:
         static constexpr auto name = "h3ToCenterChild";
+
+        static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
         H3Validator validator;
 
@@ -140,7 +149,6 @@ This function finds the center child of an H3 index at a specified finer resolut
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToCenterChild>(documentation);
-    factory.registerResultSettings(FunctionH3ToCenterChild::name, {"functions_h3_default_if_invalid"});
 }
 
 }

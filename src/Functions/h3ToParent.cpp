@@ -5,6 +5,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
@@ -12,6 +14,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -25,6 +32,8 @@ class FunctionH3ToParent final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToParent";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
     H3Validator validator;
 
@@ -143,7 +152,6 @@ Returns the parent (coarser) [H3](#h3-index) index containing the given H3 index
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToParent>(documentation);
-    factory.registerResultSettings(FunctionH3ToParent::name, {"functions_h3_default_if_invalid"});
 }
 
 }

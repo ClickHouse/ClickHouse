@@ -1,5 +1,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/midpoint.h>
 
 namespace DB
@@ -10,6 +12,13 @@ struct NameMidpoint
     static constexpr auto name = "midpoint";
 };
 using FunctionMidpointBinary = FunctionBinaryArithmetic<MidpointImpl, NameMidpoint>;
+
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
 
 REGISTER_FUNCTION(Midpoint)
 {
@@ -72,8 +81,7 @@ SELECT midpoint(toTime64('12:00:00', 0), toTime64('14:00:00', 0)) AS result, toT
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<MidpointResolver<FunctionMidpointBinary>>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerResultSettings("midpoint", {"decimal_check_overflow"});
+    factory.registerFunction("midpoint", &MidpointResolver<FunctionMidpointBinary>::create, documentation, FunctionFactory::Case::Insensitive, result_settings);
 }
 
 }

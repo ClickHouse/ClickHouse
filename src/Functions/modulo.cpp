@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
 #include <libdivide-config.h>
@@ -205,6 +207,13 @@ template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> :
 struct NameModulo { static constexpr auto name = "modulo"; };
 using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, false>;
 
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
+
 REGISTER_FUNCTION(Modulo)
 {
     FunctionDocumentation::Description description = R"(
@@ -229,8 +238,7 @@ negative number by minus one.
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionModulo>(documentation);
-    factory.registerResultSettings(NameModulo::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameModulo::name, &FunctionModulo::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
 
@@ -253,8 +261,7 @@ Calculates the remainder of a division. This is the legacy modulo implementation
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionModuloLegacy>(documentation);
-    factory.registerResultSettings(NameModuloLegacy::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameModuloLegacy::name, &FunctionModuloLegacy::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 struct NamePositiveModulo
@@ -283,9 +290,7 @@ Returns the difference between `x` and the nearest integer not greater than
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<FunctionPositiveModulo>(documentation,
-        FunctionFactory::Case::Insensitive);
-    factory.registerResultSettings(NamePositiveModulo::name, {"decimal_check_overflow"});
+    factory.registerFunction(NamePositiveModulo::name, &FunctionPositiveModulo::create, documentation, FunctionFactory::Case::Insensitive, result_settings);
 
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);
     /// Compatibility with Spark:

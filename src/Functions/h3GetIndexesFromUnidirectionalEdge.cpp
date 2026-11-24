@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
@@ -15,6 +17,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -27,6 +34,8 @@ class FunctionH3GetIndexesFromUnidirectionalEdge final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetIndexesFromUnidirectionalEdge";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
     H3Validator validator;
 
@@ -129,7 +138,6 @@ Returns the origin and destination hexagon indexes from the given unidirectional
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetIndexesFromUnidirectionalEdge>(documentation);
-    factory.registerResultSettings(FunctionH3GetIndexesFromUnidirectionalEdge::name, {"functions_h3_default_if_invalid"});
 }
 
 }

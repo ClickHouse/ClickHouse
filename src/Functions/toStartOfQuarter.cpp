@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionToStartOfQuarter = FunctionDateOrDateTimeToDateOrDate32<ToStartOfQuarterImpl>;
 
+constexpr FunctionResultSetting extended_results_settings[] = {Setting::enable_extended_results_for_datetime_functions};
+
 REGISTER_FUNCTION(ToStartOfQuarter)
 {
     FunctionDocumentation::Description description = R"(
@@ -38,8 +40,7 @@ SELECT toStartOfQuarter(toDateTime('2023-04-21 10:20:30'))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfQuarter>(documentation);
-    factory.registerResultSettings(FunctionToStartOfQuarter::name, {"enable_extended_results_for_datetime_functions"});
+    factory.registerFunction(FunctionToStartOfQuarter::name, &FunctionToStartOfQuarter::create, documentation, FunctionFactory::Case::Sensitive, extended_results_settings);
 }
 
 }

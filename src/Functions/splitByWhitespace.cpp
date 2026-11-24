@@ -94,6 +94,8 @@ public:
 
 using FunctionSplitByWhitespace = FunctionTokens<SplitByWhitespaceImpl>;
 
+constexpr FunctionResultSetting split_result_settings[] = {Setting::splitby_max_substrings_includes_remaining_string};
+
 }
 
 REGISTER_FUNCTION(SplitByWhitespace)
@@ -123,8 +125,7 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSplitByWhitespace>(documentation);
-    factory.registerResultSettings(FunctionSplitByWhitespace::name, {"splitby_max_substrings_includes_remaining_string"});
+    factory.registerFunction(FunctionSplitByWhitespace::name, &FunctionSplitByWhitespace::create, documentation, FunctionFactory::Case::Sensitive, split_result_settings);
 }
 
 }

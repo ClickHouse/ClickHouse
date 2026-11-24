@@ -27,7 +27,11 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
     extern const SettingsBool cast_keep_nullable;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool precise_float_parsing;
 }
 
 namespace ErrorCodes
@@ -396,6 +400,17 @@ private:
     }
 };
 
+namespace
+{
+
+constexpr FunctionResultSetting overflow_only_or_default[] = {Setting::date_time_overflow_behavior, Setting::cast_keep_nullable};
+constexpr FunctionResultSetting float_or_default[] = {Setting::date_time_overflow_behavior, Setting::precise_float_parsing, Setting::cast_keep_nullable};
+constexpr FunctionResultSetting date_time_or_default[] = {Setting::date_time_overflow_behavior, Setting::cast_string_to_date_time_mode, Setting::cast_keep_nullable};
+constexpr FunctionResultSetting ip_address_or_default[] = {Setting::cast_ipv4_ipv6_default_on_conversion_error, Setting::cast_keep_nullable};
+constexpr FunctionResultSetting uuid_or_default[] = {Setting::cast_keep_nullable};
+
+}
+
 REGISTER_FUNCTION(CastOrDefault)
 {
     /// accurateCastOrDefault documentation
@@ -452,7 +467,12 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
     FunctionDocumentation::Category accurateCastOrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation accurateCastOrDefault_documentation = {accurateCastOrDefault_description, accurateCastOrDefault_syntax, accurateCastOrDefault_arguments, {}, accurateCastOrDefault_returned_value, accurateCastOrDefault_examples, accurateCastOrDefault_introduced_in, accurateCastOrDefault_category};
 
-    factory.registerFunction<FunctionCastOrDefault>(accurateCastOrDefault_documentation);
+    factory.registerFunction(
+        FunctionCastOrDefault::name,
+        &FunctionCastOrDefault::create,
+        accurateCastOrDefault_documentation,
+        FunctionFactory::Case::Sensitive,
+        getConversionResultSettings(ConversionResultKind::Cast));
 
     FunctionDocumentation::Description toUInt8OrDefault_description = R"(
 Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [UInt8](/reference/data-types/int-uint) but returns the default value in case of an error.
@@ -474,7 +494,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toUInt8OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt8OrDefault", std::make_shared<DataTypeUInt8>()); },
-        toUInt8OrDefault_documentation);
+        toUInt8OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toUInt16OrDefault_description = R"(
 Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [UInt16](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -495,7 +515,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toUInt16OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt16OrDefault", std::make_shared<DataTypeUInt16>()); },
-        toUInt16OrDefault_documentation);
+        toUInt16OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toUInt32OrDefault_description = R"(
 Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [UInt32](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -516,7 +536,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toUInt32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt32OrDefault", std::make_shared<DataTypeUInt32>()); },
-        toUInt32OrDefault_documentation);
+        toUInt32OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toUInt64OrDefault_description = R"(
 Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [UInt64](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -537,7 +557,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toUInt64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt64OrDefault", std::make_shared<DataTypeUInt64>()); },
-        toUInt64OrDefault_documentation);
+        toUInt64OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toUInt128OrDefault_description = R"(
 Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -558,7 +578,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toUInt128OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>()); },
-        toUInt128OrDefault_documentation);
+        toUInt128OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toUInt256OrDefault_description = R"(
 Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [UInt256](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -579,7 +599,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); },
-        toUInt256OrDefault_documentation);
+        toUInt256OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
 
     FunctionDocumentation::Description toInt8OrDefault_description = R"(
 Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](/reference/data-types/int-uint) but returns the default value in case of an error.
@@ -601,7 +621,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toInt8OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt8OrDefault", std::make_shared<DataTypeInt8>()); },
-        toInt8OrDefault_documentation);
+        toInt8OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toInt16OrDefault_description = R"(
 Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -622,7 +642,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toInt16OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt16OrDefault", std::make_shared<DataTypeInt16>()); },
-        toInt16OrDefault_documentation);
+        toInt16OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toInt32OrDefault_description = R"(
 Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -643,7 +663,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toInt32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt32OrDefault", std::make_shared<DataTypeInt32>()); },
-        toInt32OrDefault_documentation);
+        toInt32OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toInt64OrDefault_description = R"(
 Like [`toInt64`](#toInt64), this function converts an input value to a value of type [Int64](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -664,7 +684,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toInt64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt64OrDefault", std::make_shared<DataTypeInt64>()); },
-        toInt64OrDefault_documentation);
+        toInt64OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toInt128OrDefault_description = R"(
 Like [`toInt128`](#toInt128), this function converts an input value to a value of type [Int128](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -685,7 +705,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toInt128OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt128OrDefault", std::make_shared<DataTypeInt128>()); },
-        toInt128OrDefault_documentation);
+        toInt128OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
     FunctionDocumentation::Description toInt256OrDefault_description = R"(
 Like [`toInt256`](#toInt256), this function converts an input value to a value of type [Int256](/reference/data-types/int-uint) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -706,7 +726,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt256OrDefault", std::make_shared<DataTypeInt256>()); },
-        toInt256OrDefault_documentation);
+        toInt256OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
 
     FunctionDocumentation::Description toFloat32OrDefault_description = R"(
 Like [`toFloat32`](#toFloat32), this function converts an input value to a value of type [Float32](/reference/data-types/float) but returns the default value in case of an error.
@@ -728,7 +748,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toFloat32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat32OrDefault", std::make_shared<DataTypeFloat32>()); },
-        toFloat32OrDefault_documentation);
+        toFloat32OrDefault_documentation, FunctionFactory::Case::Sensitive, float_or_default);
     FunctionDocumentation::Description toFloat64OrDefault_description = R"(
 Like [`toFloat64`](#toFloat64), this function converts an input value to a value of type [Float64](/reference/data-types/float) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -749,7 +769,7 @@ If no `default` value is passed then `0` is returned in case of an error.
 
     factory.registerFunction("toFloat64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat64OrDefault", std::make_shared<DataTypeFloat64>()); },
-        toFloat64OrDefault_documentation);
+        toFloat64OrDefault_documentation, FunctionFactory::Case::Sensitive, float_or_default);
 
     FunctionDocumentation::Description toDateOrDefault_description = R"(
 Like [toDate](#toDate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date](/reference/data-types/date).
@@ -770,7 +790,7 @@ Like [toDate](#toDate) but if unsuccessful, returns a default value which is eit
 
     factory.registerFunction("toDateOrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateOrDefault", std::make_shared<DataTypeDate>()); },
-        toDateOrDefault_documentation);
+        toDateOrDefault_documentation, FunctionFactory::Case::Sensitive, date_time_or_default);
     FunctionDocumentation::Description toDate32OrDefault_description = R"(
 Converts the argument to the [Date32](/reference/data-types/date32) data type. If the argument cannot be converted, which includes a numeric value outside of the range of [Date32](/reference/data-types/date32), the function returns a default value which is either the second argument (if specified), or otherwise `1900-01-01`, the historical default value of [Date32](/reference/data-types/date32) (not its lower boundary, which is `0000-01-01`). If the argument has [Date](/reference/data-types/date) type, its borders are taken into account.
 
@@ -793,7 +813,7 @@ Note that, unlike [toDate32](#toDate32), this function does not saturate an out-
 
     factory.registerFunction("toDate32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDate32OrDefault", std::make_shared<DataTypeDate32>()); },
-        toDate32OrDefault_documentation);
+        toDate32OrDefault_documentation, FunctionFactory::Case::Sensitive, date_time_or_default);
     FunctionDocumentation::Description toDateTimeOrDefault_description = R"(
 Like [toDateTime](#toDateTime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundary of [DateTime](/reference/data-types/datetime).
     )";
@@ -813,7 +833,7 @@ Like [toDateTime](#toDateTime) but if unsuccessful, returns a default value whic
     FunctionDocumentation toDateTimeOrDefault_documentation = {toDateTimeOrDefault_description, toDateTimeOrDefault_syntax, toDateTimeOrDefault_arguments, {}, toDateTimeOrDefault_returned_value, toDateTimeOrDefault_examples, toDateTimeOrDefault_introduced_in, toDateTimeOrDefault_category};
     factory.registerFunction("toDateTimeOrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTimeOrDefault", std::make_shared<DataTypeDateTime>()); },
-        toDateTimeOrDefault_documentation);
+        toDateTimeOrDefault_documentation, FunctionFactory::Case::Sensitive, date_time_or_default);
     FunctionDocumentation::Description toDateTime64OrDefault_description = R"(
 Like [toDateTime64](#toDateTime64), this function converts an input value to a value of type [DateTime64](/reference/data-types/datetime64),
 but returns either the default value of [DateTime64](/reference/data-types/datetime64)
@@ -837,7 +857,7 @@ or the provided default if an invalid argument is received.
 
     factory.registerFunction("toDateTime64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTime64OrDefault", std::make_shared<DataTypeDateTime64>(3)); },
-        toDateTime64OrDefault_documentation);
+        toDateTime64OrDefault_documentation, FunctionFactory::Case::Sensitive, date_time_or_default);
 
     FunctionDocumentation::Description toDecimal32OrDefault_description = R"(
 Like [`toDecimal32`](#toDecimal32), this function converts an input value to a value of type [Decimal(9, S)](/reference/data-types/decimal) but returns the default value in case of an error.
@@ -859,7 +879,7 @@ Like [`toDecimal32`](#toDecimal32), this function converts an input value to a v
 
     factory.registerFunction("toDecimal32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal32OrDefault", createDecimalMaxPrecision<Decimal32>(0)); },
-        toDecimal32OrDefault_documentation);
+        toDecimal32OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
 
     FunctionDocumentation::Description toDecimal64OrDefault_description = R"(
 Like [`toDecimal64`](#toDecimal64), this function converts an input value to a value of type [Decimal(18, S)](/reference/data-types/decimal) but returns the default value in case of an error.
@@ -881,7 +901,7 @@ Like [`toDecimal64`](#toDecimal64), this function converts an input value to a v
 
     factory.registerFunction("toDecimal64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal64OrDefault", createDecimalMaxPrecision<Decimal64>(0)); },
-        toDecimal64OrDefault_documentation);
+        toDecimal64OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
 
     FunctionDocumentation::Description toDecimal128OrDefault_description = R"(
 Like [`toDecimal128`](#toDecimal128), this function converts an input value to a value of type [Decimal(38, S)](/reference/data-types/decimal) but returns the default value in case of an error.
@@ -903,7 +923,7 @@ Like [`toDecimal128`](#toDecimal128), this function converts an input value to a
 
     factory.registerFunction("toDecimal128OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal128OrDefault", createDecimalMaxPrecision<Decimal128>(0)); },
-        toDecimal128OrDefault_documentation);
+        toDecimal128OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
 
     FunctionDocumentation::Description toDecimal256OrDefault_description = R"(
 Like [`toDecimal256`](#toDecimal256), this function converts an input value to a value of type [Decimal(76, S)](/reference/data-types/decimal) but returns the default value in case of an error.
@@ -925,7 +945,7 @@ Like [`toDecimal256`](#toDecimal256), this function converts an input value to a
 
     factory.registerFunction("toDecimal256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal256OrDefault", createDecimalMaxPrecision<Decimal256>(0)); },
-        toDecimal256OrDefault_documentation);
+        toDecimal256OrDefault_documentation, FunctionFactory::Case::Sensitive, overflow_only_or_default);
 
     FunctionDocumentation::Description toUUIDOrDefault_description = R"(
 Converts a String value to UUID type. If the conversion fails, returns a default UUID value instead of throwing an error.
@@ -971,7 +991,7 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
     FunctionDocumentation toUUIDOrDefault_documentation = {toUUIDOrDefault_description, toUUIDOrDefault_syntax, toUUIDOrDefault_arguments, {}, toUUIDOrDefault_returned_value, toUUIDOrDefault_examples, toUUIDOrDefault_introduced_in, toUUIDOrDefault_category};
 
     factory.registerFunction("toUUIDOrDefault", [](ContextPtr context)
-        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); }, toUUIDOrDefault_documentation);
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); }, toUUIDOrDefault_documentation, FunctionFactory::Case::Sensitive, uuid_or_default);
 
 
     FunctionDocumentation::Description toIPv4OrDefault_description = R"(
@@ -1010,7 +1030,7 @@ SELECT
 
     factory.registerFunction("toIPv4OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv4OrDefault", std::make_shared<DataTypeIPv4>()); },
-        toIPv4OrDefault_documentation);
+        toIPv4OrDefault_documentation, FunctionFactory::Case::Sensitive, ip_address_or_default);
 
     FunctionDocumentation::Description toIPv6OrDefault_description = R"(
 Converts a string or a UInt128 form of IPv6 address to [`IPv6`](/reference/data-types/ipv6) type.
@@ -1048,24 +1068,7 @@ SELECT
 
     factory.registerFunction("toIPv6OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); },
-        toIPv6OrDefault_documentation);
-
-    const auto register_or_default = [&](ConversionResultKind kind, std::initializer_list<const char *> targets)
-    {
-        auto settings = getConversionResultSettings(kind);
-        settings.push_back("cast_keep_nullable");
-        for (const auto * target : targets)
-            factory.registerResultSettings(std::string("to") + target + "OrDefault", settings);
-    };
-    register_or_default(
-        ConversionResultKind::OverflowOnly,
-        {"UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "UInt256", "Int8", "Int16", "Int32", "Int64", "Int128", "Int256", "Decimal32",
-         "Decimal64", "Decimal128", "Decimal256"});
-    register_or_default(ConversionResultKind::Float, {"Float32", "Float64"});
-    register_or_default(ConversionResultKind::DateTime, {"Date", "Date32", "DateTime", "DateTime64"});
-    register_or_default(ConversionResultKind::IPAddress, {"IPv4", "IPv6"});
-    factory.registerResultSettings("toUUIDOrDefault", {"cast_keep_nullable"});
-    factory.registerResultSettings(FunctionCastOrDefault::name, getConversionResultSettings(ConversionResultKind::Cast));
+        toIPv6OrDefault_documentation, FunctionFactory::Case::Sensitive, ip_address_or_default);
 }
 
 }

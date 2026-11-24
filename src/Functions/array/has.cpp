@@ -1,10 +1,17 @@
 #include <Functions/array/arrayIndex.h>
 #include <Functions/array/has.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool type_json_skip_null_typed_paths;
+}
+
 struct NameHas { static constexpr auto name = "has"; };
 
 /// has(arr, x) - whether there is an element x in the array, map, or JSON.
@@ -37,8 +44,8 @@ REGISTER_FUNCTION(Has)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionHas>(documentation);
-    factory.registerResultSettings(FunctionHas::name, {"type_json_skip_null_typed_paths"});
+    static constexpr FunctionResultSetting result_settings[] = {Setting::type_json_skip_null_typed_paths};
+    factory.registerFunction(FunctionHas::name, &FunctionHas::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 FunctionOverloadResolverPtr createInternalFunctionHasOverloadResolver()

@@ -26,6 +26,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/GatherUtils/Algorithms.h>
@@ -281,6 +282,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
 class FunctionIf final : public FunctionIfBase
 {
 public:
+    static constexpr FunctionResultSetting result_settings[] = {Setting::optimize_if_transform_const_strings_to_lowcardinality, Setting::optimize_if_transform_strings_to_enum};
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
@@ -1690,7 +1692,6 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerResultSettings(FunctionIf::name, {"optimize_if_transform_const_strings_to_lowcardinality", "optimize_if_transform_strings_to_enum"});
 }
 
 FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool allow_lossy_numeric_supertype, bool use_low_cardinality_optimisation)

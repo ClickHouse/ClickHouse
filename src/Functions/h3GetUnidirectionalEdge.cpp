@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
@@ -14,6 +16,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -26,6 +33,8 @@ class FunctionH3GetUnidirectionalEdge final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdge";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
     H3Validator validator;
 
@@ -129,7 +138,6 @@ Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin 
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionH3GetUnidirectionalEdge>(documentation);
-    factory.registerResultSettings(FunctionH3GetUnidirectionalEdge::name, {"functions_h3_default_if_invalid"});
 }
 
 }

@@ -968,6 +968,15 @@ private:
 public:
     static constexpr auto name = Name::name;
 
+    static constexpr FunctionResultSetting mysql_result_settings[]
+        = {Setting::formatdatetime_parsedatetime_m_is_month_name,
+           Setting::formatdatetime_f_prints_single_zero,
+           Setting::formatdatetime_f_prints_scale_number_of_digits,
+           Setting::formatdatetime_format_without_leading_zeros,
+           Setting::formatdatetime_e_with_space_padding};
+    static constexpr FunctionResultSettings result_settings
+        = format_syntax == FormatSyntax::MySQL ? FunctionResultSettings(mysql_result_settings) : FunctionResultSettings();
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 
     explicit FunctionFormatDateTimeImpl(ContextPtr context, bool execute_on_dictionary_default_ = false)
@@ -2238,13 +2247,6 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 
     factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionFromUnixTimestamp>>(documentation_fromUnixTimestamp);
     factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::Case::Insensitive);
-
-    for (const auto * name : {FunctionFormatDateTime::name, FunctionFromUnixTimestamp::name})
-        factory.registerResultSettings(
-            name,
-            {"formatdatetime_parsedatetime_m_is_month_name", "formatdatetime_f_prints_single_zero",
-             "formatdatetime_f_prints_scale_number_of_digits", "formatdatetime_format_without_leading_zeros",
-             "formatdatetime_e_with_space_padding"});
 
     FunctionDocumentation::Description description_formatDateTimeInJodaSyntax = R"(
 Similar to `formatDateTime`, except that it formats datetime in Joda style instead of MySQL style. Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).

@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -10,12 +11,45 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString bool_false_representation;
+    extern const SettingsString bool_true_representation;
+    extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    extern const SettingsDateTimeOutputFormat date_time_output_format;
+    extern const SettingsIntervalOutputFormat interval_output_format;
+    extern const SettingsBool output_format_always_write_decimal_point_in_float_and_decimal;
+    extern const SettingsBool output_format_decimal_trailing_zeros;
+    extern const SettingsUInt64 output_format_float_precision;
+    extern const SettingsBool output_format_json_escape_forward_slashes;
+    extern const SettingsBool output_format_json_map_as_array_of_tuples;
+    extern const SettingsBool output_format_json_named_tuples_as_objects;
+    extern const SettingsBool output_format_json_pretty_print;
+    extern const SettingsBool output_format_json_quote_64bit_floats;
+    extern const SettingsBool output_format_json_quote_64bit_integers;
+    extern const SettingsBool output_format_json_quote_decimals;
+    extern const SettingsBool output_format_json_quote_denormals;
+    extern const SettingsBool output_format_json_skip_null_value_in_named_tuples;
+    extern const SettingsBool output_format_json_validate_utf8;
+    extern const SettingsBool output_format_trim_fixed_string;
+}
+
 namespace
 {
     class FunctionToJSONString final : public IFunction
     {
     public:
         static constexpr auto name = "toJSONString";
+        static constexpr FunctionResultSetting result_settings[] = {
+            Setting::output_format_json_quote_64bit_integers, Setting::output_format_json_quote_64bit_floats,
+            Setting::output_format_json_quote_denormals, Setting::output_format_json_quote_decimals,
+            Setting::output_format_json_escape_forward_slashes, Setting::output_format_json_named_tuples_as_objects,
+            Setting::output_format_json_skip_null_value_in_named_tuples, Setting::output_format_json_validate_utf8,
+            Setting::output_format_json_map_as_array_of_tuples, Setting::output_format_json_pretty_print, Setting::date_time_output_format,
+            Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, Setting::interval_output_format,
+            Setting::bool_true_representation, Setting::bool_false_representation, Setting::output_format_decimal_trailing_zeros,
+            Setting::output_format_always_write_decimal_point_in_float_and_decimal, Setting::output_format_float_precision,
+            Setting::output_format_trim_fixed_string};
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToJSONString>(context); }
 
         explicit FunctionToJSONString(ContextPtr context)
@@ -120,14 +154,6 @@ SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_form
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToJSONString>(documentation);
-    factory.registerResultSettings(
-        FunctionToJSONString::name,
-        {"output_format_json_quote_64bit_integers", "output_format_json_quote_64bit_floats", "output_format_json_quote_denormals",
-         "output_format_json_quote_decimals", "output_format_json_escape_forward_slashes", "output_format_json_named_tuples_as_objects",
-         "output_format_json_skip_null_value_in_named_tuples", "output_format_json_validate_utf8", "output_format_json_map_as_array_of_tuples",
-         "output_format_json_pretty_print", "date_time_output_format", "date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands",
-         "interval_output_format", "bool_true_representation", "bool_false_representation", "output_format_decimal_trailing_zeros",
-         "output_format_always_write_decimal_point_in_float_and_decimal", "output_format_float_precision", "output_format_trim_fixed_string"});
 }
 
 }

@@ -96,6 +96,8 @@ public:
 
 using FunctionSplitByAlpha = FunctionTokens<SplitByAlphaImpl>;
 
+constexpr FunctionResultSetting split_result_settings[] = {Setting::splitby_max_substrings_includes_remaining_string};
+
 }
 
 REGISTER_FUNCTION(SplitByAlpha)
@@ -124,8 +126,7 @@ Selects substrings of consecutive bytes from the ranges `a-z` and `A-Z` and retu
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSplitByAlpha>(documentation);
-    factory.registerResultSettings(FunctionSplitByAlpha::name, {"splitby_max_substrings_includes_remaining_string"});
+    factory.registerFunction(FunctionSplitByAlpha::name, &FunctionSplitByAlpha::create, documentation, FunctionFactory::Case::Sensitive, split_result_settings);
     factory.registerAlias("splitByAlpha", FunctionSplitByAlpha::name);
 }
 

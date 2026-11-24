@@ -7,6 +7,7 @@
 #include <Common/IFactoryWithAliases.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/FunctionDocumentation.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 
 #include <functional>
@@ -63,23 +64,22 @@ public:
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
+    /// `result_settings`: see `FunctionResultSetting`. Their values are captured when the function is created and become part
+    /// of its identity (`IFunctionBase::updateHash`), and storage keys use them to tell whether a session computes the values
+    /// stored with the key. A function registered by its class declares them in `Function::result_settings` instead.
     void registerFunction(
         const std::string & name,
         FunctionCreator creator,
         FunctionDocumentation documentation,
-        Case case_sensitiveness = Case::Sensitive);
+        Case case_sensitiveness = Case::Sensitive,
+        FunctionResultSettings result_settings_ = {});
 
     void registerFunction(
         const std::string & name,
         FunctionSimpleCreator creator,
         FunctionDocumentation documentation,
-        Case case_sensitiveness = Case::Sensitive);
-
-    /// Declares the settings that change the result of the function `name` for the same arguments, e.g.
-    /// `formatdatetime_parsedatetime_m_is_month_name` for `formatDateTime`. Their values are captured when the function is
-    /// created and become part of its identity (`IFunctionBase::updateHash`), and storage keys use them to tell whether a
-    /// session computes the values stored with the key. Must follow the registration of the function.
-    void registerResultSettings(const std::string & name, Names settings);
+        Case case_sensitiveness = Case::Sensitive,
+        FunctionResultSettings result_settings_ = {});
 
     /// The declared result settings of `name` (an alias or any case of a case-insensitive name), or nullptr.
     [[nodiscard]] const Names * tryGetResultSettings(const std::string & name) const;
@@ -118,8 +118,13 @@ private:
     template <typename Function>
     void registerFunction(const std::string & name, FunctionDocumentation documentation, Case case_sensitiveness = Case::Sensitive)
     {
-        registerFunction(name, &Function::create, std::move(documentation), case_sensitiveness);
+        FunctionResultSettings function_result_settings;
+        if constexpr (requires { Function::result_settings; })
+            function_result_settings = Function::result_settings;
+        registerFunction(name, &Function::create, std::move(documentation), case_sensitiveness, function_result_settings);
     }
+
+    void registerResultSettings(const std::string & name, FunctionResultSettings settings);
 };
 
 const String & getFunctionCanonicalNameIfAny(const String & name);

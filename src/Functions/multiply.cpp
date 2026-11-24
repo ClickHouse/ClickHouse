@@ -1,6 +1,8 @@
 #include <type_traits>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <base/arithmeticOverflow.h>
 
 namespace DB
@@ -126,6 +128,13 @@ private:
     FunctionOverloadResolverPtr multiply;
 };
 
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
+
 REGISTER_FUNCTION(Multiply)
 {
     FunctionDocumentation::Description description = "Calculates the product of two values `x` and `y`.";
@@ -138,8 +147,7 @@ REGISTER_FUNCTION(Multiply)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionMultiply>(documentation);
-    factory.registerResultSettings(NameMultiply::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameMultiply::name, &FunctionMultiply::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 REGISTER_FUNCTION(Sqr)

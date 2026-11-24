@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/LeastGreatestGeneric.h>
@@ -66,6 +68,14 @@ using LeastImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, 
 struct NameLeast { static constexpr auto name = "least"; };
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 
+namespace Setting
+{
+extern const SettingsBool least_greatest_legacy_null_behavior;
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::least_greatest_legacy_null_behavior, Setting::decimal_check_overflow};
+
 REGISTER_FUNCTION(Least)
 {
     FunctionDocumentation::Description description = R"(
@@ -126,8 +136,7 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerResultSettings(NameLeast::name, {"least_greatest_legacy_null_behavior", "decimal_check_overflow"});
+    factory.registerFunction(NameLeast::name, &LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>::create, documentation, FunctionFactory::Case::Insensitive, result_settings);
 }
 
 }

@@ -1,5 +1,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/midpoint.h>
 
 namespace DB
@@ -27,6 +29,13 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
     [[nodiscard]] bool isVariadic() const override { return false; }
 };
+
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
 
 REGISTER_FUNCTION(Avg2)
 {
@@ -89,7 +98,6 @@ SELECT avg2(toTime64('12:00:00', 0), toTime64('14:00:00', 0)) AS result, toTypeN
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<Avg2Resolver<FunctionMidpointBinary>>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerResultSettings("avg2", {"decimal_check_overflow"});
+    factory.registerFunction("avg2", &Avg2Resolver<FunctionMidpointBinary>::create, documentation, FunctionFactory::Case::Insensitive, result_settings);
 }
 }

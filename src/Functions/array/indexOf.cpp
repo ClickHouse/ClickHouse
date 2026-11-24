@@ -1,8 +1,15 @@
 #include <Functions/array/arrayIndex.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool type_json_skip_null_typed_paths;
+}
+
 struct NameIndexOf { static constexpr auto name = "indexOf"; };
 
 using FunctionIndexOf = FunctionArrayIndex<IndexOfAction, NameIndexOf>;
@@ -34,7 +41,7 @@ To find one, test for it: `arrayFirstIndex(x -> isNaN(x), arr)` returns its posi
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIndexOf>(documentation);
-    factory.registerResultSettings(FunctionIndexOf::name, {"type_json_skip_null_typed_paths"});
+    static constexpr FunctionResultSetting result_settings[] = {Setting::type_json_skip_null_typed_paths};
+    factory.registerFunction(FunctionIndexOf::name, &FunctionIndexOf::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 }

@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool implicit_select;
+}
+
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
@@ -84,11 +89,16 @@ struct HighlightQueryImpl
     }
 };
 
+constexpr FunctionResultSetting highlight_query_result_settings[] = {Setting::implicit_select};
+
 }
 
 REGISTER_FUNCTION(HighlightQuery)
 {
-    factory.registerFunction<FunctionQueryTokenization<HighlightQueryImpl>>(FunctionDocumentation{
+    factory.registerFunction(
+        HighlightQueryImpl::name,
+        &FunctionQueryTokenization<HighlightQueryImpl>::create,
+        FunctionDocumentation{
         .description = R"(
 Parses a ClickHouse SQL query string and returns an array of highlighted ranges for syntax highlighting.
 Each range is a named tuple with the beginning position (in bytes), the end position, and the highlight type.
@@ -102,8 +112,9 @@ and escape characters are highlighted separately.
         .examples = {{"simple", "SELECT highlightQuery('SELECT 1')", R"([(0,6,'keyword'),(7,8,'number')])"}},
         .introduced_in = {26, 5},
         .category = FunctionDocumentation::Category::Other,
-    });
-    factory.registerResultSettings("highlightQuery", {"implicit_select"});
+    },
+    FunctionFactory::Case::Sensitive,
+    highlight_query_result_settings);
 }
 
 }

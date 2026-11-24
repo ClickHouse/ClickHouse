@@ -5,10 +5,17 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
@@ -21,6 +28,8 @@ class FunctionH3IsResClassIII final : public IFunction
 {
 public:
     static constexpr auto name = "h3IsResClassIII";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
     H3Validator validator;
 
@@ -112,7 +121,6 @@ Class III resolutions have an odd-numbered resolution, while Class II resolution
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3IsResClassIII>(documentation);
-    factory.registerResultSettings(FunctionH3IsResClassIII::name, {"functions_h3_default_if_invalid"});
 }
 
 }

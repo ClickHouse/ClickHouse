@@ -1,4 +1,6 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
 
@@ -38,6 +40,13 @@ struct DivideIntegralOrZeroImpl
 struct NameIntDivOrZero { static constexpr auto name = "intDivOrZero"; };
 using FunctionIntDivOrZero = BinaryArithmeticOverloadResolver<DivideIntegralOrZeroImpl, NameIntDivOrZero>;
 
+namespace Setting
+{
+extern const SettingsBool decimal_check_overflow;
+}
+
+constexpr FunctionResultSetting result_settings[] = {Setting::decimal_check_overflow};
+
 REGISTER_FUNCTION(IntDivOrZero)
 {
     FunctionDocumentation::Description description = R"(
@@ -60,8 +69,7 @@ minimal negative number by minus one.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIntDivOrZero>(documentation);
-    factory.registerResultSettings(NameIntDivOrZero::name, {"decimal_check_overflow"});
+    factory.registerFunction(NameIntDivOrZero::name, &FunctionIntDivOrZero::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 }
 
 }

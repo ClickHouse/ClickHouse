@@ -5,6 +5,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
@@ -13,6 +15,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
@@ -25,6 +32,8 @@ class FunctionH3ExactEdgeLengthM final : public IFunction
 {
 public:
     static constexpr auto name = "h3ExactEdgeLengthM";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
     H3Validator validator;
 
@@ -116,7 +125,6 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ExactEdgeLengthM>(documentation);
-    factory.registerResultSettings(FunctionH3ExactEdgeLengthM::name, {"functions_h3_default_if_invalid"});
 }
 
 }

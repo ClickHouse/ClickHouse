@@ -219,13 +219,13 @@ public:
       * function that does not is keyed by its name and types alone, and two sessions that differ in
       * the setting it captured share one key (the query condition cache still tells them apart by
       * `queryConditionCacheSettingsSalt`, the statistics cache does not).
-      * A setting declared by `FunctionFactory::registerResultSettings` is hashed here for every function, so the function
+      * A result setting of the function (see `FunctionResultSetting`) is hashed here for every function, so the function
       * does not need to override `updateHashImpl` for it.
       */
     void updateHash(SipHash & hash) const;
 
-    /// The hash of the values of the settings declared by `FunctionFactory::registerResultSettings`, captured when the
-    /// function was created. 0 when the function declares none or is constructed outside the factory.
+    /// The hash of the values of the result settings (see `FunctionResultSetting`) captured when the function was created.
+    /// 0 when the function declares none or is constructed outside the factory.
     UInt128 getResultSettingsHash() const { return result_settings_hash; }
     void setResultSettingsHash(UInt128 hash) const { result_settings_hash = hash; }
 

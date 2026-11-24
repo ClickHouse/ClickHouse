@@ -9,6 +9,8 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -17,6 +19,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 
 namespace ErrorCodes
 {
@@ -31,6 +38,8 @@ class FunctionH3KRing final : public IFunction
 {
 public:
     static constexpr auto name = "h3kRing";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
     H3Validator validator;
 
@@ -179,7 +188,6 @@ Lists all the [H3](#H3-index) hexagons in the radius of `k` from the given hexag
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3KRing>(documentation);
-    factory.registerResultSettings(FunctionH3KRing::name, {"functions_h3_default_if_invalid"});
 }
 
 }

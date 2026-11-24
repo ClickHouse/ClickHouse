@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
@@ -94,6 +95,7 @@ namespace
     class FunctionTimezone final : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
+        static constexpr FunctionResultSetting result_settings[] = {Setting::session_timezone};
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
         explicit FunctionTimezone(ContextPtr context)
@@ -351,7 +353,6 @@ SELECT timezone()
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
-    factory.registerResultSettings(FunctionTimezone::name, {"session_timezone"});
     factory.registerAlias("timeZone", "timezone");
     factory.registerAlias("current_timezone", "timezone", FunctionFactory::Case::Insensitive);
 }
