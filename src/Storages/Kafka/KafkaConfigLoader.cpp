@@ -332,6 +332,7 @@ void checkSQLKafkaProperty(const String & name, const String & value)
         "topic.compression.type",
         "topic.delivery.timeout.ms",
         "topic.message.timeout.ms",
+        "topic.metadata.propagation.max.ms",
         "topic.metadata.refresh.interval.ms",
         "topic.partitioner",
         "topic.request.required.acks",
