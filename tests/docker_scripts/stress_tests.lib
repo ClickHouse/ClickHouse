@@ -222,6 +222,8 @@ EOL
     # window views, and `clickhouse-test --upgrade-check` passes `--fake-drop`, so they stay in the
     # metadata for the new binary to fail on. Keep it readonly, rather than set to `false`, until
     # that suite stops creating them: assigning an obsolete setting makes the new binary warn.
+    # allow_reserved_column_names is readonly too: a column that hides a MergeTree virtual column
+    # can crash merges.
     cat > /etc/clickhouse-server/users.d/stress_test_tweaks-users.xml <<EOL
 <clickhouse>
     <profiles>
@@ -257,6 +259,10 @@ EOL
                 <allow_experimental_window_view>
                     <readonly/>
                 </allow_experimental_window_view>
+
+                <allow_reserved_column_names>
+                    <readonly/>
+                </allow_reserved_column_names>
 
             </constraints>
         </default>
@@ -523,7 +529,8 @@ function collect_query_and_trace_logs()
     for table in query_log trace_log metric_log aggregated_zookeeper_log
     do
         # Don't ignore errors here, it leads to ignore sanitizer reports when running clickhouse-local
-        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
+        # --config-file loads the stress profile, which enables the server-side AST fuzzer.
+        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables --ast_fuzzer_runs 0 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
     done
 }
 

@@ -362,6 +362,13 @@ if [ $((RANDOM % 2)) -eq 0 ]; then
         | sudo tee /etc/clickhouse-server/users.d/s3queue_keeper_fault_injection.xml > /dev/null
 fi
 
+# Randomize allocation failures inside merges and mutations. Their thread groups take the settings of the
+# background profile (see `background_profile.xml`), built only at startup, so client options never reach them.
+if [ $((RANDOM % 3)) -eq 0 ]; then
+    echo "<clickhouse><profiles><background><memory_tracker_fault_probability>0.001</memory_tracker_fault_probability></background></profiles></clickhouse>" \
+        | sudo tee /etc/clickhouse-server/users.d/background_memory_fault_injection.xml > /dev/null
+fi
+
 # Randomize Keeper fault injection around a `ReplicatedMergeTree` part commit, to exercise the commit
 # retry path. These are `MergeTree` settings, read only by `StorageReplicatedMergeTree`, so they go in
 # the default `<merge_tree>` config and affect replicated tables only.
