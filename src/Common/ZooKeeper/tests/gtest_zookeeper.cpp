@@ -436,3 +436,23 @@ TEST(ZooKeeperTest, MultiReadResponsesInFlightThrowHardwareErrorOnAccess)
     EXPECT_THROW(responses[0], zkutil::KeeperException);
     EXPECT_THROW(responses.waitForResponses(), zkutil::KeeperException);
 }
+
+TEST(ZooKeeperTest, RemoveRootPathOfChrootNode)
+{
+    const String chroot = "/clickhouse";
+
+    ZooKeeperExistsRequest request;
+    request.path = "/";
+    request.addRootPath(chroot);
+    EXPECT_EQ(request.path, chroot);
+
+    ZooKeeperWatchResponse watch;
+    watch.path = request.path;
+    ASSERT_NO_THROW(watch.removeRootPath(chroot));
+    EXPECT_EQ(watch.path, "/");
+
+    ZooKeeperCreateResponse create;
+    create.path_created = chroot + "/node";
+    create.removeRootPath(chroot);
+    EXPECT_EQ(create.path_created, "/node");
+}

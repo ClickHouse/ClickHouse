@@ -66,10 +66,16 @@ static void addRootPath(String & path, const String & root_path)
         path = root_path + path;
 }
 
-static void removeRootPath(String & path, const String & root_path)
+void removeRootPath(String & path, const String & root_path)
 {
     if (root_path.empty())
         return;
+
+    if (path == root_path)
+    {
+        path = "/";
+        return;
+    }
 
     if (path.size() <= root_path.size())
         throw Exception::fromMessage(Error::ZDATAINCONSISTENCY, "Received path is not longer than root_path");

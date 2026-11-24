@@ -143,6 +143,9 @@ bool isUserError(Error code);
 
 const char * errorMessage(Error code);
 
+/// Strips the chroot `root_path` from a path received from the server; `root_path` itself becomes "/".
+void removeRootPath(String & path, const String & root_path);
+
 struct Request;
 using RequestPtr = std::shared_ptr<Request>;
 using Requests = std::vector<RequestPtr>;
