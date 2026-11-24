@@ -105,8 +105,9 @@ void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapp
 ColumnStats makeGroupingKeyStats(const ColumnStats & input, const RelationStats & input_relation);
 
 /// Tighten equi-join key NDVs to their minimum, respecting which side each join kind preserves.
-/// Anti joins and full joins leave both inputs unchanged. An updated side takes the provenance of the minimum
-/// (`num_distinct_values_from_metadata`), so a measured key that gets an estimate from metadata is marked as such.
+/// Anti joins and full joins leave both inputs unchanged. An updated side that takes a minimum estimated from
+/// metadata takes its origin as well (`ColumnStatsOrigin::EstimatedFromMetadata`), so a measured key that gets an
+/// estimate from metadata is marked as such.
 void updateJoinKeyDistinctCounts(
     ColumnStats & left_stats,
     ColumnStats & right_stats,

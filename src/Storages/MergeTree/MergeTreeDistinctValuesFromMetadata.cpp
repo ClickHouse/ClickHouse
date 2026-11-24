@@ -84,6 +84,9 @@ bool hasOnlyGeneralPurposeCodecs(const ASTPtr & codec, bool & uses_default)
 /// The parts mostly overlap in their values, so the sum over the parts is scaled by the ratio of the distinct values
 /// of the marks of all parts to the sum of the distinct values of the marks of each part.
 ///
+/// A part of a single granule has no next mark to compare with, so it adds nothing to the estimate, and a table
+/// whose parts all have a single granule gets no estimate.
+///
 /// The final mark holds the last row of the part rather than the start of a granule: it equals the start of the last
 /// granule when that one has a single row, so it is not used.
 ///
@@ -144,22 +147,23 @@ std::optional<UInt64> estimateDistinctValuesOfFirstKeyColumnFromPrimaryIndex(con
             changes += column.compareAt(i, i + 1, column, /*nan_direction_hint=*/ 1) != 0;
         }
 
-        if (pairs != 0 && changes == pairs)
+        /// A part of a single granule has one mark, which tells nothing about the values of its rows: it is left out.
+        if (pairs == 0)
+            continue;
+
+        if (changes == pairs)
             return std::nullopt;
 
         /// The value of the first mark and those starting in the granules.
         const size_t part_pairs = granules - 1;
-        if (pairs != 0)
-        {
-            const Float64 changed_fraction = static_cast<Float64>(changes) / static_cast<Float64>(pairs);
-            sum_part_distinct_values += 1 + static_cast<Float64>(part_pairs) * -std::log1p(-changed_fraction);
-        }
-        else
-        {
-            sum_part_distinct_values += 1;
-        }
+        const Float64 changed_fraction = static_cast<Float64>(changes) / static_cast<Float64>(pairs);
+        sum_part_distinct_values += 1 + static_cast<Float64>(part_pairs) * -std::log1p(-changed_fraction);
         part_indexes.push_back({index, granules});
     }
+
+    /// Every part has a single granule, e.g. a small table: no estimate.
+    if (part_indexes.empty())
+        return std::nullopt;
 
     Float64 overlap = 1;
     if (part_indexes.size() > 1)
@@ -321,7 +325,7 @@ std::optional<UInt64> readLowCardinalityDictionarySize(const IMergeTreeDataPart 
 /// The numbers of distinct values of the `LowCardinality` columns in `column_names` from the dictionaries of the
 /// largest wide parts. The parts share most of their values, so the number of a column is the largest one of the
 /// parts; a part with more values than its first dictionary gives no number for the column.
-std::unordered_map<String, UInt64> estimateDistinctValuesFromLowCardinalityDictionaries(
+UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromLowCardinalityDictionaries(
     const RangesInDataParts & parts, const StorageMetadataPtr & metadata, const Names & column_names)
 {
     /// Each part costs a read, so only a few of the largest parts are read.
@@ -343,7 +347,7 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromLowCardinalityDicti
         [](const auto * lhs, const auto * rhs) { return lhs->rows_count > rhs->rows_count; });
     largest_parts.resize(num_parts_to_read);
 
-    std::unordered_map<String, UInt64> result;
+    UnorderedMapWithMemoryTracking<String, UInt64> result;
     for (const auto & column : low_cardinality_columns)
     {
         UInt64 distinct_values = 0;
@@ -375,9 +379,29 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromLowCardinalityDicti
     return result;
 }
 
+/// Whether the column of the part is stored by general purpose codecs. The codec declared for the column is the
+/// current one, while a codec-only `ALTER` leaves the parts as they were written: a part written with
+/// `CODEC(Delta, ZSTD)` keeps it under a column altered to `CODEC(ZSTD)`. So the codec is taken from the data files of
+/// the column, which costs a small read per file, once for a part.
+///
+/// On a remote disk that is a request per file of every part, too much for the planning of a query, so there the
+/// declaration is taken instead. A replicated table tells whether a part was written with the current metadata, and
+/// a part written with another one leaves the column without an estimate. The metadata version of other tables does
+/// not change, so on a remote disk their parts are taken as declared: a codec-only `ALTER` is not noticed there.
+bool isStoredWithGeneralPurposeCodecs(const IMergeTreeDataPart & part, const String & column_name, const StorageInMemoryMetadata & metadata)
+{
+    if (!part.isStoredOnRemoteDisk())
+        return part.isColumnStoredWithGeneralPurposeCodecs(column_name);
+
+    if (!part.storage.supportsReplication())
+        return true;
+
+    return !part.old_part_with_no_metadata_version_on_disk && part.getMetadataVersion() == metadata.getMetadataVersion();
 }
 
-std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
+}
+
+UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromMetadata(
     const RangesInDataParts & parts, const StorageMetadataPtr & metadata, const Names & column_names)
 {
     const auto & columns = metadata->getColumns();
@@ -385,7 +409,7 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
     if (parts.empty())
         return {};
 
-    std::unordered_map<String, UInt64> result;
+    UnorderedMapWithMemoryTracking<String, UInt64> result;
 
     /// The first column of the primary key is sorted in every part, so the marks of the primary key index tell its
     /// number of distinct values. Its compressed size does not (see below).
@@ -457,15 +481,27 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
             return result;
 
         const auto part_sizes = data_part->getColumnSizes();
-        for (auto & [column_name, size] : sizes)
+        for (auto it = sizes.begin(); it != sizes.end();)
         {
+            auto & [column_name, size] = *it;
             /// A part without the column (added by `ALTER` and not materialized) keeps no size for it.
-            const auto it = part_sizes->find(column_name);
-            if (it == part_sizes->end() || it->second.data_compressed == 0)
+            const auto size_it = part_sizes->find(column_name);
+            if (size_it == part_sizes->end() || size_it->second.data_compressed == 0)
+            {
+                ++it;
                 continue;
+            }
+
+            /// A part that stores the column by another codec than the declared one leaves it without an estimate.
+            if (!isStoredWithGeneralPurposeCodecs(*data_part, column_name, *metadata))
+            {
+                it = sizes.erase(it);
+                continue;
+            }
 
             size.rows += data_part->rows_count;
-            size.compressed_bytes += it->second.data_compressed;
+            size.compressed_bytes += size_it->second.data_compressed;
+            ++it;
         }
     }
 

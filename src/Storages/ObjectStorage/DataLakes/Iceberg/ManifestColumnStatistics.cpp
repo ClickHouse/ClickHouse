@@ -1,4 +1,5 @@
 #include "config.h"
+#include <base/arithmeticOverflow.h>
 
 #if USE_AVRO
 
@@ -61,26 +62,37 @@ std::optional<UInt64> valueRangeWidth(const Field & min_value, const Field & max
     if (min_value.getType() != max_value.getType())
         return std::nullopt;
 
-    UInt64 difference = 0;
+    /// The bounds are written by any writer: a minimum above the maximum says nothing about the values. Otherwise the
+    /// difference of the signed values fits in `UInt64`, computed modulo 2^64.
+    auto width = [](auto max, auto min) -> std::optional<UInt64>
+    {
+        if (max < min)
+            return std::nullopt;
+        return common::subIgnoreOverflow(static_cast<UInt64>(max), static_cast<UInt64>(min));
+    };
+
+    std::optional<UInt64> difference;
     switch (min_value.getType())
     {
         case Field::Types::Int64:
-            difference = static_cast<UInt64>(max_value.safeGet<Int64>()) - static_cast<UInt64>(min_value.safeGet<Int64>());
+            difference = width(max_value.safeGet<Int64>(), min_value.safeGet<Int64>());
             break;
         case Field::Types::UInt64:
-            difference = max_value.safeGet<UInt64>() - min_value.safeGet<UInt64>();
+            difference = width(max_value.safeGet<UInt64>(), min_value.safeGet<UInt64>());
             break;
         case Field::Types::Bool:
-            difference = static_cast<UInt64>(max_value.safeGet<bool>()) - static_cast<UInt64>(min_value.safeGet<bool>());
+            difference = width(max_value.safeGet<bool>(), min_value.safeGet<bool>());
             break;
         case Field::Types::Decimal64:
-            difference = static_cast<UInt64>(max_value.safeGet<DecimalField<Decimal64>>().getValue().value)
-                - static_cast<UInt64>(min_value.safeGet<DecimalField<Decimal64>>().getValue().value);
+            difference = width(max_value.safeGet<DecimalField<Decimal64>>().getValue().value,
+                min_value.safeGet<DecimalField<Decimal64>>().getValue().value);
             break;
         default:
             return std::nullopt;
     }
-    return difference == std::numeric_limits<UInt64>::max() ? difference : difference + 1;
+    if (!difference)
+        return std::nullopt;
+    return *difference == std::numeric_limits<UInt64>::max() ? *difference : *difference + 1;
 }
 
 }
@@ -258,6 +270,7 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
         /// from them give a guarantee.
         if (!metrics.nulls && metrics.min_value.isNull())
             continue;
+        distinct_values_inputs[i].has_statistics = true;
         statistics_builder.addStatistics(
             targets[i].name,
             ColumnStatistics::createBasicFromSummary(targets[i].storage_type, rows, metrics.min_value, metrics.max_value, metrics.nulls));
@@ -310,6 +323,25 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
     /// checked against all rows of the files: a file without metrics leaves it partial, whatever the deletes.
     statistics_builder.incrementRowCount(total_rows);
     statistics_builder.subtractDeletedRows(deleted_rows);
+
+    /// The NULL counts and the bounds are optional in a manifest independently of the sizes of the columns. A column
+    /// whose files have none of them has no statistics to keep a number of distinct values, although its sizes give
+    /// one (see `estimate_distinct_values_from_metadata`). It gets a summary without the NULL count and the bounds
+    /// of the rows whose sizes are known, and the rule of the sizes below sets its number of distinct values. Only
+    /// with an estimate, so that a column without one stays without statistics.
+    if (estimate_distinct_values_from_compressed_size)
+    {
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            const auto & inputs = distinct_values_inputs[i];
+            if (inputs.has_statistics || !estimateDistinctValuesFromCompressedSize(inputs.rows_with_compressed_size, inputs.compressed_bytes))
+                continue;
+            statistics_builder.addStatistics(
+                targets[i].name,
+                ColumnStatistics::createBasicFromSummary(targets[i].storage_type, inputs.rows_with_compressed_size, Field(), Field(), std::nullopt));
+        }
+    }
+
     const auto estimator = statistics_builder.getEstimator();
     if (!estimator)
         return;

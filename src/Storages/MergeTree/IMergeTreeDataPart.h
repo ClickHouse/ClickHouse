@@ -177,6 +177,10 @@ public:
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
     /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
     std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
+    /// The sizes of the subcolumns, and, if `with_columns`, of the columns among `column_names` that the part has. The uncached
+    /// subcolumn sizes are calculated with one reader per column, or nullopt is returned if `only_from_memory` and that reads files.
+    std::optional<std::vector<std::pair<String, ColumnSize>>> getColumnAndSubcolumnSizes(
+        const Names & column_names, bool with_columns, bool only_from_memory) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -501,6 +505,13 @@ public:
     /// `TTLRecompressMergeSelector`) must treat this as "unknown" rather than trust the guess, so a
     /// wrong guess cannot suppress a merge that is still needed.
     mutable bool default_codec_is_approximate = false;
+
+    /// Whether the data of the column is stored by general purpose codecs only (`NONE`, `LZ4`, `ZSTD` and the like,
+    /// rather than `Delta`, `T64`, an encryption codec, ...), by the first compressed frame of each of its nonempty
+    /// data files. The codec declared for the column does not tell it: a codec-only `ALTER` leaves the parts as they
+    /// were written. `false` when it is unknown: for a part that is not Wide, or without data of the column. The
+    /// frames are read once, on the first call for the column.
+    [[nodiscard]] bool isColumnStoredWithGeneralPurposeCodecs(const String & column_name) const;
 
     /// Whether `default_codec` was chosen by an explicit `RECOMPRESS` TTL rather than by the
     /// `<compression>` config or the built-in default. It travels with `default_codec` so that the
@@ -866,6 +877,10 @@ protected:
 private:
     void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
 
+    /// See `isColumnStoredWithGeneralPurposeCodecs`.
+    mutable std::mutex columns_stored_with_general_purpose_codecs_mutex;
+    mutable std::unordered_map<String, bool> columns_stored_with_general_purpose_codecs TSA_GUARDED_BY(columns_stored_with_general_purpose_codecs_mutex);
+
     /// Columns and secondary indices sizes can be calculated lazily on first request.
     mutable std::mutex columns_and_secondary_indices_sizes_mutex;
     mutable bool are_columns_and_secondary_indices_sizes_calculated TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex) = false;
@@ -911,6 +926,7 @@ protected:
 
     /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
     virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
+    virtual bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & /*subcolumn*/) const { return true; }
 
     /// Calculate the size of the streams a read of all columns touches; the size on disk where columns are not stored
     /// in streams of their own.

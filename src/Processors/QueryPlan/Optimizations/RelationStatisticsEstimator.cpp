@@ -293,9 +293,7 @@ void addDistinctValuesFromMetadata(
         column_stats.num_distinct_values = stats.estimated_rows
             ? std::clamp<UInt64>(distinct_values, 1, std::max<UInt64>(*stats.estimated_rows, 1))
             : distinct_values;
-        column_stats.num_distinct_values_from_metadata = true;
-        /// It is not measured on the rows, so it gives no guarantee, whatever the read does to the rows.
-        column_stats.ndv_provenance = {.origin = ColumnStatsOrigin::SyntheticFallback};
+        column_stats.ndv_provenance = {.origin = ColumnStatsOrigin::EstimatedFromMetadata};
     }
 }
 
@@ -303,11 +301,7 @@ void markDistinctValuesFromMetadata(const DataLakeReadEstimate & estimate, Relat
 {
     for (const auto & column_name : estimate.distinct_values_from_metadata)
         if (auto it = stats.column_stats.find(column_name); it != stats.column_stats.end())
-        {
-            it->second.num_distinct_values_from_metadata = true;
-            /// The estimator takes it for a measured one, as it was set as the cardinality of the column.
-            it->second.ndv_provenance.origin = ColumnStatsOrigin::SyntheticFallback;
-        }
+            it->second.ndv_provenance.origin = ColumnStatsOrigin::EstimatedFromMetadata;
 }
 
 }
@@ -687,10 +681,9 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .estimated_rows = analyzed_result->selected_rows,
                 .table_name = table_display_name,
                 .imprecise_estimate = true,
+                .rows_exact = !coverage.mayDropRows(analyzed_result->selected_rows),
                 .source = RowEstimateSource::PrimaryIndex};
 
-        if (stats.estimated_rows)
-            stats.rows_exact = !coverage.mayDropRows(analyzed_result->selected_rows);
         addDistinctValuesFromMetadata(*reading, analyzed_result, nullptr, stats);
         coverage.recordIn(stats, analyzed_result ? analyzed_result->selected_rows : 0);
         return stats;

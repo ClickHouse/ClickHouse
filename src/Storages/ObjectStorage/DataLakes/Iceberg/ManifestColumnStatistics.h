@@ -127,6 +127,8 @@ private:
         bool identity_partition_known = true;
         /// The rows and the sizes on disk of the column in the files that give the size, for the last rule.
         UInt64 rows_with_compressed_size = 0;
+        /// A file gave the NULL count or the bounds of the column, so the column has statistics.
+        bool has_statistics = false;
         UInt64 compressed_bytes = 0;
     };
 
