@@ -12,6 +12,8 @@ Expression, type, and lazy-conversion index errors reported together
 Modify collects policy, expression, and type errors across columns
 Rename collects policy errors across columns
 Clear collects policy errors across columns
+Alias conversion retains policy errors across columns
+Whole Nested group reports all dependent indices
 Both invalid text indices reported
 Both lazy JSON indices reported
 3	7

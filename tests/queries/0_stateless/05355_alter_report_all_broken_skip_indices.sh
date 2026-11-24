@@ -203,6 +203,42 @@ check_index_validation_error \
 echo 'Clear collects policy errors across columns'
 $CLICKHOUSE_CLIENT --query 'DROP TABLE alter_policy_multi_column_indices'
 
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE alter_policy_alias_indices
+    (
+        x UInt64, y UInt64, z UInt64,
+        INDEX ix x TYPE minmax,
+        INDEX iy y TYPE minmax
+    ) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS add_minmax_index_for_numeric_columns = 0,
+             alter_column_secondary_index_mode = 'throw'
+"
+$CLICKHOUSE_CLIENT --query 'INSERT INTO alter_policy_alias_indices VALUES (1, 2, 3)'
+check_index_validation_error \
+    'ALTER TABLE alter_policy_alias_indices MODIFY COLUMN x UInt32 ALIAS z, MODIFY COLUMN y UInt32' \
+    'Code: 524.' 'ALTER_OF_COLUMN_IS_FORBIDDEN' 'used by the indices ix' 'used by the indices iy'
+echo 'Alias conversion retains policy errors across columns'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE alter_policy_alias_indices'
+
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE alter_nested_group_indices
+    (
+        n Nested(a UInt64, b UInt64), y UInt64,
+        INDEX ia n.a TYPE minmax,
+        INDEX ib n.b TYPE minmax,
+        INDEX iy y TYPE minmax
+    ) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS add_minmax_index_for_numeric_columns = 0,
+             alter_column_secondary_index_mode = 'throw',
+             share_nested_offsets = 1
+"
+$CLICKHOUSE_CLIENT --query 'INSERT INTO alter_nested_group_indices (n.a, n.b, y) VALUES ([1], [2], 3)'
+check_index_validation_error \
+    'ALTER TABLE alter_nested_group_indices CLEAR COLUMN y, CLEAR COLUMN n' \
+    'Code: 524.' 'ALTER_OF_COLUMN_IS_FORBIDDEN' 'used by the indices ia, ib' 'used by the indices iy'
+echo 'Whole Nested group reports all dependent indices'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE alter_nested_group_indices'
+
 $CLICKHOUSE_CLIENT --multiquery --query "
     CREATE TABLE alter_invalid_text_indices
     (

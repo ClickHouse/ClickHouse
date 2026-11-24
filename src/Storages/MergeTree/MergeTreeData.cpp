@@ -7174,7 +7174,25 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// we will clear the index files (as we do with the column files) in any other case
                 if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
                 {
-                    if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
+                    Names affected_indices;
+                    auto add_indices = [&](const String & column_name)
+                    {
+                        if (auto it = columns_in_explicit_indices.find(column_name); it != columns_in_explicit_indices.end())
+                        {
+                            for (const auto & index_name : it->second)
+                                if (!std::ranges::contains(affected_indices, index_name))
+                                    affected_indices.push_back(index_name);
+                        }
+                    };
+
+                    add_indices(command.column_name);
+                    if (share_nested_offsets && old_columns.hasNested(command.column_name))
+                    {
+                        for (const auto & nested_column : old_columns.getNested(command.column_name))
+                            add_indices(nested_column.name);
+                    }
+
+                    if (!affected_indices.empty())
                     {
                         secondary_index_errors.emplace(
                             secondary_index_errors.begin() + policy_errors_count,
@@ -7183,7 +7201,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                 "The ALTER CLEAR of the column '{}' is forbidden because it is used by the indices {}. Check the "
                                 "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
                                 backQuoteIfNeed(command.column_name),
-                                backQuotedList(it->second)));
+                                backQuotedList(affected_indices)));
                         ++policy_errors_count;
                     }
                 }
@@ -7246,6 +7264,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 }
             }
 
+            bool rejected_by_secondary_index_policy = false;
             if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
             {
                 if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
@@ -7259,6 +7278,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             backQuoteIfNeed(command.column_name),
                             backQuotedList(it->second)));
                     ++policy_errors_count;
+                    rejected_by_secondary_index_policy = true;
                 }
             }
 
@@ -7292,7 +7312,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                         it->second->getName(), command.data_type->getName());
                 }
 
-                if (old_metadata.getColumns().has(command.column_name))
+                if (old_metadata.getColumns().has(command.column_name)
+                    && (!rejected_by_secondary_index_policy || new_metadata.getColumns().hasPhysical(command.column_name)))
                 {
                     columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
                 }
