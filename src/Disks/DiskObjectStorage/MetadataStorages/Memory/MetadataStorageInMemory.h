@@ -56,7 +56,6 @@ public:
 
     Poco::Timestamp getLastModified(const std::string & path) const override;
 
-    bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
@@ -141,8 +140,6 @@ public:
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
-
-    [[nodiscard]] bool supportsChmod() const override { return false; }
 
     /// Needed so `FREEZE` and detached-part cloning (`BackupImpl` with `make_source_readonly`) work on
     /// `borrow_from_cache` `MergeTree` tables instead of throwing `NOT_IMPLEMENTED`; a validated no-op
