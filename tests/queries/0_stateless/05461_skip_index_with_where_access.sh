@@ -18,6 +18,7 @@ DROP FUNCTION IF EXISTS $udf;
 DROP TABLE IF EXISTS secret;
 DROP TABLE IF EXISTS scratch;
 DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS hidden;
 CREATE TABLE secret (sensitive UInt8) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE scratch (p UInt8, INDEX i p TYPE minmax) ENGINE = MergeTree ORDER BY tuple();
 CREATE FUNCTION $udf AS (t, c) -> hasColumnInTable('$CLICKHOUSE_DATABASE', t, c);
@@ -59,6 +60,25 @@ do
     run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.scratch ADD INDEX j p + intDiv(1, $udf('secret', 'sensitive')) TYPE minmax WHERE p > 0" $enabled
 done
 
+echo "a function the server context resolves to another object"
+# The session database is the test one, the server context's is `default`: the user may see `hidden` only in the former.
+$CLICKHOUSE_CLIENT -q "
+CREATE TABLE hidden (sensitive UInt8) ENGINE = MergeTree ORDER BY tuple();
+GRANT SHOW COLUMNS ON $CLICKHOUSE_DATABASE.hidden TO $user;
+"
+run_as_user "SELECT hasColumnInTable(currentDatabase(), 'hidden', 'sensitive')" 1
+for enabled in 1 0
+do
+    predicate="p = intDiv(1, hasColumnInTable(currentDatabase(), 'hidden', 'sensitive'))"
+    expression="p + intDiv(1, hasColumnInTable(currentDatabase(), 'hidden', 'sensitive'))"
+    run_as_user "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i p TYPE minmax WHERE $predicate) ENGINE = MergeTree ORDER BY tuple()" $enabled
+    run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.scratch ADD INDEX j p TYPE minmax WHERE $predicate" $enabled
+    run_as_user "CREATE INDEX j ON ${CLICKHOUSE_DATABASE}.scratch (p) TYPE minmax WHERE $predicate" $enabled
+    run_as_user "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i $expression TYPE minmax WHERE p > 0) ENGINE = MergeTree ORDER BY tuple()" $enabled
+    run_as_user "ALTER TABLE ${CLICKHOUSE_DATABASE}.scratch ADD INDEX j $expression TYPE minmax WHERE p > 0" $enabled
+    run_as_user "CREATE INDEX j ON ${CLICKHOUSE_DATABASE}.scratch ($expression) TYPE minmax WHERE p > 0" $enabled
+done
+
 echo "introspection function in the indexed expression"
 output=$($CLICKHOUSE_CLIENT --user "$user" --allow_experimental_partial_skip_indexes=1 --allow_introspection_functions=1 \
     -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.probe (p UInt8, INDEX i demangle(toString(p)) TYPE minmax WHERE p > 0) ENGINE = MergeTree ORDER BY tuple()" 2>&1)
@@ -91,5 +111,6 @@ DROP FUNCTION $udf;
 DROP TABLE secret;
 DROP TABLE scratch;
 DROP TABLE src;
+DROP TABLE hidden;
 DROP TABLE IF EXISTS probe;
 "

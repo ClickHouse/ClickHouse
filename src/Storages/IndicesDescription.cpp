@@ -144,6 +144,20 @@ void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & cont
     });
 }
 
+/// The global context resolves `currentDatabase`, `hasColumnInTable`, `dictGet` and the like to other objects than the user's
+/// context does. All of them are non-deterministic. Refused by name: analysis evaluates some arguments apart, e.g. the set of `IN`.
+void rejectNonDeterministicFunctions(const IAST & ast, const ContextPtr & context, const String & index_name)
+{
+    /// `arrayJoin` depends on no context, and `MergeTreeIndexFactory::validate` refuses it as an array join.
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name != "arrayJoin")
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && !resolver->isDeterministic())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Secondary index '{}' with WHERE cannot contain non-deterministic function `{}`", index_name, function->name);
+
+    for (const auto & child : ast.children)
+        rejectNonDeterministicFunctions(*child, context, index_name);
+}
+
 }
 
 void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const ColumnsDescription & columns, const ContextPtr & context)
@@ -153,7 +167,8 @@ void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const Colum
         return;
 
     /// `getIndexFromAST` analyses the indexed expression of a partial index with the global context too.
-    IndexDescription().initExpressionInfo(index_definition->getExpression()->clone(), columns, context);
+    IndexDescription index;
+    index.initExpressionInfo(index_definition->getExpression()->clone(), columns, context);
 
     ASTPtr where_ast = index_definition->getWhere()->clone();
     if (auto * where_with_alias = dynamic_cast<ASTWithAlias *>(where_ast.get()))
@@ -162,8 +177,19 @@ void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const Colum
     ReplaceAliasToExprVisitor::Data data{columns, {}};
     ReplaceAliasToExprVisitor{data}.visit(where_ast);
 
-    auto syntax = TreeRewriter(context).analyze(where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-    ExpressionAnalyzer(where_ast, syntax, context).getActions(true);
+    /// `TreeRewriter` rewrites what it analyses, and the check below needs the condition as `getIndexFromAST` gets it.
+    ASTPtr analysed_where_ast = where_ast->clone();
+    auto syntax = TreeRewriter(context).analyze(analysed_where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    ExpressionAnalyzer(analysed_where_ast, syntax, context).getActions(true);
+
+    /// After the analysis as the user, which reports what they may not access, before the one with the global context.
+    for (auto ast : {index.expression_list_ast->clone(), where_ast})
+    {
+        /// Inlines SQL UDF bodies, as `TreeRewriter` does, so a function used only inside one is seen.
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(ast, context);
+        rejectNonDeterministicFunctions(*ast, context, index_definition->name);
+    }
 }
 
 void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context)
