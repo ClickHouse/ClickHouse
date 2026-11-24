@@ -1,5 +1,8 @@
 -- `if` with a constant condition and a chain of `if` are changed before the types are found, so the stored columns stay as they were
 
+-- with this setting a chain of `if` stays as it is
+SET optimize_if_transform_const_strings_to_lowcardinality = 0;
+
 DROP TABLE IF EXISTS t_projection_if_rewrites;
 
 CREATE TABLE t_projection_if_rewrites (a UInt8, b UInt64)

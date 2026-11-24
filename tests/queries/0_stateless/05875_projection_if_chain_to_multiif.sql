@@ -1,5 +1,8 @@
 -- a query with `optimize_if_chain_to_multiif` reads a projection that was added with the setting
 
+-- with this setting a chain of `if` stays as it is
+SET optimize_if_transform_const_strings_to_lowcardinality = 0;
+
 DROP TABLE IF EXISTS t_projection_if_chain;
 
 CREATE TABLE t_projection_if_chain (a Int32)
