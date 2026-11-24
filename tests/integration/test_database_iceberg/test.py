@@ -1896,9 +1896,9 @@ def test_show_create_current_keys(started_cluster, partitioned, sorted_table):
     assert ("PARTITION BY" in definition) == partitioned
     assert ("ORDER BY" in definition) == sorted_table
     if partitioned:
-        assert "PARTITION BY (icebergDay(`event time`), icebergTruncate(3, `@symbol`), icebergBucket(8, id), `details.value`)" in definition
+        assert "PARTITION BY tuple(icebergDay(`event time`), icebergTruncate(3, `@symbol`), icebergBucket(8, id), `details.value`)" in definition
     if sorted_table:
-        assert "ORDER BY (`@symbol`, icebergDay(`event time`) DESC)" in definition
+        assert "ORDER BY tuple(`@symbol`, icebergDay(`event time`) DESC)" in definition
     assert "NULLS" not in definition
     assert "Nullable(DateTime64(6, 'Europe/Amsterdam'))" in definition
     assert minio_secret_key not in definition
