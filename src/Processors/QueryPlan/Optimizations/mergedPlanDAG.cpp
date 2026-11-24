@@ -250,24 +250,6 @@ const ActionsDAG::Node * cloneOf(const ActionsDAG::NodeMapping & clone_mapping, 
     return it->second;
 }
 
-/// Whether the join computes what its expressions say, see `JoinStepLogical::getConditionInputsWithRepeatedNames`:
-/// the same-named columns its conditions read are one value below it, under one alias or another.
-bool readsOneValuePerRepeatedName(const JoinStepLogical & join_step, const ActionsDAG::NodeMapping & clone_mapping)
-{
-    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> value_of_name;
-    for (const auto * input : join_step.getConditionInputsWithRepeatedNames())
-    {
-        const auto * value = cloneOf(clone_mapping, input);
-        while (value->type == ActionsDAG::ActionType::ALIAS)
-            value = value->children.front();
-
-        const auto [it, inserted] = value_of_name.emplace(input->result_name, value);
-        if (!inserted && it->second != value)
-            return false;
-    }
-    return true;
-}
-
 /// Unites what the right side of a join built into what the left side built; the sources of the right side are numbered
 /// after the ones of the left side. The join reads the left header first, so uniting in that order lines the columns up
 /// with its inputs, including the columns both sides happen to name alike.
@@ -292,6 +274,7 @@ void uniteRightSide(Built & built, Built & right)
     built.dag.nearest_padded_side.merge(right.dag.nearest_padded_side);
     built.dag.origins.merge(right.dag.origins);
     built.dag.step_outputs.merge(right.dag.step_outputs);
+    built.dag.unremovable_outputs.insert(right.dag.unremovable_outputs.begin(), right.dag.unremovable_outputs.end());
     built.pre_join_nodes.append_range(right.pre_join_nodes);
 }
 
@@ -516,9 +499,6 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, VectorWithMemoryTr
     if (!mergeAndTrack(built, step_dag, clone_mapping))
         return {};
 
-    if (!readsOneValuePerRepeatedName(*join_step, clone_mapping))
-        return {};
-
     trackPreJoinNodes(built, *join_step, clone_mapping, join_padded_sides);
 
     /// A join outputs what its DAG outputs and drops the rest, while the merge kept the columns of both
@@ -527,6 +507,16 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, VectorWithMemoryTr
     if (dag_outputs.size() < step_dag.getOutputs().size())
         return {};
     dag_outputs.resize(step_dag.getOutputs().size());
+
+    /// See `MergedPlanDAG::unremovable_outputs`. A join above can pad such a value as any other of this subtree.
+    for (size_t position : join_step->getUnremovableOutputPositions())
+    {
+        const auto * kept = &dag.addAlias(*dag_outputs[position], dag_outputs[position]->result_name);
+        dag_outputs[position] = kept;
+        built.dag.origins.emplace(kept, MergedPlanDAG::Origin{&node, nullptr});
+        built.dag.unremovable_outputs.insert(kept);
+        built.ungated_nodes.push_back(kept);
+    }
 
     collectJoinConditions(built, join_operator, clone_mapping);
 

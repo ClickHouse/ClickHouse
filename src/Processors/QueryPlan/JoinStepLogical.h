@@ -215,9 +215,9 @@ public:
     [[nodiscard]] UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
 
     /// The physical join finds its columns by name. Where a side has several columns named as an input a join
-    /// condition reads, it takes the first of them, whichever one the condition reads. Returns the inputs that
-    /// read such columns: the join computes what its expressions say only where they all are one value.
-    [[nodiscard]] UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getConditionInputsWithRepeatedNames() const;
+    /// condition reads, it takes the first of them, whichever one the condition reads, so what the join makes of
+    /// them is not what its expressions say. These are the columns it outputs of such inputs.
+    [[nodiscard]] VectorWithMemoryTracking<size_t> getUnremovableOutputPositions() const override;
 
     /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
     /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
@@ -294,6 +294,9 @@ protected:
     };
 
     [[nodiscard]] UnneededColumnsPlan analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
+
+    /// The inputs of a name that a join condition reads and the header of their side repeats.
+    [[nodiscard]] UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getConditionInputsWithRepeatedNames() const;
 
     [[nodiscard]] VectorWithMemoryTracking<std::pair<String, String>> describeJoinProperties() const;
     [[nodiscard]] JoinEstimation getEstimation() const;

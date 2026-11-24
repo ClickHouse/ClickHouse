@@ -454,6 +454,21 @@ UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> JoinStepLogical::getCon
     return inputs_with_repeated_names;
 }
 
+VectorWithMemoryTracking<size_t> JoinStepLogical::getUnremovableOutputPositions() const
+{
+    VectorWithMemoryTracking<size_t> positions;
+    const auto inputs_with_repeated_names = getConditionInputsWithRepeatedNames();
+    if (inputs_with_repeated_names.empty())
+        return positions;
+
+    const auto & outputs = expression_actions.getActionsDAG()->getOutputs();
+    for (size_t position = 0; position < outputs.size(); ++position)
+        if (anyReachableNode({outputs[position]}, [&](const ActionsDAG::Node * node) { return inputs_with_repeated_names.contains(node); }))
+            positions.push_back(position);
+
+    return positions;
+}
+
 JoinStepLogical::UnneededColumnsPlan
 JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
@@ -464,14 +479,9 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
     /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
     const SetWithMemoryTracking<size_t> unneeded_positions_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
 
-    /// All of them have to stay for the physical join to keep taking the same one, and so does what the join
-    /// outputs of them.
+    /// All the inputs of such a name have to stay for the physical join to keep taking the same one of them.
     const auto inputs_with_repeated_names = getConditionInputsWithRepeatedNames();
-    const auto reads_input_with_repeated_name = [&](const ActionsDAG::Node * output)
-    {
-        return !inputs_with_repeated_names.empty()
-            && anyReachableNode({output}, [&](const ActionsDAG::Node * node) { return inputs_with_repeated_names.contains(node); });
-    };
+    const auto unremovable_output_positions = getUnremovableOutputPositions();
 
     ActionsDAG::NodeRawConstPtrs kept_output_nodes;
     const auto & dag_outputs = actions_dag.getOutputs();
@@ -484,7 +494,8 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
         const auto * output_node = dag_outputs[position];
         /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one
         /// output column, so it is kept even when it is not required.
-        if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node) || reads_input_with_repeated_name(output_node))
+        if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node)
+            || std::ranges::binary_search(unremovable_output_positions, position))
             kept_output_nodes.push_back(output_node);
         else
             plan.dropped_output_positions.push_back(position);

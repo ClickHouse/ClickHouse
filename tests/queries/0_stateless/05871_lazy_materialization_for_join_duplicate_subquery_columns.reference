@@ -77,7 +77,7 @@
 790	p1790
 474	p1474
 1
--- same-named key columns with different values: the join is not entered, nothing is read lazily
+-- same-named key columns with different values: the key is returned as the join returns it
 1	p2001
 2	p2002
 0	p0
@@ -88,7 +88,7 @@
 0	p0
 2	p1002
 1	p1
-0
+1
 1	p2001
 2	p2002
 0	p0
@@ -99,7 +99,7 @@
 0	p0
 2	p1002
 1	p1
-0
+1
 -- same-named columns with different values: the join reads the first one, whether or not it is returned
 1	1
 2	2

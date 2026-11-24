@@ -101,6 +101,11 @@ struct MergedPlanDAG
     /// order. What a step passes through without reading is only here.
     UnorderedMapWithMemoryTracking<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;
 
+    /// The columns a step does not let go of, see `IQueryPlanStep::getUnremovableOutputPositions`. What the step
+    /// makes of such a column is not what the nodes below it say, so it is a value of its own here, had from the
+    /// output of that step only: it is computed there, and crosses the `LIMIT` rather than being computed again.
+    NodeSet unremovable_outputs;
+
     [[nodiscard]] const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 
     /// Nodes for the columns of the subtree's output header, in order.
