@@ -47,7 +47,7 @@ HTTPCredentials::~HTTPCredentials()
 }
 
 
-void HTTPCredentials::fromUserInfo(const std::string& userInfo)
+void HTTPCredentials::fromUserInfo(std::string_view userInfo)
 {
 	std::string username;
 	std::string password;
@@ -179,7 +179,7 @@ bool HTTPCredentials::hasProxyDigestCredentials(const HTTPRequest& request)
 }
 
 
-void HTTPCredentials::extractCredentials(const std::string& userInfo, std::string& username, std::string& password)
+void HTTPCredentials::extractCredentials(std::string_view userInfo, std::string& username, std::string& password)
 {
 	const std::string::size_type p = userInfo.find(':');
 
