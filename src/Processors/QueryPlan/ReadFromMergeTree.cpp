@@ -3431,8 +3431,7 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
     return true;
 }
 
-/// Whether an `OR` of the filter combines a primary key atom with another condition: elsewhere the primary key
-/// cannot drop a granule in the disjunction merge that its own analysis does not drop.
+/// Only an `OR` mixing a primary key atom with another condition lets the merge drop granules the primary key keeps.
 bool primaryKeyAtomIsInMixedDisjunction(const KeyCondition & primary_key_condition, const KeyCondition & rpn_template)
 {
     using RPNElement = KeyCondition::RPNElement;
@@ -3782,7 +3781,6 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
         }
     }
 
-    /// The primary key takes part in the disjunction analysis like one more skip index.
     const bool primary_key_takes_part = primaryKeyAtomIsInMixedDisjunction(
         indexes.key_condition->generateUnsubstituted(), indexes.key_condition_rpn_template->generateUnsubstituted());
     indexes.use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]

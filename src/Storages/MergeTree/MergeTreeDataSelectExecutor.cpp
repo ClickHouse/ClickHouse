@@ -3944,7 +3944,7 @@ void MergeTreeDataSelectExecutor::recordPrimaryKeyResultsForDisjunctions(
     const size_t rpn_size = rpn_template_for_eval_result.getRPN().size();
     for (const auto & [position, atom_condition] : key_condition.getAtomConditionsWithPositions())
     {
-        /// As for the results of skip indexes, see `filterMarksUsingIndex`.
+        /// The merge reads only the positions of the template.
         if (position >= rpn_size)
             continue;
 

@@ -478,8 +478,7 @@ public:
     /// Returns limits and leaf_limits that should be applied during part processing.
     static RowLimits getRowLimits(const Context & context, const SelectQueryInfo & query_info);
 
-    /// Writes into `partial_eval_results` the marks of `ranges` where an atom of the primary key condition cannot be true,
-    /// so that `mergePartialResultsForDisjunctions` takes the primary key into account.
+    /// Writes into `partial_eval_results` the marks of `ranges` where an atom of the primary key condition cannot be true.
     static void recordPrimaryKeyResultsForDisjunctions(
         const IMergeTreeDataPartInfoForReader & part,
         const MarkRanges & ranges,
