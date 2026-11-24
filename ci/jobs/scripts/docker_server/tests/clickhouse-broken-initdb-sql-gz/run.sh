@@ -9,27 +9,43 @@ source "$dir/../lib.sh"
 
 image="$1"
 
-initdb="$(mktemp -d)"
-chmod 755 "$initdb"
-echo 'this is not gzip' > "$initdb/broken.sql.gz"
-chmod 644 "$initdb/broken.sql.gz"
+initdb=""
+cid=""
+trap '[ -z "$cid" ] || docker rm -vf "$cid" > /dev/null; rm -rf ${initdb:+"$initdb"}' EXIT
 
-cid="$(
-  docker run -d \
-    -v "$initdb":/docker-entrypoint-initdb.d:ro \
-    --name "$(cname)" \
-    "$image"
-)"
-trap 'docker rm -vf "$cid" > /dev/null; rm -rf "$initdb"' EXIT
+# Run the server with the `broken.sql.gz` init script from stdin and check that the container fails.
+checkFails() {
+  initdb="$(mktemp -d)"
+  chmod 755 "$initdb"
+  cat > "$initdb/broken.sql.gz"
+  chmod 644 "$initdb/broken.sql.gz"
 
-# A server that started anyway keeps running, and `docker wait` does not return.
-if ! exit_code="$(timeout 120 docker wait "$cid")"; then
-  echo "the container is still running instead of failing" >&2
-  dumpServerLogs "$cid"
-  exit 1
-fi
-if [ "$exit_code" = 0 ]; then
-  echo "the container exited with code 0 instead of failing" >&2
-  dumpServerLogs "$cid"
-  exit 1
-fi
+  cid="$(
+    docker run -d \
+      -v "$initdb":/docker-entrypoint-initdb.d:ro \
+      --name "$(cname)" \
+      "$image"
+  )"
+
+  # A server that started anyway keeps running, and `docker wait` does not return.
+  if ! exit_code="$(timeout 120 docker wait "$cid")"; then
+    echo "the container is still running instead of failing ($1)" >&2
+    dumpServerLogs "$cid"
+    exit 1
+  fi
+  if [ "$exit_code" = 0 ]; then
+    echo "the container exited with code 0 instead of failing ($1)" >&2
+    dumpServerLogs "$cid"
+    exit 1
+  fi
+
+  docker rm -vf "$cid" > /dev/null
+  cid=""
+  rm -rf "$initdb"
+  initdb=""
+}
+
+echo 'this is not gzip' | checkFails "not gzip"
+
+# An empty file is not gzip either, although a decompressor can read it as an empty stream.
+checkFails "empty file" < /dev/null

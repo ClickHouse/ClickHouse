@@ -204,6 +204,15 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
 /// decompression fails (then the input of `rhs` ends early, like with `set -o pipefail` in entrypoint.sh).
 int runDecompressedGzipInto(const std::string & path, const std::vector<std::string> & rhs)
 {
+    /// An empty file is not gzip (`gunzip -c` fails on it), although the decompressing buffer reads it as an empty
+    /// stream: running it would mark the initialization done without running anything.
+    std::error_code ec;
+    if (fs::file_size(path, ec) == 0 && !ec)
+    {
+        std::cerr << "docker-init: error: " << path << " is empty, not a gzip file\n";
+        return 1;
+    }
+
     int pipefd[2];
     if (pipe(pipefd) < 0)
         return -1;
@@ -568,6 +577,19 @@ std::string getUsersConfigFile(const std::string & config_file, const std::vecto
         std::string type = storage.substr(0, storage.find('['));
         if (type == "users_xml" || type == "users.xml" || type == "users_config")
             users_files.push_back(resolve(config.getString("user_directories." + storage + ".path")));
+    }
+
+    /// The same file referenced twice (e.g. the legacy `users_config` and the `users_xml` storage both naming
+    /// `users.xml`) is one storage: the server skips a path equal to the (lexically normal) path of an added one.
+    {
+        std::vector<std::string> unique_files;
+        for (const auto & file : users_files)
+        {
+            const std::string normal = fs::path(file).lexically_normal().string();
+            if (std::find(unique_files.begin(), unique_files.end(), normal) == unique_files.end())
+                unique_files.push_back(normal);
+        }
+        users_files = std::move(unique_files);
     }
 
     /// The server authenticates against every storage in turn: removing or restricting `default` in one of them would

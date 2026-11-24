@@ -73,3 +73,13 @@ checkPassword "-v $config/custom-users-path.xml:/etc/clickhouse-server/config.d/
 
 # Selected in the server arguments.
 checkPassword "" -- --user_directories.users_xml.path=/etc/clickhouse-server/custom-users.xml
+
+# The legacy `users_config` naming the same `users.xml` as the shipped `users_xml` storage: one users file, which the
+# server loads once, so the setup applies to it rather than refusing several users files.
+cat > "$config/legacy-users-config.xml" <<'XML'
+<clickhouse>
+    <users_config>users.xml</users_config>
+</clickhouse>
+XML
+chmod a+r "$config/legacy-users-config.xml"
+checkPassword "-v $config/legacy-users-config.xml:/etc/clickhouse-server/config.d/legacy-users-config.xml:ro"
