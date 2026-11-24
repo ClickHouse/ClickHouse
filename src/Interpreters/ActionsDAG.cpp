@@ -4128,7 +4128,6 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         both_streams_push_down_conjunctions.allowed = std::move(both_streams_value_only_conjunctions);
     }
 
-    /// A runtime filter whose key can throw stays above the join, which may remove the rows the key throws on.
     for (auto * conjunctions : {&left_stream_push_down_conjunctions, &right_stream_push_down_conjunctions, &both_streams_push_down_conjunctions})
     {
         NodeRawConstPtrs kept;
@@ -4745,7 +4744,6 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
     const auto from_nested = removeNullable(removeLowCardinality(from));
     const auto to_nested = removeNullable(removeLowCardinality(to));
 
-    /// `Nothing` has no values, e.g. the elements of `[]`.
     if (isNothing(from_nested))
         return true;
 
@@ -4812,7 +4810,6 @@ static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
     return canCastWithoutThrowing(node.children.front()->result_type, node.result_type);
 }
 
-/// A runtime filter computes the key also on rows that are removed before the join.
 static bool canComputeKeyOnAnyRow(const ActionsDAG::Node * key)
 {
     return allReachableNodes({key}, [](const ActionsDAG::Node * node)
