@@ -683,7 +683,8 @@ void FuzzConfig::logDistributedShapesReach()
     static const String settings = R"(SETTINGS make_distributed_plan = 0, enable_parallel_replicas = 0, extremes = 0, limit = 0, offset = 0,
     max_execution_time = 0, max_result_rows = 0, max_result_bytes = 0, max_rows_to_read = 0, max_bytes_to_read = 0,
     max_rows_to_group_by = 0, max_memory_usage = 0, max_threads = 0, memory_tracker_fault_probability = 0,
-    additional_result_filter = '', additional_table_filters = {}, use_query_cache = 0)";
+    additional_result_filter = '', additional_table_filters = {}, use_query_cache = 0, force_index_by_date = 0, force_primary_key = 0,
+    force_data_skipping_indices = '', force_optimize_projection = 0, force_optimize_skip_unused_shards = 0)";
     /// Whether the log holds anything at all, against settings the session may have set
     static const String logged = fmt::format(R"(SELECT count() AS entries, countIf(is_initial_query) AS initial, min(event_time) AS first
 FROM "system"."query_log" {})", settings);
