@@ -454,23 +454,50 @@ static Block adaptBlockStructure(Block block, const Block & header)
         ++remaining_uses[position];
     }
 
-    /// A shard may name an `IN` set differently. It returns the columns of the same query in the same order, so a
-    /// missing column reads the one at its position if that differs from it only in set hashes.
-    if (block.columns() == header.columns())
+    /// A shard may name an `IN` set differently: a missing column reads the one at its position if the shard returned as
+    /// many columns (in the same order) and that one differs from it just in set hashes. A shard also merges expressions
+    /// equal on it, so it may read the only such column, unless the block is a two-level bucket of the shard's own keys.
+    VectorWithMemoryTracking<String> normalized_block_names;
+    for (size_t position = 0; position < header.columns(); ++position)
     {
-        for (size_t position = 0; position < header.columns(); ++position)
-        {
-            const auto & elem = header.getByPosition(position);
-            if (source_positions[position] || (elem.column && isColumnConst(*elem.column)))
-                continue;
+        const auto & elem = header.getByPosition(position);
+        if (source_positions[position] || (elem.column && isColumnConst(*elem.column)))
+            continue;
 
-            const auto & candidate = block.getByPosition(position);
-            if (!occurrences.contains(candidate.name) && candidate.type->equals(*elem.type)
-                && normalizeGeneratedSetKeys(candidate.name) == normalizeGeneratedSetKeys(elem.name))
+        if (normalized_block_names.empty())
+            for (const auto & column : block)
+                normalized_block_names.push_back(normalizeGeneratedSetKeys(column.name));
+
+        const String normalized_name = normalizeGeneratedSetKeys(elem.name);
+        auto matches = [&](size_t i)
+        {
+            return block.getByPosition(i).type->equals(*elem.type) && normalized_block_names[i] == normalized_name;
+        };
+
+        std::optional<size_t> source;
+        if (block.columns() == header.columns() && !occurrences.contains(block.getByPosition(position).name) && matches(position))
+        {
+            source = position;
+        }
+        else if (block.info.bucket_num < 0)
+        {
+            size_t num_matches = 0;
+            for (size_t i = 0; i < block.columns(); ++i)
             {
-                source_positions[position] = position;
-                ++remaining_uses[position];
+                if (matches(i))
+                {
+                    ++num_matches;
+                    source = i;
+                }
             }
+            if (num_matches != 1)
+                source.reset();
+        }
+
+        if (source)
+        {
+            source_positions[position] = *source;
+            ++remaining_uses[*source];
         }
     }
 
