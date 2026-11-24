@@ -2249,6 +2249,31 @@ def test_stage_create_conflicts(started_cluster):
     assert list_metadata_files(staged["location"]) == []
 
 
+def test_stage_create_location(started_cluster):
+    ns = f"staged_location_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    # Stage with a client-chosen location. It is used as given, without the trailing slash.
+    location = f"s3://{BUCKET}/explicit/{ns}"
+    staged = stage_create_table(ns, "events", location=location + "/").json()["metadata"]
+    assert staged["location"] == location
+
+    # The commit creates the table at that location.
+    committed = commit_table(ns, "events", ASSERT_CREATE, create_updates_from_metadata(staged)).json()
+    assert committed["metadata"]["location"] == location
+    assert committed["metadata-location"].startswith(f"{location}/metadata/v1-")
+    assert get_keeper().exists(location_node(location))
+
+    # Staging stores nothing, so the overlap is found at the commit.
+    inner = f"{location}/data"
+    staged_inner = stage_create_table(ns, "inner", location=inner).json()["metadata"]
+    response = commit_table(ns, "inner", ASSERT_CREATE, create_updates_from_metadata(staged_inner), expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert f"Location {inner} overlaps location {location}" in response.json()["error"]["message"]
+    assert not table_exists(ns, "inner")
+    assert list_metadata_files(inner) == []
+
+
 def test_pyiceberg_create_table_transaction(started_cluster):
     ns = f"pyiceberg_ctas_{uuid.uuid4().hex[:8]}"
     catalog = load_pyiceberg_catalog()
