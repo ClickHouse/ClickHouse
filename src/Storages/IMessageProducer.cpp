@@ -16,7 +16,7 @@ void AsynchronousMessageProducer::start(const ContextPtr & context)
 
     initialize();
 
-    producing_task = context->getSchedulePool()->createTask(StorageID::createEmpty(), getProducingTaskName(), [this]
+    auto task = context->getSchedulePool()->createTask(StorageID::createEmpty(), getProducingTaskName(), [this]
     {
         LOG_TEST(log, "Starting producing task loop");
 
@@ -25,12 +25,13 @@ void AsynchronousMessageProducer::start(const ContextPtr & context)
 
         startProducingTaskLoop();
     });
-    producing_task->activateAndSchedule();
+    task->activateAndSchedule();
+    producing_task = std::move(task);
 }
 
 void AsynchronousMessageProducer::finish()
 {
-    /// We should execute finish logic only once, and only for the producing task that `start` created.
+    /// We should execute finish logic only once, and only if `start` scheduled the producing task.
     if (finished.exchange(true) || !producing_task)
         return;
 
