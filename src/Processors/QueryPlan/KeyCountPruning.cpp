@@ -15,6 +15,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 
 #include <atomic>
@@ -375,15 +376,15 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
     {
         const UInt64 granules_rows = parts[part_index].data_part->index_granularity->getRowsCountInRange(begin, end);
         /// Unsigned: the running sum below wraps back to the true, non-negative counts.
-        reaching_below[first] += granules_rows;
-        reaching_below[last + 1] -= granules_rows;
+        reaching_below[first] = common::addIgnoreOverflow(reaching_below[first], granules_rows);
+        reaching_below[last + 1] = common::subIgnoreOverflow(reaching_below[last + 1], granules_rows);
     });
 
     UInt64 rows = 0;
     UInt64 reaching = 0;
     for (size_t value = 0; value < num_values; ++value)
     {
-        rows += reaching_below[value];
+        rows = common::addIgnoreOverflow(rows, reaching_below[value]);
         reaching_below[value] = reaching;
         reaching += rows >= min_count;
     }
