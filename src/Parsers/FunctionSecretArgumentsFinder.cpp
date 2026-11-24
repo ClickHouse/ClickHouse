@@ -332,6 +332,12 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
         findHMACSecretArguments();
         return;
     }
+    if ((name == "sipHash64Keyed") || (name == "sipHash128Keyed") || (name == "sipHash128ReferenceKeyed"))
+    {
+        /// sipHash64Keyed((k0, k1), 'message') -> sipHash64Keyed('[HIDDEN]', 'message')
+        markSecretArgument(0);
+        return;
+    }
     if (name == "bigquery")
     {
         /// Accepts positional arguments after named ones and models their slots itself.
