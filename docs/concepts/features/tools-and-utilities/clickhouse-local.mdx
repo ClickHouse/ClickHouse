@@ -12,6 +12,8 @@ doc_type: 'reference'
 
 While `clickhouse-local` is a great tool for development and testing purposes, and for processing files, it is not suitable for serving end users or applications. In these scenarios, it is recommended to use the open-source [ClickHouse](/get-started/setup/install). ClickHouse is a powerful OLAP database that is designed to handle large-scale analytical workloads. It provides fast and efficient processing of complex queries on large datasets, making it ideal for use in production environments where high-performance is critical. Additionally, ClickHouse offers a wide range of features such as replication, sharding, and high availability, which are essential for scaling up to handle large datasets and serving applications. If you need to handle larger datasets or serve end users or applications, we recommend using open-source ClickHouse instead of `clickhouse-local`.
 
+Although `clickhouse-local` can [accept network connections](#starting-listeners), it gives every connected client unrestricted access to the local files, the ability to run commands, and administrative privileges, so it must not be used for multi-user scenarios - see [Multi-user scenarios](#multi-user-scenarios).
+
 Please read the docs below that show example use cases for `clickhouse-local`, such as [querying local file](#query_data_in_file) or [reading a parquet file in S3](#query-data-in-a-parquet-file-in-aws-s3).
 
 ## Download clickhouse-local {#download-clickhouse-local}
@@ -432,10 +434,30 @@ The HTTP listener answers CORS preflight requests with the same permissive heade
 <Warning>
 **Security**
 
-By default, `clickhouse-local` runs with the temporary users setup, so any listener it opens is unauthenticated. Bind to a loopback address (`127.0.0.1` or `::1`) unless you have explicitly configured users and access control by pointing the `users_config` setting at a custom `users.xml` (for example via `--config-file`). Listening on a non-loopback address without authentication exposes the data of the local instance to anyone who can reach the chosen port.
+By default, `clickhouse-local` runs with the temporary users setup, so any listener it opens is unauthenticated. Bind to a loopback address (`127.0.0.1` or `::1`) unless you have explicitly configured users and access control by pointing the `users_config` setting at a custom `users.xml` (for example via `--config-file`). Listening on a non-loopback address without authentication gives anyone who can reach the chosen port not only the data of the local instance, but also the files and the ability to run commands with the privileges of the OS user that runs `clickhouse-local`, see [Multi-user scenarios](#multi-user-scenarios).
 
 Note that a loopback address is still reachable from the browser: while an HTTP listener is open, any web page you visit can query the local instance and, thanks to the default CORS headers, read the results.
 </Warning>
+
+### Multi-user scenarios {#multi-user-scenarios}
+
+<Note>
+The listeners of `clickhouse-local` are meant for a single user: the one who started it, connecting with their own tools. For multi-user scenarios, such as several people or applications with different privileges, or any client that you would not let log in to your OS account, use [`clickhouse-server`](/get-started/setup/install) instead.
+</Note>
+
+`clickhouse-local` is a tool for working with the local environment of the user who runs it, so it lifts the restrictions that `clickhouse-server` places on queries. This applies to the whole process: every connection accepted by a listener gets the same abilities as the session of `clickhouse-local` itself. A connected client can do the following:
+
+- **Read and write any file.** `clickhouse-server` confines the access to files to the [`user_files_path`](/reference/settings/server-settings/settings/user#user_files_path) directory. `clickhouse-local` has no such directory: a query can read, list, create, and overwrite every file available to the OS user that runs `clickhouse-local`. This works with the [`file`](/reference/functions/table-functions/file) and [`filesystem`](/reference/functions/table-functions/filesystem) table functions, the [`file`](/reference/functions/regular-functions/files#file) function, the [`File`](/reference/engines/table-engines/special/file) table engine, the [`Filesystem`](/reference/engines/database-engines/filesystem) and [`SQLite`](/reference/engines/database-engines/sqlite) database engines, and simply by using a path as a table name, as in `SELECT * FROM '/path/to/data.csv'`. The reachable files include private keys, credentials of cloud services, shell configuration files, and the environment variables of the process (`/proc/self/environ`).
+- **Run commands.** `clickhouse-server` accepts dictionaries with the [`EXECUTABLE`](/reference/statements/create/dictionary/sources/executable-file) and [`EXECUTABLE_POOL`](/reference/statements/create/dictionary/sources/executable-pool) sources only from the configuration files written by the administrator, and refuses to create them with a query. `clickhouse-local` allows `CREATE DICTIONARY ... SOURCE(EXECUTABLE(COMMAND '...'))`, and the command is run by the shell, so a query can run an arbitrary program.
+- **Act as the administrator.** Unless users are configured with `users_config`, the only user is `default`: it has no password, is allowed to connect from any address, and has the privileges of an administrator, including access management. Every connection can read, change, and delete all the data of the instance, change any setting (there are no settings constraints or quotas), see the queries of other sessions in `system.processes` and kill them, close the listeners, and terminate the process with `SYSTEM SHUTDOWN`. It can also create users, which are saved in the data directory, when it is persistent, and remain after a restart.
+- **Connect to any host.** The [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) restriction is not applied in `clickhouse-local`, so the table functions and engines for external sources, such as `url`, `s3`, `remote`, `mysql`, and `postgresql`, can send requests from your machine to any address, including the services on the loopback interface and in the internal network.
+- **Use the introspection functions.** The [introspection functions](/reference/functions/regular-functions/introspection) are enabled by default (see [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions)), so a client can resolve the stack traces of the process, such as the ones in `system.stack_trace`, to symbol names and source locations.
+
+Configuring users with passwords and limited privileges adds authentication, but does not bring these restrictions back. A user granted the access to files (`READ` and `WRITE` on `FILE`) gets the whole filesystem instead of a dedicated directory and, together with the `CREATE DICTIONARY` grant, the ability to run commands. The `file` function does not check the grants at all, so even a user without any grant on files can read every file.
+
+The listeners also do not support TLS: `SYSTEM START LISTEN` in `clickhouse-local` opens only plain `TCP` and `HTTP` listeners, so passwords, queries, and data are sent over the network unencrypted.
+
+All of this happens with the privileges of the OS user that runs `clickhouse-local`, which is typically your personal account, while `clickhouse-server` typically runs under a dedicated account that owns nothing but its data. On a machine shared by several OS users, a loopback address is available to all of them: with the default unauthenticated setup, another user of the machine who connects to the listener can read your files and run commands under your account.
 
 ## Related Content {#related-content-1}
 

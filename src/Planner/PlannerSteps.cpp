@@ -497,8 +497,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         && astContainsNonDeterministicFunctions(select_query_info.query, query_context);
     const UInt64 partial_cache_semantic_key = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
 
-    /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
-    /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
+    /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys.
+    /// With aggregate functions, enable the shared kept-keys cutoff, which keeps the values of the kept keys
     /// exact under parallel aggregation (see `Aggregator::Params::shared_kept_keys_for_overflow_any`).
     /// External aggregation stays configured as usual: before the kept keys are frozen a spill
     /// abandons the cutoff, and after the freeze a table already rebuilt to the kept keys still
@@ -521,7 +521,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         aggregator_params.empty_result_for_aggregation_by_empty_set = true;
 
     aggregator_params.query_semantic_hash_for_partial_cache = partial_cache_semantic_key;
-    aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
+    aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value() && !aggregate_descriptions.empty();
 
     return aggregator_params;
 }
