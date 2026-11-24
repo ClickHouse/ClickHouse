@@ -17,6 +17,8 @@
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <base/simd.h>
 #    include <arm_neon.h>
+#elif defined(__SSE2__)
+#    include <emmintrin.h>
 #endif
 
 namespace DB
@@ -71,30 +73,34 @@ void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
 
     while (p < end)
     {
-#if defined(__aarch64__) && defined(__ARM_NEON)
         /// Dense Unicode needs no ASCII scan.
         if (static_cast<unsigned char>(*p) < 0x80)
         {
             p = skipASCIIBlocks(p, end);
+#if defined(__aarch64__) && defined(__ARM_NEON)
             if (end - p >= 16)
             {
                 /// The first remaining block contains a non-ASCII byte.
                 const auto mask = getNibbleMask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80)));
                 p += std::countr_zero(mask) / 4;
             }
+#elif defined(__SSE2__)
+            if (end - p >= 16)
+            {
+                /// The first remaining block contains a non-ASCII byte.
+                const auto mask = static_cast<UInt32>(_mm_movemask_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(p))));
+                p += std::countr_zero(mask);
+            }
+#endif
 
-            /// Skip ASCII in a partial vector tail without a Poco legality check.
+            /// Skip ASCII in a partial vector tail without a Poco legality check: it is an out-of-line call,
+            /// and making it for every byte of the tail leaves the speed of short values at the mercy of
+            /// the placement of the code in the binary.
             while (p < end && static_cast<unsigned char>(*p) < 0x80)
                 ++p;
             if (p == end)
                 break;
         }
-#else
-        /// Fast skip of ASCII
-        p = skipASCIIBlocks(p, end);
-        if (!(p < end))
-            break;
-#endif
 
         size_t len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
 
