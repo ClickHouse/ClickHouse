@@ -55,7 +55,7 @@ public:
     static constexpr size_t CHECKPOINT_STRIDE = 16;
 
     /// Returns true if the mark contains no sampled rows and can be skipped.
-    bool canSkipMark(size_t mark) const;
+    [[nodiscard]] bool canSkipMark(size_t mark) const;
 
     /// Replay filter into a fresh column: append num_rows values (0 or 1).
     void appendToFilter(PaddedPODArray<UInt8> & filter_data, size_t starting_row, size_t num_rows) const;
