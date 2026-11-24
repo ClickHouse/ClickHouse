@@ -27,3 +27,12 @@ SELECT x, n, floor(x, n), ceil(x, n), round(x, n) FROM values('x Float64, n Int1
 SELECT floor(1e23, -23), trunc(1e23, -23), floor(2e23, -23), floor(4e23, -23), floor(3e-25, 25), ceil(2.7e-22, 23);
 SELECT floor(1e-21, 21), ceil(3e-20, 20), floor(5e-22, 22), ceil(9.5e21, -20), floor(3.1e23, -22);
 SELECT x, n, floor(x, n), trunc(x, n), ceil(x, n) FROM values('x Float64, n Int16', (1e23, -23), (3e-25, 25), (2.7e-22, 23), (1e-21, 21));
+-- 16-digit coefficients: x * 10^N is between 2^51 and 2^52, where its fraction is not exact in Float64.
+SELECT ceil(3.377699720527877e-8, 23), round(3.377699720527877e-8, 23), floor(-3.377699720527877e-8, 23), trunc(4.418713162622315e-8, 23);
+SELECT ceil(3.377699720527881e45, -30), round(3.377699720527881e45, -30), floor(-4.369148609217617e40, -25), trunc(4.150553237927879e84, -69);
+SELECT x, n, floor(x, n), ceil(x, n), trunc(x, n), round(x, n) FROM values('x Float64, n Int16', (3.377699720527877e-8, 23), (-3.377699720527877e-8, 23), (3.377699720527881e45, -30), (4.150553237927879e84, -69));
+-- x * 10^N between 2^52 and 2^53: x is not a grid value, its neighbours are.
+SELECT floor(4.5035996273704965e-8, 23), ceil(4.5035996273704965e-8, 23), round(4.5035996273704965e-8, 23), floor(4.5035996273704964e38, -23), ceil(4.5035996273704964e38, -23);
+SELECT x, n, floor(x, n), ceil(x, n), trunc(x, n), round(x, n) FROM values('x Float64, n Int16', (4.5035996273704965e-8, 23), (-4.5035996273704964e38, -23));
+-- A decimal tie still rounds to even.
+SELECT round(4.5e-20, 20), round(5.5e-20, 20), roundBankers(5.5e-30, 30), round(6.5e25, -25), round(5.5e40, -40);
