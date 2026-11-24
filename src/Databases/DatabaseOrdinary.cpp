@@ -46,6 +46,7 @@
 #include <Storages/TableZnodeInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -693,32 +694,59 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
         std::sort(pending.begin(), pending.end(), [](const auto & lhs, const auto & rhs) { return lhs.file_name < rhs.file_name; });
 
-        while (!pending.empty())
+        /// The number of the tables not processed yet that define a disk.
+        UnorderedMapWithMemoryTracking<String, size_t> pending_definitions;
+        for (const auto & table : pending)
+            for (const auto & name : table.defined_disks)
+                ++pending_definitions[name];
+
+        /// Whether no other table that is not processed yet defines a disk the table refers to.
+        auto is_ready = [&](const TableWithNamedDiskReferences & table)
         {
-            auto it = std::find_if(pending.begin(), pending.end(), [&](const TableWithNamedDiskReferences & table)
+            return std::none_of(table.referenced_disks.begin(), table.referenced_disks.end(), [&](const String & name)
             {
-                return std::none_of(pending.begin(), pending.end(), [&](const TableWithNamedDiskReferences & other)
-                {
-                    return &other != &table
-                        && std::any_of(table.referenced_disks.begin(), table.referenced_disks.end(),
-                                       [&](const String & name) { return other.defined_disks.contains(name); });
-                });
+                auto it = pending_definitions.find(name);
+                return it != pending_definitions.end() && it->second > (table.defined_disks.contains(name) ? 1 : 0);
             });
+        };
 
-            /// The references form a cycle, which cannot be resolved in any order: processing the table reports the missing disk.
-            if (it == pending.end())
-                it = pending.begin();
-
+        auto process = [&](const TableWithNamedDiskReferences & table)
+        {
             try
             {
-                finish_processing(it->ast, it->file_name);
+                finish_processing(table.ast, table.file_name);
             }
             catch (Exception & e)
             {
-                e.addMessage("Cannot parse definition from metadata file " + (fs::path(getMetadataPath()) / it->file_name).string());
+                e.addMessage("Cannot parse definition from metadata file " + (fs::path(getMetadataPath()) / table.file_name).string());
                 throw;
             }
-            pending.erase(it);
+
+            for (const auto & name : table.defined_disks)
+                --pending_definitions[name];
+        };
+
+        /// Every pass processes the tables that are ready, in the order of their file names. The number of passes is
+        /// the depth of the references, so the whole thing is linear in the number of tables unless they form a long chain.
+        while (!pending.empty())
+        {
+            std::vector<TableWithNamedDiskReferences> remaining;
+            for (auto & table : pending)
+            {
+                if (is_ready(table))
+                    process(table);
+                else
+                    remaining.push_back(std::move(table));
+            }
+
+            /// The references form a cycle, which cannot be resolved in any order: processing the table reports the missing disk.
+            if (remaining.size() == pending.size())
+            {
+                process(remaining.front());
+                remaining.erase(remaining.begin());
+            }
+
+            pending = std::move(remaining);
         }
     };
 
