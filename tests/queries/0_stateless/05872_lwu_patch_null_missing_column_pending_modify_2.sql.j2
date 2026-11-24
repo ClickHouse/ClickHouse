@@ -1,0 +1,47 @@
+-- The cases of 05872_lwu_patch_null_missing_column_pending_modify, with the MODIFY COLUMN mutation completed:
+-- it stores the new DEFAULT for the NULL.
+
+SET enable_lightweight_update = 1;
+SET enable_nullable_tuple_type = 1;
+
+{% set columns = [
+    ('s', 'Nullable(String)', "'old'", 'String', "'abc'", "'u'", 's'),
+    ('d', 'Nullable(String)', "'old'", 'String', "concat('d', toString(id))", "'u'", 'd'),
+    ('lc', 'LowCardinality(Nullable(String))', "'old'", 'LowCardinality(String)', "'abc'", "'u'", 'lc'),
+    ('x', 'Nullable(Tuple(a Nullable(UInt64)))', 'tuple(1)', 'Tuple(a Nullable(UInt64))', 'tuple(7)', 'tuple(5)', 'x'),
+    ('arr', 'Nullable(String)', "'[9]'", 'Array(UInt8)', '[7]', "'[5]'", 'arr'),
+    ('v', 'Nullable(String)', "'old'", 'Variant(String, UInt64)', "'abc'", "'u'", 'v, isNull(v)'),
+    ('dyn', 'Nullable(String)', "'old'", 'Dynamic', "'abc'", "'u'", 'dyn, isNull(dyn)'),
+    ('y', 'Nullable(Tuple(a UInt64))', 'tuple(1)', 'Tuple(a UInt64)', 'tuple(7)', 'tuple(5)', 'y.a'),
+    ('xs', 'Nullable(Tuple(a Nullable(UInt64), b Array(UInt64), c Map(String, UInt64), d Variant(UInt64, String), e LowCardinality(Nullable(String)), f Nullable(Tuple(g UInt64)), h UInt64))',
+     "tuple(1, [1], map('k', 1), 1::UInt64, 'one', tuple(1), 1)",
+     'Tuple(a Nullable(UInt64), b Array(UInt64), c Map(String, UInt64), d Variant(UInt64, String), e LowCardinality(Nullable(String)), f Nullable(Tuple(g UInt64)), h UInt64)',
+     "tuple(7, [7, 7], map('k', 7), 7::UInt64, 'seven', tuple(7), 7)",
+     "tuple(NULL, [], map(), NULL, NULL, NULL, 5)",
+     'xs.a, xs.b, xs.c, xs.d, xs.d.UInt64, xs.e, xs.f.g, xs.h'),
+] -%}
+
+{% for version in ['v1', 'v2'] -%}
+{% for col, old_type, old_default, new_type, new_default, value, expr in columns -%}
+
+-- {{ col }} ({{ version }}): the MODIFY mutation completes and stores the converted column.
+DROP TABLE IF EXISTS t_done_{{ col }}_{{ version }} SYNC;
+CREATE TABLE t_done_{{ col }}_{{ version }} (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_done_{{ col }}_{{ version }} VALUES (1), (2), (3);
+ALTER TABLE t_done_{{ col }}_{{ version }} ADD COLUMN {{ col }} {{ old_type }} DEFAULT {{ old_default }};
+UPDATE t_done_{{ col }}_{{ version }} SET {{ col }} = NULL WHERE id = 1;
+UPDATE t_done_{{ col }}_{{ version }} SET {{ col }} = {{ value }} WHERE id = 2;
+ALTER TABLE t_done_{{ col }}_{{ version }} MODIFY COLUMN {{ col }} {{ new_type }} DEFAULT {{ new_default }} SETTINGS mutations_sync = 2;
+SELECT 'done {{ col }} {{ version }}', is_done, latest_fail_reason FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_done_{{ col }}_{{ version }}' AND command LIKE '%MODIFY COLUMN%';
+SELECT 'done {{ col }} {{ version }} stored', count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_done_{{ col }}_{{ version }}' AND active AND name NOT LIKE 'patch-%' AND column = '{{ col }}';
+SELECT 'done {{ col }} {{ version }}', id, {{ 'x, x.a' if col == 'x' else expr }} FROM t_done_{{ col }}_{{ version }} ORDER BY id;
+{% if col == 'x' -%}
+SELECT 'done {{ col }} {{ version }} where', id FROM t_done_{{ col }}_{{ version }} WHERE x.a = 7 ORDER BY id;
+{% endif -%}
+DROP TABLE t_done_{{ col }}_{{ version }} SYNC;
+
+{% endfor -%}
+{% endfor -%}

@@ -1,0 +1,68 @@
+killed v1 patch type	LowCardinality(Nullable(String))
+killed v1 patch type	LowCardinality(Nullable(String))
+killed v1 patch type	Nullable(String)
+killed v1 patch type	Nullable(String)
+killed v1	1	[7]
+killed v1	2	[5]
+killed v1	3	[7]
+nodefault v1 pending	1	0
+nodefault v1 default		
+nodefault v1	1	
+nodefault v1	2	u
+nodefault v1	3	
+dropreadd same v1 pending	2	['String']
+dropreadd same v1	1	abc
+dropreadd same v1	2	u
+dropreadd same v1	3	abc
+dropreadd same v1 nodefault	1	
+dropreadd same v1 nodefault	2	u
+dropreadd same v1 nodefault	3	
+dropreadd other v1 pending	2	['UInt64']
+dropreadd other v1	1	abc
+dropreadd other v1	2	u
+dropreadd other v1	3	abc
+dropreadd other v1 nodefault	1	
+dropreadd other v1 nodefault	2	u
+dropreadd other v1 nodefault	3	
+omitted frozen v1 stored	0
+omitted stored v1 stored	1
+twocolumns v1 b	1	bdef
+twocolumns v1 b	2	previous
+twocolumns v1 b	3	bdef
+twocolumns v1 a3, b	1	adef	bdef
+twocolumns v1 a3, b	2	adef	previous
+twocolumns v1 a3, b	3	adef	bdef
+killed v2 patch type	LowCardinality(Nullable(String))
+killed v2 patch type	LowCardinality(Nullable(String))
+killed v2 patch type	Nullable(String)
+killed v2 patch type	Nullable(String)
+killed v2	1	[7]
+killed v2	2	[5]
+killed v2	3	[7]
+nodefault v2 pending	1	0
+nodefault v2 default		
+nodefault v2	1	
+nodefault v2	2	u
+nodefault v2	3	
+dropreadd same v2 pending	2	['String']
+dropreadd same v2	1	abc
+dropreadd same v2	2	u
+dropreadd same v2	3	abc
+dropreadd same v2 nodefault	1	
+dropreadd same v2 nodefault	2	u
+dropreadd same v2 nodefault	3	
+dropreadd other v2 pending	2	['UInt64']
+dropreadd other v2	1	abc
+dropreadd other v2	2	u
+dropreadd other v2	3	abc
+dropreadd other v2 nodefault	1	
+dropreadd other v2 nodefault	2	u
+dropreadd other v2 nodefault	3	
+omitted frozen v2 stored	0
+omitted stored v2 stored	1
+twocolumns v2 b	1	bdef
+twocolumns v2 b	2	previous
+twocolumns v2 b	3	bdef
+twocolumns v2 a3, b	1	adef	bdef
+twocolumns v2 a3, b	2	adef	previous
+twocolumns v2 a3, b	3	adef	bdef
