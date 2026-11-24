@@ -763,7 +763,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
 
 
 template <typename Vector, bool parse_complex_escape_sequence, bool support_crlf>
-void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
+NO_INLINE static void readEscapedStringIntoImplSlow(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -816,6 +816,30 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
             }
         }
     }
+}
+
+/// Most fields are short: find their end without calling `find_first_symbols`. The rest is a tail call, so this
+/// function needs no stack frame - with pointer authentication, no return address to sign for every field.
+template <typename Vector, bool parse_complex_escape_sequence, bool support_crlf>
+void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
+{
+    if (buf.hasPendingData())
+    {
+        char * end = buf.position() + std::min<size_t>(buf.available(), 16);
+        for (char * pos = buf.position(); pos < end; ++pos)
+        {
+            if (*pos == '\t' || *pos == '\n')
+            {
+                appendToStringOrVector(s, buf, pos);
+                buf.position() = pos;
+                return;
+            }
+            if (*pos == '\\' || (support_crlf && *pos == '\r'))
+                break;
+        }
+    }
+
+    readEscapedStringIntoImplSlow<Vector, parse_complex_escape_sequence, support_crlf>(s, buf);
 }
 
 template <typename Vector, bool support_crlf>

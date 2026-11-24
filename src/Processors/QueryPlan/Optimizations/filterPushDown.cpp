@@ -34,11 +34,16 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
+#include <Storages/StorageLog.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -475,7 +480,8 @@ static void projectDagInputs(ActionsDAG & actions_dag)
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns);
+    const Names & available_columns,
+    bool only_conditions_safe_on_more_rows = false);
 
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 
@@ -1229,6 +1235,62 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     });
 }
 
+/// a filter on the column can merge with the expressions below and go below a step that removes rows (e.g. a JOIN),
+/// so the steps below must make the column from a source step or an ARRAY JOIN with only functions that cannot throw
+static bool isColumnSafeOnMoreRows(const QueryPlan::Node * node, const String & column_name)
+{
+    NameSet names{column_name};
+    while (!names.empty() && !node->children.empty())
+    {
+        if (node->children.size() != 1)
+            return false;
+
+        const ActionsDAG * dag = nullptr;
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
+            dag = &expression->getExpression();
+        else if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get()))
+            dag = &filter->getExpression();
+        else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(node->step.get()))
+        {
+            for (const auto & column : array_join->getColumns())
+                names.erase(column);
+        }
+        else
+            return false;
+
+        if (dag)
+        {
+            NameSet inputs;
+            for (const auto & name : names)
+            {
+                const auto * output = dag->tryFindInOutputs(name);
+                if (!output)
+                {
+                    /// the step passes through a column that its actions do not read
+                    if (std::ranges::any_of(dag->getInputs(), [&](const auto * input) { return input->result_name == name; }))
+                        return false;
+                    inputs.insert(name);
+                    continue;
+                }
+                if (!canBeMovedToTheFrontOfAndChain(output))
+                    return false;
+                for (const auto * reachable : findReachableNodes({output}))
+                    if (reachable->type == ActionsDAG::ActionType::INPUT)
+                        inputs.insert(reachable->result_name);
+            }
+            names = std::move(inputs);
+        }
+
+        node = node->children.front();
+    }
+
+    /// other sources (e.g. `Merge` or remote tables) can give a filter to a plan that this walk does not see, where it can go below a JOIN
+    const auto * source = node->step.get();
+    return names.empty() || typeid_cast<const ReadFromMergeTree *>(source) || typeid_cast<const ReadFromMemoryStorageStep *>(source)
+        || typeid_cast<const ReadFromStorageLogStep *>(source) || typeid_cast<const ReadFromSystemNumbersStep *>(source)
+        || dynamic_cast<const ReadFromPreparedSource *>(source);
+}
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -1396,6 +1458,24 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs))
             return updated_steps;
+
+        /// e.g. an OR over the elements of several arrays: add the part that the input can compute below, keep the filter above
+        if (!array_join->hasRelaxedFilterBelow())
+        {
+            Names safe_inputs;
+            for (const auto * input : filter->getExpression().getInputs())
+                if (!keys_set.contains(input->result_name) && isColumnSafeOnMoreRows(child_node->children.front(), input->result_name))
+                    safe_inputs.push_back(input->result_name);
+
+            auto relaxed_filter = tryToExtractPartialPredicate(
+                filter->getExpression(), filter->getFilterColumnName(), safe_inputs, /*only_conditions_safe_on_more_rows=*/ true);
+            if (relaxed_filter)
+            {
+                array_join->setHasRelaxedFilterBelow();
+                addFilterOnTop(*child_node, 0, nodes, std::move(*relaxed_filter));
+                return 3;
+            }
+        }
     }
 
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, true, nodes, child))

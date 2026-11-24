@@ -70,6 +70,8 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// Finding the target table reads the definition of the TimeSeries table, as `DESCRIBE TABLE` of it does.
+    checkSourceTableAccess(context, time_series_storage_id, AccessType::SHOW_COLUMNS);
     target_table_type_name = getTargetTable(context)->getName();
 }
 
