@@ -1,3 +1,4 @@
+--- enable_analyzer=1 ---
 definer: 5001
 none:    5001
 invoker: ACCESS_DENIED

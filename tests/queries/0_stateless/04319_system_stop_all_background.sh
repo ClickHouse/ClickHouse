@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine
+# Tags: atomic-database, memory-engine, no-parallel
+
+# Uses `SYSTEM ... ALL BACKGROUND` commands, which affect all refreshable views
+# on the server, so it cannot run concurrently with other tests that create RMV
+# https://github.com/ClickHouse/ClickHouse/issues/102707
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,30 +26,14 @@ wait_status() {
     done
 }
 
-# Helper: create refreshable view `$1` over `src` (10 rows, 1 second each) with refresh settings `$3`,
-# refresh it, and send the statements `$2` while the refresh is still running. The check and `$2` go
-# in one client call, so no client start-up separates them; if a slow server let the refresh get too
-# far before the check, the view is re-created and the attempt repeated. Prints 1 if `$2` was sent
-# while the refresh was running.
-interrupt_running_refresh() {
+# Helper: wait until the refresh is running AND has read at least one row, so that a cancellation
+# issued right after has a concrete pipeline to interrupt (see 04105_system_pause_view).
+wait_running_with_progress() {
     local view_name=$1
-    local statements=$2
-    local view_settings=$3
-    local running=0
-    for _ in {1..10}
+    while [ "`$CLICKHOUSE_CLIENT -q "select status = 'Running' and read_rows > 0 from refreshes where view = '$view_name' -- $LINENO" | xargs`" != '1' ]
     do
-        $CLICKHOUSE_CLIENT -q "
-            drop table if exists $view_name;
-            create materialized view $view_name refresh every 1 year $view_settings (x Int64) engine Memory empty as
-                select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-            system refresh $view_name;"
-        # At most 8 of the 10 rows read: at least 2 seconds of the refresh are left.
-        running=`$CLICKHOUSE_CLIENT -q "
-            select status = 'Running' and read_rows between 1 and 8 from refreshes where view = '$view_name';
-            $statements"`
-        [ "$running" = 1 ] && break
+        sleep 0.1
     done
-    echo "$running"
 }
 
 # ---------------------------------------------------------------------------
@@ -54,25 +42,15 @@ interrupt_running_refresh() {
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(2) settings max_block_size=1;"
+    insert into src select * from numbers(5) settings max_block_size=1;
+    create materialized view p refresh every 1 year (x Int64) engine Memory empty as
+        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+    system refresh p;"
 
-# Pause while a slow refresh (2 rows * 1 second) is running; PAUSE must not cancel it. On a slow server
-# the pause can land before the refresh starts or after it ends, so retry with a new view until the
-# refresh is still running right after the pause.
-for _ in {1..10}
-do
-    $CLICKHOUSE_CLIENT -q "
-        drop table if exists p;
-        create materialized view p refresh every 1 year (x Int64) engine Memory empty as
-            select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
-        system refresh p;"
-    # 1 = the refresh started before the pause (`Running`) and had not swapped in its result yet (`p` empty).
-    running=`$CLICKHOUSE_CLIENT -q "
-        system pause p;
-        select status = 'Running' and (select count() from p) = 0 from refreshes where view = 'p' -- $LINENO"`
-    [ "$running" = 1 ] && break
-done
-echo "<1: refresh running after pause: $running>"
+wait_status p Running
+
+# Pause while the refresh is running. This should NOT cancel the ongoing refresh.
+$CLICKHOUSE_CLIENT -q "system pause p;"
 
 # The currently running refresh must complete successfully.
 $CLICKHOUSE_CLIENT -q "system wait view p;"
@@ -96,10 +74,14 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size=1;"
+    insert into src select * from numbers(10) settings max_block_size=1;
+    create materialized view s refresh every 1 year (x Int64) engine Memory empty as
+        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+    system refresh s;"
 
-running=`interrupt_running_refresh s "system stop s;"`
-echo "<2: refresh running before stop: $running>"
+wait_running_with_progress s
+
+$CLICKHOUSE_CLIENT -q "system stop s;"
 
 wait_status s Disabled
 
@@ -131,10 +113,14 @@ $CLICKHOUSE_CLIENT -q "
 # 02932_refreshable_materialized_views_2.
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(10) settings max_block_size=1;"
+    insert into src select * from numbers(10) settings max_block_size=1;
+    create materialized view c refresh every 1 year settings refresh_retries = 0 (x Int64) engine Memory empty as
+        select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
+    system refresh c;"
 
-running=`interrupt_running_refresh c "system cancel c;" "settings refresh_retries = 0"`
-echo "<3: refresh running before cancel: $running>"
+wait_running_with_progress c
+
+$CLICKHOUSE_CLIENT -q "system cancel c;"
 
 # After cancel, the view is not disabled: the interrupted refresh leaves the view empty
 # and the next refresh stays on schedule (a year away), so the status returns to Scheduled.
@@ -209,15 +195,7 @@ $CLICKHOUSE_CLIENT -q "
 # background activity. Here those tables are two refreshable views; the same code
 # path covers the streaming engines (Kafka, S3Queue, RabbitMQ, NATS) too.
 # The views use a yearly schedule so they only refresh when explicitly told to.
-# The wildcard skips tables the caller may not control (see Test 10), so it runs as a user
-# granted only on this database, to leave the views of concurrent tests alone.
 # ---------------------------------------------------------------------------
-
-db_user="user_04319_db_$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT -q "
-    create user $db_user;
-    grant system views on $CLICKHOUSE_DATABASE.* to $db_user;"
-DB_USER_CLIENT="$CLICKHOUSE_CLIENT --user $db_user"
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
@@ -228,44 +206,44 @@ $CLICKHOUSE_CLIENT -q "
         as select x from src;"
 
 # Test 5: SYSTEM REFRESH ALL BACKGROUND refreshes every view.
-$DB_USER_CLIENT -q "system refresh all background;"
 $CLICKHOUSE_CLIENT -q "
+    system refresh all background;
     system wait view va;
     system wait view vb;
     select '<5: refresh all background refreshes all views>',
         (select count() from va), (select count() from vb);"
 
 # Test 6: SYSTEM STOP ALL BACKGROUND disables every view.
-$DB_USER_CLIENT -q "system stop all background;"
+$CLICKHOUSE_CLIENT -q "system stop all background;"
 wait_status va Disabled
 wait_status vb Disabled
 $CLICKHOUSE_CLIENT -q "
     select '<6: stop all background disables all>',
         countIf(status = 'Disabled'), count()
-    from refreshes where view in ('va', 'vb');"
-$DB_USER_CLIENT -q "system start all background;"
+    from refreshes where view in ('va', 'vb');
+    system start all background;"
 while [ "`$CLICKHOUSE_CLIENT -q "select countIf(status = 'Disabled') from refreshes where view in ('va', 'vb') -- $LINENO" | xargs`" != '0' ]
 do
     sleep 0.1
 done
 
 # Test 7: SYSTEM PAUSE ALL BACKGROUND disables every view.
-$DB_USER_CLIENT -q "system pause all background;"
+$CLICKHOUSE_CLIENT -q "system pause all background;"
 wait_status va Disabled
 wait_status vb Disabled
 $CLICKHOUSE_CLIENT -q "
     select '<7: pause all background disables all>',
         countIf(status = 'Disabled'), count()
-    from refreshes where view in ('va', 'vb');"
-$DB_USER_CLIENT -q "system start all background;"
+    from refreshes where view in ('va', 'vb');
+    system start all background;"
 while [ "`$CLICKHOUSE_CLIENT -q "select countIf(status = 'Disabled') from refreshes where view in ('va', 'vb') -- $LINENO" | xargs`" != '0' ]
 do
     sleep 0.1
 done
 
 # Test 8: SYSTEM CANCEL ALL BACKGROUND interrupts current activity without disabling.
-$DB_USER_CLIENT -q "system cancel all background;"
 $CLICKHOUSE_CLIENT -q "
+    system cancel all background;
     select '<8: cancel all background keeps views enabled>',
         countIf(status != 'Disabled'), count()
     from refreshes where view in ('va', 'vb');
@@ -273,8 +251,7 @@ $CLICKHOUSE_CLIENT -q "
     system stop view vb;
     drop table va;
     drop table vb;
-    drop table src;
-    drop user $db_user;"
+    drop table src;"
 
 # ---------------------------------------------------------------------------
 # Test 9: Access control. The engine-agnostic commands require the same

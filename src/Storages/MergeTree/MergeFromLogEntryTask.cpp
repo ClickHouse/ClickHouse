@@ -1,6 +1,5 @@
 
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
-#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -248,9 +247,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    /// Size and place the reservation for the moment the merge itself evaluates TTL at (entry.create_time, passed
-    /// to mergePartsToTemporaryPart below), not for the local clock, which may lag behind the assigning replica's.
-    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true, entry.create_time);
+    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -284,13 +281,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         future_merged_part->part_info,
         future_merged_part->parts,
         &tagger,
-        &ttl_infos,
-        /*is_insert=*/false,
-        entry.create_time);
+        &ttl_infos);
 
     if (!reserved_space)
         reserved_space = storage.reserveSpacePreferringTTLRules(
-            metadata_snapshot, estimated_space_for_merge, ttl_infos, entry.create_time, max_volume_index);
+            metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
 
     future_merged_part->uuid = entry.new_part_uuid;
     future_merged_part->updatePath(storage, reserved_space.get());
@@ -358,10 +353,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
-    /// Account TTL merge. The slot belongs to this task, so it is given back when the task dies,
-    /// whether or not the merge it was taken for ever ran.
+    /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))
-        ttl_merge_slot = MergeList::TTLMergeSlot(storage.getContext()->getMergeList());
+        storage.getContext()->getMergeList().bookMergeWithTTL();
 
     auto table_id = storage.getStorageID();
 
@@ -512,9 +506,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// a correct part name after rename for a key of cache entry.
     if (prewarm_caches.primary_index_cache)
         part->moveIndexToCache(*prewarm_caches.primary_index_cache);
-
-    if (prewarm_caches.statistics_cache)
-        part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

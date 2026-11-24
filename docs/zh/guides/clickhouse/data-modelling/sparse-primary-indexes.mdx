@@ -285,7 +285,9 @@ ClickHouse 客户端的输出显示：
 * 该表有一个主索引，包含 1083 个条目 (称为 &#39;标记&#39;) ，索引大小为 96.93 KB。
 * 总计而言，该表的数据文件、标记文件和主索引文件在磁盘上共占用 207.07 MB。
 
-### 数据在磁盘上按主键列排序存储
+<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
+  ### 数据在磁盘上按主键列排序存储
+</div>
 
 我们在上面创建的表具有：
 
@@ -326,7 +328,9 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   * 我们从 0 开始对行编号，以便与 ClickHouse 内部的行编号方案保持一致，该方案也用于日志消息。
 </Note>
 
-### 数据按粒度组织，以便并行处理数据
+<div id="data-is-organized-into-granules-for-parallel-data-processing">
+  ### 数据按粒度组织，以便并行处理数据
+</div>
 
 为了进行数据处理，表中的列值在逻辑上会被划分为多个粒度。
 粒度是流式传输到 ClickHouse 中进行数据处理的最小不可分割数据集。
@@ -359,7 +363,9 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   * 我们从 0 开始对粒度编号，以与 ClickHouse 的内部编号方案保持一致，该方案也用于日志消息。
 </Note>
 
-### 主索引中每个粒度对应一个条目
+<div id="the-primary-index-has-one-entry-per-granule">
+  ### 主索引中每个粒度对应一个条目
+</div>
 
 主索引是根据上图所示的粒度创建的。该索引是一个未压缩的一维数组文件 (primary.idx) ，其中包含所谓的数值索引标记，编号从 0 开始。
 
@@ -468,7 +474,9 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 
   我们稍后会更详细地讨论这对查询执行性能的影响。
 
-### 主索引用于筛选粒度
+<div id="the-primary-index-is-used-for-selecting-granules">
+  ### 主索引用于筛选粒度
+</div>
 
 现在，我们可以借助主索引来执行查询。
 
@@ -504,7 +512,7 @@ Processed 8.19 thousand rows,
 740.18 KB (1.53 million rows/s., 138.59 MB/s.)
 ```
 
-ClickHouse 客户端的输出现在显示，只有 8190 行数据流式传输到 ClickHouse，而不是执行全表扫描。
+ClickHouse 客户端的输出现在显示，ClickHouse 仅流入了 8190 行数据，而不是执行全表扫描。
 
 如果启用了 <a href="/zh/reference/settings/server-settings/settings/other#logger" target="_blank">trace 日志</a>，那么 ClickHouse 服务器日志文件会显示，ClickHouse 在 1083 个 UserID 索引标记上执行了 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分查找</a>，以识别可能包含 UserID 列值为 `749927693` 的行的粒度。这需要 19 个步骤，平均时间复杂度为 `O(log2 n)`：
 
@@ -519,15 +527,15 @@ ClickHouse 客户端的输出现在显示，只有 8190 行数据流式传输到
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
-<Note>
-  在较新版本的 ClickHouse 中，`Running binary search on index range`、`Found (LEFT) boundary mark` 和 `Found (RIGHT) boundary mark` 消息会记录在 `test` 级别 (最高详细级别) ，而非 `trace` 级别。若要查看这些消息，请将日志详细级别提高到 `test` (例如，在客户端执行 `SET send_logs_level = 'test'`，或者在服务器配置中设置 `<logger><level>test</level></logger>`) 。上面显示的其余行仍记录在 `trace` 级别。本指南中的所有二分查找日志示例均适用此说明。
-</Note>
+:::note
+在较新版本的 ClickHouse 中，`Running binary search on index range`、`Found (LEFT) boundary mark` 和 `Found (RIGHT) boundary mark` 消息会记录在 `test` 级别 (最高详细级别) ，而非 `trace` 级别。若要查看这些消息，请将日志详细级别提高到 `test` (例如，在客户端执行 `SET send_logs_level = 'test'`，或者在服务器配置中设置 `<logger><level>test</level></logger>`) 。上面显示的其余行仍记录在 `trace` 级别。本指南中的所有二分查找日志示例均适用此说明。
+:::
 
 我们可以从上面的 trace 日志中看到，在现有的 1083 个标记中，只有 1 个标记满足该查询。
 
 <Accordion title="trace 日志详情">
   <p>
-    已定位到标记 176 (&#39;found left boundary mark&#39; 为包含边界，&#39;found right boundary mark&#39; 为排除边界) ，因此会将粒度 176 中的全部 8192 行 (该粒度从第 1.441.792 行开始——我们将在本指南后文看到) 流式传输到 ClickHouse，以找出 UserID 列值为 `749927693` 的实际行。
+    已定位到标记 176 (&#39;found left boundary mark&#39; 为包含边界，&#39;found right boundary mark&#39; 为排除边界) ，因此会将粒度 176 中的全部 8192 行 (该粒度从第 1.441.792 行开始——我们将在本指南后文看到) 读入 ClickHouse，以找出 UserID 列值为 `749927693` 的实际行。
   </p>
 </Accordion>
 
@@ -586,7 +594,9 @@ LIMIT 10;
 
 我们将在下一节更详细地讨论第二阶段。
 
-### 标记文件用于定位粒度
+<div id="mark-files-are-used-for-locating-granules">
+  ### 标记文件用于定位粒度
+</div>
 
 下图展示了该表主索引文件的一部分。
 
@@ -678,7 +688,9 @@ LIMIT 10;
 
 <a name="filtering-on-key-columns-after-the-first" />
 
-### 次级键列也可能 (不) 高效
+<div id="secondary-key-columns-can-not-be-inefficient">
+  ### 次级键列也可能 (不) 高效
+</div>
 
 当查询按复合键中的某一列进行过滤，且该列是第一个键列时，[ClickHouse 会在该键列的索引标记上运行二分查找算法](#the-primary-index-is-used-for-selecting-granules)。
 
@@ -756,7 +768,9 @@ Processed 8.81 million rows,
 
 <a name="generic-exclusion-search-algorithm" />
 
-### 通用排除搜索算法
+<div id="generic-exclusion-search-algorithm">
+  ### 通用排除搜索算法
+</div>
 
 下面说明了当通过次级列选择粒度，且前一个键列具有较低或较高基数时，<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">ClickHouse 通用排除搜索算法</a>是如何工作的。
 
@@ -807,7 +821,9 @@ Processed 8.81 million rows,
 
 在我们的样本数据集中，两个键列 (UserID、URL) 的基数都较高且相近。正如前文所述，当 URL 列的前置键列具有较高或相近的基数时，通用排除搜索算法并不太有效。
 
-### 关于数据跳过索引的说明
+<div id="note-about-data-skipping-index">
+  ### 关于数据跳过索引的说明
+</div>
 
 由于 UserID 和 URL 都具有较高且相近的基数，我们的[按 URL 过滤的查询](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)即使在[具有复合主键 (UserID, URL) 的表](#a-table-with-a-primary-key)的 URL 列上创建[二级数据跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)，收益也不会太大。
 
@@ -844,7 +860,9 @@ ClickHouse 现在又创建了一个额外索引，用于为每组 4 个连续的
 
 <a name="multiple-primary-indexes" />
 
-### 创建额外主索引的选项
+<div id="options-for-creating-additional-primary-indexes">
+  ### 创建额外主索引的选项
+</div>
 
 如果我们想同时显著加快两个样本查询——一个按特定 UserID 过滤行，另一个按特定 URL 过滤行——就需要通过以下三种方式之一使用多个主索引：
 
@@ -872,7 +890,9 @@ ClickHouse 现在又创建了一个额外索引，用于为每组 4 个连续的
 
 <a name="multiple-primary-indexes-via-secondary-tables" />
 
-### 选项 1：辅助表
+<div id="option-1-secondary-tables">
+  ### 选项 1：辅助表
+</div>
 
 <a name="secondary-table" />
 
@@ -1027,7 +1047,9 @@ ClickHouse 仅选择了 39 个索引标记，而使用 通用排除搜索 时则
 
 现在我们有两个表，分别针对加快按 `UserIDs` 过滤的查询和按 URL 过滤的查询进行了优化：
 
-### 选项 2：Materialized Views
+<div id="option-2-materialized-views">
+  ### 选项 2：Materialized Views
+</div>
 
 基于现有表创建一个 [materialized view](/zh/reference/statements/create/view)。
 
@@ -1110,7 +1132,9 @@ Processed 335.87 thousand rows,
 ...Executor): 使用 4 个流读取约 335872 行
 ```
 
-### 选项 3：投影
+<div id="option-3-projections">
+  ### 选项 3：投影
+</div>
 
 在现有表上创建投影：
 
@@ -1379,7 +1403,9 @@ Processed 20.32 thousand rows,
 
 原因在于，当通过次级键列选择[粒度](#the-primary-index-is-used-for-selecting-granules)，且其前一个键列的基数更低时，[通用排除搜索算法](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)的效果最好。我们已在本指南的[前一节](#generic-exclusion-search-algorithm)中对此进行了详细说明。
 
-### 数据文件的最佳压缩率
+<div id="optimal-compression-ratio-of-data-files">
+  ### 数据文件的最佳压缩率
+</div>
 
 此查询比较了我们上面创建的两个表中 `UserID` 列的压缩率：
 
@@ -1459,7 +1485,9 @@ ORDER BY Ratio ASC
 
 兼顾最快检索速度和最佳数据压缩效果的一种折中方案，是使用复合主键，并将 UUID 作为最后一个键列，放在基数较低的键列之后；这些列可用于确保表中某些列获得良好的压缩率。
 
-### 一个具体示例
+<div id="a-concrete-example">
+  ### 一个具体示例
+</div>
 
 一个具体示例是明文粘贴服务 [https://pastila.nl](https://pastila.nl)。该服务由 Alexey Milovidov 开发，并曾在[博客中介绍](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/)。
 

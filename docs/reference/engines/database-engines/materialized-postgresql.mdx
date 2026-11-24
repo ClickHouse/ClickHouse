@@ -156,7 +156,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 <Note>
-[**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
+Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 </Note>
 
 ## Settings {#settings}
@@ -194,7 +194,6 @@ Default value: `65536`.
 ### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
 A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
-Cannot be used together with `materialized_postgresql_use_unique_replication_consumer_identifier`.
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
@@ -218,7 +217,6 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
-Cannot be used together with `materialized_postgresql_replication_slot`: a user-managed replication slot has a single fixed name and cannot be unique per consumer. Such a combination is rejected on `CREATE` and on `ATTACH` with a full definition, but a database or table that was already created with it can still be loaded.
 
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 

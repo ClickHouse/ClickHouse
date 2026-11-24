@@ -13,7 +13,6 @@ from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_merge_queue_jo
 workflow = Workflow.Config(
     name="MergeQueueCI",
     event=Workflow.Event.MERGE_QUEUE,
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
         JobConfigs.fast_test,
@@ -21,23 +20,8 @@ workflow = Workflow.Config(
         # Reruns the PR's new/changed stateless tests against the merge group
         # state, catching semantic conflicts with `master` changes that landed
         # after the PR's last CI run (e.g. a new randomized setting in
-        # `tests/clickhouse-test`). Also reruns the tests that `master` added or
-        # changed after the PR's last CI run, which the PR may break (see
-        # `Targeting.get_merge_queue_drift_tests`). Self-skips when there are no
-        # such tests.
+        # `tests/clickhouse-test`). Self-skips when the PR changes no tests.
         *JobConfigs.stateless_tests_flaky_mq_jobs,
-        # Reruns the documentation examples against the merge group state, so a
-        # pull request and a `master` commit that are each green on their own
-        # cannot break them together. Cheap enough to run unconditionally - see
-        # `JobConfigs.docs_examples_mq_job`.
-        JobConfigs.docs_examples_mq_job,
-        # clang-tidy on the merge group state. The full tidy build takes hours,
-        # so the queue cannot run it, and clang-tidy breakage keeps reaching
-        # `master` from pull requests that were green before the changes they are
-        # merged on top of. This job analyzes only the translation units the pull
-        # request touches, which is cheap enough for the queue; the full check on
-        # `master` still covers the rest of the tree.
-        JobConfigs.tidy_changed_files_job,
     ],
     artifacts=[
         *[

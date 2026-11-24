@@ -27,6 +27,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const SharedHeader & DeserializedInputHeaders::at(size_t i) const
+{
+    if (i >= headers.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "A step of the serialized query plan has {} input(s), but the input {} is required", headers.size(), i);
+    return headers[i];
+}
+
 static void serializeHeader(const Block & header, WriteBuffer & out)
 {
     /// Write only names and types.
@@ -153,19 +161,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
 
         stack.pop();
 
-        auto step_name = node->step->getSerializationName();
-        writeStringBinary(step_name, out);
-
-        /// The per-step version selects how this step writes its own payload in `serialize` below; it is
-        /// chosen for the plan version this stream is serialized at. The step settings written further
-        /// down are gated by the plan version itself, not by the per-step version.
-        UInt64 step_version = 0;
-        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
-        {
-            step_version = QueryPlanStepRegistry::instance().versionToWrite(step_name, flags.version);
-            writeVarUInt(step_version, out);
-        }
-
+        writeStringBinary(node->step->getSerializationName(), out);
         writeStringBinary(node->step->getStepDescription(), out);
 
         if (node->step->hasOutputHeader())
@@ -180,7 +176,6 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
 
         IQueryPlanStep::Serialization ctx{out, registry};
         ctx.version = flags.version;
-        ctx.step_version = step_version;
         node->step->serialize(ctx);
     }
 
@@ -271,16 +266,8 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         }
 
         std::string step_name;
-        readStringBinary(step_name, in);
-
-        UInt64 step_version = 0;
-        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
-        {
-            readVarUInt(step_version, in);
-            step_registry.checkVersionReadable(step_name, step_version);
-        }
-
         std::string step_description;
+        readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
         auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
@@ -291,12 +278,25 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());
         for (const auto & child : frame.children)
+        {
+            /// A sink (e.g. `GatherSend`) has no output, so it cannot be an input of another step.
+            if (!child->step->hasOutputHeader())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized step {} has a child step {} without an output stream",
+                    step_name, child->step->getName());
             input_headers.push_back(child->step->getOutputHeader());
+        }
 
         IQueryPlanStep::Deserialization ctx{
-            in, sets_registry, {}, context, input_headers, output_header, settings,
-            max_type_complexity, flags.version, step_version, flags.skip_data};
+            in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version, flags.skip_data};
         auto step = step_registry.createStep(step_name, ctx);
+
+        /// The plan tree assumes that a step has exactly one input per child, e.g. optimizations iterate
+        /// over the children and access the input header of each of them.
+        if (step->getInputHeaders().size() != frame.children.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized step {} has {} input(s), but the serialized query plan has {} child(ren) of it",
+                step_name, step->getInputHeaders().size(), frame.children.size());
 
         if (step->hasOutputHeader())
         {

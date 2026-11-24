@@ -1,0 +1,35 @@
+<clickhouse>
+    <!--
+        A custom HTTP protocol endpoint whose `<handlers>` value is a *nested* config prefix
+        (`custom_nested.handlers`), not a top-level section name. `createHandlerFactory` reads the
+        handler rules from the prefix `custom_nested.handlers` (i.e. `<custom_nested><handlers>...`),
+        so a valid config can place them under an arbitrary top-level section. The validator must
+        therefore (1) exempt the top-level component `custom_nested`, and (2) scan the *full*
+        `custom_nested.handlers` prefix for `config://` references so `<nested_payload>` is exempted
+        as well. If either part were missing, the node would fail to start.
+    -->
+    <protocols>
+        <alt_http_nested>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8126</port>
+            <handlers>custom_nested.handlers</handlers>
+        </alt_http_nested>
+    </protocols>
+
+    <custom_nested>
+        <handlers>
+            <rule>
+                <methods>GET</methods>
+                <url>/my_nested_endpoint</url>
+                <handler>
+                    <type>static</type>
+                    <response_content>config://nested_payload</response_content>
+                </handler>
+            </rule>
+            <defaults/>
+        </handlers>
+    </custom_nested>
+
+    <nested_payload>Hello from nested handlers</nested_payload>
+</clickhouse>
