@@ -1385,6 +1385,30 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
                 if ((suffix == "MergeState" || suffix == "Merge") && isStateOf(argument_types, base_name, action, parameters))
                     break;
 
+                /// The same for -If over -Merge/-MergeState: sumMergeOrNullIf consumes sum states,
+                /// sumOrNullMergeIf consumes sumOrNull states. The last argument of -If is the condition.
+                if (suffix == "If" && !argument_types.empty() && typeid_cast<const DataTypeAggregateFunction *>(argument_types[0].get()))
+                {
+                    std::string_view merge_suffix;
+                    if (base_name.ends_with("MergeState"))
+                        merge_suffix = "MergeState";
+                    else if (base_name.ends_with("Merge"))
+                        merge_suffix = "Merge";
+
+                    if (!merge_suffix.empty() && base_name.size() > merge_suffix.size())
+                    {
+                        auto nested_name = base_name.substr(0, base_name.size() - merge_suffix.size());
+                        if (!isStateOf({argument_types[0]}, nested_name, action, parameters))
+                        {
+                            result_aggregate_function_name = std::move(nested_name);
+                            result_aggregate_function_name += "OrNull";
+                            result_aggregate_function_name += merge_suffix;
+                            result_aggregate_function_name += suffix_string_value;
+                            break;
+                        }
+                    }
+                }
+
                 result_aggregate_function_name = std::move(base_name);
                 result_aggregate_function_name += "OrNull";
                 result_aggregate_function_name += suffix_string_value;
