@@ -121,3 +121,10 @@ SELECT left('abcdefghij', n) FROM (SELECT toLowCardinality(toNullable(n)) AS n F
 -- A value that is referenced is still reported.
 SELECT left('abcdefghij', n) FROM t_lc_05582; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 DROP TABLE t_lc_05582;
+-- Extreme signed lengths and offsets saturate instead of throwing, also behind NULL.
+SELECT substring(CAST(NULL, 'Nullable(String)'), toUInt64(9223372036854775807), toInt64(-4611686018427387904));
+SELECT substring('abc', toUInt64(9223372036854775807), toInt64(-4611686018427387904));
+SELECT substring('abc', toUInt64(1), toInt64('-9223372036854775808'));
+SELECT substring('abc', toInt64('-9223372036854775808'), toInt64(-1));
+SELECT substring(CAST(NULL, 'Nullable(String)'), toUInt64(1), toInt64('-9223372036854775808'));
+SELECT substring('abc', toUInt64(1), nullIf(if(number = 0, toInt64('-9223372036854775808'), 2), toInt64('-9223372036854775808'))) FROM numbers(2);

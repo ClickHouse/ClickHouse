@@ -16,7 +16,6 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace DB::GatherUtils
@@ -385,26 +384,13 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 
         if (size < 0)
         {
-            Int64 abs_size = 0;
-            if (common::subOverflow(Int64(0), size, abs_size))
-                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Overflow in length argument of substring-like function: {}", size);
-            Int64 adjustment = 0;
-            if (offset > 0)
-            {
-                adjustment = static_cast<Int64>(src.getElementSize()) - (offset - 1);
-            }
-            else
-            {
-                if (common::subOverflow(Int64(0), offset, adjustment))
-                    throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "Overflow in offset argument of substring-like function: {}", offset);
-            }
-            Int64 new_size = 0;
-            if (common::addOverflow(size, adjustment, new_size))
-                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Overflow when computing slice size in substring-like function: size={}, adjustment={}", size, adjustment);
-            size = new_size;
+            /// Compute in 128 bits and saturate: a negative length reaching past the start gives an empty slice
+            /// instead of an overflow error.
+            Int128 adjustment = offset > 0
+                ? static_cast<Int128>(src.getElementSize()) - (static_cast<Int128>(offset) - 1)
+                : -static_cast<Int128>(offset);
+            Int128 new_size = static_cast<Int128>(size) + adjustment;
+            size = new_size < 0 ? 0 : new_size > std::numeric_limits<Int64>::max() ? std::numeric_limits<Int64>::max() : static_cast<Int64>(new_size);
         }
 
         if (offset != 0 && size > 0)
