@@ -1,8 +1,8 @@
 -- The row-level security filter and `PREWHERE` run inside the `Memory` reading source, so the sets of
--- their `IN (subquery)` conditions have to be built while the plan is optimized, in `applyFilters` and
--- `updatePrewhereInfo`, and not when the pipeline is built: by then `CreatingSetsStep` has already
--- taken the subquery plans. A set built in place does not need the `CreatingSet` branch and the
--- `DelayedPorts` gate in the pipeline, which is what this test asserts on.
+-- their `IN (subquery)` conditions have to be built while the plan is optimized, in `applyFilters`,
+-- and not when the pipeline is built: by then `CreatingSetsStep` has already taken the subquery plans.
+-- A set built in place does not need the `CreatingSet` branch and the `DelayedPorts` gate in the
+-- pipeline, which is what this test asserts on. A condition the optimizer moves to `PREWHERE` keeps them.
 
 SET max_threads = 1;
 SET optimize_move_to_prewhere = 1;

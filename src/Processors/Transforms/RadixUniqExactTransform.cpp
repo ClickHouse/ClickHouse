@@ -2015,6 +2015,10 @@ IProcessor::Status RadixUniqExactBarrierTransform::prepare()
         return Status::Finished;
     }
 
+    if (!was_output_needed && !isAnyOutputNeeded())
+        return Status::PortFull;
+    was_output_needed = true;
+
     bool all_inputs_finished = true;
     for (auto & input : inputs)
     {

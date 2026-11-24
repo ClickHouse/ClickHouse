@@ -86,10 +86,6 @@ private:
     size_t num_streams;
     bool delay_read_for_global_sub_queries;
 
-    /// Whether `applyFilters` has run for this step, i.e. whether the sets of the in-source filters
-    /// were built in place; see `updatePrewhereInfo`.
-    bool filters_applied = false;
-
     /// TopN dynamic filtering (see `tryOptimizeTopK`): the rows that cannot enter the top-K heap
     /// of the query are dropped inside the source, before the other columns are read.
     FormatTopKFilterInfoPtr top_k_filter;

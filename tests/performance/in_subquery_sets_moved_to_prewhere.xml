@@ -1,0 +1,28 @@
+<test>
+    <!-- Many `IN (subquery)` conditions on non-key columns, moved to PREWHERE by the optimizer (#134090). -->
+
+    <create_query>CREATE TABLE moved_prewhere_fact (id UInt64, a UInt32, b UInt32, c UInt32, d UInt32, e UInt32, f UInt32, v Float64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE moved_prewhere_dim (id UInt32, name String) ENGINE = MergeTree ORDER BY id</create_query>
+
+    <fill_query>
+        INSERT INTO moved_prewhere_fact SELECT number, number % 300000, (number * 7) % 300000, (number * 13) % 300000, (number * 17) % 300000,
+            (number * 19) % 300000, (number * 23) % 300000, number % 100
+        FROM numbers(2000000)
+    </fill_query>
+    <fill_query>INSERT INTO moved_prewhere_dim SELECT number, concat('name_', toString(cityHash64(number))) FROM numbers(300000)</fill_query>
+    <fill_query>OPTIMIZE TABLE moved_prewhere_fact FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE moved_prewhere_dim FINAL</fill_query>
+
+    <query>
+        SELECT count(), sum(v) FROM moved_prewhere_fact
+        WHERE a IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%11%') AND b IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%12%')
+            AND c IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%13%') AND d IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%14%')
+            AND e IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%15%') AND f IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%16%')
+            AND a IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%1%') AND b IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%2%')
+            AND c IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%3%') AND d IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%4%')
+            AND e IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%5%') AND f IN (SELECT id FROM moved_prewhere_dim WHERE name LIKE '%6%')
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS moved_prewhere_fact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS moved_prewhere_dim</drop_query>
+</test>
