@@ -1517,6 +1517,18 @@ def test_restore_materialized_view_checks_source_rights():
     assert expected_error in instance.query_and_get_error(f"RESTORE TABLE test.mv2 FROM {backup_name2}", user="u1")
     assert instance.query("EXISTS test.mv2") == "0\n"
 
+    # Nor does it hide a table function, the rights for which are checked only when the query can be analyzed.
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.mv3 TO test.sink AS "
+        "SELECT x, y FROM test.table WHERE x IN (SELECT x FROM remote('127.0.0.1', test.other))"
+    )
+    instance.query("GRANT SELECT, INSERT, CREATE VIEW, BACKUP ON test.mv3 TO u1")
+    backup_name3 = new_backup_name()
+    instance.query(f"BACKUP TABLE test.mv3, TABLE test.table AS test.missing TO {backup_name3}", user="u1")
+    instance.query("DROP TABLE test.mv3")
+    assert "UNKNOWN_TABLE" in instance.query_and_get_error(f"RESTORE TABLE test.mv3 FROM {backup_name3}", user="u1")
+    assert instance.query("EXISTS test.mv3") == "0\n"
+
     instance.query("GRANT SELECT ON test.secret TO u1")
     instance.query(f"RESTORE TABLE test.mv FROM {backup_name}", user="u1")
     assert instance.query("EXISTS test.mv") == "1\n"

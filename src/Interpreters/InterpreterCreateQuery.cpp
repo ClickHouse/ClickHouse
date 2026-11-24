@@ -49,6 +49,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -2446,11 +2447,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// A restore does not validate the view, but checks the rights for the tables that its query reads, as `CREATE` does.
         try
         {
-            getMaterializedViewSampleBlock(create);
+            (void)getMaterializedViewSampleBlock(create);
         }
         catch (Exception & e)
         {
-            if (e.code() == ErrorCodes::ACCESS_DENIED)
+            /// The rights for a table function are checked only by the analysis.
+            std::function<bool(const IAST &)> has_table_function = [&](const IAST & ast)
+            {
+                const auto * table_expression = ast.as<ASTTableExpression>();
+                return (table_expression && table_expression->table_function)
+                    || std::ranges::any_of(ast.children, [&](const auto & child) { return has_table_function(*child); });
+            };
+            if (e.code() == ErrorCodes::ACCESS_DENIED || has_table_function(*create.select))
                 throw;
 
             /// The query cannot be analyzed, for example a table is missing. Then the rights are checked for every table that it names.
