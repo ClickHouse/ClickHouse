@@ -14,13 +14,9 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
-#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-
-#include <algorithm>
 
 
 namespace DB::BackupUtils
@@ -75,65 +71,10 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 }
 
 
-namespace
-{
-    /// Whether a DATABASE or ALL element selects the data of `system.named_collections`: the element
-    /// must select the table and must not exclude its data. A table whose data is excluded (`EXCEPT
-    /// DATA FROM TABLES`) keeps only its definition in the backup, which exports no collection.
-    bool wildcardElementExportsSystemNamedCollections(const ASTBackupQuery::Element & element)
-    {
-        static const DatabaseAndTableName system_named_collections{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"};
-
-        if (element.except_data_tables.contains(system_named_collections))
-            return false;
-
-        if (element.type == ASTBackupQuery::DATABASE)
-            return (element.database_name == system_named_collections.first)
-                && !element.except_tables.contains(system_named_collections);
-
-        if (element.type == ASTBackupQuery::ALL)
-            return !element.except_databases.contains(system_named_collections.first)
-                && !element.except_tables.contains(system_named_collections);
-
-        return false;
-    }
-}
-
-bool isSystemNamedCollectionsTable(const QualifiedTableName & table_name)
-{
-    return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "named_collections");
-}
-
-bool wildcardSelectionExportsSystemNamedCollections(const ASTBackupQuery::Elements & elements)
-{
-    return std::ranges::any_of(elements, wildcardElementExportsSystemNamedCollections);
-}
-
-void excludeSystemNamedCollectionsFromWildcardSelection(ASTBackupQuery::Elements & elements)
-{
-    for (auto & element : elements)
-        if (wildcardElementExportsSystemNamedCollections(element))
-            element.except_tables.emplace(DatabaseCatalog::SYSTEM_DATABASE, "named_collections");
-}
-
-bool explicitSelectionExportsSystemNamedCollections(const ASTBackupQuery::Elements & elements)
-{
-    return std::ranges::any_of(
-        elements,
-        [](const ASTBackupQuery::Element & element)
-        {
-            /// `EXCEPT DATA FROM TABLE` on the element keeps only the table's definition in the
-            /// backup, which exports no collection.
-            return (element.type == ASTBackupQuery::TABLE) && (element.database_name == DatabaseCatalog::SYSTEM_DATABASE)
-                && (element.table_name == "named_collections") && !element.except_data;
-        });
-}
-
 /// Returns access required to execute BACKUP query.
-AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, std::optional<bool> backup_named_collections)
+AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements)
 {
     AccessRightsElements required_access;
-    bool exports_named_collections = false;
     for (const auto & element : elements)
     {
         switch (element.type)
@@ -141,13 +82,6 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             case ASTBackupQuery::TABLE:
             {
                 required_access.emplace_back(AccessType::BACKUP, element.database_name, element.table_name);
-                /// Naming the table explicitly exports the collections unless `backup_named_collections`
-                /// turns the export off (see `backupNamedCollections`) or `EXCEPT DATA FROM TABLE` keeps
-                /// only the table's definition in the backup.
-                exports_named_collections |= (backup_named_collections != false)
-                    && (element.database_name == DatabaseCatalog::SYSTEM_DATABASE)
-                    && (element.table_name == "named_collections")
-                    && !element.except_data;
                 break;
             }
 
@@ -161,11 +95,6 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP, element.database_name);
-                /// A DATABASE or ALL element selecting the table's data requires the rights only with
-                /// `backup_named_collections = true`: with the setting unset such an element exports
-                /// the collections only if the user holds the rights (see `backupNamedCollections`),
-                /// so nothing is required.
-                exports_named_collections |= (backup_named_collections == true) && wildcardElementExportsSystemNamedCollections(element);
                 break;
             }
 
@@ -173,27 +102,10 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP);
-                exports_named_collections |= (backup_named_collections == true) && wildcardElementExportsSystemNamedCollections(element);
                 break;
             }
         }
     }
-
-    /// Exporting `system.named_collections` writes the values of all SQL-created named collections into
-    /// the backup, so it requires the same rights as reading the values (see `backupNamedCollections`,
-    /// which re-checks them on every host collecting the entries). The initiating host of a
-    /// `BACKUP ON CLUSTER` query never runs the collector, and with the default
-    /// `distributed_ddl_use_initial_user_and_roles = false` the other hosts execute the query with full
-    /// access, so this list is the only check made against the initiating user before the query is
-    /// sent to them.
-    if (exports_named_collections)
-    {
-        required_access.emplace_back(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS});
-        /// `SHOW NAMED COLLECTIONS SECRETS` alone does not allow reading the values back, reading them
-        /// requires `displaySecretsInShowAndSelect` with it (see `StorageSystemNamedCollections`).
-        required_access.emplace_back(AccessType::displaySecretsInShowAndSelect);
-    }
-
     return required_access;
 }
 
@@ -252,11 +164,11 @@ namespace
 
 /// The `MergeTreeData` behind `storage` if it is on a storage policy marked `backup_metadata_only`. Only a `MergeTreeData`
 /// keeps its data on a storage policy: `Alias`, `Distributed` and `StorageProxy` report one but keep no data of their own.
-/// Loads a lazily loaded table, whose `StorageTableProxy` reports no storage policy, but never runs the table function
-/// behind a `StorageTableFunctionProxy`, which is checked for every table backed up or restored.
+/// A proxy is not resolved here, unlike on master, where `resolveStorageProxyLoading` loads a lazily loaded table: the
+/// helpers it needs are not on this branch, so a table behind a proxy keeps its data backed up as usual.
 std::shared_ptr<MergeTreeData> getMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
 {
-    auto merge_tree = castStorage<MergeTreeData>(resolveStorageProxyLoading(storage), DeferredTable::Skip);
+    auto merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
     if (!merge_tree)
         return nullptr;
     auto policy = merge_tree->getStoragePolicy();
@@ -265,57 +177,26 @@ std::shared_ptr<MergeTreeData> getMergeTreeOnBackupMetadataOnlyStoragePolicy(con
     return merge_tree;
 }
 
-void warnBackupMetadataOnlyIgnored(const StoragePtr & storage, const String & reason)
-{
-    LOG_WARNING(
-        getLogger("BackupUtils"),
-        "{} is on a storage policy marked backup_metadata_only, which BACKUP and RESTORE support only for tables of the MergeTree "
-        "family that are neither replicated nor shared, but {}: its data is backed up and restored as usual",
-        storage->getStorageID().getNameForLogs(),
-        reason);
 }
 
-}
-
-bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context)
+/// `context` is unused here: only the `TimeSeries` targets left out on this branch needed it.
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, [[maybe_unused]] const ContextPtr & context)
 {
     /// Only a table of the plain `MergeTree` family reopens the parts it finds on the storage. `RESTORE` creates a
     /// `ReplicatedMergeTree` table in a mode that refuses them, a `SharedMergeTree` table sees only the parts in Keeper,
     /// and a view looks for the data of its inner tables in the backup. For the others the flag is ignored.
-    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
-    {
-        if (materialized_view->hasInnerTable())
-        {
-            auto target = materialized_view->tryGetTargetTable();
-            if (target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
-                warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a materialized view with the inner table {}", target->getStorageID().getNameForLogs()));
-        }
+    ///
+    /// Master warns when it ignores the flag, naming the inner table that carries it. The warning is left out here:
+    /// it needs the inner tables of a `TimeSeries` table through `getTargetKinds`, which is not static on this
+    /// branch, and the answer below does not depend on it.
+    if (typeid_cast<const StorageMaterializedView *>(storage.get()) || typeid_cast<const StorageTimeSeries *>(storage.get()))
         return false;
-    }
-
-    if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
-    {
-        for (auto target_kind : StorageTimeSeries::getTargetKinds())
-        {
-            if (!time_series->isInnerTable(target_kind))
-                continue;
-            auto target = time_series->tryGetTargetTable(target_kind, context);
-            if (target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
-                warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a TimeSeries table with the inner table {}", target->getStorageID().getNameForLogs()));
-        }
-        return false;
-    }
 
     auto merge_tree = getMergeTreeOnBackupMetadataOnlyStoragePolicy(storage);
     if (!merge_tree)
         return false;
 
-    if (!castStorage<StorageMergeTree>(merge_tree, DeferredTable::Skip))
-    {
-        warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a {} table", merge_tree->getName()));
-        return false;
-    }
-    return true;
+    return std::dynamic_pointer_cast<StorageMergeTree>(merge_tree) != nullptr;
 }
 
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ASTPtr & create_table_query, const ContextPtr & context)

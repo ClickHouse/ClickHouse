@@ -31,16 +31,6 @@ If true, subquery for IN will be executed on every follower replica.
 
 Allow usage of materialized views with parallel replicas
 
-## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
-
-<ExperimentalBadge/>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."}]}]}/>
-
-Allow reading from a `Merge` table with parallel replicas. Effective only together with [parallel_replicas_plan_based](/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based): the read from the `Merge` table is expanded into a union of the reads from the underlying `MergeTree` tables, which is then distributed like any other union. A `Merge` table is left to a single replica when any of its underlying tables cannot be read that way (a non-`MergeTree` table, a `FINAL` read). Set it to `false` to read every `Merge` table on a single replica, as before the support was added. Experimental.
-
 ## parallel_replicas_allow_view_over_mergetree {#parallel_replicas_allow_view_over_mergetree}
 
 <BetaBadge/>
@@ -57,7 +47,7 @@ Allow parallel replicas to execute the outer query of a simple view over `MergeT
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "300"},{"label": "Separate connection timeout for parallel replicas queries"}]}]}/>
 
-The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
+The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query executio
 
 ## parallel_replicas_count {#parallel_replicas_count}
 
@@ -78,8 +68,6 @@ Simple expressions using primary keys are preferred.
 
 If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
 Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
-
-The expression is checked against the column-level `SELECT` grants of the user. For a view with `SQL SECURITY DEFINER` or `NONE` it is applied to the columns of the view; the body of the view is read without it.
 
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
@@ -111,13 +99,13 @@ Note: This setting will not cause any additional data to be filtered during quer
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<BetaBadge/>
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Enabled by default"}]}]}/>
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-Push a condition standing above the part of the query parallel replicas execute into that part, and into the query the replicas are sent, so that they filter by it as well.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-Turn it off to keep the condition above the read on the initiator, as versions before 26.10 did. It is the way out if the push-down misbehaves: the answer does not change either way, only how much work the replicas do and how early they do it.
+Allow pushing down filters to part of query which parallel replicas choose to execute
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
@@ -133,37 +121,21 @@ Replace table function engines with their -Cluster alternatives
 
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
 
-## parallel_replicas_for_object_storage_tables {#parallel_replicas_for_object_storage_tables}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to read tables with an object storage engine with parallel replicas."}]}]}/>
-
-Read a table with an object storage engine that has a `-Cluster` table function (`S3`, `AzureBlobStorage`, `HDFS`, `Iceberg`, `IcebergS3`, `IcebergAzure`, `IcebergHDFS`, `IcebergLocal`, `DeltaLake`, `DeltaLakeS3`, `DeltaLakeAzure`, `Hudi`, `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`) over the replicas of `cluster_for_parallel_replicas`, the same way `parallel_replicas_for_cluster_engines` does for the table functions. Has no effect when `parallel_replicas_for_cluster_engines` is disabled.
-
-A replica takes part in the read only if it has the table, and the table must have the same definition on every replica.
-
-## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
-
-<BetaBadge/>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control whether parallel replicas are used for queries joining multiple tables (queries with JOIN). It does not affect a UNION query without a JOIN, nor ARRAY JOIN."}]}]}/>
-
-If enabled, parallel replicas can be used for queries joining multiple tables (queries with `JOIN`). If disabled, parallel replicas are not used for such queries, and they are executed without parallel replicas.
-
-The setting affects only queries with `JOIN`, where the non-leftmost side is read in full on every replica. A `UNION` query without a `JOIN` is not affected: each `UNION` branch is an independent single-table read, so parallel replicas remain applicable to it. A `UNION` used as a table expression of a `JOIN` is a part of a query joining multiple tables and is affected. `ARRAY JOIN` does not count as a join between tables.
-
 ## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}]}]}/>
 
-Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
+Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_pla
 
-This concerns the index analysis that selects the mark ranges a read announces, which is what the coordinator assigns from. It does not cover pruning that happens while the data is read, such as the granule pruning of `enable_join_runtime_filters_index_analysis`: a JOIN runtime filter only exists once the build side has been read, so every replica evaluates its own and prunes its own share, and no coordinator could do it for them.
+## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}]}]}/>
+
+Use local pipeline during distributed INSERT SELECT with parallel replicas
 
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
@@ -187,8 +159,6 @@ Parts virtually divided into segments to be distributed between replicas for par
 
 Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
 
-Ignored when `automatic_parallel_replicas_mode` is enabled: the automatic mode decides with its own cost model.
-
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />
@@ -196,6 +166,14 @@ Ignored when `automatic_parallel_replicas_mode` is enabled: the automatic mode d
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "read_tasks"},{"label": "This setting was introduced as a part of making parallel replicas feature Beta"}]}]}/>
 
 Type of filter to use with custom key for parallel replicas. default - use modulo operation on the custom key, range - use range filter on custom key using all possible values for the value type of custom key.
+
+## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Parallel replicas is supported only with analyzer enabled"}]}]}/>
+
+The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 
 ## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
@@ -207,15 +185,13 @@ Type of filter to use with custom key for parallel replicas. default - use modul
 
 Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
 
-Has no effect on a distributed `INSERT SELECT` ([parallel_distributed_insert_select](/reference/settings/session-settings/parallel#parallel_distributed_insert_select) = 2), which ships the whole `INSERT` as a query to every replica: a replica executing that query reads with the query-tree-based implementation, so the initiator, taking part as one more replica, uses it too.
-
 ## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN."}]}]}/>
 
-If true, and `JOIN` can be executed with parallel replicas algorithm, and every storage of the `JOIN` part that would otherwise be materialized into a temporary table can be read by each replica on its own, local `JOIN` will be used instead of `GLOBAL JOIN`. That part is the right one, except for a `RIGHT JOIN`, where it is the left one and where every storage has to be eligible for parallel replicas rather than merely `*MergeTree`. A storage under the materialized side of a nested `GLOBAL JOIN`, or under a `GLOBAL IN`, does not count, because the initiator materializes those itself.
+If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN.
 
 ## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 
@@ -233,6 +209,6 @@ This allows queries with `max_parallel_replicas = 1` to be directed to another h
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."}]}]}/>
 
-Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan.
+Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
 
 {/*AUTOGENERATED_END*/}

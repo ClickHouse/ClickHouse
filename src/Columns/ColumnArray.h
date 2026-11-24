@@ -52,21 +52,12 @@ public:
       */
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
-        /// Per the doc comment above, the underlying columns may be shared. `assumeMutable` here
-        /// would `chassert(use_count() == 1)` and abort, while `IColumn::mutate` would deep-clone
-        /// and break callers like `recursiveRemoveLowCardinality` that rely on offsets aliasing the
-        /// original `ColumnArray`. Bypass the assertion via `const_cast` + `getPtr` — equivalent to
-        /// the old `assumeMutable` fast path. The result is returned as `Ptr` (immutable), and any
-        /// mutation must go through `IColumn::mutate`, which deep-clones shared sub-columns at the
-        /// proper time.
-        return ColumnArray::create(
-            const_cast<IColumn *>(nested_column.get())->getPtr(),
-            const_cast<IColumn *>(offsets_column.get())->getPtr());
+        return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
     }
 
     static Ptr create(const ColumnPtr & nested_column)
     {
-        return ColumnArray::create(const_cast<IColumn *>(nested_column.get())->getPtr());
+        return ColumnArray::create(nested_column->assumeMutable());
     }
 
     template <typename ... Args>
@@ -85,17 +76,14 @@ public:
     void get(size_t n, Field & res) const override;
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return data->isFixedAndContiguous(); }
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
-
-    /// All arrays are empty iff every offset is zero.
-    bool hasOnlyTypeDefaults() const override;
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
@@ -109,10 +97,8 @@ public:
     bool tryInsert(const Field & x) override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertFrom(const IColumn & src_, size_t n) override;
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
@@ -200,7 +186,6 @@ public:
         data->forEachMutableSubcolumnRecursively(callback);
     }
 
-    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(offsets);
@@ -222,16 +207,7 @@ public:
         return false;
     }
 
-    void finalize() override
-    {
-        /// A row-input format serializer can retain a `ColumnPtr` to `data` while the
-        /// owning `ColumnArray` is finalized. Mutating the slot through `IColumn::mutate`
-        /// would replace it with a clone and leave that retained reference pointing to a
-        /// different column. The serializer owns this bounded sharing and mutates the
-        /// nested column in place.
-        const auto & data_ref = data;
-        const_cast<IColumn &>(*data_ref).finalize();
-    }
+    void finalize() override { data->finalize(); }
     bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }

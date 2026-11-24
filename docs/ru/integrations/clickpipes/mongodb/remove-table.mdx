@@ -10,6 +10,8 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 В некоторых случаях имеет смысл исключить определённые таблицы из MongoDB ClickPipe — например, если какая-то таблица не нужна для вашей аналитической рабочей нагрузки, её пропуск поможет снизить затраты на хранилище и репликацию в ClickHouse.
 
 <div id="remove-tables-steps">
@@ -25,15 +27,7 @@ integration:
 
 <br />
 
-<div className="ch-image-md">
-
-<Frame>
-
-![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
 
 5. Нажмите Update.
 6. После успешного обновления на вкладке **Metrics** статус будет **Running**. Эта таблица больше не будет реплицироваться данным ClickPipe.

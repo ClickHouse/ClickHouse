@@ -63,7 +63,7 @@
     </fill_query>
 
     <!-- Parallel hash join with low-cardinality keys: many dispatched blocks will be empty,
-        exercising the empty-block skip optimisation in HashJoinResult -->
+        exercising the empty-block skip optimisation in ConcurrentHashJoinResult -->
     <query tag='inner_low_card'>
         SELECT count() FROM
             (SELECT number % 10 AS k FROM numbers_mt(100000)) AS l
@@ -112,20 +112,6 @@
         SELECT count() FROM phj_asof_left AS l
         ASOF LEFT JOIN phj_asof_right AS r
         ON l.key = r.key AND l.ts &lt;= r.ts
-        FORMAT Null
-    </query>
-
-    <!-- More than 2^15 keys in every bucket of the two-level map. Half of the left keys are found. -->
-    <query tag='left_large_right'>
-        SELECT sum(r.v) FROM (SELECT intHash64(number) AS k FROM numbers_mt(24000000)) AS l
-        LEFT JOIN (SELECT intHash64(number * 2) AS k, number AS v FROM numbers_mt(12000000)) AS r ON l.k = r.k
-        FORMAT Null
-    </query>
-
-    <!-- The same with dense keys. -->
-    <query tag='left_large_right_dense'>
-        SELECT sum(r.v) FROM (SELECT number AS k FROM numbers_mt(24000000)) AS l
-        LEFT JOIN (SELECT number AS k, number AS v FROM numbers_mt(12000000)) AS r ON l.k = r.k
         FORMAT Null
     </query>
 

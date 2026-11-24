@@ -6,6 +6,8 @@ keywords: ['희소 프라이머리 인덱스', '프라이머리 인덱스', '인
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 <Tip>
   **고급 인덱싱에 관한 자세한 내용을 찾고 계신가요?**
 
@@ -30,15 +32,7 @@ ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 �
 
 [앞서 살펴본 것처럼](/ko/concepts/core-concepts/parts), 프라이머리 키가 (town, street)인 ① 예시 테이블에서는 ② 삽입된 데이터가 ③ 프라이머리 키 컬럼 값을 기준으로 정렬된 상태로 디스크에 저장되며, 각 컬럼은 별도의 파일에 압축되어 저장됩니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
 
 <br />
 
@@ -48,15 +42,7 @@ ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 �
 
 이 그래뉼 구조 때문에 프라이머리 인덱스는 **희소**해집니다. ClickHouse는 모든 행을 인덱싱하는 대신, 각 그래뉼에서 단 하나의 행, 즉 첫 번째 행의 ⑤ 프라이머리 키 값만 저장합니다. 그 결과 그래뉼마다 하나의 인덱스 엔트리가 생성됩니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
 
 <br />
 
@@ -70,37 +56,19 @@ ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 �
 
 다음 애니메이션을 통해 희소 프라이머리 인덱스가 쿼리 가속에 어떻게 사용되는지 간단히 살펴보겠습니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
 
 <br />
 
 <br />
 
-<Steps>
-  <Step title="쿼리 프레디케이트 파싱">
-    예시 쿼리에는 두 프라이머리 키 컬럼 모두에 대한 프레디케이트가 포함되어 있습니다: `town = 'LONDON' AND street = 'OXFORD STREET'`.
-  </Step>
+① 예시 쿼리에는 두 프라이머리 키 컬럼 모두에 대한 프레디케이트가 포함되어 있습니다: `town = 'LONDON' AND street = 'OXFORD STREET'`.
 
-  <Step title="프라이머리 인덱스 로드">
-    쿼리 속도를 높이기 위해 ClickHouse는 테이블의 프라이머리 인덱스를 메모리에 로드합니다.
-  </Step>
+② 쿼리 속도를 높이기 위해 ClickHouse는 테이블의 프라이머리 인덱스를 메모리에 로드합니다.
 
-  <Step title="일치하는 그래뉼 식별">
-    그런 다음 인덱스 항목을 스캔하여 어떤 그래뉼에 프레디케이트와 일치하는 행이 포함될 수 있는지, 다시 말해 어떤 그래뉼을 건너뛸 수 없는지를 식별합니다.
-  </Step>
+③ 그런 다음 인덱스 항목을 스캔하여 어떤 그래뉼에 프레디케이트와 일치하는 행이 포함될 수 있는지, 다시 말해 어떤 그래뉼을 건너뛸 수 없는지를 식별합니다.
 
-  <Step title="그래뉼 로드 및 처리">
-    이렇게 잠재적으로 관련 있는 그래뉼을 쿼리에 필요한 다른 컬럼의 해당 그래뉼과 함께 메모리로 로드한 다음 [처리합니다](/ko/concepts/core-concepts/query-parallelism).
-  </Step>
-</Steps>
+④ 이렇게 잠재적으로 관련 있는 그래뉼을 쿼리에 필요한 다른 컬럼의 해당 그래뉼과 함께 메모리로 로드한 다음 [처리합니다](/ko/concepts/core-concepts/query-parallelism).
 
 <div id="monitoring-primary-indexes">
   ## 프라이머리 인덱스 모니터링

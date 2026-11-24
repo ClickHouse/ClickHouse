@@ -11,11 +11,7 @@ do
     echo "$engine:"
 
     $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS tbl"
-    # Pin the column codec to `LZ4`. `Log`/`TinyLog` store each column with its own codec, so this keeps
-    # their byte dumps independent of the server default codec. `StripeLog` instead writes one shared
-    # `data.bin` (and its `index.mrk`) with the server default codec regardless of the column codec, so its
-    # dumps reflect that default (currently `ZSTD(3)`).
-    $CLICKHOUSE_CLIENT --query="CREATE TABLE tbl(x UInt32 CODEC(LZ4), y String CODEC(LZ4)) ENGINE=$engine"
+    $CLICKHOUSE_CLIENT --query="CREATE TABLE tbl(x UInt32, y String) ENGINE=$engine"
     data_dir=$($CLICKHOUSE_CLIENT --query="SELECT data_paths[1] FROM system.tables WHERE name='tbl' AND database=currentDatabase()")
 
     echo "empty:"

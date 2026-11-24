@@ -49,50 +49,40 @@ public:
         if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs). "
+                "Function {} is deprecated since its usage is error-prone (see docs)."
                 "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
                 name);
 
         return std::make_shared<FunctionRunningAccumulate>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isStateful() const override
+    bool isStateful() const override
     {
         return true;
     }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool isDeterministic() const override
+    bool isDeterministic() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Finalizing an arbitrary aggregate state can throw. The declaration above answers a different
-    /// question, so it must not decide whether unused rows of a replicated argument are finalized.
-    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(M : AggregateFunction) -> aggregateFunctionReturnType(M)"
-               " OR (M : AggregateFunction, Any) -> aggregateFunctionReturnType(M)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -107,7 +97,7 @@ public:
         return type->getReturnType();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const ColumnAggregateFunction * column_with_states
             = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
@@ -193,11 +183,11 @@ REGISTER_FUNCTION(RunningAccumulate)
     FunctionDocumentation::Description description = R"(
 Accumulates the states of an aggregate function for each row of a data block.
 
-<Warning title="Deprecated">
+:::warning Deprecated
 The state is reset for each new block of data.
-Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/reference/functions/window-functions/index) instead.
+Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/reference/functions/window-functions) instead.
 You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
-</Warning>
+:::
 )";
     FunctionDocumentation::Syntax syntax = "runningAccumulate(agg_state[, grouping])";
     FunctionDocumentation::Arguments arguments = {

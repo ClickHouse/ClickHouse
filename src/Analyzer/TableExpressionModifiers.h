@@ -36,7 +36,7 @@ public:
     {}
 
     /// Returns true if final is specified, false otherwise
-    [[nodiscard]] bool hasFinal() const
+    bool hasFinal() const
     {
         return has_final;
     }
@@ -48,37 +48,37 @@ public:
     }
 
     /// Returns true if sample size ratio is specified, false otherwise
-    [[nodiscard]] bool hasSampleSizeRatio() const
+    bool hasSampleSizeRatio() const
     {
         return sample_size_ratio.has_value();
     }
 
     /// Get sample size ratio
-    [[nodiscard]] std::optional<Rational> getSampleSizeRatio() const
+    std::optional<Rational> getSampleSizeRatio() const
     {
         return sample_size_ratio;
     }
 
     /// Returns true if sample offset ratio is specified, false otherwise
-    [[nodiscard]] bool hasSampleOffsetRatio() const
+    bool hasSampleOffsetRatio() const
     {
         return sample_offset_ratio.has_value();
     }
 
     /// Get sample offset ratio
-    [[nodiscard]] std::optional<Rational> getSampleOffsetRatio() const
+    std::optional<Rational> getSampleOffsetRatio() const
     {
         return sample_offset_ratio;
     }
 
     /// Returns true if STREAM modifier is specified
-    [[nodiscard]] bool hasStream() const
+    bool hasStream() const
     {
         return stream_settings.has_value();
     }
 
     /// Get stream settings
-    [[nodiscard]] const std::optional<StreamSettings> & getStreamSettings() const
+    const std::optional<StreamSettings> & getStreamSettings() const
     {
         return stream_settings;
     }
@@ -90,7 +90,7 @@ public:
     void updateTreeHash(SipHash & hash_state) const;
 
     /// Format for error message
-    [[nodiscard]] String formatForErrorMessage() const;
+    String formatForErrorMessage() const;
 
 private:
     bool has_final = false;

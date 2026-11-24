@@ -8,21 +8,15 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 Este conjunto de dados contém todos os registros de `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory` e `PostLinks` do Stack Overflow.
 
 Você pode baixar versões Parquet dos dados já preparadas, contendo todas as postagens até abril de 2024, ou baixar os dados mais recentes em formato XML e carregá-los. O Stack Overflow fornece atualizações desses dados periodicamente — historicamente, a cada 3 meses.
 
 O diagrama a seguir mostra o esquema das tabelas disponíveis, considerando o formato Parquet.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Esquema do Stack Overflow](/images/getting-started/example-datasets/stackoverflow.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Esquema do Stack Overflow" size="md" />
 
 Uma descrição do esquema desses dados pode ser encontrada [aqui](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 
@@ -72,7 +66,7 @@ ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
 ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
 
-INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
+INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
 ```
 
 ```response
@@ -98,7 +92,7 @@ CREATE TABLE stackoverflow.votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId, UserId)
 
-INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
+INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
 ```
 
 ```response
@@ -125,7 +119,7 @@ CREATE TABLE stackoverflow.comments
 ENGINE = MergeTree
 ORDER BY CreationDate
 
-INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet', NOSIGN)
+INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
 ```
 
 ```response
@@ -157,7 +151,7 @@ CREATE TABLE stackoverflow.users
 ENGINE = MergeTree
 ORDER BY (Id, CreationDate)
 
-INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
+INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
 ```
 
 ```response
@@ -181,7 +175,7 @@ CREATE TABLE stackoverflow.badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
+INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
 ```
 
 ```response
@@ -204,7 +198,7 @@ CREATE TABLE stackoverflow.postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
+INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
 ```
 
 ```response
@@ -232,7 +226,7 @@ CREATE TABLE stackoverflow.posthistory
 ENGINE = MergeTree
 ORDER BY (CreationDate, PostId)
 
-INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet', NOSIGN)
+INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet')
 ```
 
 ```response
