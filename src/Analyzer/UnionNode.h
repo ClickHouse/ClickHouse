@@ -179,13 +179,13 @@ public:
     }
 
     /// Returns true if union node is a keyed recursive CTE (WITH RECURSIVE name USING KEY (...) AS), false otherwise
-    bool hasRecursiveCTEKeyColumns() const
+    [[nodiscard]] bool hasRecursiveCTEKeyColumns() const
     {
         return !recursive_cte_key_columns.empty();
     }
 
     /// Get keyed recursive CTE key column names
-    const Names & getRecursiveCTEKeyColumns() const
+    [[nodiscard]] const Names & getRecursiveCTEKeyColumns() const
     {
         return recursive_cte_key_columns;
     }
