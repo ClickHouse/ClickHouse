@@ -42,3 +42,8 @@ NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 7
+-- another Distributed table over a table of the same name in another database is replaced by its local table
+3
+3
+-- and fails if the database of the table depends on the shard
+NOT_IMPLEMENTED

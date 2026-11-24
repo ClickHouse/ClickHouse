@@ -114,7 +114,22 @@ $CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM plai
     | grep -o -m1 'NOT_IMPLEMENTED'
 $CLICKHOUSE_CLIENT --distributed_product_mode global -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM plain_same)"
 
+echo '-- another Distributed table over a table of the same name in another database is replaced by its local table'
 $CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE shard_0.local_data (d Date, x UInt64) ENGINE = MergeTree ORDER BY x;
+    INSERT INTO shard_0.local_data VALUES ('2024-01-15', 1), ('2024-02-15', 10);
+    CREATE TABLE plain_other_database (d Date, x UInt64) ENGINE = Distributed(test_cluster_two_shards_localhost, shard_0, local_data);
+"
+$CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM plain_other_database)"
+$CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same AS a INNER JOIN plain_other_database AS b USING (x)"
+echo '-- and fails if the database of the table depends on the shard'
+$CLICKHOUSE_CLIENT -q "CREATE TABLE plain_shard_database (d Date, x UInt64) ENGINE = Distributed(test_cluster_two_shards_different_databases, '', local_data)"
+$CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE (d, x) IN plain_shard_database" 2>&1 \
+    | grep -o -m1 'NOT_IMPLEMENTED'
+
+$CLICKHOUSE_CLIENT -m -q "
+    DROP TABLE plain_shard_database;
+    DROP TABLE plain_other_database;
     DROP TABLE plain_same;
     DROP TABLE plain_other;
     DROP TABLE other_data;

@@ -1167,7 +1167,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 /// `distributed_product_mode = 'local'` replaces other `Distributed` tables of the query by their local tables.
 /// The partitions skipped while they are moved between shards are known only for the tables of `distributed_table` itself.
-static void checkPartitionMovesOfReplacedTables(const QueryTreeNodePtr & node, const StorageID & distributed_table, const String * remote_table_with_moves)
+static void checkPartitionMovesOfReplacedTables(const QueryTreeNodePtr & node, const StorageID & distributed_table, const StorageID * remote_table_with_moves)
 {
     if (!node)
         return;
@@ -1182,7 +1182,11 @@ static void checkPartitionMovesOfReplacedTables(const QueryTreeNodePtr & node, c
                 "Table {} cannot be read by a query of table {} with `distributed_product_mode = 'local'` while its partitions are moved between shards",
                 other_table.getNameForLogs(), distributed_table.getNameForLogs());
 
-        if (remote_table_with_moves && dummy->getStorageID().table_name == *remote_table_with_moves)
+        /// A name without a database can be the same table on a shard, a name with another database cannot.
+        const auto & local_table = dummy->getStorageID();
+        if (remote_table_with_moves && local_table.table_name == remote_table_with_moves->table_name
+            && (local_table.database_name.empty() || remote_table_with_moves->database_name.empty()
+                || local_table.database_name == remote_table_with_moves->database_name))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Table {} cannot be read by a query of table {} with `distributed_product_mode = 'local'` while the partitions of {} are moved between shards",
                 other_table.getNameForLogs(), distributed_table.getNameForLogs(), distributed_table.getNameForLogs());
@@ -1268,7 +1272,7 @@ void StorageDistributed::read(
         modified_query_info.partitions_to_skip_by_shard = getPartitionsToSkipByShard(getCluster());
 
     const bool skips_partitions = modified_query_info.partitions_to_skip_by_shard && !modified_query_info.partitions_to_skip_by_shard->empty();
-    checkPartitionMovesOfReplacedTables(modified_query_info.query_tree, getStorageID(), skips_partitions ? &remote_table : nullptr);
+    checkPartitionMovesOfReplacedTables(modified_query_info.query_tree, getStorageID(), skips_partitions ? &remote_storage : nullptr);
 
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
