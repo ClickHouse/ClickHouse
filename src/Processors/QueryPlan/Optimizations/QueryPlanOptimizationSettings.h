@@ -115,6 +115,7 @@ struct QueryPlanOptimizationSettings
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
+    bool reuse_storage_ordering_for_window_functions_merge_all_streams;
     bool lift_up_union;
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;

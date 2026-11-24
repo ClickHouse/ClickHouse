@@ -401,6 +401,10 @@ bool canOptimizeWindowPerPartition(QueryPlan::Node & node);
 /// `PARTITION BY` determines a prefix of the primary key reads the table by ranges of that prefix: every range
 /// holds whole window partitions, so the sorting and the window functions run for each range independently.
 void optimizeWindowByLayers(QueryPlan::Node & root);
+/// Whether the window sorting with `PARTITION BY` at `node`, if it reads in order, does not merge all the streams
+/// read in order in a single thread: either `optimizeWindowByLayers` is expected to read it by ranges of the primary
+/// key, or there is only one stream to merge. Otherwise the full sorting is parallel and faster.
+bool canReadWindowInOrderWithoutSingleMerge(QueryPlan::Node & node, size_t max_threads);
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);

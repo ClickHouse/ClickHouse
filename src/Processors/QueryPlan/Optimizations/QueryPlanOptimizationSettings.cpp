@@ -110,6 +110,7 @@ namespace Setting
     extern const SettingsBool query_plan_use_shuffle_for_order_by_rand;
     extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
+    extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions_merge_all_streams;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool use_join_disjunctions_push_down;
@@ -282,6 +283,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];
     execute_functions_after_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_execute_functions_after_sorting];
     reuse_storage_ordering_for_window_functions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_reuse_storage_ordering_for_window_functions];
+    reuse_storage_ordering_for_window_functions_merge_all_streams
+        = reuse_storage_ordering_for_window_functions && from[Setting::query_plan_reuse_storage_ordering_for_window_functions_merge_all_streams];
     lift_up_union = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_union];
     aggregate_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_aggregate_partitions_independently];
     remove_redundant_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_distinct];

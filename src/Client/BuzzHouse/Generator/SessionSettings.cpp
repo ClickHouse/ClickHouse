@@ -706,6 +706,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_remove_unused_columns", trueOrFalseSetting},
        {"query_plan_replace_always_true_filter", trueOrFalseSetting},
        {"query_plan_reuse_storage_ordering_for_window_functions", trueOrFalseSetting},
+       {"query_plan_reuse_storage_ordering_for_window_functions_merge_all_streams", trueOrFalseSetting},
        {"query_plan_short_circuit_constant_false_join", trueOrFalseSetting},
        {"query_plan_split_filter", trueOrFalseSetting},
        {"query_plan_top_k_through_array_join", trueOrFalseSetting},

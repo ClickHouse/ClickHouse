@@ -2140,6 +2140,13 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
 
+    /// A window sorting that reads in order merges all the streams read in order into one before scattering them by
+    /// `PARTITION BY`, unless the read is split by ranges of the primary key (`optimizeWindowByLayers`). That single
+    /// merge is much slower than the parallel full sorting, so it is done only on request.
+    if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions_merge_all_streams
+        && !canReadWindowInOrderWithoutSingleMerge(node, optimization_settings.max_threads))
+        return;
+
     /// Processing every table partition by its own window needs neither a scatter nor a merge, which is
     /// cheaper than merging the streams read in order and scattering them again.
     if (sorting->hasPartitions() && optimization_settings.window_partitions_independently && canOptimizeWindowPerPartition(node))

@@ -759,7 +759,8 @@ void optimizeTreeSecondPass(
             /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
             /// subquery's values, exactly the settings that gate an optimization which can call
             /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`
-            /// and, for a sort with window partitions, `reuse_storage_ordering_for_window_functions`),
+            /// and, for a sort with window partitions, `reuse_storage_ordering_for_window_functions` and
+            /// `reuse_storage_ordering_for_window_functions_merge_all_streams`),
             /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
             /// (`distinct_in_order`) and `optimizeLimitByInOrder` (`limit_by_in_order`; it skips parallel
             /// replicas reads for now, but takes the subquery's value so that this stays correct once it does
@@ -780,6 +781,8 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.push_limit_by_into_sort = subquery_optimization_settings.push_limit_by_into_sort;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
+                local_optimization_settings.reuse_storage_ordering_for_window_functions_merge_all_streams
+                    = subquery_optimization_settings.reuse_storage_ordering_for_window_functions_merge_all_streams;
                 local_optimization_settings.enable_parallel_replicas = false;
                 /// Plan-based PR adds the join runtime filters on the outer plan before cloning the
                 /// fragment, so they are already in this local plan; re-adding them would filter the

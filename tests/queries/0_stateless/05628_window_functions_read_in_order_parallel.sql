@@ -24,9 +24,27 @@ FROM (EXPLAIN PIPELINE SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b
 -- Only a prefix of the window sorting comes from the storage: the suffix is sorted in every range.
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%'), countIf(explain LIKE '%FinishSortingTransform × %') > 0, countIf(explain LIKE '%WindowTransform × %') > 0
 FROM (EXPLAIN PIPELINE SELECT a, c, row_number() OVER (PARTITION BY a ORDER BY c, b) FROM t_window_read_in_order);
--- Reading a `UNION ALL` cannot be split by ranges: the streams read in order are merged and scattered by `PARTITION BY`.
+-- Reading a `UNION ALL` cannot be split by ranges: on request, the streams read in order are merged and scattered by `PARTITION BY`.
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%'), countIf(explain LIKE '%WindowTransform × 4%')
-FROM (EXPLAIN PIPELINE SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order));
+FROM (EXPLAIN PIPELINE SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)
+      SETTINGS query_plan_reuse_storage_ordering_for_window_functions_merge_all_streams = 1);
+
+SELECT 'merge of all the streams';
+-- A read that cannot be split by ranges is sorted fully and in parallel instead of merging all the streams read in
+-- order in a single thread, unless that merge is requested or there is a single thread anyway.
+SELECT countIf(explain LIKE '%Prefix sort description%')
+FROM (EXPLAIN actions = 1 SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) FROM t_window_read_in_order);
+SELECT countIf(explain LIKE '%Prefix sort description%')
+FROM (EXPLAIN actions = 1 SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order));
+SELECT countIf(explain LIKE '%Prefix sort description%')
+FROM (EXPLAIN actions = 1 SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)
+      SETTINGS query_plan_reuse_storage_ordering_for_window_functions_merge_all_streams = 1);
+SELECT countIf(explain LIKE '%Prefix sort description%')
+FROM (EXPLAIN actions = 1 SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)
+      SETTINGS max_threads = 1);
+-- `PARTITION BY` does not determine a prefix of the primary key.
+SELECT countIf(explain LIKE '%Prefix sort description%')
+FROM (EXPLAIN actions = 1 SELECT a, b, row_number() OVER (PARTITION BY b ORDER BY a) FROM t_window_read_in_order WHERE a = 1);
 
 SELECT 'results';
 SELECT
@@ -37,7 +55,7 @@ SELECT
   = (SELECT sum(cityHash64(a, b, s)) FROM (SELECT a, b, sum(b) OVER (PARTITION BY a ORDER BY c, b ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS s FROM t_window_read_in_order));
 SELECT
     (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
-  = (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)));
+  = (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)) SETTINGS query_plan_reuse_storage_ordering_for_window_functions_merge_all_streams = 1);
 -- `PARTITION BY a, b % 10` determines only the first column of the primary key, which is enough to split by ranges of `a`.
 SELECT
     (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a, b % 10 ORDER BY c, b) AS rn FROM t_window_read_in_order) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
@@ -53,6 +71,6 @@ SELECT a, b, rn FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b)
 SETTINGS query_plan_enable_multithreading_after_window_functions = 0;
 SELECT a, b, rn FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM t_window_read_in_order) ORDER BY a, b LIMIT 3 OFFSET 3998;
 SELECT a, b, rn FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)) ORDER BY a, b, rn LIMIT 3 OFFSET 7996
-SETTINGS query_plan_enable_multithreading_after_window_functions = 0;
+SETTINGS query_plan_enable_multithreading_after_window_functions = 0, query_plan_reuse_storage_ordering_for_window_functions_merge_all_streams = 1;
 
 DROP TABLE t_window_read_in_order;
