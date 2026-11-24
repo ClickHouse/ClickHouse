@@ -1165,7 +1165,7 @@ QueryAnalyzer::MaxOrdinaryExpressionsResult QueryAnalyzer::recursivelyCollectMax
     {
         /// A lambda parameter is not a valid GROUP BY key: report its binding lambda instead.
         if (auto column_source = column_node->getColumnSourceOrNull();
-            column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+            column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
             return {false, {column_source.get()}, 0};
 
         into.push_back(node);
@@ -1176,7 +1176,7 @@ QueryAnalyzer::MaxOrdinaryExpressionsResult QueryAnalyzer::recursivelyCollectMax
     if (auto * lambda_node = node->as<LambdaNode>())
     {
         auto body_result = recursivelyCollectMaxOrdinaryExpressions(lambda_node->getExpression(), into);
-        body_result.referenced_lambdas.erase(lambda_node);
+        body_result.referenced_lambda_arguments.erase(&lambda_node->getArguments());
         return body_result;
     }
 
@@ -1192,19 +1192,19 @@ QueryAnalyzer::MaxOrdinaryExpressionsResult QueryAnalyzer::recursivelyCollectMax
 
     UInt64 pushed_children = 0;
     bool has_aggregate = false;
-    std::unordered_set<const IQueryTreeNode *> referenced_lambdas;
+    std::unordered_set<const IQueryTreeNode *> referenced_lambda_arguments;
 
     for (auto & child : function->getArguments().getNodes())
     {
         auto child_result = recursivelyCollectMaxOrdinaryExpressions(child, into);
         has_aggregate |= child_result.has_aggregate;
         pushed_children += child_result.pushed_children;
-        referenced_lambdas.merge(child_result.referenced_lambdas);
+        referenced_lambda_arguments.merge(child_result.referenced_lambda_arguments);
     }
 
     /// Without aggregates or unbound lambda parameters below it, the current function replaces its
     /// arguments as a single key.
-    if (!has_aggregate && referenced_lambdas.empty())
+    if (!has_aggregate && referenced_lambda_arguments.empty())
     {
         for (UInt64 i = 0; i < pushed_children; i++)
             into.pop_back();
@@ -1213,7 +1213,7 @@ QueryAnalyzer::MaxOrdinaryExpressionsResult QueryAnalyzer::recursivelyCollectMax
         pushed_children = 1;
     }
 
-    return {has_aggregate, std::move(referenced_lambdas), pushed_children};
+    return {has_aggregate, std::move(referenced_lambda_arguments), pushed_children};
 }
 
 /** Expand GROUP BY ALL by extracting all the SELECT-ed expressions that are not aggregate functions.

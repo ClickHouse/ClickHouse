@@ -171,12 +171,12 @@ private:
 
     void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope) const;
 
-    /// `referenced_lambdas`: lambdas outside the sub-expression whose parameters it references.
-    /// While it is non-empty, the sub-expression is not a valid GROUP BY key.
+    /// `referenced_lambda_arguments`: arguments of the lambdas outside the sub-expression whose
+    /// parameters it references. While it is non-empty, the sub-expression is not a valid GROUP BY key.
     struct MaxOrdinaryExpressionsResult
     {
         bool has_aggregate = false;
-        std::unordered_set<const IQueryTreeNode *> referenced_lambdas;
+        std::unordered_set<const IQueryTreeNode *> referenced_lambda_arguments;
         UInt64 pushed_children = 0;
     };
     static MaxOrdinaryExpressionsResult recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
