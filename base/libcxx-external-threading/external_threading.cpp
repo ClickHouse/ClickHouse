@@ -563,4 +563,30 @@ int __libcpp_condvar_destroy(__libcpp_condvar_t * cv)
     return 0;
 }
 
+__libcpp_thread_id __libcpp_thread_get_current_id()
+{
+    const uint64_t fiber_id = silk::FiberScheduler::getCurrentFiberId().raw;
+    return fiber_id ? fiber_id | (1ull << 63) : pthread_self();
+}
+
+void __libcpp_thread_yield()
+{
+    if (needSilkAwareWait())
+        silk::FiberScheduler::yield();
+    else
+        sched_yield();
+}
+
+void __libcpp_thread_sleep_for(const chrono::nanoseconds & ns)
+{
+    if (needSilkAwareWait())
+    {
+        silk::FiberScheduler::sleep(static_cast<uint64_t>(ns.count()));
+        return;
+    }
+    timespec ts = std::__convert_to_timespec<timespec>(ns);
+    while (nanosleep(&ts, &ts) == -1 && errno == EINTR)
+        ;
+}
+
 _LIBCPP_END_NAMESPACE_STD
