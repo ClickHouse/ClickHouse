@@ -2,7 +2,7 @@
 # Tags: no-fasttest, no-parallel-replicas
 # Tag no-fasttest: needs MinIO
 # Tag no-parallel-replicas: profile events are not available on the other replicas
-# Random settings limits: use_columns_cache=(0, 0); use_query_condition_cache=(0, 0); output_format_parquet_write_page_index=(1, 1); output_format_parquet_row_group_size=(1000000, None); output_format_parquet_row_group_size_bytes=(536870912, None)
+# Random settings limits: use_columns_cache=(0, 0); use_query_condition_cache=(0, 0); output_format_parquet_write_page_index=(1, 1); output_format_parquet_row_group_size=(1000000, None); output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_data_page_row_limit=(20000, None)
 
 # A read that finds the footer of a Parquet file in the metadata cache keeps the offset indexes it reads with it,
 # so that later reads of the file do not request them again. Every file is private to the test database, so the

@@ -1,6 +1,8 @@
 -- A JSON conversion parses a value it cannot convert exactly, so it rejects what the parser rejects
 -- instead of wrapping a number or converting the internal value of a date or an address.
 -- Every case runs with the optimized conversion and with format+parse.
+-- The queries without the setting check the optimized conversion, so pin its default against the settings randomization.
+SET json_use_optimized_type_conversion = 1;
 
 SELECT CAST('{"a":300}'::JSON(a Int64), 'JSON(a Int8)'); -- { serverError INCORRECT_DATA }
 SELECT CAST('{"a":300}'::JSON(a Int64), 'JSON(a Int8)') SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
