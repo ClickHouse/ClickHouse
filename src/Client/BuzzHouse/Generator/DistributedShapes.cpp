@@ -150,6 +150,8 @@ std::vector<std::pair<String, String>> StatementGenerator::parallelReplicasSetti
     add("parallel_replicas_mode", "'read_tasks'");
     add("make_distributed_plan", "0");
     add("parallel_replicas_for_queries_with_multiple_tables", "1");
+    /// Parallel replicas do not read with `FINAL`, and turn themselves off for it
+    add("final", "0");
     /// TODO: temporary, so that the reach of these queries can be measured in `system.query_log`
     add("log_queries", "1");
     add("log_profile_events", "1");
