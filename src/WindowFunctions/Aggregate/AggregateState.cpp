@@ -21,12 +21,18 @@ namespace
 
 constexpr size_t arena_replace_bytes = 16 << 20;
 
+void throwIfNot(bool condition)
+{
+    if (unlikely(!condition))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function is used after a failed creation");
+}
+
 }
 
 AggregateState::AggregateState(AggregateFunctionPtr function_)
     : function(std::move(function_))
-    , place(function->sizeOfData(), function->alignOfData())
     , is_state(function->isState())
+    , place(function->sizeOfData(), function->alignOfData())
     , check_cancellation(makeCancellationCheck(function->getName()))
     , budget(check_cancellation)
 {
@@ -58,14 +64,9 @@ void AggregateState::recreate()
     created = true;
 }
 
-void AggregateState::throwNotCreated() const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function {} is used after a failed creation", function->getName());
-}
-
 void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 end)
 {
-    checkCreated();
+    throwIfNot(created);
     while (begin < end)
     {
         const ArgumentsSegment segment = arguments.segment(begin, end);
@@ -77,17 +78,23 @@ void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 e
 
 void AggregateState::merge(ConstAggregateDataPtr rhs)
 {
-    checkCreated();
+    throwIfNot(created);
     function->merge(place.data(), rhs, arena.get());
 }
 
 void AggregateState::insertResultInto(IColumn & result)
 {
-    checkCreated();
+    throwIfNot(created);
     if (is_state)
         function->insertMergeResultInto(place.data(), result, arena.get());
     else
         function->insertResultInto(place.data(), result, arena.get());
+}
+
+ConstAggregateDataPtr AggregateState::getData() const
+{
+    throwIfNot(created);
+    return place.data();
 }
 
 }

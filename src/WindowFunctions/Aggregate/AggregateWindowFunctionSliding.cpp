@@ -9,7 +9,6 @@
 
 #include <Columns/IColumn.h>
 
-#include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -27,16 +26,6 @@ namespace
 
 constexpr size_t MAX_STATE_BYTES = 256;
 constexpr size_t ROWS_IN_CHUNK = 8;
-
-void addRows(const IAggregateFunction & function, AggregateDataPtr place, const WindowArguments & arguments, Int64 begin, Int64 end)
-{
-    while (begin < end)
-    {
-        const ArgumentsSegment segment = arguments.segment(begin, end);
-        function.addBatchSinglePlace(segment.row_begin, segment.row_end, place, const_cast<const IColumn **>(segment.columns.data()), nullptr);
-        begin += segment.row_end - segment.row_begin;
-    }
-}
 
 class AggregationStack
 {
@@ -58,7 +47,13 @@ public:
 
         AggregateDataPtr new_state = arena->alignedAlloc(std::max<size_t>(function->sizeOfData(), 1), function->alignOfData());
         function->create(new_state);
-        addRows(*function, new_state, arguments, rows_begin, rows_end);
+        while (rows_begin < rows_end)
+        {
+            const ArgumentsSegment segment = arguments.segment(rows_begin, rows_end);
+            function->addBatchSinglePlace(segment.row_begin, segment.row_end, new_state, const_cast<const IColumn **>(segment.columns.data()), nullptr);
+            rows_begin += segment.row_end - segment.row_begin;
+        }
+
         if (!states.empty())
             function->merge(new_state, states.back(), nullptr);
 
@@ -95,13 +90,11 @@ private:
 class SlidingAggregation
 {
 public:
-    SlidingAggregation(AggregateFunctionPtr function_, Int64 rows_in_chunk_)
-        : function(std::move(function_))
-        , rows_in_chunk(rows_in_chunk_)
+    SlidingAggregation(AggregateFunctionPtr function, Int64 rows_in_chunk_)
+        : rows_in_chunk(rows_in_chunk_)
         , left_stack(function)
-        , right_state(std::max<size_t>(function->sizeOfData(), 1), function->alignOfData())
+        , right_state(function)
     {
-        function->create(right_state.data());
     }
 
     [[nodiscard]] Int64 getCoveredBegin() const
@@ -117,7 +110,7 @@ public:
     void reset()
     {
         left_stack.clear();
-        function->create(right_state.data());
+        right_state.recreate();
         begin = 0;
         midpoint = 0;
         end = 0;
@@ -125,7 +118,7 @@ public:
 
     void pushRowsUntil(const WindowArguments & arguments, Int64 row)
     {
-        addRows(*function, right_state.data(), arguments, end, row);
+        right_state.add(arguments, end, row);
         end = row;
     }
 
@@ -142,7 +135,7 @@ public:
                 begin -= rows_in_chunk;
             }
 
-            function->create(right_state.data());
+            right_state.recreate();
             midpoint = end;
         }
 
@@ -158,14 +151,13 @@ public:
         if (begin < midpoint)
             state.merge(left_stack.getTotalState());
 
-        state.merge(right_state.data());
+        state.merge(right_state.getData());
     }
 
 private:
-    const AggregateFunctionPtr function;
     const Int64 rows_in_chunk;
     AggregationStack left_stack;
-    AlignedBuffer right_state;
+    AggregateState right_state;
     Int64 begin = 0;
     Int64 midpoint = 0;
     Int64 end = 0;
