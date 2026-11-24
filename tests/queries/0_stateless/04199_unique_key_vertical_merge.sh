@@ -17,17 +17,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Polls until a read of `uk_vertical` sees one part; fails after 60 s.
-wait_for_one_part() {
-    local deadline=$((SECONDS + 60))
-    while (( SECONDS < deadline )); do
-        [[ $($CLICKHOUSE_CLIENT --query "SELECT uniqExact(_part) FROM uk_vertical") == 1 ]] && return 0
-        sleep 0.1
-    done
-    echo "uk_vertical: a read still sees more than one part 60 s after SYSTEM SYNC MERGES" >&2
-    return 1
-}
-
 # A run that stopped while the merge was paused leaves the fail point enabled.
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT unique_key_merge_pause_before_commit"
 
@@ -60,9 +49,6 @@ $CLICKHOUSE_CLIENT --query "DELETE FROM uk_vertical WHERE id IN (7, 106)"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT unique_key_merge_pause_before_commit"
 $CLICKHOUSE_CLIENT --max_execution_time 120 --query "SYSTEM SYNC MERGES uk_vertical"
-
-# SYNC MERGES can return before the merge's commit is visible to reads.
-wait_for_one_part
 
 $CLICKHOUSE_CLIENT --query "SELECT 'row', _part_offset, id, s, a, b, c, d FROM uk_vertical ORDER BY s"
 

@@ -1,8 +1,5 @@
--- Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree
+-- Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
 -- UNIQUE KEY + TTL is rejected on every entry path; an ATTACHed UK+TTL table cannot merge until REMOVE TTL.
---   1. CREATE and ALTER: table TTL, column TTL, MODIFY TTL, ADD/MODIFY COLUMN ... TTL all throw
---   2. ATTACH: loads; MATERIALIZE TTL, OPTIMIZE and DRY RUN throw; after REMOVE TTL it merges
---   3. plain table: TTL on a table without UNIQUE KEY is unaffected
 -- no-parallel: case 2 ATTACHes a fixed UUID, which collides across concurrent runs.
 
 SET enable_unique_key = 1;
@@ -64,7 +61,7 @@ SELECT 'merged_after_remove_ttl' AS step, count() FROM system.parts
 
 DROP TABLE uk_ttl_attach SYNC;
 
--- 3. plain table: red if the CREATE-time TTL refusal applies to every MergeTree table.
+-- 3. plain table: red if the TTL refusal applies to a table without UNIQUE KEY.
 DROP TABLE IF EXISTS plain_ttl;
 CREATE TABLE plain_ttl (id UInt64, d Date) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 1 DAY;
 DROP TABLE plain_ttl;

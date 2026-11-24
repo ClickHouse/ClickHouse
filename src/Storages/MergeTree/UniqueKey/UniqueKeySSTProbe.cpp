@@ -39,10 +39,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Decode the 4-byte big-endian row number written by `SSTIndexWriter`
-/// (`encodeRowNumberBE`), widened to UInt64 (== `_part_offset`). The writer
-/// always emits exactly 4 bytes; any other size is a corrupt or
-/// incompatible sidecar, so fail closed rather than decode a prefix.
+/// `SSTIndexWriter` always emits exactly 4 bytes, so any other size is a corrupt or incompatible
+/// sidecar: fail closed rather than decode a prefix.
 UInt64 decodeRowNumberBE(const char * data, size_t size)
 {
     if (size != sizeof(UInt32))

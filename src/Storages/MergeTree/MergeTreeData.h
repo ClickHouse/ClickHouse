@@ -1171,7 +1171,6 @@ public:
 
     size_t clearEmptyParts();
 
-    DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(const MergeTreeTransactionPtr & txn) const;
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(const ContextPtr & local_context) const;
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
@@ -2422,6 +2421,7 @@ protected:
 
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
+    DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(const MergeTreeTransactionPtr & txn) const;
 
     /// A writable `table_disk` disk holds the data of one table, which owns its root until the instance is destroyed.
     void acquireTableDiskRoots();

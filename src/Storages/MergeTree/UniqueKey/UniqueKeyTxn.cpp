@@ -147,7 +147,7 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(
 
 MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context, std::string_view operation)
 {
-    return beginUniqueKeyTransaction(context->getCurrentTransaction(), operation, /*source_parts=*/{});
+    return beginUniqueKeyTransaction(context->getCurrentTransaction(), operation);
 }
 
 CSN UniqueKeyTxnManager::commitTransaction(

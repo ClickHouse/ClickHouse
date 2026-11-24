@@ -90,8 +90,6 @@ private:
 
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
-    /// UNIQUE KEY only; `UniqueKeyTxnCommit::merge` commits it, not the stock path's `txn`.
-    MergeTreeTransactionHolder uk_txn;
 
     /// Collects the counters and the memory of all threads of the task, from its first step.
     ThreadGroupPtr thread_group;

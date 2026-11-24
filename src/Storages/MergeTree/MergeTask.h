@@ -189,11 +189,11 @@ public:
 
     void cancel() noexcept;
 
-    /// The snapshot the merge read its sources' delete bitmaps at; built for every unique-key merge.
+    /// The snapshot the merge read its sources' delete bitmaps at.
     [[nodiscard]] const DeleteBitmapSnapshot & getDeleteBitmapSnapshot() const
     {
-        chassert(global_ctx->unique_key_read_snapshot);
-        return *global_ctx->unique_key_read_snapshot;
+        chassert(global_ctx->delete_bitmap_snapshot);
+        return *global_ctx->delete_bitmap_snapshot;
     }
     /// Where each source row landed in the merged part; built for every unique-key merge.
     [[nodiscard]] const MergedPartOffsets & getUniqueKeyMergedPartOffsets() const
@@ -334,9 +334,8 @@ private:
         /// Text indexes are rebuilt for the resulting part instead of being merged.
         bool rebuild_text_indexes{false};
 
-        /// Set in `prepare()`.
         bool is_unique_key_merge{false};
-        DeleteBitmapSnapshotPtr unique_key_read_snapshot;
+        DeleteBitmapSnapshotPtr delete_bitmap_snapshot;
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;

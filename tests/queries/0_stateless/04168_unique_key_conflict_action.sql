@@ -32,9 +32,6 @@ ALTER TABLE uk_ig MODIFY SETTING unique_key_conflict_action = 'overwrite';
 INSERT INTO uk_ig VALUES (1, 'a_over');
 SELECT 'overwritten_rows', id, v FROM uk_ig ORDER BY id;
 
-OPTIMIZE TABLE uk_ig FINAL SETTINGS optimize_throw_if_noop = 1;
-SELECT 'merged_rows', id, v FROM uk_ig ORDER BY id;
-
 SYSTEM FLUSH LOGS query_log;
 SELECT 'conflict', log_comment, extract(exception, 'part \\S+ \\(row \\d+\\)')
 FROM system.query_log

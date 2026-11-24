@@ -82,9 +82,9 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context,
 /// For a caller with no query context that knows the answer -- today only the background merge task,
 /// which is handed the OPTIMIZE query's transaction as a member. Prefer the overload above: it
 /// cannot be passed the wrong transaction.
-/// The snapshot covers every source part's creation csn.
+/// Its snapshot covers the creation csn of every part in `source_parts`.
 MergeTreeTransactionHolder beginUniqueKeyTransaction(
-    const MergeTreeTransactionPtr & current, std::string_view operation, const std::vector<MergeTreeDataPartPtr> & source_parts);
+    const MergeTreeTransactionPtr & current, std::string_view operation, const std::vector<MergeTreeDataPartPtr> & source_parts = {});
 
 class UniqueKeyTxnManager
 {

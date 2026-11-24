@@ -2075,7 +2075,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     bool optimize_skip_merged_partitions,
     const std::function<void()> & on_wait_for_running_merges)
 {
-    /// TODO(unique-key): support TTL; only ATTACH'd tables get here.
+    /// TODO(unique-key): support TTL; see `MergeTreeData::checkProperties`.
     if (metadata_snapshot->hasUniqueKey() && metadata_snapshot->hasAnyTTL())
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,

@@ -10,8 +10,8 @@
 #include <Interpreters/TransactionManager.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
@@ -101,10 +101,12 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    /// Reads and commits under its own transaction, which replaces the one a background merge was selected under.
     if (metadata_snapshot->hasUniqueKey())
     {
         const MergeTreeTransactionPtr query_txn = txn_holder.getTransaction() ? nullptr : txn;
-        uk_txn = beginUniqueKeyTransaction(query_txn, "OPTIMIZE", future_part->parts);
+        txn_holder = beginUniqueKeyTransaction(query_txn, "OPTIMIZE", future_part->parts);
+        txn = txn_holder.getTransaction();
     }
 
     merge_list_entry = storage.getContext()->getMergeList().insert(
@@ -147,7 +149,7 @@ void MergePlainMergeTreeTask::prepare()
         deduplicate_by_columns,
         cleanup,
         storage.merging_params,
-        uk_txn.getTransaction() ? uk_txn.getTransaction() : txn);
+        txn);
 }
 
 
@@ -156,18 +158,20 @@ void MergePlainMergeTreeTask::finish()
     new_part = merge_task->takeResultPart();
     new_part->getDataPartStorage().commitTransaction();
 
-    if (uk_txn.getTransaction())
+    if (metadata_snapshot->hasUniqueKey())
     {
         /// Holds open the window between the merge's snapshot and its commit, where a kill is a late one.
         FailPointInjection::pauseFailPoint(FailPoints::unique_key_merge_pause_before_commit);
 
         UniqueKeyTxnCommit::merge(
             storage,
-            {.transaction = uk_txn,
+            {.transaction = txn_holder,
             .source_parts = future_part->parts,
             .merged_part = new_part,
             .read_snapshot = merge_task->getDeleteBitmapSnapshot(),
             .merged_part_offsets = merge_task->getUniqueKeyMergedPartOffsets()});
+        /// Committed or rolled back already, so the commit below is the stock path's alone.
+        txn_holder = {};
     }
     else
     {

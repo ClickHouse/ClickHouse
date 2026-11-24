@@ -13,6 +13,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./parts.lib
 . "$CURDIR"/parts.lib
 
+set -e
+
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_unique_key 1"
 
 # The name of table `$1`'s one active part matching `$2`.

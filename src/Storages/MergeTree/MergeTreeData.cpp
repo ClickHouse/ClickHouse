@@ -1876,7 +1876,8 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
-    /// Merge-time TTL expiration bypasses the delete bitmap; ATTACH must still load existing tables.
+    /// Merge-time TTL expiration bypasses the delete bitmap. ATTACH must still load an existing table, which
+    /// `checkUniqueKeyOptimizeIsPossible` and `StorageMergeTree::selectPartsToMerge` then refuse to merge.
     if (new_metadata.hasAnyTTL() && new_metadata.hasUniqueKey() && !attach)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "TTL is not supported on tables with UNIQUE KEY");
@@ -5735,7 +5736,6 @@ void MergeTreeData::checkUniqueKeyOptimizeIsPossible(const StorageInMemoryMetada
     if (!metadata.hasUniqueKey())
         return;
 
-    /// CREATE and ALTER refuse TTL on a unique-key table, so only an attached one can have it.
     if (metadata.hasAnyTTL())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "OPTIMIZE is not supported for UNIQUE KEY tables with TTL: merge-time TTL "

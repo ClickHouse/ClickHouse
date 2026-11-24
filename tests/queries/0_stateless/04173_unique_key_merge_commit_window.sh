@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree
-# UNIQUE KEY: what lands between a merge's snapshot and its commit, parked there by failpoints.
-#   1. self-kill: a late kill re-expressed on the merge result does not pin that result
-#   2. right row: a late kill lands on the right merged row, sorted and unsorted
+# UNIQUE KEY: a late kill, committed while a failpoint parks a merge between its snapshot and its commit,
+# lands on the right merged row, sorted and unsorted, and does not pin the merge result.
 # no-parallel: `unique_key_merge_pause_before_commit` is server-wide.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -104,14 +103,15 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE uk_late SYNC"
 
 # 2. right row: red if a late kill ignores where the merge sorted its row, or the offset of its
 # source part in an unsorted merge (`interleaved` / `no_sorting_key`).
-# Not sparse: a merged sparse `id` reads its 0 last even under ORDER BY, a stock bug.
+# Not sparse: a merged sparse `id` reads its 0 last even under ORDER BY, a stock bug. Horizontal: 04199
+# covers a vertical merge.
 late_kill_lands_on_its_row() {
     local case=$1 order_by=$2 first=$3 second=$4 dead_at_snapshot=$5 late=$6
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_late_map SYNC"
     $CLICKHOUSE_CLIENT --query "
         CREATE TABLE uk_late_map (id UInt64, v String)
         ENGINE = MergeTree UNIQUE KEY (id) ORDER BY $order_by
-        SETTINGS merge_selector_algorithm = 'Manual', min_bytes_for_wide_part = 0,
+        SETTINGS merge_selector_algorithm = 'Manual', min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0,
                  ratio_of_defaults_for_sparse_serialization = 1"
     $CLICKHOUSE_CLIENT --query "INSERT INTO uk_late_map SELECT id, 'a' FROM ($first)"
     $CLICKHOUSE_CLIENT --query "INSERT INTO uk_late_map SELECT id, 'b' FROM ($second)"

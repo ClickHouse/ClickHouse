@@ -77,8 +77,7 @@ release_delete() {
 }
 
 # 1. vs merge, the DELETE parked: red if the partition is not rescanned after the conflict
-# (`delete_retried 0`), e.g. the commit skips the retired target instead of aborting, the retry
-# gives up (`delete_ok 0`), or a row comes back twice (`still_unique` 0).
+# (`delete_retried 0`), the retry gives up (`delete_ok 0`), or a row survives twice (`still_unique 0`).
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_del_vs_merge"
 $CLICKHOUSE_CLIENT --query "

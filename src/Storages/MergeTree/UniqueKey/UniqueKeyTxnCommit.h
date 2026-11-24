@@ -52,7 +52,7 @@ public:
     struct MergeRequest
     {
         MergeTreeTransactionHolder & transaction;
-        /// `merged_part_offsets` is indexed like this.
+        /// `merged_part_offsets` numbers the sources in this order.
         const MergeTreeData::DataPartsVector & source_parts;
         MergeTreeMutableDataPartPtr merged_part;
         /// The snapshot the merge's input filter read the sources' bitmaps at.

@@ -32,10 +32,11 @@ namespace ErrorCodes
 }
 
 UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
-    const MergeTreeDataPartsVector & sources,
+    const MergeTreeDataPartsVector & sources_,
     const DeleteBitmapSnapshot & read_snapshot,
     const MergedPartOffsets & merged_part_offsets_)
-    : merged_part_offsets(merged_part_offsets_)
+    : sources(sources_)
+    , merged_part_offsets(merged_part_offsets_)
     , merged_start(sources.size())
 {
     chassert(merged_part_offsets.isFinalized());
@@ -44,6 +45,10 @@ UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
     for (size_t i = 0; i < sources.size(); ++i)
     {
         source_bitmaps.push_back(read_snapshot.bitmapAt(sources[i]->info));
+        if (source_bitmaps[i]->rangeCardinality(0, sources[i]->rows_count) != source_bitmaps[i]->cardinality())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "UNIQUE KEY merge: delete bitmap of source part {} kills a row past the part's {} rows",
+                sources[i]->name, sources[i]->rows_count);
         const UInt64 live_at_snapshot = sources[i]->rows_count - source_bitmaps[i]->cardinality();
         if (merged_part_offsets.isMappingEnabled() && merged_part_offsets.getPartRowsCount(i) != live_at_snapshot)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -71,33 +76,25 @@ UniqueKeyMergeRowMap::UniqueKeyMergeRowMap(
 /// before `r`. Without a sorting key the merge appends the sources in order.
 std::optional<UInt64> UniqueKeyMergeRowMap::toMergedRow(size_t source_index, UInt64 source_row) const
 {
+    const IMergeTreeDataPart & source = *sources[source_index];
+    if (source_row >= source.rows_count)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "UNIQUE KEY merge: row {} of source part {} is past the part's {} rows", source_row, source.name, source.rows_count);
+
     const DeleteBitmap & source_bitmap = *source_bitmaps[source_index];
     if (source_bitmap.contains(source_row))
         return std::nullopt;
 
-    UInt64 live_index = source_row;
+    UInt64 live_rank = source_row;
     if (const auto & dead_before = dead_before_container[source_index]; !dead_before.empty())
     {
         const UInt64 container = source_row / DeleteBitmap::CONTAINER_ROWS;
         chassert(container < dead_before.size());
-        live_index -= dead_before[container] + source_bitmap.rangeCardinality(container * DeleteBitmap::CONTAINER_ROWS, source_row);
+        live_rank -= dead_before[container] + source_bitmap.rangeCardinality(container * DeleteBitmap::CONTAINER_ROWS, source_row);
     }
     if (merged_part_offsets.isMappingEnabled())
-        return merged_part_offsets[source_index, live_index];
-    return merged_start[source_index] + live_index;
-}
-
-UniqueKeyMergedIndexBuilder::UniqueKeyMergedIndexBuilder(
-    const MergeTreeDataPartsVector & sources_,
-    const DeleteBitmapSnapshot & read_snapshot,
-    const MergedPartOffsets & merged_part_offsets,
-    IDataPartStorage & merged_part_storage_,
-    ContextPtr context_)
-    : sources(sources_)
-    , row_map(sources_, read_snapshot, merged_part_offsets)
-    , merged_part_storage(merged_part_storage_)
-    , context(std::move(context_))
-{
+        return merged_part_offsets[source_index, live_rank];
+    return merged_start[source_index] + live_rank;
 }
 
 #if USE_ROCKSDB
@@ -113,6 +110,8 @@ namespace
         SSTFileReaderPtr reader;
         /// After `reader`, so it is destroyed first.
         std::unique_ptr<rocksdb::Iterator> iterator;
+        /// Rows a key already points at: the index maps each row to exactly one key.
+        std::vector<bool> seen_rows;
 
         /// False once the source is exhausted; a read error throws instead of ending the scan early.
         [[nodiscard]] bool hasEntry() const
@@ -149,7 +148,8 @@ namespace
                     "Dense index of source part {} has {} entries, but the part has {} rows",
                     part.name, entries, part.rows_count);
 
-            SourceCursor cursor{.source_index = i, .part = &part, .reader = reader, .iterator = reader->newIterator()};
+            SourceCursor cursor{
+                .source_index = i, .part = &part, .reader = reader, .iterator = reader->newIterator(), .seen_rows = std::vector<bool>(part.rows_count)};
             cursor.iterator->SeekToFirst();
             if (cursor.hasEntry())
                 cursors.push_back(std::move(cursor));
@@ -157,11 +157,17 @@ namespace
         return cursors;
     }
 }
-#endif
 
-void UniqueKeyMergedIndexBuilder::build(MergeTreeDataPartChecksums & out_checksums, bool fsync)
+void writeDenseIndexOnMerge(
+    const MergeTreeDataPartsVector & sources,
+    const DeleteBitmapSnapshot & read_snapshot,
+    const MergedPartOffsets & merged_part_offsets,
+    IDataPartStorage & merged_part_storage,
+    const ContextPtr & context,
+    MergeTreeDataPartChecksums & out_checksums,
+    bool fsync)
 {
-#if USE_ROCKSDB
+    const UniqueKeyMergeRowMap row_map(sources, read_snapshot, merged_part_offsets);
     const UInt64 merged_rows_count = row_map.mergedRowsCount();
     if (merged_rows_count > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::LIMIT_EXCEEDED,
@@ -196,12 +202,14 @@ void UniqueKeyMergedIndexBuilder::build(MergeTreeDataPartChecksums & out_checksu
 
         const rocksdb::Slice value = cursor.iterator->value();
         const UInt64 source_row = decodeRowNumberBE(value.data(), value.size());
-        if (source_row >= cursor.part->rows_count)
+        /// Before `seen_rows`: it throws for a row past the part's rows.
+        const auto merged_row = row_map.toMergedRow(cursor.source_index, source_row);
+        if (cursor.seen_rows[source_row])
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Dense index of source part {} points at row {}, but the part has {} rows",
-                cursor.part->name, source_row, cursor.part->rows_count);
+                "Dense index of source part {} points at row {} twice", cursor.part->name, source_row);
+        cursor.seen_rows[source_row] = true;
 
-        if (const auto merged_row = row_map.toMergedRow(cursor.source_index, source_row))
+        if (merged_row)
         {
             const rocksdb::Slice key = cursor.iterator->key();
             writer.addEncoded(std::string_view(key.data(), key.size()), static_cast<UInt32>(*merged_row));
@@ -218,11 +226,19 @@ void UniqueKeyMergedIndexBuilder::build(MergeTreeDataPartChecksums & out_checksu
             writer.entriesAdded(), merged_rows_count);
 
     writer.finish(out_checksums, fsync);
-#else
-    /// The reference members are read only on the RocksDB path; without these `-Wunused-private-field` fails the build.
-    (void)sources; (void)row_map; (void)merged_part_storage; (void)out_checksums; (void)fsync;
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "UNIQUE KEY merge requires RocksDB support (USE_ROCKSDB=1)");
-#endif
 }
+#else
+void writeDenseIndexOnMerge(
+    const MergeTreeDataPartsVector &,
+    const DeleteBitmapSnapshot &,
+    const MergedPartOffsets &,
+    IDataPartStorage &,
+    const ContextPtr &,
+    MergeTreeDataPartChecksums &,
+    bool)
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "UNIQUE KEY merge requires RocksDB support (USE_ROCKSDB=1)");
+}
+#endif
 
 }

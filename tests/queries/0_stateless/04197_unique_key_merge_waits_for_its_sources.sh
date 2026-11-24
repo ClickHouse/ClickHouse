@@ -47,7 +47,8 @@ $CLICKHOUSE_CLIENT --max_execution_time 120 --query "
     SYSTEM WAIT FAILPOINT unique_key_insert_pause_before_commit PAUSE"
 
 optimize_id="${CLICKHOUSE_DATABASE}_optimize"
-$CLICKHOUSE_CLIENT --query_id "$optimize_id" --query "OPTIMIZE TABLE uk_merge_sources FINAL" 2>/dev/null &
+optimize_stderr="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_optimize.stderr"
+$CLICKHOUSE_CLIENT --query_id "$optimize_id" --query "OPTIMIZE TABLE uk_merge_sources FINAL" 2>"$optimize_stderr" &
 optimize_pid=$!
 wait_for_log "$optimize_id" "Selected 2 parts"
 $CLICKHOUSE_CLIENT --query "
@@ -55,7 +56,7 @@ $CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT unique_key_insert_pause_before_commit"
 wait "$insert_pid" && echo "insert_committed 1" || echo "insert_committed 0"
-wait "$optimize_pid" && echo "optimize_committed 1" || echo "optimize_committed 0"
+wait "$optimize_pid" && echo "optimize_committed 1" || { echo "optimize_committed 0"; cat "$optimize_stderr"; }
 
 $CLICKHOUSE_CLIENT --query "
     SELECT 'parts', count(), sum(rows) FROM system.parts

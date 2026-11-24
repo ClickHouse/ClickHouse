@@ -98,7 +98,6 @@ namespace ProfileEvents
     extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
     extern const Event MergedProjections;
     extern const Event RebuiltProjections;
-    extern const Event UniqueKeyMergeInputRowsSkipped;
     extern const Event MergeCheckpointsResumed;
     extern const Event MergeCheckpointable;
     extern const Event MergeNonCheckpointable;
@@ -633,7 +632,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->is_unique_key_merge = global_ctx->metadata_snapshot->hasUniqueKey();
 
     if (global_ctx->is_unique_key_merge)
-        global_ctx->unique_key_read_snapshot = global_ctx->txn
+        global_ctx->delete_bitmap_snapshot = global_ctx->txn
             ? global_ctx->data->makeDeleteBitmapSnapshot(global_ctx->txn)
             : global_ctx->data->makeDeleteBitmapSnapshot(global_ctx->context);
 
@@ -2297,7 +2296,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         /// Skips the rows the horizontal stage skipped, so the column lines up with `rows_sources`.
         RangesInDataPart part_ranges(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset);
         if (global_ctx->is_unique_key_merge)
-            part_ranges.delete_bitmap = global_ctx->unique_key_read_snapshot->bitmapAt(part_ranges.data_part->info);
+            part_ranges.delete_bitmap = global_ctx->delete_bitmap_snapshot->bitmapAt(part_ranges.data_part->info);
 
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
@@ -2793,13 +2792,14 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     /// Before `finalizePart`, so the dense index's checksum lands in `checksums.txt`, as on INSERT.
     if (global_ctx->is_unique_key_merge && global_ctx->rows_written > 0)
     {
-        UniqueKeyMergedIndexBuilder(
+        writeDenseIndexOnMerge(
             global_ctx->future_part->parts,
-            *global_ctx->unique_key_read_snapshot,
+            *global_ctx->delete_bitmap_snapshot,
             *global_ctx->merged_part_offsets,
             global_ctx->new_data_part->getDataPartStorage(),
-            global_ctx->data->getContext())
-            .build(global_ctx->gathered_data.checksums, ctx->need_sync);
+            global_ctx->data->getContext(),
+            global_ctx->gathered_data.checksums,
+            ctx->need_sync);
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
@@ -3776,11 +3776,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         RangesInDataPart part_ranges(part, nullptr, i, part_starting_offset);
         if (global_ctx->is_unique_key_merge)
         {
-            part_ranges.delete_bitmap = global_ctx->unique_key_read_snapshot->bitmapAt(part->info);
+            part_ranges.delete_bitmap = global_ctx->delete_bitmap_snapshot->bitmapAt(part->info);
             /// Counted here, once per merge: the vertical stage's reads skip the same rows again per column.
-            const size_t dead_at_snapshot = part_ranges.delete_bitmap->cardinality();
-            *global_ctx->input_rows_filtered += dead_at_snapshot;
-            ProfileEvents::increment(ProfileEvents::UniqueKeyMergeInputRowsSkipped, dead_at_snapshot);
+            *global_ctx->input_rows_filtered += part_ranges.delete_bitmap->cardinality();
         }
 
         createReadFromPartStep(
