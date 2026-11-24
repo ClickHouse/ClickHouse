@@ -7,6 +7,7 @@ SET query_plan_remove_unused_joins = 1;
 SET query_plan_remove_unused_columns = 1; -- the columns of the other side that only a removed join read are pruned by it
 SET explain_query_plan_default = 'legacy'; -- one line per step
 SET enable_parallel_replicas = 0; -- the joins of the plan are counted
+SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS fact;
 DROP TABLE IF EXISTS dim;
@@ -50,6 +51,11 @@ SELECT sum(id) FROM fact_named WHERE id > 1;
 
 -- A join that only a removed join reads goes away with it.
 SELECT count() FROM (EXPLAIN SELECT id FROM fact LEFT ANY JOIN dim AS d1 ON fact.k = d1.k LEFT ANY JOIN dim AS d2 ON d1.k2 = d2.k) WHERE explain LIKE '%Join (%';
+
+-- A correlated subquery reads the outer table through `CommonSubplanStep`, two of them here, and they go away with their readers.
+SELECT count() FROM (EXPLAIN SELECT count() FROM fact LEFT JOIN LATERAL (SELECT count() AS c FROM dim WHERE dim.k < fact.k) AS d ON true) WHERE explain LIKE '%Join (%';
+SELECT count() FROM fact LEFT JOIN LATERAL (SELECT count() AS c FROM dim WHERE dim.k < fact.k) AS d ON true SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
+SELECT count() FROM fact LEFT JOIN LATERAL (SELECT count() AS c FROM dim WHERE dim.k < fact.k) AS d ON true SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
 
 -- What the join computed of the preserved side stays: the key of `USING` in the common type, and the number of rows when no column is read.
 SELECT k, toTypeName(k) FROM fact LEFT ANY JOIN dim USING (k) ORDER BY k;
