@@ -100,7 +100,7 @@ public:
         std::optional<int32_t> processed_bucket_version;
     };
 
-    /// Return vector of indexes of filtered paths.
+    /// Removes from `paths` the files that are already processed or failed.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,

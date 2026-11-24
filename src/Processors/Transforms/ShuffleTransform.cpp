@@ -136,9 +136,11 @@ ColumnPtr ShuffleKeyGenerator::generateInRange(pcg64 & rng, size_t num_rows, siz
     }
     else
     {
-        const UInt64 begin = static_cast<UInt64>((static_cast<unsigned __int128>(index) << 64) / count);
-        const UInt64 end = static_cast<UInt64>((static_cast<unsigned __int128>(index + 1) << 64) / count);
-        const UInt64 width = end - begin; /// `end` is zero (2^64 wraps) for the last range, and the subtraction is still correct.
+        const unsigned __int128 begin_wide = (static_cast<unsigned __int128>(index) << 64) / count;
+        const unsigned __int128 end_wide = (static_cast<unsigned __int128>(index + 1) << 64) / count;
+        const UInt64 begin = static_cast<UInt64>(begin_wide);
+        /// `end_wide` is 2^64 for the last range, so the width is computed in the wider type to avoid a wrap-around.
+        const UInt64 width = static_cast<UInt64>(end_wide - begin_wide);
         for (auto & key : keys)
             key = begin + randomBelow(rng, width);
     }
