@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
@@ -117,6 +118,7 @@ public:
 protected:
     Chunk generate() override
     {
+        auto component_guard = Coordination::setCurrentComponent("StripeLogSource::generate");
         Columns result_columns;
         result_columns.reserve(getPort().getHeader().columns());
         fillPhysicalColumns(result_columns);
@@ -231,6 +233,7 @@ public:
 
     ~StripeLogSink() override
     {
+        auto component_guard = Coordination::setCurrentComponent("StripeLogSink::~StripeLogSink");
         try
         {
             if (!done)
@@ -267,6 +270,7 @@ public:
 
     void onFinish() override
     {
+        auto component_guard = Coordination::setCurrentComponent("StripeLogSink::onFinish");
         if (done)
             return;
 
@@ -385,6 +389,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 
 size_t StorageStripeLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageStripeLog::getMaxReadStreams");
     const auto lock_timeout = getLockTimeout(local_context);
     loadIndices(lock_timeout);
 
@@ -412,6 +417,7 @@ Pipe StorageStripeLog::read(
     const size_t /*max_block_size*/,
     size_t num_streams)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageStripeLog::read");
     storage_snapshot->check(column_names);
 
     auto lock_timeout = getLockTimeout(local_context);
@@ -460,6 +466,7 @@ Pipe StorageStripeLog::read(
 
 SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageStripeLog::write");
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -481,11 +488,13 @@ IStorage::DataValidationTasksPtr StorageStripeLog::getCheckTaskList(
 
 std::optional<CheckResult> StorageStripeLog::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageStripeLog::checkDataNext");
     return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
 }
 
 void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageStripeLog::truncate");
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -634,6 +643,7 @@ std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
 
 void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageStripeLog::backupData");
     auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
 
     loadIndices(lock_timeout);
@@ -715,6 +725,7 @@ void StorageStripeLog::restoreDataFromBackup(RestorerFromBackup & restorer, cons
 
 void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageStripeLog::restoreDataImpl");
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -788,6 +799,7 @@ void registerStorageStripeLog(StorageFactory & factory)
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
     {
+        auto component_guard = Coordination::setCurrentComponent("registerStorageStripeLog");
         checkStorageSettingNames(args);
 
         if (!args.engine_args.empty())

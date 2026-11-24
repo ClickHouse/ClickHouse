@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -229,6 +230,7 @@ String LogSource::getCacheKey(const NameAndTypePair & name_and_type_on_disk) con
 
 Chunk LogSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("LogSource::generate");
     if (isFinished())
     {
         /// Close the files (before destroying the object).
@@ -453,6 +455,7 @@ public:
 
     ~LogSink() override
     {
+        auto component_guard = Coordination::setCurrentComponent("LogSink::~LogSink");
         try
         {
             if (!done)
@@ -543,6 +546,7 @@ private:
 
 void LogSink::consume(Chunk & chunk)
 {
+    auto component_guard = Coordination::setCurrentComponent("LogSink::consume");
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
     metadata_snapshot->check(block, true);
 
@@ -559,6 +563,7 @@ void LogSink::consume(Chunk & chunk)
 
 void LogSink::onFinish()
 {
+    auto component_guard = Coordination::setCurrentComponent("LogSink::onFinish");
     if (done)
         return;
 
@@ -1019,6 +1024,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 
 size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageLog::getMaxReadStreams");
     if (!use_marks_file)
         return 1;
 
@@ -1035,11 +1041,13 @@ size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_contex
 
 void StorageLog::drop()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageLog::drop");
     disk->removeRecursive(table_path);
 }
 
 void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageLog::truncate");
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -1080,6 +1088,7 @@ Pipe StorageLog::createReadingPipe(
     size_t num_streams
 )
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageLog::createReadingPipe");
     auto lock_timeout = getLockTimeout(local_context);
     loadMarks(lock_timeout);
 
@@ -1168,6 +1177,7 @@ void StorageLog::readImpl(
 
 SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageLog::write");
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -1190,6 +1200,7 @@ IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(
 
 std::optional<CheckResult> StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageLog::checkDataNext");
     return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
 }
 
@@ -1270,6 +1281,7 @@ std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
 
 void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageLog::backupData");
     auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
 
     loadMarks(lock_timeout);
@@ -1357,6 +1369,7 @@ void StorageLog::restoreDataFromBackup(RestorerFromBackup & restorer, const Stri
 
 void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageLog::restoreDataImpl");
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -1473,6 +1486,7 @@ void registerStorageLog(StorageFactory & factory)
 
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
+        auto component_guard = Coordination::setCurrentComponent("registerStorageLog");
         checkStorageSettingNames(args);
         if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
             checkNoQuantizedCodec(args.columns.getAll(), args.engine_name);
