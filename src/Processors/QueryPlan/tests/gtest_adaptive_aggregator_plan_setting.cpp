@@ -25,8 +25,8 @@ using namespace DB;
 /// whose query-plan serialization version knows the names, and `adaptive_aggregator_disable_thaw`, a name of a later
 /// version, only towards a peer that knows it.
 ///
-/// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched entry by
-/// name and `readBinary` throws on a name it does not know. Writing either name towards a peer that predates it
+/// The reader of `QueryPlanSerializationSettings` in a peer that predates these names throws on a name it does not
+/// know. Writing either name towards a peer that predates it
 /// would make every serialized aggregation plan unreadable there, so under `serialize_query_plan = 1` a mixed-version
 /// cluster would stop aggregating altogether. Leaving them off costs nothing: such a peer has no adaptive
 /// aggregation to drive, and the adaptive path is exact, so the result is the same either way.
@@ -50,7 +50,8 @@ QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_agg
         /*max_block_size=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
-        /*enable_packed_string_keys=*/true);
+        /*enable_packed_string_keys=*/true,
+        /*enable_fixed_and_packed_string_keys=*/true);
     params.enable_adaptive_aggregator = enable_adaptive_aggregator;
     params.adaptive_aggregator_freeze_threshold = 4096;
     params.adaptive_aggregator_freeze_threshold_bytes = 4096;
@@ -78,11 +79,11 @@ QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_agg
     return settings;
 }
 
-/// The names as they appear in the binary settings stream written by `writeChangedBinary`.
+/// The names as they appear in the settings stream written by `QueryPlanSerializationSettings::write`.
 bool wireCarries(const QueryPlanSerializationSettings & settings, std::string_view name)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str().contains(name);
 }
 
