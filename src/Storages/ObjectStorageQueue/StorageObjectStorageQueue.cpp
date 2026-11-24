@@ -700,8 +700,9 @@ bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & conte
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context_, format_settings);
 }
 
-/// The committing SELECT locks of one query, shared by all its reading steps and pipelines. The query takes the locks
-/// of all queues it reads at once and never waits while it holds one, so queries cannot wait for each other in a cycle.
+/// The committing SELECT locks of one initial query, shared by all its reading steps and pipelines and by its secondary
+/// queries on this server. The query takes the locks of all queues it reads at once and never waits while it holds one,
+/// so queries cannot wait for each other in a cycle.
 class StorageObjectStorageQueue::CommittingSelectLocks : public ICustomResourceHolder
 {
 public:
@@ -878,6 +879,8 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
         QueryPlanResourceHolder resources;
         resources.custom_resources.push_back(committing_select_locks);
         pipeline.addResources(resources);
+        /// Each source commits on its own and could move the single processed pointer past a file another one still reads.
+        processing_threads_num = 1;
     }
 
     createIterator(nullptr);
@@ -2145,7 +2148,10 @@ StorageObjectStorageQueue::CommittingSelectLocks::~CommittingSelectLocks()
 std::shared_ptr<StorageObjectStorageQueue::CommittingSelectLocks>
 StorageObjectStorageQueue::CommittingSelectLocks::add(std::shared_ptr<StorageObjectStorageQueue> storage, const ContextPtr & context)
 {
-    String query_id{context->getCurrentQueryId()};
+    /// Secondary queries (e.g. a loopback `remote`) share the locks of their initial query: they cannot wait for it.
+    String query_id = context->getInitialQueryId();
+    if (query_id.empty())
+        query_id = context->getCurrentQueryId();
     /// Declared before the lock: if this is the last reference, its destructor takes the mutex.
     std::shared_ptr<CommittingSelectLocks> locks;
     std::lock_guard guard(mutex);
