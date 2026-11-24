@@ -331,6 +331,8 @@ static struct InitFiu
     REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
+    ONCE(iceberg_writes_lose_metadata_commit_response) \
+    ONCE(iceberg_writes_lose_metadata_commit_request) \
     PAUSEABLE_ONCE(glue_catalog_pause_before_update_table) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
