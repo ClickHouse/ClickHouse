@@ -46,11 +46,14 @@ SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
 SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
 -- 550000 keys, more than half of the kept maximum but too few to saturate the filter: the first run is predicted from
 -- the previous count. It spills, so it leaves no count of its own, and the second run takes half of the maximum
--- and gets the filter built.
+-- and gets the filter built. The next two runs are predicted from the count of the second: at this ratio the filter
+-- is built (the kept maximum would skip it), at 0.046 it is skipped (half of the maximum would build it).
 TRUNCATE TABLE t_rf_latest;
 INSERT INTO t_rf_latest SELECT number * 2 FROM numbers(550000);
 SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k) SETTINGS max_bytes_before_external_join = 1000000;
 SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
+SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
+SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k) SETTINGS join_runtime_bloom_filter_max_ratio_of_set_bits = 0.046;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['RuntimeFiltersCreated'], ProfileEvents['RuntimeFilterBloomFilterBuildsSkipped'] > 0, ProfileEvents['RuntimeFilterRowsChecked'] > 0, ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0
