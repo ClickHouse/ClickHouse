@@ -477,7 +477,8 @@ void storeValuesOfScalarSubqueries(ASTPtr & query_ast, const StoragePtr & source
     if (!hasSubquery(query_ast))
         return;
 
-    auto query_tree = buildProjectionQueryTree(query_ast, source, context, /*only_analyze=*/false);
+    /// only resolved: a later change can remove the expression that holds a subquery (`count((SELECT 1))`)
+    auto query_tree = resolveProjectionQuery(query_ast, source, context, /*only_analyze=*/false);
     ScalarSubqueryValues values;
     collectScalarSubqueryValues(query_tree, values);
 
