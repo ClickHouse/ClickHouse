@@ -1,9 +1,11 @@
 import logging
+import threading
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV, wait_condition
 
 LDAP_ADMIN_BIND_DN = "cn=admin,dc=example,dc=org"
 LDAP_ADMIN_PASSWORD = "clickhouse"
@@ -27,6 +29,12 @@ instance2 = cluster.add_instance(
     macros={"shard": 1, "replica": "instance2"},
     stay_alive=True,
     with_zookeeper=True,
+)
+
+instance3 = cluster.add_instance(
+    "instance3",
+    main_configs=["configs/ldap_unreachable_server.xml"],
+    user_configs=["configs/users.xml", "configs/users_ldap_auth.xml"],
 )
 
 
@@ -251,3 +259,75 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
 
     instance2.query("DROP USER IF EXISTS non_local", user="common_user", password="qwerty")
     instance2.query("DROP TABLE IF EXISTS test_table SYNC", user="common_user", password="qwerty")
+
+
+def test_login_not_blocked_by_unreachable_ldap_server(ldap_cluster):
+    def connecting_to_unreachable_server():
+        # 127.0.0.1:1390 in SYN_SENT state.
+        tcp = instance3.exec_in_container(["cat", "/proc/net/tcp"])
+        return sum(
+            1
+            for line in tcp.splitlines()[1:]
+            if line.split()[2] == "0100007F:056E" and line.split()[3] == "02"
+        )
+
+    errors = []
+
+    def login(user):
+        errors.append(
+            instance3.http_query_and_get_error(
+                "SELECT 1", user=user, password="secret", timeout=120
+            )
+        )
+
+    with PartitionManager() as pm:
+        pm.add_rule(
+            {
+                "instance": instance3,
+                "chain": "OUTPUT",
+                "destination": "127.0.0.1",
+                "destination_port": 1390,
+                "protocol": "tcp",
+                "action": "DROP",
+            }
+        )
+
+        # Unknown users are authenticated by the `ldap` user directory, i.e. by the unreachable server.
+        threads = [
+            threading.Thread(target=login, args=(f"ghost{i}",)) for i in range(2)
+        ]
+        for thread in threads:
+            thread.start()
+
+        # Both LDAP logins are connecting at the same time.
+        wait_condition(
+            connecting_to_unreachable_server,
+            lambda n: n == 2,
+            max_attempts=200,
+            delay=0.1,
+        )
+
+        # A local user and a user of a healthy LDAP server log in while both are still connecting.
+        assert (
+            instance3.http_query(
+                "SELECT currentUser()",
+                user="common_user",
+                password="qwerty",
+                timeout=60,
+            )
+            == "common_user\n"
+        )
+        assert (
+            instance3.http_query(
+                "SELECT currentUser()", user="janedoe", password="qwerty", timeout=60
+            )
+            == "janedoe\n"
+        )
+        assert connecting_to_unreachable_server() == 2
+
+    for thread in threads:
+        thread.join(timeout=120)
+        assert not thread.is_alive()
+    assert len(errors) == 2
+    for error in errors:
+        assert "AUTHENTICATION_FAILED" in error

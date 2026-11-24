@@ -1,0 +1,21 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+        </openldap>
+        <unreachable>
+            <host>127.0.0.1</host>
+            <port>1390</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+        </unreachable>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>unreachable</server>
+        </ldap>
+    </user_directories>
+</clickhouse>

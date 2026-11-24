@@ -1,0 +1,9 @@
+<clickhouse>
+    <users>
+        <janedoe>
+            <ldap>
+                <server>openldap</server>
+            </ldap>
+        </janedoe>
+    </users>
+</clickhouse>
