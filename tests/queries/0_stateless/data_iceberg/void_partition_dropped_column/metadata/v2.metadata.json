@@ -1,0 +1,124 @@
+{
+  "current-schema-id": 1,
+  "current-snapshot-id": 2011348865913312671,
+  "default-sort-order-id": 0,
+  "default-spec-id": 0,
+  "format-version": 1,
+  "last-column-id": 2,
+  "last-partition-id": 1000,
+  "last-updated-ms": 1794613339284,
+  "location": "/tmp/warehouse/void_partition_dropped_column/",
+  "metadata-log": [
+    {
+      "metadata-file": "/tmp/warehouse/void_partition_dropped_column/metadata/v2.metadata.json",
+      "timestamp-ms": 1794613339284
+    }
+  ],
+  "partition-spec": [
+    {
+      "field-id": 1000,
+      "name": "c0",
+      "source-id": 2,
+      "transform": "void"
+    }
+  ],
+  "partition-specs": [
+    {
+      "fields": [
+        {
+          "field-id": 1000,
+          "name": "c0",
+          "source-id": 2,
+          "transform": "void"
+        }
+      ],
+      "spec-id": 0
+    }
+  ],
+  "refs": {
+    "main": {
+      "snapshot-id": 2011348865913312671,
+      "type": "branch"
+    }
+  },
+  "schema": {
+    "type": "struct",
+    "schema-id": 1,
+    "fields": [
+      {
+        "id": 1,
+        "name": "id",
+        "required": true,
+        "type": "long"
+      }
+    ]
+  },
+  "schemas": [
+    {
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "c0",
+          "required": true,
+          "type": "int"
+        }
+      ],
+      "schema-id": 0,
+      "type": "struct"
+    },
+    {
+      "type": "struct",
+      "schema-id": 1,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        }
+      ]
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 2011348865913312671,
+      "timestamp-ms": 1794613339284
+    }
+  ],
+  "snapshots": [
+    {
+      "manifest-list": "/tmp/warehouse/void_partition_dropped_column/metadata/snap-2011348865913312671-1-6a6f19d7-4d29-4fe1-9f6f-4cbaf3a20785.avro",
+      "parent-snapshot-id": -1,
+      "schema-id": 0,
+      "snapshot-id": 2011348865913312671,
+      "summary": {
+        "added-data-files": "2",
+        "added-files-size": "1799",
+        "added-records": "2",
+        "changed-partition-count": "2",
+        "operation": "append",
+        "total-data-files": "2",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-files-size": "1799",
+        "total-position-deletes": "0",
+        "total-records": "2"
+      },
+      "timestamp-ms": 1794613339284
+    }
+  ],
+  "sort-orders": [
+    {
+      "fields": [],
+      "order-id": 0
+    }
+  ],
+  "statistics": [],
+  "table-uuid": "284b67e9-52d4-4d13-8645-b58dd1412fb3"
+}

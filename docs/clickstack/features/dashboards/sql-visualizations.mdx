@@ -28,9 +28,11 @@ To create a SQL-based visualization, open a dashboard tile editor and select the
 From there:
 
 1. Select a **ClickHouse connection** to run the query against.
-2. Optionally select a **Source** — this enables dashboard-level filters to be applied to your chart via the `$__filters` macro.
+2. Optionally select a **Source** — this enables dashboard-level filters to be applied to your chart via the `$__filters` macro, and lets the query use `$__sourceTable`.
 3. Write your SQL query in the editor, using query parameters and macros to integrate with the dashboard time range, filters, and variables.
 4. Click the **play** button to preview results, then **Save**.
+
+The connection and source can also be a [connection variable or data source variable](/clickstack/features/dashboards/overview#source-connection-variables), so that the viewer chooses which connection or source the tile queries.
 
 ## Query parameters {#query-parameters}
 
@@ -111,14 +113,15 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 | Macro         | Description                                                                            |
 |---------------|----------------------------------------------------------------------------------------|
 | `$__filters`  | Replaced with the dashboard-level filter conditions (requires a Source to be selected) |
+| `$__sourceTable` | Replaced with the selected Source's table, fully qualified, such as `default.otel_logs`. For metric sources, use `$__sourceTable(<metric type>)`, where the metric type is `gauge`, `histogram`, `sum`, `summary`, or `exponential histogram`. Requires a Source to be selected |
 
 When a **Source** is selected on the chart and dashboard filters are active, `$__filters` expands to the corresponding SQL `WHERE` conditions. When no source is selected or no filters are applied, it expands to `(1=1)`, so it is always safe to include in a `WHERE` clause.
 
-Only filters with **Broadcast filter condition** enabled are applied by `$__filters`. Filters exposed as variables are referenced explicitly, as described below.
+`$__filters` applies the selections of SQL expression values filters with **Broadcast filter condition** enabled, and the conditions of [ad hoc filters](/clickstack/features/dashboards/overview#adhoc-filters) that apply to the tile's source. Filters exposed as variables are referenced explicitly, as described below.
 
 ### Dashboard variable macros {#dashboard-variables}
 
-When a dashboard filter is [available as a variable](/clickstack/features/dashboards/overview#dashboard-variables), its selected values can be referenced anywhere in the query. These macros are only available on tiles belonging to a dashboard that declares at least one variable.
+When a dashboard filter is [available as a variable](/clickstack/features/dashboards/overview#dashboard-variables) — a SQL expression values filter with **Available as variable** enabled, or any static values, SQL query values, or PromQL label values filter — its selected values can be referenced anywhere in the query. These macros are only available on tiles belonging to a dashboard that declares at least one variable.
 
 | Macro                                          | Description                                                                                                              |
 |------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
