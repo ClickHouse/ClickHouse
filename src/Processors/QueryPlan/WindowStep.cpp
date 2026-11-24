@@ -8,9 +8,9 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Parsers/NullsAction.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -27,6 +27,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsUInt64 window_sliding_aggregation_min_frame_rows;
 }
 
 static ITransformingStep::Traits getTraits(bool preserves_sorting)
@@ -355,9 +360,11 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     return window_functions;
 }
 
-void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     sort_settings.updatePlanSettings(settings);
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_SLIDING_AGGREGATION)
+        settings[QueryPlanSerializationSetting::window_sliding_aggregation_min_frame_rows] = function_settings.sliding_aggregation_min_frame_rows;
 }
 
 void WindowStep::serialize(Serialization & ctx) const
@@ -433,7 +440,7 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         window_description.window_functions,
         streams_fan_out,
         SortingStep::Settings(ctx.settings),
-        WindowFunctionSettings::create(ctx.context->getSettingsRef()));
+        WindowFunctionSettings::create(ctx.settings));
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);

@@ -6,6 +6,7 @@ namespace DB
 {
 
 struct Settings;
+struct QueryPlanSerializationSettings;
 
 struct WindowFunctionSettings
 {
@@ -13,6 +14,7 @@ struct WindowFunctionSettings
 
 public:
     static WindowFunctionSettings create(const Settings & settings);
+    static WindowFunctionSettings create(const QueryPlanSerializationSettings & settings);
 };
 
 }
