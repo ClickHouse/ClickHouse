@@ -91,7 +91,10 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
+#include <optional>
 #include <ranges>
+#include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -165,6 +168,92 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Inserts CTE nodes into `ctes_in_resolve_process` (and optionally `cte_definitions_in_resolve_process`)
+/// using precomputed `QueryTreeNodePtrWithHash` keys, and erases those precomputed keys on scope exit
+/// so cleanup survives nested `unordered_set` rehashes and neither traverses the tree nor throws.
+class CTEInResolveProcessGuard
+{
+public:
+    explicit CTEInResolveProcessGuard(
+        QueryTreeNodePtrWithHashSet & ctes_in_resolve_process_,
+        std::unordered_set<const IQueryTreeNode *> * cte_definitions_in_resolve_process_ = nullptr) noexcept
+        : ctes_in_resolve_process(ctes_in_resolve_process_)
+        , cte_definitions_in_resolve_process(cte_definitions_in_resolve_process_)
+    {
+    }
+
+    CTEInResolveProcessGuard(const CTEInResolveProcessGuard &) = delete;
+    CTEInResolveProcessGuard & operator=(const CTEInResolveProcessGuard &) = delete;
+
+    void insert(const QueryTreeNodePtr & cte_node)
+    {
+        if (!cte_node)
+            return;
+
+        if (single_cte_key.has_value())
+            extra_cte_keys.reserve(extra_cte_keys.size() + 1);
+        if (cte_definitions_in_resolve_process && single_cte_def != nullptr)
+            extra_cte_defs.reserve(extra_cte_defs.size() + 1);
+
+        QueryTreeNodePtrWithHash cte_with_hash{cte_node};
+        if (auto [_, inserted] = ctes_in_resolve_process.insert(cte_with_hash); inserted)
+        {
+            if (!single_cte_key.has_value())
+                single_cte_key.emplace(std::move(cte_with_hash));
+            else
+                extra_cte_keys.push_back(std::move(cte_with_hash));
+        }
+
+        if (cte_definitions_in_resolve_process)
+        {
+            if (auto [_, inserted] = cte_definitions_in_resolve_process->insert(cte_node.get()); inserted)
+            {
+                if (single_cte_def == nullptr)
+                    single_cte_def = cte_node.get();
+                else
+                    extra_cte_defs.push_back(cte_node.get());
+            }
+        }
+    }
+
+    void insertRange(const QueryTreeNodes & cte_nodes)
+    {
+        if (cte_nodes.size() > 1)
+        {
+            extra_cte_keys.reserve(cte_nodes.size() - 1);
+            if (cte_definitions_in_resolve_process)
+                extra_cte_defs.reserve(cte_nodes.size() - 1);
+        }
+
+        for (const auto & cte_node : cte_nodes)
+            insert(cte_node);
+    }
+
+    ~CTEInResolveProcessGuard() noexcept
+    {
+        if (single_cte_key.has_value())
+            ctes_in_resolve_process.erase(*single_cte_key);
+        for (const auto & cte_key : extra_cte_keys)
+            ctes_in_resolve_process.erase(cte_key);
+
+        if (cte_definitions_in_resolve_process)
+        {
+            if (single_cte_def != nullptr)
+                cte_definitions_in_resolve_process->erase(single_cte_def);
+            for (const auto * cte_def : extra_cte_defs)
+                cte_definitions_in_resolve_process->erase(cte_def);
+        }
+    }
+
+private:
+    QueryTreeNodePtrWithHashSet & ctes_in_resolve_process;
+    std::unordered_set<const IQueryTreeNode *> * cte_definitions_in_resolve_process = nullptr;
+    std::optional<QueryTreeNodePtrWithHash> single_cte_key;
+    const IQueryTreeNode * single_cte_def = nullptr;
+    std::vector<QueryTreeNodePtrWithHash> extra_cte_keys;
+    std::vector<const IQueryTreeNode *> extra_cte_defs;
+};
 
 /// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
 /// Must run for every reference: clones of one body can resolve differently.
@@ -1499,6 +1588,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     if (node_type == QueryTreeNodeType::IDENTIFIER)
     {
         scope_to_resolve_alias_expression->pushExpressionNode(alias_node);
+        SCOPE_EXIT(scope_to_resolve_alias_expression->popExpressionNode());
 
         auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
@@ -1506,8 +1596,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
-
-        scope_to_resolve_alias_expression->popExpressionNode();
 
         /** The niladic-function fallback of `tryResolveIdentifier` is gated on the initial context, so that
           * it stays the last resort of the whole scope walk instead of firing at every parent scope. Here the
@@ -1836,6 +1924,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         it = insert_it;
     }
 
+    SCOPE_EXIT({
+        it->second.count--;
+        if (it->second.count == 0)
+            scope.identifier_in_lookup_process.erase(it);
+    });
+
     /// Resolve identifier from current scope
 
     IdentifierResolveResult resolve_result;
@@ -1966,13 +2060,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
-    it->second.count--;
-    if (it->second.count == 0)
-    {
-        scope.identifier_in_lookup_process.erase(it);
-        if (resolve_result.resolved_identifier)
-            scope.tryCacheIdentifier(identifier_lookup, resolve_result, identifier_resolve_context);
-    }
+    if (it->second.count == 1 && resolve_result.resolved_identifier)
+        scope.tryCacheIdentifier(identifier_lookup, resolve_result, identifier_resolve_context);
 
     return resolve_result;
 }
@@ -3205,8 +3294,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// resolveLambda resolves the body via resolveExpressionNode, which itself
                     /// pushes the aggregate function before resolving its arguments.
                     scope.pushExpressionNode(function_to_resolve_untyped);
+                    SCOPE_EXIT(scope.popExpressionNode());
                     node_projection_names = resolveFunction(function_to_resolve_untyped, scope);
-                    scope.popExpressionNode();
                     node = function_to_resolve_untyped;
                 }
                 else
@@ -3636,6 +3725,11 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
     ProjectionName result_projection_name;
     QueryTreeNodePtr parent_window_node;
+    bool parent_window_inserted = false;
+    SCOPE_EXIT({
+        if (parent_window_inserted)
+            windows_in_resolve_process.erase(parent_window_node.get());
+    });
 
     if (identifier_node)
         parent_window_name = identifier_node->getIdentifier().getFullName();
@@ -3666,6 +3760,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
                 "Recursive window {}. In scope {}",
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
+        parent_window_inserted = true;
 
         if (identifier_node)
         {
@@ -3754,7 +3849,6 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
     }
 
-    windows_in_resolve_process.erase(parent_window_node.get());
     return result_projection_name;
 }
 
@@ -3935,6 +4029,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     }
 
     scope.pushExpressionNode(node);
+    SCOPE_EXIT(scope.popExpressionNode());
 
     auto node_type = node->getNodeType();
 
@@ -4014,16 +4109,13 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         ///
                         /// In this example argument of function `in` is being resolve here. If CTE `test1` is not forbidden,
                         /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
-                        ctes_in_resolve_process.insert(original_cte_node);
-                        cte_definitions_in_resolve_process.insert(original_cte_node.get());
+                        CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process, &cte_definitions_in_resolve_process);
+                        cte_resolve_guard.insert(original_cte_node);
 
                         if (subquery_node)
                             resolveQuery(resolved_identifier_node, subquery_scope);
                         else
                             resolveUnion(resolved_identifier_node, subquery_scope);
-
-                        ctes_in_resolve_process.erase(original_cte_node);
-                        cte_definitions_in_resolve_process.erase(original_cte_node.get());
                     }
                     else if (table_node != nullptr && table_node->isMaterializedCTE())
                     {
@@ -4040,7 +4132,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                         if (!mat_subquery_is_resolved)
                         {
-                            ctes_in_resolve_process.insert(resolved_identifier_node);
+                            CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process);
+                            cte_resolve_guard.insert(resolved_identifier_node);
 
                             IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
                             mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -4049,8 +4142,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 resolveQuery(mat_subquery, mat_subquery_scope);
                             else
                                 resolveUnion(mat_subquery, mat_subquery_scope);
-
-                            ctes_in_resolve_process.erase(resolved_identifier_node);
 
                             checkMaterializedCTESubqueryIsNotCorrelated(mat_subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                         }
@@ -4467,8 +4558,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     }
 
     resolved_expressions.emplace(node, result_projection_names);
-
-    scope.popExpressionNode();
 
     return result_projection_names;
 }
@@ -5138,10 +5227,9 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 resolve_settings.allow_to_resolve_subquery_during_identifier_resolution = false;
 
                 scope.pushExpressionNode(current_join_tree_node);
+                SCOPE_EXIT(scope.popExpressionNode());
 
                 auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, resolve_settings);
-
-                scope.popExpressionNode();
 
                 auto resolved_identifier = table_identifier_resolve_result.resolved_identifier;
 
@@ -7089,19 +7177,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         {
             QueryTreeNodePtr original_cte_node = try_get_original_cte_node(join_tree_node);
 
-            if (original_cte_node)
-            {
-                ctes_in_resolve_process.insert(original_cte_node);
-                cte_definitions_in_resolve_process.insert(original_cte_node.get());
-            }
+            CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process, &cte_definitions_in_resolve_process);
+            cte_resolve_guard.insert(original_cte_node);
 
             resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
-
-            if (original_cte_node)
-            {
-                ctes_in_resolve_process.erase(original_cte_node);
-                cte_definitions_in_resolve_process.erase(original_cte_node.get());
-            }
             break;
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
@@ -7137,11 +7216,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 {
                     auto & subquery = table_node->getMaterializedCTESubquery();
 
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
-                    }
+                    CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process, &cte_definitions_in_resolve_process);
+                    cte_resolve_guard.insertRange(cte_map_nodes);
 
                     IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
                     subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -7150,12 +7226,6 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         resolveQuery(subquery, subquery_scope);
                     else
                         resolveUnion(subquery, subquery_scope);
-
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.erase(cte_map_node);
-                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
-                    }
 
                     checkMaterializedCTESubqueryIsNotCorrelated(subquery, cte_name, scope.scope_node);
 
@@ -7184,19 +7254,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
 
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
-                    }
+                    CTEInResolveProcessGuard cte_resolve_guard(ctes_in_resolve_process, &cte_definitions_in_resolve_process);
+                    cte_resolve_guard.insertRange(cte_map_nodes);
 
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
-
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.erase(cte_map_node);
-                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
-                    }
 
                     /// A clone can resolve correlated even when the storage-initializing clone did not
                     /// (identifiers may bind to outer scope here). The first-reference branch above
