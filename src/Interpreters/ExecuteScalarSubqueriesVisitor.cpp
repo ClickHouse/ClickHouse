@@ -148,6 +148,8 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     options.analyze(data.only_analyze);
     /// `collectMaterializedCTEs` returns nothing for subquery options unless materialization is forced.
     options.forceMaterializeCTE();
+    if (!data.allow_compound_table_identifier_qualification)
+        options.allowCompoundTableIdentifierQualification(false);
 
     return std::make_unique<InterpreterSelectQueryAnalyzer>(
         subquery_select, subquery_context, options,

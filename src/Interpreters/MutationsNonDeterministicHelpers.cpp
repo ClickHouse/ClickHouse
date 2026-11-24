@@ -212,17 +212,16 @@ ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, C
         Scalars scalars;
         Scalars local_scalars;
         /// The rewritten command is stored, so read table names in its subqueries as written.
-        const auto subquery_context = Context::createCopyForStoredDefinition(context);
-
         ExecuteScalarSubqueriesVisitor::Data data{
-            WithContext{subquery_context},
+            WithContext{context},
             /*subquery_depth=*/0,
             scalars,
             local_scalars,
             /*only_analyze=*/false,
             /*is_create_parameterized_view=*/false,
             /*replace_only_to_literals=*/true,
-            settings[Setting::mutations_max_literal_size_to_replace]};
+            settings[Setting::mutations_max_literal_size_to_replace],
+            /*allow_compound_table_identifier_qualification=*/ false};
 
         ExecuteScalarSubqueriesVisitor visitor(data);
         visit(visitor);

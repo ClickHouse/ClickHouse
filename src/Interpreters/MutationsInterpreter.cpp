@@ -130,9 +130,6 @@ void checkNoRowPolicyForSetOperands(
     AddDefaultDatabaseVisitor visitor(context, default_database);
     visitor.visit(ast);
 
-    /// Read table names as the mutation will when it is executed.
-    const auto stored_definition_context = Context::createCopyForStoredDefinition(context);
-
     const auto check = [&](const ASTPtr & node, const auto & self) -> void
     {
         if (const auto * function = node->as<ASTFunction>();
@@ -144,8 +141,8 @@ void checkNoRowPolicyForSetOperands(
             {
                 auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
                     Identifier(table_identifier->name_parts),
-                    stored_definition_context,
-                    /*allow_compound_table_identifier_qualification=*/ true);
+                    context,
+                    /*allow_compound_table_identifier_qualification=*/ false); /// Read as the mutation will read them.
                 if (!resolved.resolved_identifier && throw_if_unresolved)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
