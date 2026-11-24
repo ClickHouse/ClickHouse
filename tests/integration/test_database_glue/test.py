@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import random
+import re
 import uuid
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
