@@ -17,21 +17,35 @@ using namespace DB;
 namespace
 {
 
+/// What the mock transport has received. It is shared between the transport, which the agent
+/// owns, and the test, which inspects it.
+struct MockTransportRecord
+{
+    /// The messages passed to each model call.
+    std::vector<ai::Messages> conversations;
+    /// The system prompt and the tools offered at each model call.
+    std::vector<String> system_prompts;
+    std::vector<std::set<String>> tool_names;
+};
+
 /// A transport returning pre-programmed steps and recording the conversations it receives.
 class MockTransport : public IAIAgentTransport
 {
 public:
-    explicit MockTransport(std::vector<AIAgentStep> steps_) : steps(std::move(steps_)) {}
+    MockTransport(std::vector<AIAgentStep> steps_, std::shared_ptr<MockTransportRecord> record_)
+        : steps(std::move(steps_)), record(std::move(record_))
+    {
+    }
 
     AIAgentStep step(const String & system_prompt, const ai::Messages & messages, const ai::ToolSet & tools) override
     {
-        system_prompts.push_back(system_prompt);
-        conversations.push_back(messages);
+        record->system_prompts.push_back(system_prompt);
+        record->conversations.push_back(messages);
 
         std::set<String> names;
         for (const auto & [name, tool] : tools)
             names.insert(name);
-        tool_names.push_back(std::move(names));
+        record->tool_names.push_back(std::move(names));
 
         AIAgentStep result = steps.at(std::min(next, steps.size() - 1));
         ++next;
@@ -40,15 +54,9 @@ public:
 
     [[nodiscard]] String description() const override { return "mock"; }
 
-    /// The messages passed to each model call. The transport outlives the agent in the tests
-    /// (the agent owns a raw observer pointer stored by the test), so this is safe to inspect.
-    std::vector<ai::Messages> conversations;
-    /// The system prompt and the tools offered at each model call.
-    std::vector<String> system_prompts;
-    std::vector<std::set<String>> tool_names;
-
 private:
     std::vector<AIAgentStep> steps;
+    std::shared_ptr<MockTransportRecord> record;
     size_t next = 0;
 };
 
@@ -76,7 +84,8 @@ AIAgentStep toolCallStep(const String & tool_name, ai::JsonValue arguments = ai:
 struct AgentWithMock
 {
     std::shared_ptr<QueryContextBuffer> buffer = std::make_shared<QueryContextBuffer>();
-    MockTransport * transport = nullptr;
+    /// The record of the mock transport owned by the agent.
+    std::shared_ptr<MockTransportRecord> transport = std::make_shared<MockTransportRecord>();
     std::ostringstream output;
     std::unique_ptr<AIAgent> agent;
 
@@ -85,13 +94,10 @@ struct AgentWithMock
     /// tool failure.
     explicit AgentWithMock(std::vector<AIAgentStep> steps, const AIAgentHooks & hooks = {}, size_t max_steps = 4)
     {
-        auto owned = std::make_unique<MockTransport>(std::move(steps));
-        MockTransport * observer = owned.get();
         AIConfiguration config;
         config.max_steps = max_steps;
-        agent = std::make_unique<AIAgent>(config, std::move(owned), hooks, buffer, output, /*use_colors=*/ false);
-        /// Assigned after the ownership has moved to the agent, which lives as long as this object.
-        transport = observer;
+        agent = std::make_unique<AIAgent>(
+            config, std::make_unique<MockTransport>(std::move(steps), transport), hooks, buffer, output, /*use_colors=*/ false);
     }
 };
 
