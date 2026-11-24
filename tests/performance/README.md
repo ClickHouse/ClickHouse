@@ -92,11 +92,17 @@ Test template:
 
 The drop queries also run when the test fails, and a test whose drop queries cannot be shown to have cleaned up stops the rest of its batch.
 
+Currently, do not use `run_all_queries="1"` outside the standard benchmarks `clickbench.xml`, `tpch.xml` and `tpcds.xml`. Master runs and full pull request runs measure at most 10 queries of a test, chosen at random, and the attribute makes them measure every query of the test, which slows down CI. The nightly job runs all queries of every test anyway.
+
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
 ### Queries whose time keeps growing with each run
 
 Every query runs several times on the same tables, with nothing reset between the runs. The check of a pull request that adds or changes a test fails when the time of a query of the test keeps growing with each run on the tested server (at least 5 runs, correlation of run number and time above 0.8, last run over first above 1.2). Usually each run reads what the previous runs changed, for example a table that grows with every timed `INSERT`. A pull request job runs at most 10 queries of a test, chosen at random, unless the test sets `run_all_queries="1"`. Make every run do the same work, for example write to `/dev/null` instead of a file, or make an `UPDATE` skip the rows it already rewrote.
+
+### Unstable queries in a new or changed test
+
+The check of a pull request also fails when a query of a test it adds or changes is unstable. If the pull request changes only files under `tests/` and the reference server runs the performance reference build of the master commit the pull request is merged with, both servers run the same code built the same way, and the check fails when the report marks the query changed or unstable (a relative difference above 15% that is at least its randomization threshold, or a randomization threshold above 25%; higher for a query with history or a test with its own threshold). Otherwise the two servers do not run the same build (the pull request changes code, or the reference is the official build or a build of an older master commit), and the check fails when the standard deviation of the query's run times on the tested server is more than half their median (at least 5 runs). This includes a spread that the change itself causes: after the merge both servers of master run that code, so the query would vary as much on both. A query that failed on the reference server and ran only on the tested one, which the report does not compare, is judged by the standard deviation of its run times in any pull request. Usually the query runs for a few milliseconds or waits for something besides its own work, such as Keeper or the network; make each run do more work.
 
 ### Disabling a query
 
@@ -163,7 +169,7 @@ Tests tagged `long` are skipped in PR and master runs (`perf.py` skips them unle
 
 How to write one:
 
-* `<test run_all_queries="1" max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
+* `<test max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
 * Put `<max_execution_time>0</max_execution_time>` into `<settings>`, otherwise long setup statements are cut by the server profile limit. Prewarm and timed runs still get the budget.
 * Load raw data with `fill_query` and finish every loaded MergeTree table as `tpch_sf100.xml` does: insert; `MODIFY SETTING lock_acquire_timeout_for_background_operations`; `OPTIMIZE ... FINAL` with `optimize_throw_if_noop = 1`; row and part counts; then content checks. `tpch_sf100.xml` also runs `MATERIALIZE STATISTICS` (`mutations_sync = 1`) before `SYSTEM STOP MERGES`, which blocks mutations too; for a test whose queries only read, the harness stops merges after the setup (`perf.py --stop-merges`).
 * Keep the tables in `default` (no `CREATE DATABASE`, no `USE`) and drop them with `DROP TABLE IF EXISTS <t> SYNC`, so the disk is free for the next test. (`USE` in existing tests is reconnect-safe: `clickhouse_driver` re-sends the database selected by `USE` when it reconnects.)
