@@ -16,6 +16,9 @@
 #include <base/TypeLists.h>
 #include <numeric>
 #include <vector>
+#include <base/sanitizer_defs.h>
+
+#include <limits>
 
 
 namespace DB
@@ -64,13 +67,13 @@ private:
         return res;
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Authoritative: accepts 1..3 integer (or `IPv4`, in the first two positions) arguments and
     /// returns an array whose element type is their least common supertype. The result-type
@@ -79,7 +82,7 @@ private:
     /// an `onlyNull` argument collapses the whole result to a scalar `Nullable(Nothing)`, and an
     /// `IPv4` counts as `UInt32`. The `Nothing` alternative accepts a bare `NULL` literal in any
     /// position so `range(NULL)` keeps reaching `rangeResult`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// One arm per arity: the `rangeResult` type function cannot reference an absent optional
         /// capture, so the three lengths are spelled out explicitly instead of using `[optional]`.
@@ -111,13 +114,13 @@ private:
                         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                         "A call to function {} overflows, only support positive values when only end is provided", getName());
 
-                    const auto sum = lhs + rhs;
-                    if (sum < lhs)
+                    const auto rhs_unsigned = static_cast<size_t>(rhs);
+                    if (rhs_unsigned > std::numeric_limits<size_t>::max() - lhs)
                         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                         "A call to function {} overflows, investigate the values "
                                         "of arguments you are passing", getName());
 
-                    return sum;
+                    return lhs + rhs_unsigned;
                 });
 
             if (total_values > max_elements)
@@ -151,8 +154,12 @@ private:
     /// loop's alignment. The value comes from the index, not an accumulator: ranges here are short, so
     /// the vectoriser's scalar remainder dominates and independent values fill it better. `iotaWithStep`
     /// keeps an accumulator because its caller generates whole blocks, where a multiply would cost more.
+    /// For a signed `T` with a negative step, `idx * step` and the sum are evaluated in `size_t`, so
+    /// the two's-complement wrap is what yields the right value once it is cast back to `T`. The
+    /// element count is computed in `__int128_t` by the callers, so the mathematical result fits `T`.
     template <typename T>
-    static NO_INLINE void fillConstStartStep(T * out, size_t n, T start, T step)
+    static NO_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW
+    void fillConstStartStep(T * out, size_t n, T start, T step)
     {
         /// Same as in `iota`: a portable AArch64 build keeps LLVM's default interleave factor of 2,
         /// while x86-64-v3 is already at 4.
@@ -164,6 +171,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeConstStartStep(
             const IColumn * end_arg, const T start, const T step, const size_t input_rows_count) const
     {
@@ -223,6 +231,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeConstStep(
         const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count) const
     {
@@ -286,6 +295,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeConstStart(
             const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count) const
     {
@@ -349,6 +359,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeGeneric(
         const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count) const
     {
@@ -414,7 +425,7 @@ private:
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
         if (null_presence.has_null_constant)
