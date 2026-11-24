@@ -714,8 +714,9 @@ ORDER BY event_time_microseconds LIMIT 10 {2})", bundled, from_log, settings);
         LOG_INFO(log, "Distributed shapes reach: SYSTEM FLUSH LOGS failed");
         return;
     }
-    for (const auto & [name, query] : std::vector<std::pair<String, String>>{
-             {"reach", reach}, {"errors", errors}, {"sources", sources}, {"missed", missed}})
+    const std::vector<std::pair<String, String>> queries = {{"reach", reach}, {"errors", errors}, {"sources", sources}, {"missed", missed}};
+
+    for (const auto & [name, query] : queries)
     {
         const std::optional<DB::Strings> lines = queryLines(query, false, "TabSeparatedWithNames");
 
