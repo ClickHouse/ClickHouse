@@ -1,0 +1,5 @@
+CREATE TABLE default.url_method_expr
+(
+    `x` UInt8
+)
+ENGINE = URL('http://localhost:1/data.csv', 'CSV', http_method = 'POST')

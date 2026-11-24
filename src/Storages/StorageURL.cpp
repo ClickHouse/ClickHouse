@@ -2764,6 +2764,10 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP method cannot be empty");
                     validateHTTPMethod(*out_http_method);
 
+                    /// Keep the evaluated value, so that the stored table definition and the query sent to the cluster nodes
+                    /// do not evaluate the expression again, possibly to another method.
+                    (*arg_it)->as<ASTFunction &>().arguments->children[1] = ast_literal;
+
                     http_method_arg = arg_it->get();
                 }
             }
