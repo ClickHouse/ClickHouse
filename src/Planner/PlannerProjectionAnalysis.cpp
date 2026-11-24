@@ -330,6 +330,17 @@ void collectIdentifierNames(const ASTPtr & ast, Names & names)
             collectIdentifierNames(child, names);
 }
 
+/// true if the expression reads a name that a parameter of a lambda hides at the place where the expression goes
+bool readsLambdaParameter(const ASTPtr & expression, const Names & lambda_parameters)
+{
+    Names names;
+    collectIdentifierNames(expression, names);
+    return std::ranges::any_of(names, [&](const auto & name)
+    {
+        return std::ranges::contains(lambda_parameters, name.substr(0, name.find('.')));
+    });
+}
+
 /// a parameter of a lambda hides an alias with its name, and a subquery has its own aliases
 /// returns true if it replaced an argument
 bool replaceAliasedIfArguments(const ASTPtr & ast, const AliasedIfArguments & aliased_arguments, Names & lambda_parameters)
@@ -349,7 +360,8 @@ bool replaceAliasedIfArguments(const ASTPtr & ast, const AliasedIfArguments & al
         for (size_t i = 0; it != aliased_arguments.end() && i < arguments.size(); ++i)
         {
             const auto * identifier = arguments[i]->as<ASTIdentifier>();
-            if (!it->second[i] || !identifier || std::ranges::contains(lambda_parameters, identifier->name()))
+            if (!it->second[i] || !identifier || std::ranges::contains(lambda_parameters, identifier->name())
+                || readsLambdaParameter(it->second[i], lambda_parameters))
                 continue;
 
             auto expression = it->second[i]->clone();
