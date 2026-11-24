@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <optional>
@@ -6,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/DataLake/Common.h>
@@ -122,6 +124,9 @@ struct Plan
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
     Poco::JSON::Array::Ptr current_schema_fields;
+    /// The storage paths of the files that the metadata being replaced references. The rewrite removes only them, because
+    /// the other files in the directories of the table may belong to a concurrent write that has not committed yet.
+    std::unordered_set<String> replaced_files;
 
     class ParititonEncoder
     {
@@ -246,6 +251,12 @@ static Plan getPlan(
     plan.initial_metadata_object = initial_metadata_object;
     plan.current_schema_fields = current_schema;
 
+    const auto & resolver = persistent_table_components.path_resolver;
+    if (const auto statistics = initial_metadata_object->getArray(Iceberg::f_statistics))
+        for (UInt32 i = 0; i < statistics->size(); ++i)
+            plan.replaced_files.insert(resolver.resolve(
+                Iceberg::IcebergPathFromMetadata::deserialize(statistics->getObject(i)->getValue<String>(Iceberg::f_statistics_path))));
+
     /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_set<Iceberg::IcebergPathFromMetadata> seen_position_delete_files;
@@ -253,8 +264,10 @@ static Plan getPlan(
     for (const auto & snapshot : snapshots_info)
     {
         auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log);
+        plan.replaced_files.insert(resolver.resolve(snapshot.manifest_list_path));
         for (const auto & manifest_file : manifest_list)
         {
+            plan.replaced_files.insert(resolver.resolve(manifest_file.manifest_file_path));
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
@@ -271,7 +284,10 @@ static Plan getPlan(
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
             for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
                 if (seen_position_delete_files.insert(pos_delete_file->parsed_entry->file_path_key).second)
+                {
                     all_positional_delete_files.push_back(pos_delete_file);
+                    plan.replaced_files.insert(resolver.resolve(pos_delete_file->parsed_entry->file_path_key));
+                }
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
@@ -279,9 +295,10 @@ static Plan getPlan(
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
+                plan.replaced_files.insert(resolver.resolve(data_file->parsed_entry->file_path_key));
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                     data_file,
-                    persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
+                    resolver.resolve(data_file->parsed_entry->file_path_key),
                     0,
                     Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
                 /// One DataFilePlan per source *data file*, keyed by the data file's own path.
@@ -1517,19 +1534,35 @@ static bool writeMetadataFiles(
     }
 }
 
-static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
+static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path, const Plan & plan)
 {
-    auto metadata_files = listFilesNonRecursive(*object_storage, table_path, "metadata", "");
-    std::erase_if(metadata_files, [](const String & file)
+    /// A filesystem names `a//b` and `a/./b` as `a/b`; an object key is a byte string.
+    const auto storage_type = object_storage->getType();
+    const bool is_filesystem = storage_type == ObjectStorageType::Local || storage_type == ObjectStorageType::HDFS;
+    const String key_prefix = object_storage->getCommonKeyPrefix();
+    auto normalize = [&](const String & path)
     {
-        return file.ends_with("metadata/version-hint.text");
+        if (!is_filesystem)
+            return path;
+        std::filesystem::path file(path);
+        if (storage_type == ObjectStorageType::Local && file.is_relative())
+            file = std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix));
+        return file.lexically_normal().string();
+    };
+    std::unordered_set<String> replaced_files;
+    for (const auto & file : plan.replaced_files)
+        replaced_files.insert(normalize(file));
+
+    auto old_files = listFilesNonRecursive(*object_storage, table_path, "metadata", "");
+    std::erase_if(old_files, [&](const String & file)
+    {
+        return !file.ends_with(".metadata.json") && !replaced_files.contains(normalize(file));
     });
-    auto data_files = listFiles(*object_storage, table_path, "data", "");
+    for (auto && data_file : listFiles(*object_storage, table_path, "data", ""))
+        if (replaced_files.contains(normalize(data_file)))
+            old_files.push_back(data_file);
 
-    for (auto && data_file : data_files)
-        metadata_files.push_back(data_file);
-
-    return metadata_files;
+    return old_files;
 }
 
 static void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
@@ -1686,7 +1719,7 @@ void compactIcebergTable(
         if (shouldWriteIcebergTableStatisticsNdv(context_, /*catalog=*/ nullptr))
             column_sketches.emplace(*sample_block_, plan.current_schema_fields);
 
-        auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
+        auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path, plan);
         writeDataFiles(
             plan,
             sample_block_,
