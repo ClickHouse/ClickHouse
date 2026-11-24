@@ -206,7 +206,7 @@ VectorWithMemoryTracking<size_t> orderRowAxes(size_t num_axes, const VectorWithM
 
     while (order.size() < num_used)
     {
-        size_t chosen;
+        size_t chosen = 0;
         if (!ready.empty())
         {
             chosen = ready.top();
