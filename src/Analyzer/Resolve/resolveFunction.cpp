@@ -1527,7 +1527,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// The lambda form of `einsum` with the indices as the arguments of the lambda is rewritten to the form with subscripts.
     if (function_name == "einsum"
-        && !function_node_ptr->isWindowFunction()
+        && !function_node_ptr->isWindowCall()
         && function_node_ptr->getParameters().getNodes().empty()
         && !function_node_ptr->getArguments().getNodes().empty()
         && function_node_ptr->getArguments().getNodes().front()->getNodeType() == QueryTreeNodeType::LAMBDA)
