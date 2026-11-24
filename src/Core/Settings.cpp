@@ -11144,7 +11144,7 @@ Allows creation of columns of the experimental [FixedArray](/reference/data-type
 (with `CREATE TABLE` and `ALTER TABLE`). It does not affect the use of `FixedArray` in queries, and the tables
 that already have such columns can be attached and used regardless of this setting.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New experimental setting for the `FixedArray` data type."}) \
+        {"26.12", false, false, "New experimental setting for the `FixedArray` data type."}) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
