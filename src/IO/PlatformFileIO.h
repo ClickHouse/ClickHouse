@@ -112,4 +112,10 @@ int platformFileVersion(const std::string & path, PlatformFileVersion & out);
 /// The same for an open descriptor, like `fstat`.
 int platformFileVersionOfDescriptor(int fd, PlatformFileVersion & out);
 
+/// Whether the file behind an open descriptor has no names left, so that nothing can open it again:
+/// `st_nlink == 0` on POSIX. On Windows a file that is deleted while it is open either loses its
+/// last link at once (POSIX delete semantics) or stays with its delete pending until the last
+/// handle is closed; both count. Returns `1` or `0`, or `-1` with `errno` set on failure.
+int platformIsDescriptorUnlinked(int fd);
+
 }

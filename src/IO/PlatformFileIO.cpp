@@ -413,6 +413,21 @@ int platformFileVersionOfDescriptor(int fd, PlatformFileVersion & out)
     return fileVersionFromHandle(handle, out);
 }
 
+int platformIsDescriptorUnlinked(int fd)
+{
+    auto * handle = toHandle(fd);
+    if (handle == INVALID_HANDLE_VALUE)
+        return -1;
+
+    FILE_STANDARD_INFO info{};
+    if (!GetFileInformationByHandleEx(handle, FileStandardInfo, &info, sizeof(info)))
+    {
+        errno = EIO;
+        return -1;
+    }
+    return info.DeletePending || info.NumberOfLinks == 0;
+}
+
 int platformOpenDirectory(const std::string & path)
 {
     /// The only consumer of this descriptor is `platformFDataSync`, i.e. `_commit`, i.e.
@@ -564,6 +579,14 @@ int platformFileVersionOfDescriptor(int fd, PlatformFileVersion & out)
         return -1;
     fileVersionFromStat(st, out);
     return 0;
+}
+
+int platformIsDescriptorUnlinked(int fd)
+{
+    struct stat st{};
+    if (0 != ::fstat(fd, &st))
+        return -1;
+    return st.st_nlink == 0;
 }
 
 #endif

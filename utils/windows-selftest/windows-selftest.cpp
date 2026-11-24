@@ -479,6 +479,52 @@ void positionalReadLeavesTheDescriptorPositionAlone()
     DeleteFileA(path.c_str());
 }
 
+/// `parallelSyncPaths` flushes a file through a descriptor of its own and remembers the files whose
+/// flush failed by their identity. Both need what POSIX gives for free: `FlushFileBuffers` wants a
+/// handle with write access, and the `st_dev` / `st_ino` of the CRT's `fstat` are zero for every
+/// file, so the identity has to come from the volume serial number and the file index.
+void fileIdentityTellsFilesApartAndAWriteOnlyDescriptorSyncs()
+{
+    char temp_dir[MAX_PATH + 1];
+    char first_file[MAX_PATH + 1];
+    char second_file[MAX_PATH + 1];
+    check(GetTempPathA(sizeof(temp_dir), temp_dir) != 0
+            && GetTempFileNameA(temp_dir, "chs", 0, first_file) != 0
+            && GetTempFileNameA(temp_dir, "chs", 0, second_file) != 0,
+        "two temporary file names can be made");
+
+    const int first = DB::platformOpenFile(first_file, O_WRONLY);
+    const int first_again = DB::platformOpenFile(first_file, O_WRONLY);
+    const int second = DB::platformOpenFile(second_file, O_WRONLY);
+    check(first >= 0 && first_again >= 0 && second >= 0, "the temporary files can be opened for writing");
+
+    if (first >= 0 && first_again >= 0 && second >= 0)
+    {
+        DB::PlatformFileVersion first_version;
+        DB::PlatformFileVersion first_again_version;
+        DB::PlatformFileVersion second_version;
+        check(DB::platformFileVersionOfDescriptor(first, first_version) == 0
+                && DB::platformFileVersionOfDescriptor(first_again, first_again_version) == 0
+                && DB::platformFileVersionOfDescriptor(second, second_version) == 0,
+            "the identity of an open file can be read");
+
+        check(first_version.device_id == first_again_version.device_id && first_version.file_id == first_again_version.file_id,
+            "two descriptors of one file have the same identity");
+        check(first_version.device_id != second_version.device_id || first_version.file_id != second_version.file_id,
+            "two different files have different identities");
+
+        check(DB::platformFDataSync(first) == 0, "a write-only descriptor can be synced");
+        check(DB::platformIsDescriptorUnlinked(first) == 0, "a file that still has its name is not reported as unlinked");
+    }
+
+    for (int fd : {first, first_again, second})
+        if (fd >= 0)
+            ::_close(fd);
+
+    DeleteFileA(first_file);
+    DeleteFileA(second_file);
+}
+
 }
 
 
@@ -502,6 +548,7 @@ int main(int, char **)
     alignedAllocationsOfZeroBytesSucceedAndReportTheirSize();
     alignedAllocationsRejectSizesThatOverflowTheOverhead();
     positionalReadLeavesTheDescriptorPositionAlone();
+    fileIdentityTellsFilesApartAndAWriteOnlyDescriptorSyncs();
 
     std::cout << (failures ? "FAILED: " + std::to_string(failures) + " check(s)\n" : "OK\n");
     return failures ? 1 : 0;

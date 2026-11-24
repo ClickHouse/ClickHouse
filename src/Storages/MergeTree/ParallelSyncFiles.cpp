@@ -20,7 +20,6 @@
 #include <mutex>
 
 #include <fcntl.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 
@@ -56,7 +55,9 @@ namespace
 /// to sync such a file fails as well. For example, a retry of the insert that is deduplicated against
 /// the part with this file, or a part produced by a mutation that hardlinks this file.
 ///
-/// The files are identified by their inodes, which are shared by the hardlinks. The failed files are kept open,
+/// The files are identified by their inodes, which are shared by the hardlinks: the device and the inode on POSIX,
+/// the volume serial number and the file index on Windows (the `st_dev` and `st_ino` of its CRT `fstat` are
+/// zero for every file, so they cannot tell files apart), see `PlatformFileVersion`. The failed files are kept open,
 /// so that their inodes are not reused for other files. When the last hardlink of a failed file is removed
 /// (for example, its part is merged away or its table is dropped), no new attempt to sync it is possible,
 /// so its descriptor is closed, and its disk space is released, see `releaseUnlinked`.
@@ -73,23 +74,23 @@ public:
     }
 
     /// The hash of the file identity wraps around modulo 2^64 on purpose.
-    NO_SANITIZE_UNSIGNED_OVERFLOW std::mutex & getMutex(const struct stat & st)
+    NO_SANITIZE_UNSIGNED_OVERFLOW std::mutex & getMutex(const PlatformFileVersion & file)
     {
-        return mutexes[(st.st_dev * 0x9E3779B97F4A7C15ULL + st.st_ino) % num_mutexes];
+        return mutexes[(file.device_id * 0x9E3779B97F4A7C15ULL + file.file_id) % num_mutexes];
     }
 
     /// Must be called under the mutex for this file.
-    bool contains(const struct stat & st)
+    bool contains(const PlatformFileVersion & file)
     {
         std::lock_guard lock(files_mutex);
-        return files.contains({st.st_dev, st.st_ino});
+        return files.contains({file.device_id, file.file_id});
     }
 
     /// Must be called under the mutex for this file. Takes the ownership of the file descriptor.
-    void add(const struct stat & st, int fd)
+    void add(const PlatformFileVersion & file, int fd)
     {
         std::lock_guard lock(files_mutex);
-        if (!files.emplace(std::pair{st.st_dev, st.st_ino}, fd).second)
+        if (!files.emplace(std::pair{file.device_id, file.file_id}, fd).second)
         {
             [[maybe_unused]] int err = ::close(fd);
         }
@@ -102,30 +103,33 @@ public:
         if (!has_files.load(std::memory_order_relaxed))
             return;
 
-        std::vector<struct stat> unlinked;
+        std::vector<PlatformFileVersion> unlinked;
         {
             std::lock_guard lock(files_mutex);
             for (const auto & [key, fd] : files)
             {
-                struct stat st{};
-                if (::fstat(fd, &st) == 0 && st.st_nlink == 0)
-                    unlinked.push_back(st);
+                if (platformIsDescriptorUnlinked(fd) == 1)
+                {
+                    PlatformFileVersion file;
+                    file.device_id = key.first;
+                    file.file_id = key.second;
+                    unlinked.push_back(file);
+                }
             }
         }
 
-        for (const auto & st : unlinked)
+        for (const auto & file : unlinked)
         {
             /// Serialize with the attempts to sync this file, which take the mutex for the file before `files_mutex`.
-            std::lock_guard file_lock(getMutex(st));
+            std::lock_guard file_lock(getMutex(file));
             std::lock_guard lock(files_mutex);
-            auto it = files.find({st.st_dev, st.st_ino});
+            auto it = files.find({file.device_id, file.file_id});
             if (it == files.end())
                 continue;
 
             /// The snapshot above is stale: another call could have released this file already, and its inode
             /// could be reused for a new file, whose fsync failed as well. So check again that the file is unlinked.
-            struct stat current_st{};
-            if (::fstat(it->second, &current_st) != 0 || current_st.st_nlink != 0)
+            if (platformIsDescriptorUnlinked(it->second) != 1)
                 continue;
 
             [[maybe_unused]] int err = ::close(it->second);
@@ -141,32 +145,38 @@ private:
     std::array<std::mutex, num_mutexes> mutexes;
 
     std::mutex files_mutex;
-    std::map<std::pair<dev_t, ino_t>, int> files;
+    std::map<std::pair<UInt64, UInt64>, int> files;
     std::atomic<bool> has_files{false};
 };
 
 void syncPath(const std::string & path)
 {
+#if defined(OS_WINDOWS)
+    /// `platformFDataSync` is `_commit`, i.e. `FlushFileBuffers`, which fails with access denied on
+    /// a handle without `GENERIC_WRITE`. POSIX lets a read-only descriptor flush the file it names.
+    int fd = platformOpenFile(path, O_WRONLY | O_CLOEXEC);
+#else
     int fd = platformOpenFile(path, O_RDONLY | O_CLOEXEC);
+#endif
     if (fd == -1)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {} to fsync", path);
 
     SCOPE_EXIT({
-        /// The file is only read, and the result of the sync is checked below, so a failed `close` loses nothing.
+        /// Nothing is written through this descriptor, and the result of the sync is checked below, so a failed `close` loses nothing.
         if (fd != -1)
         {
             [[maybe_unused]] int err = ::close(fd);
         }
     });
 
-    struct stat st{};
-    if (::fstat(fd, &st) == -1)
+    PlatformFileVersion file;
+    if (platformFileVersionOfDescriptor(fd, file) == -1)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSTAT, path, "Cannot fstat {}", path);
 
     auto & failed_files = FailedFiles::instance();
-    std::lock_guard lock(failed_files.getMutex(st));
+    std::lock_guard lock(failed_files.getMutex(file));
 
-    if (failed_files.contains(st))
+    if (failed_files.contains(file))
         throw Exception(ErrorCodes::CANNOT_FSYNC, "The fsync of file {} failed earlier, so its data may not be durable", path);
 
     int res = 0;
@@ -203,7 +213,7 @@ void syncPath(const std::string & path)
     if (res == -1)
     {
         int saved_errno = errno;
-        failed_files.add(st, fd);
+        failed_files.add(file, fd);
         fd = -1;
         errno = saved_errno;
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fsync {}", path);

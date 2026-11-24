@@ -719,6 +719,7 @@ def main():
             backup_dir = f"{Utils.cwd()}/ci/tmp/windows-backup-non-ascii"
             template_dir = f"{Utils.cwd()}/ci/tmp/windows-template"
             disks_dir = f"{Utils.cwd()}/ci/tmp/windows-disks"
+            fsync_dir = f"{Utils.cwd()}/ci/tmp/windows-fsync"
             wine_commands = [
                 ("Initialize the Wine prefix", f"{wine_env} wine wineboot --init"),
                 ("clickhouse.exe --version", f"{wine_env} wine {build_dir}/programs/clickhouse.exe --version"),
@@ -791,6 +792,19 @@ def main():
                     f" && {{ {wine_env} wine {build_dir}/programs/clickhouse.exe disks --config-file {disks_dir}/config.xml"
                     f" --disk local --query \"remove C:{disks_dir}/victim.txt\"; true; }}"
                     f" && test -f {disks_dir}/victim.txt && test -f {wine_prefix}/drive_c{disks_dir}/victim.txt",
+                ),
+                # A persistent `MergeTree` table with `fsync_after_insert`: when the insert
+                # finishes, the files of the part are flushed through descriptors opened for
+                # that alone, which need write access for `FlushFileBuffers`. Two inserts, so
+                # that the second one syncs files other than those of the first.
+                (
+                    "INSERT with fsync_after_insert",
+                    f"rm -rf {fsync_dir} && mkdir -p {fsync_dir}"
+                    f" && test \"$({wine_env} wine {build_dir}/programs/clickhouse.exe local --path Z:{fsync_dir}"
+                    f" --query \"CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS fsync_after_insert = 1;"
+                    f" INSERT INTO t SELECT number FROM numbers(1000);"
+                    f" INSERT INTO t SELECT number FROM numbers(1000);"
+                    f" SELECT count() FROM t\")\" = 2000",
                 ),
             ]
             # Run all of them even after one fails: while the port is being brought up every
