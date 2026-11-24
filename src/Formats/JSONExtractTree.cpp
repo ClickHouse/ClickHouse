@@ -840,13 +840,6 @@ const DateLUTImpl & getTimeZoneToParseIn(const TimezoneMixin & type_time_zone, c
     return type_time_zone.getTimeZone();
 }
 
-/// Schema inference has no type to take a zone from; settings that carry no zone keep the one
-/// captured when the node was built.
-const DateLUTImpl & getTimeZoneForSchemaInference(const DateLUTImpl & captured_time_zone, const FormatSettings & format_settings)
-{
-    return format_settings.session_time_zone ? *format_settings.session_time_zone : captured_time_zone;
-}
-
 template <typename JSONParser>
 class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
@@ -2120,7 +2113,7 @@ public:
                     if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                     {
                         time_t value = 0;
-                        if (tryInferDateTimeFromString(data, value, format_settings, getTimeZoneForSchemaInference(time_zone_for_schema_inference, format_settings), utc_time_zone_for_schema_inference))
+                        if (tryInferDateTimeFromString(data, value, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference))
                         {
                             insertValueIntoDynamicVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
                             return true;
@@ -2130,7 +2123,7 @@ public:
                     if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
                     {
                         DateTime64 value;
-                        if (tryInferDateTime64FromString(data, value, format_settings, getTimeZoneForSchemaInference(time_zone_for_schema_inference, format_settings), utc_time_zone_for_schema_inference))
+                        if (tryInferDateTime64FromString(data, value, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference))
                         {
                             insertValueIntoDynamicVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
                             return true;
@@ -2344,6 +2337,12 @@ private:
     /// Time zone references for Date/DateTime inference from strings.
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
+
+    /// Settings that carry no zone keep the one captured when the node was built.
+    const DateLUTImpl & timeZoneForSchemaInference(const FormatSettings & format_settings) const
+    {
+        return format_settings.session_time_zone ? *format_settings.session_time_zone : time_zone_for_schema_inference;
+    }
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
@@ -2900,8 +2899,7 @@ private:
                 if (format_settings.try_infer_dates && tryInferDateFromString(data, scalar.date))
                     scalar.kind = ScalarKind::Date;
                 else if (format_settings.try_infer_datetimes && tryInferDateTimeOrDateTime64FromString(
-                             data, format_settings, getTimeZoneForSchemaInference(time_zone_for_schema_inference, format_settings),
-                             utc_time_zone_for_schema_inference,
+                             data, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference,
                              is_datetime64, scalar.datetime, scalar.datetime64))
                     scalar.kind = is_datetime64 ? ScalarKind::DateTime64 : ScalarKind::DateTime;
                 else
@@ -3042,6 +3040,12 @@ private:
 
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
+
+    /// Settings that carry no zone keep the one captured when the node was built.
+    const DateLUTImpl & timeZoneForSchemaInference(const FormatSettings & format_settings) const
+    {
+        return format_settings.session_time_zone ? *format_settings.session_time_zone : time_zone_for_schema_inference;
+    }
 
     enum class JSONElementType
     {
