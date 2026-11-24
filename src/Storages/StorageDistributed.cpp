@@ -168,6 +168,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
@@ -2240,6 +2241,11 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
+    /// The opt-in comparison mode can match equivalent values with distinct
+    /// sharding representations, such as positive and negative floating zero.
+    if (local_context->getSettingsRef()[Setting::in_null_as_unknown])
+        return nullptr;
+
     if (!query_info.filter_actions_dag)
         return nullptr;
 

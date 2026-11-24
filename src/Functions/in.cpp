@@ -15,7 +15,9 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
@@ -303,14 +305,14 @@ namespace
     return false;
 }
 
-[[nodiscard]] bool hasNumericTemporalPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
+[[nodiscard]] bool hasNumericTemporalOrEnumPair(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
     const auto right = removeNullable(removeLowCardinality(right_type));
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
     {
         if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
-            return hasNumericTemporalPair(left_array->getNestedType(), right_array->getNestedType());
+            return hasNumericTemporalOrEnumPair(left_array->getNestedType(), right_array->getNestedType());
     }
     if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
     {
@@ -318,19 +320,20 @@ namespace
             right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
         {
             for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
-                if (hasNumericTemporalPair(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                if (hasNumericTemporalOrEnumPair(left_tuple->getElements()[i], right_tuple->getElements()[i]))
                     return true;
         }
     }
     if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
     {
         if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
-            return hasNumericTemporalPair(left_map->getKeyType(), right_map->getKeyType())
-                || hasNumericTemporalPair(left_map->getValueType(), right_map->getValueType());
+            return hasNumericTemporalOrEnumPair(left_map->getKeyType(), right_map->getKeyType())
+                || hasNumericTemporalOrEnumPair(left_map->getValueType(), right_map->getValueType());
     }
     const bool left_temporal = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left);
     const bool right_temporal = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right);
-    return (isNumber(left) && right_temporal) || (left_temporal && isNumber(right));
+    return (isNumber(left) && (right_temporal || isEnum(right)))
+        || ((left_temporal || isEnum(left)) && isNumber(right));
 }
 
 [[nodiscard]] bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
@@ -450,6 +453,100 @@ namespace
         return converted && accurateEquals(left, (*converted)[0]);
     }
     return accurateEquals(left, right);
+}
+
+[[nodiscard]] bool accurateEqualsCompoundWithActiveTypes(
+    const Field & left, const Field & right, const DataTypePtr & left_type, const DataTypePtr & right_type,
+    const IColumn & right_column, size_t right_row)
+{
+    if (left.isNull() || right.isNull())
+        return left.isNull() && right.isNull();
+
+    const auto left_bare = removeNullable(removeLowCardinality(left_type));
+    const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    const IColumn * source = &right_column;
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(source))
+        source = &nullable->getNestedColumn();
+
+    DataTypePtr active_type;
+    if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(source))
+        active_type = dynamic->getTypeAt(right_row);
+    else if (const auto * variant = checkAndGetColumn<ColumnVariant>(source))
+    {
+        const auto discriminator = variant->globalDiscriminatorAt(right_row);
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*right_bare);
+        if (discriminator < variant_type.getVariants().size())
+            active_type = variant_type.getVariant(discriminator);
+    }
+    if (active_type)
+    {
+        if (hasNumericTemporalOrEnumPair(left_bare, active_type))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' does not yet support comparing {} with an active carrier of {}",
+                left_bare->getName(), active_type->getName());
+        return accurateEqualsCompoundFields(left, right, left_bare, active_type);
+    }
+
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right_bare.get()))
+        {
+            const auto & array_column = assert_cast<const ColumnArray &>(*source);
+            const auto & left_elements = left.safeGet<Array>();
+            const auto & right_elements = right.safeGet<Array>();
+            if (left_elements.size() != right_elements.size())
+                return false;
+            const size_t offset = right_row ? array_column.getOffsets()[right_row - 1] : 0;
+            for (size_t i = 0; i < left_elements.size(); ++i)
+                if (!accurateEqualsCompoundWithActiveTypes(left_elements[i], right_elements[i],
+                    left_array->getNestedType(), right_array->getNestedType(), array_column.getData(), offset + i))
+                    return false;
+            return true;
+        }
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_bare.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_bare.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            const auto & tuple_column = assert_cast<const ColumnTuple &>(*source);
+            const auto & left_elements = left.safeGet<Tuple>();
+            const auto & right_elements = right.safeGet<Tuple>();
+            if (left_elements.size() != right_elements.size())
+                return false;
+            for (size_t i = 0; i < left_elements.size(); ++i)
+                if (!accurateEqualsCompoundWithActiveTypes(left_elements[i], right_elements[i],
+                    left_tuple->getElements()[i], right_tuple->getElements()[i], tuple_column.getColumn(i), right_row))
+                    return false;
+            return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left_bare.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right_bare.get()))
+        {
+            const auto & map_column = assert_cast<const ColumnMap &>(*source);
+            const auto & left_entries = left.safeGet<Map>();
+            const auto & right_entries = right.safeGet<Map>();
+            if (left_entries.size() != right_entries.size())
+                return false;
+            const auto & nested = map_column.getNestedColumn();
+            const auto & entries = map_column.getNestedData();
+            const size_t offset = right_row ? nested.getOffsets()[right_row - 1] : 0;
+            for (size_t i = 0; i < left_entries.size(); ++i)
+            {
+                const auto & left_pair = left_entries[i].safeGet<Tuple>();
+                const auto & right_pair = right_entries[i].safeGet<Tuple>();
+                if (!accurateEqualsCompoundWithActiveTypes(left_pair[0], right_pair[0],
+                    left_map->getKeyType(), right_map->getKeyType(), entries.getColumn(0), offset + i)
+                    || !accurateEqualsCompoundWithActiveTypes(left_pair[1], right_pair[1],
+                        left_map->getValueType(), right_map->getValueType(), entries.getColumn(1), offset + i))
+                    return false;
+            }
+            return true;
+        }
+    }
+    return accurateEqualsCompoundFields(left, right, left_bare, right_bare);
 }
 
 class FunctionScalarCarrierValueEqualsForIn final : public IFunction
@@ -630,6 +727,12 @@ public:
                 auto extracted = tryConvertColumnToTypeOrNull(
                     *active_row, source_type, active_type, {}, /*strict=*/true);
                 values[row] = extracted && accurateEqualsCompoundFields((*maps)[row], (*extracted)[0], map_type, active_type);
+                continue;
+            }
+            if (isMap(source_type) && hasCompoundCarrierForIn(map_type, source_type))
+            {
+                values[row] = accurateEqualsCompoundWithActiveTypes(
+                    (*maps)[row], (*sources)[row], map_type, source_type, *sources, row);
                 continue;
             }
             if (isMap(source_type) && hasCompoundStringConversionLeaf(map_type, source_type))
@@ -1039,9 +1142,7 @@ public:
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
             const bool mixed_nested_calendar_types = (isArray(left_type) || isMap(left_type) || isTuple(left_type))
                 && hasNestedCalendarDateInComparison(left_type, key_type);
-            const bool mixed_numeric_temporal_types = hasNumericTemporalPair(left_type, key_type);
-            const bool mixed_enum_numeric_types = (isEnum(left_type) && isNumber(key_type))
-                || (isNumber(left_type) && isEnum(key_type));
+            const bool mixed_numeric_temporal_or_enum_types = hasNumericTemporalOrEnumPair(left_type, key_type);
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
                 && !left_type->equals(*key_type);
             /// A set containing only `NULL` has no key whose type-sensitive hash
@@ -1060,7 +1161,7 @@ public:
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
                     left_arg.type->getName(), set_types[0]->getName(), getName());
-            if ((mixed_temporal_types || mixed_nested_calendar_types || mixed_numeric_temporal_types || mixed_enum_numeric_types)
+            if ((mixed_temporal_types || mixed_nested_calendar_types || mixed_numeric_temporal_or_enum_types)
                 && !only_null_key)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
