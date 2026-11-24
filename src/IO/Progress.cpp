@@ -32,7 +32,7 @@ bool Progress::empty() const
         && total_rows_to_read == 0
         && result_rows == 0
         && result_bytes == 0;
-    /// We deliberately don't include "elapsed_ns" and "memory_usage" as a volatile value.
+    /// We deliberately don't include "elapsed_ns", "memory_usage" and "read_compressed_bytes" as volatile values.
 }
 
 
@@ -135,6 +135,8 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
 
     memory_usage += rhs.memory_usage;
 
+    read_compressed_bytes += rhs.read_compressed_bytes;
+
     return rhs.read_rows || rhs.written_rows;
 }
 
@@ -155,6 +157,8 @@ void Progress::reset()
     elapsed_ns = 0;
 
     memory_usage = 0;
+
+    read_compressed_bytes = 0;
 }
 
 ProgressValues Progress::getValues() const
@@ -176,6 +180,8 @@ ProgressValues Progress::getValues() const
     res.elapsed_ns = elapsed_ns.load(std::memory_order_relaxed);
 
     res.memory_usage = memory_usage.load(std::memory_order_relaxed);
+
+    res.read_compressed_bytes = read_compressed_bytes.load(std::memory_order_relaxed);
 
     return res;
 }
@@ -200,6 +206,8 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
 
     res.memory_usage = memory_usage.fetch_and(0);
 
+    res.read_compressed_bytes = read_compressed_bytes.fetch_and(0);
+
     return res;
 }
 
@@ -223,6 +231,8 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
 
     res.memory_usage = memory_usage.fetch_and(0);
 
+    res.read_compressed_bytes = read_compressed_bytes.fetch_and(0);
+
     return res;
 }
 
@@ -244,6 +254,8 @@ Progress & Progress::operator=(Progress && other) noexcept
 
     memory_usage = other.memory_usage.load(std::memory_order_relaxed);
 
+    read_compressed_bytes = other.read_compressed_bytes.load(std::memory_order_relaxed);
+
     return *this;
 }
 
@@ -263,6 +275,8 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
     elapsed_ns.store(values.elapsed_ns, std::memory_order_relaxed);
 
     memory_usage.store(values.memory_usage, std::memory_order_relaxed);
+
+    read_compressed_bytes.store(values.read_compressed_bytes, std::memory_order_relaxed);
 }
 
 void Progress::write(WriteBuffer & out, UInt64 client_revision) const

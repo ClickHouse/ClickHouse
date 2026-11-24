@@ -60,9 +60,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
         return;
 
     WriteBufferFromOwnString progress_string_writer;
-    auto values = accumulated_progress.getValues();
-    values.read_compressed_bytes = read_compressed_bytes;
-    values.writeJSON(progress_string_writer, mode == Progress::DisplayMode::Verbose);
+    accumulated_progress.writeJSON(progress_string_writer, mode);
     progress_string_writer.finalize();
 
     socketSendBytes(header_name, strlen(header_name));
@@ -177,7 +175,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Co
 
     /// The last call is made after the query has finished (see `flushQueryProgress`).
     if (process_list_elem)
-        read_compressed_bytes = process_list_elem->getProfileEventWithRemote(ProfileEvents::ReadCompressedBytes);
+        accumulated_progress.read_compressed_bytes = process_list_elem->getProfileEventWithRemote(ProfileEvents::ReadCompressedBytes);
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
     if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))

@@ -105,8 +105,6 @@ private:
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
 
     Progress accumulated_progress;
-    /// Compressed bytes read by the whole query, including its parts on the remote servers, see `ReadCompressedBytes`.
-    UInt64 read_compressed_bytes = 0;
     bool send_progress = false;
     size_t send_progress_interval_ms = 100;
     Stopwatch progress_watch;

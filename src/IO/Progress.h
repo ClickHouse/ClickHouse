@@ -103,6 +103,8 @@ struct Progress
 
     std::atomic<Int64> memory_usage {0};
 
+    std::atomic<UInt64> read_compressed_bytes {0};
+
     Progress() = default;
 
     Progress(UInt64 read_rows_, UInt64 read_bytes_, UInt64 total_rows_to_read_ = 0, UInt64 total_bytes_to_read_ = 0)
