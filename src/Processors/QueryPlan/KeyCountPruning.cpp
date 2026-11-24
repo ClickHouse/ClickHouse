@@ -15,6 +15,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <base/sort.h>
 
 #include <atomic>
 
@@ -158,7 +159,7 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
 
     /// A part whose selected granules form one run of at least two gives each value from the run's first key to the
     /// first key of its last granule at least the rows of its smallest granule but the last one. If these add up to the
-    /// bound over the values common to such parts, a granule reaching into them is kept, and only the others are swept.
+    /// bound over the values common to some such parts, a granule reaching into them is kept, and only the others are swept.
     struct Run
     {
         size_t part;
@@ -192,6 +193,11 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
     /// The smallest granule has at most the average rows, so the exact check is only needed when the averages suffice.
     if (average_rows >= min_count)
     {
+        /// Any runs whose rows reach the bound give a common range, and the skipped granules do not depend on which.
+        ::sort(single_runs.begin(), single_runs.end(), [](const Run & lhs, const Run & rhs)
+        {
+            return lhs.end - lhs.begin != rhs.end - rhs.begin ? lhs.end - lhs.begin > rhs.end - rhs.begin : lhs.part < rhs.part;
+        });
         UInt64 common_rows = 0;
         for (const auto & run : single_runs)
         {
@@ -207,6 +213,8 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
                 common_begin.emplace(run.part, run.begin);
             if (!common_end || compare_keys(run.part, run.end - 1, *common_end) < 0)
                 common_end.emplace(run.part, run.end - 1);
+            if (common_rows >= min_count)
+                break;
         }
         if (common_rows < min_count || compare_keys(common_begin->first, common_begin->second, *common_end) > 0)
         {
@@ -215,12 +223,35 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
         }
     }
 
+    /// The first mark in [begin, end) for which `is_past` holds, given that it holds for every mark after such a mark.
+    auto partition_point = [](size_t begin, size_t end, auto && is_past)
+    {
+        while (begin < end)
+        {
+            const size_t middle = begin + (end - begin) / 2;
+            if (is_past(middle))
+                end = middle;
+            else
+                begin = middle + 1;
+        }
+        return begin;
+    };
+
     VectorWithMemoryTracking<MarkRanges> sweep_ranges(num_parts);
     for (size_t part_index = 0; part_index < num_parts; ++part_index)
     {
         const auto & ranges = parts[part_index].ranges;
         const size_t index_rows = key_columns[part_index]->size();
         auto & sweep = sweep_ranges[part_index];
+        auto add_to_sweep = [&](size_t begin, size_t end)
+        {
+            if (begin >= end)
+                return;
+            if (!sweep.empty() && sweep.back().end == begin)
+                sweep.back().end = end;
+            else
+                sweep.emplace_back(begin, end);
+        };
         for (const auto & range : ranges)
         {
             if (range.end > index_rows)
@@ -230,16 +261,13 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
                 sweep.push_back(range);
                 continue;
             }
-            for (size_t mark = range.begin; mark < range.end; ++mark)
-            {
-                if (compare_keys(part_index, mark, *common_begin) >= 0 && mark + 1 < index_rows
-                    && compare_keys(part_index, mark + 1, *common_end) <= 0)
-                    continue;
-                if (!sweep.empty() && sweep.back().end == mark)
-                    ++sweep.back().end;
-                else
-                    sweep.emplace_back(mark, mark + 1);
-            }
+            /// The granules left out, whose key and next key are in the common range, are consecutive: a part's keys ascend.
+            const size_t inside_begin = partition_point(range.begin, range.end,
+                [&](size_t mark) { return compare_keys(part_index, mark, *common_begin) >= 0; });
+            const size_t inside_end = partition_point(inside_begin, range.end,
+                [&](size_t mark) { return mark + 1 >= index_rows || compare_keys(part_index, mark + 1, *common_end) > 0; });
+            add_to_sweep(range.begin, inside_begin);
+            add_to_sweep(inside_end, range.end);
         }
     }
 
