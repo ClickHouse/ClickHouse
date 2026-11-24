@@ -49,7 +49,7 @@ READY=000
 for _ in $(seq 1 10); do
     PORT_BASE=$((WIN_LOW + RANDOM % WIN_SLOTS * 4))
     rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"; : > "${TMP_DIR}/keeper.log"
-    # The last token is shorter than a four-letter word and must not be read past the list's end.
+    # `mntr_typo` must not enable `mntr`, and the short last token must not be read past the list's end.
     cat > "${TMP_DIR}/keeper_config.xml" <<EOF
 <clickhouse><listen_host>127.0.0.1</listen_host>
     <logger><level>information</level><console>0</console>
@@ -57,7 +57,7 @@ for _ in $(seq 1 10); do
     <keeper_server>
         <server_id>1</server_id><tcp_port>$((PORT_BASE + 1))</tcp_port>
         <http_control><port>${PORT_BASE}</port></http_control>
-        <four_letter_word_allow_list>ruok,stat,conf,srvr,isro,envi,a</four_letter_word_allow_list>
+        <four_letter_word_allow_list>ruok,stat,conf,srvr,mntr_typo,a</four_letter_word_allow_list>
         <log_storage_path>${TMP_DIR}/coordination/log</log_storage_path>
         <snapshot_storage_path>${TMP_DIR}/coordination/snapshots</snapshot_storage_path>
         <coordination_settings><force_sync>false</force_sync>
