@@ -70,6 +70,15 @@ Else, run impact analysis first so you can see what the change does to your quer
 After your organization has access, open a service and go to [**Monitoring**](/products/cloud/features/monitoring/cloud-console), then **Tables**. 
 Schema Advisor shows the recommendation for a table and the queries that produced it. See [Query insights](/products/cloud/features/sql-console-features/query-insights) for the query log those recommendations are based on.
 Once you're ready to apply the recommendation, click **Generate implementation plan** at the bottom of the recommendation page.
+The Tables page is where the recommendation and the implementation plans live. You can always come back to that page to continue the implementation, or continue the conversation in ClickHouse Assistant.
+
+If you know the schema change you want and it is not shown for that table, you can start from ClickHouse Assistant. 
+Describe the change and ask Schema Advisor to guide you through it. 
+For example: "I would like to change the primary key of my table default.sales_analysis. Use Schema Advisor to help me do this."
+
+You can also ask ClickHouse Assistant for recommendations. It will first check to see if there are any deterministic recommendations made, 
+as well as do some adhoc analysis to provide additional ones.
+We highly recommend running impact analysis before you deploy the LLM generated recommendations.
 
 ## Impact analysis {#impact-analysis}
 
