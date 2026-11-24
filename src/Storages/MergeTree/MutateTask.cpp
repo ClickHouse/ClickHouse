@@ -1449,6 +1449,15 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
+/// A mutation computes a column as `_CAST(..., '<type name>')`, which loses a custom serialization
+/// that is not part of the type name (the `Quantized` codec's), so the same type in storage is kept.
+static DataTypePtr getTypeForNewDataPart(const DataTypePtr & header_type, const DataTypePtr & storage_type)
+{
+    if (header_type == storage_type || (header_type->equals(*storage_type) && header_type->getName() == storage_type->getName()))
+        return storage_type;
+    return header_type;
+}
+
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -1698,7 +1707,20 @@ getColumnsForNewDataPart(
 
     /// In compact parts we read all columns, because they all stored in a single file
     if (!isWidePart(source_part) || !isPerFilePartStorage(source_part->getDataPartStorage()))
-        return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
+    {
+        std::unordered_map<String, DataTypePtr> storage_types;
+        for (const auto & column : storage_columns)
+            storage_types.emplace(column.name, column.type);
+
+        auto new_columns = updated_header.getNamesAndTypesList();
+        for (auto & column : new_columns)
+        {
+            auto storage_type = storage_types.find(column.name);
+            if (storage_type != storage_types.end())
+                column = NameAndTypePair{column.name, getTypeForNewDataPart(column.type, storage_type->second)};
+        }
+        return {new_columns, new_serialization_infos, {}};
+    }
 
     const auto & source_columns = source_part->getColumns();
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
@@ -1724,7 +1746,7 @@ getColumnsForNewDataPart(
             }
 
             /// `NameAndTypePair` holds the type in storage in a separate field that assigning `type` does not update.
-            auto updated_type = updated_header.getByName(it->name).type;
+            auto updated_type = getTypeForNewDataPart(updated_header.getByName(it->name).type, it->type);
             if (updated_type != it->type)
                 *it = NameAndTypePair{it->name, updated_type};
 
@@ -4435,12 +4457,12 @@ private:
             /// the new part.
             NamesAndTypesList columns_for_writer;
             {
-                NameSet new_part_columns_set;
+                std::unordered_map<String, NameAndTypePair> new_part_columns;
                 for (const auto & col : ctx->new_data_part->getColumns())
-                    new_part_columns_set.insert(col.name);
+                    new_part_columns.emplace(col.name, col);
                 for (const auto & col : ctx->updated_header.getNamesAndTypesList())
-                    if (new_part_columns_set.contains(col.name))
-                        columns_for_writer.push_back(col);
+                    if (auto it = new_part_columns.find(col.name); it != new_part_columns.end())
+                        columns_for_writer.push_back(it->second);
             }
 
             if (!ctx->recalculate_ttl_only)
