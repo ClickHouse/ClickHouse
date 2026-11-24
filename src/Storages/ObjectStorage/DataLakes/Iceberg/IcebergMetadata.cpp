@@ -753,6 +753,11 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         std::nullopt);
 
     std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object);
+    if (data_snapshot)
+    {
+        std::lock_guard lock(last_name_mapping_mutex);
+        last_name_mapping.emplace(metadata_path, data_snapshot->name_mapping);
+    }
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
     table_state_snapshot.metadata_version = metadata_version;
     table_state_snapshot.metadata_file_path = metadata_path;
@@ -2279,18 +2284,29 @@ ColumnMapperPtr IcebergMetadata::getCurrentSchemaColumnMapperForFilters(StorageM
     }
     auto mapper = persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
     if (mapper)
-    {
-        const auto metadata_object = getMetadataJSONObject(
-            iceberg_table_state->metadata_file_path,
-            object_storage,
-            persistent_components.metadata_cache,
-            context,
-            log,
-            persistent_components.metadata_compression_method,
-            persistent_components.table_uuid);
-        mapper->setIcebergNameMapping(Iceberg::getNameMapping(metadata_object));
-    }
+        mapper->setIcebergNameMapping(getNameMappingOfMetadataFile(iceberg_table_state->metadata_file_path, context));
     return mapper;
+}
+
+IcebergNameMappingPtr IcebergMetadata::getNameMappingOfMetadataFile(const String & metadata_file_path, ContextPtr local_context) const
+{
+    {
+        std::lock_guard lock(last_name_mapping_mutex);
+        if (last_name_mapping && last_name_mapping->first == metadata_file_path)
+            return last_name_mapping->second;
+    }
+
+    auto name_mapping = Iceberg::getNameMapping(getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        persistent_components.metadata_cache,
+        local_context,
+        log,
+        persistent_components.metadata_compression_method,
+        persistent_components.table_uuid));
+    std::lock_guard lock(last_name_mapping_mutex);
+    last_name_mapping.emplace(metadata_file_path, name_mapping);
+    return name_mapping;
 }
 
 KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
