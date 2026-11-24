@@ -75,7 +75,7 @@ inline char parseEscapeSequence(char c)
         case 'b':
             return '\b';
         case 'e':
-            return '\x1B';      /// \e escape sequence is non standard for C and C++ but supported by gcc and clang.
+            return '\x1B';      /// \e escape sequence is non standard for C and C++ but supported by clang.
         case 'f':
             return '\f';
         case 'n':

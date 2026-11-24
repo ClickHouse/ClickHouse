@@ -516,7 +516,7 @@ endif()
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_server_ssh Server/SSH)
 endif()
-if (TARGET ch_contrib::arrow_flight)
+if (TARGET ch_contrib::arrow_flight_proto)
     add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
@@ -871,7 +871,7 @@ endif ()
 
 # Native Arrow IPC reader/writer needs only the FlatBuffers-generated metadata headers, not the Arrow runtime.
 if (TARGET ch_contrib::arrow_ipc_metadata)
-    target_link_libraries(dbms PRIVATE ch_contrib::arrow_ipc_metadata)
+    target_link_libraries(dbms PUBLIC ch_contrib::arrow_ipc_metadata)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)
@@ -1058,8 +1058,8 @@ if (TARGET ch_contrib::sha3iuf)
     target_link_libraries(dbms PUBLIC ch_contrib::sha3iuf)
 endif()
 
-if (TARGET ch_contrib::arrow_flight)
-    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
+if (TARGET ch_contrib::arrow_flight_proto)
+    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight_proto)
 endif()
 
 
