@@ -73,6 +73,15 @@ CompressionMethod getMetadataCompressionMethod(const Poco::JSON::Object & metada
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be 'none' or 'gzip', got '{}'", METADATA_COMPRESSION_CODEC_PROPERTY, codec);
 }
 
+/// Files of a table belong under its location. These properties move them elsewhere.
+void validatePathProperties(const Poco::JSON::Object & metadata)
+{
+    const auto properties = getObject(metadata, Iceberg::f_properties);
+    for (const auto * property : {"write.data.path", "write.metadata.path"})
+        if (properties->has(property))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table property '{}' is not supported", property);
+}
+
 /// Tables of the namespace go under `location`. `handleExternalRequest` maps `BAD_ARGUMENTS` to a 400 response.
 void validateNamespaceLocation(const IcebergRESTCatalogWarehouse & warehouse, const std::map<String, String> & properties)
 {
@@ -819,6 +828,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleCreateTable(const RoutedReq
             getOptionalObject(*json, "partition-spec"),
             getOptionalObject(*json, "write-order"),
             std::move(properties));
+        validatePathProperties(*metadata);
         compression_method = getMetadataCompressionMethod(*metadata);
 
         pointer.metadata_location = firstMetadataLocation(location, uuid, compression_method);
@@ -987,6 +997,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleStagedCreateCommit(
         validateTableName(table);
         metadata = buildMetadataFromStagedCreateCommit(updates);
         location = getString(*metadata, Iceberg::f_location);
+        validatePathProperties(*metadata);
         compression_method = getMetadataCompressionMethod(*metadata);
         pointer.uuid = getString(*metadata, Iceberg::f_table_uuid);
 
@@ -1191,6 +1202,7 @@ std::expected<IcebergRESTCatalogService::PreparedTableCommit, IcebergRESTRespons
             return prepared;
 
         applyTableUpdatesToJSON(*prepared.metadata, updates, pointer.metadata_location);
+        validatePathProperties(*prepared.metadata);
         /// A `set-properties` update may change the codec. The new file follows the updated properties.
         prepared.compression_method = getMetadataCompressionMethod(*prepared.metadata);
     }
