@@ -15,9 +15,11 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
@@ -33,6 +35,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
+#include <Planner/PlannerActionsVisitor.h>
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
@@ -298,6 +301,17 @@ bool equalsCanDisagreeWithHashTable(const IDataType & type)
     return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
 }
 
+/// The JOIN compares the bytes, while `Set` converts a key to a `Bool` member type, turning every nonzero byte into 1.
+DataTypePtr setTypeComparingBytes(const DataTypePtr & type)
+{
+    if (!isBool(removeLowCardinalityAndNullable(type)))
+        return type;
+    return rewriteTypeTree(
+        type,
+        [](const DataTypePtr & nested) -> DataTypePtr { return isBool(nested) ? std::make_shared<DataTypeUInt8>() : nested; },
+        CustomizationPolicy::Keep);
+}
+
 /// A runtime filter key comes from an `=` predicate, which never matches NULL, so a `Nullable` integer key keeps
 /// only its non-NULL values, in the set of the nested type.
 bool canDropNullKeys(const DataTypePtr & type)
@@ -319,7 +333,7 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
 }
 
 template <typename ProcessBatch>
-void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, ProcessBatch && process_batch)
+void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, ProcessBatch && process_batch, size_t first_row = 0)
 {
     /// The join matches `-0.` and `0.` as equal keys, so the Bloom filter has to hash them identically,
     /// both when inserting and when probing.
@@ -327,10 +341,10 @@ void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, Proces
     const IColumn & column = normalized_column ? *normalized_column : original_column;
 
     const size_t row_count = column.size();
-    if (row_count == 0)
+    if (row_count <= first_row)
         return;
 
-    VectorWithMemoryTracking<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
+    VectorWithMemoryTracking<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count - first_row));
 
     if (!isColumnConst(column) && column.isFixedAndContiguous())
     {
@@ -339,7 +353,7 @@ void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, Proces
 
         chassert(value_size == 0 || raw_data.size() / value_size >= row_count);
 
-        size_t start_row = 0;
+        size_t start_row = first_row;
         while (start_row < row_count)
         {
             const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
@@ -351,7 +365,7 @@ void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, Proces
         return;
     }
 
-    size_t start_row = 0;
+    size_t start_row = first_row;
     while (start_row < row_count)
     {
         const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
@@ -415,7 +429,7 @@ ExactSetRuntimeFilter<negate>::ExactSetRuntimeFilter(
     , exact_values_limit(exact_values_limit_)
     , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls && !drop_null_keys)})
 {
-    ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(filter_column_target_type_, String())};
+    ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(setTypeComparingBytes(filter_column_target_type_), String())};
     getExactValues().setHeader(set_header);
     getExactValues().fillSetElements(); /// Save the values, not just hashes.
 }
@@ -445,18 +459,21 @@ ColumnPtr ExactSetRuntimeFilter<negate>::toFilterColumnType(const ColumnPtr & se
 }
 
 template <bool negate>
-void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
+size_t ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 {
     if (is_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter exact set after it was marked as finished");
 
     if (is_full)
-        return;
+        return 0;
 
     auto & set = getExactValues();
-    set.insertFromColumns({values});
+    size_t rows_taken = 0;
+    /// A full positive set is dropped, while `NOT IN` filters by every key it took.
+    set.insertFromColumns({values}, negate ? std::numeric_limits<size_t>::max() : exact_values_limit, rows_taken);
     const size_t set_bytes = bound_key_bytes ? set.getSetElementsBytes() : set.getTotalByteCount();
     is_full = set.getTotalRowCount() > exact_values_limit || set_bytes > bytes_limit;
+    return rows_taken;
 }
 
 template <bool negate>
@@ -631,18 +648,19 @@ ApproximateSetRuntimeFilter::ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UI
 {
 }
 
-void ApproximateSetRuntimeFilter::insert(ColumnPtr values)
+void ApproximateSetRuntimeFilter::insert(ColumnPtr values, size_t first_row)
 {
-    insertIntoBloomFilter(values);
+    insertIntoBloomFilter(values, first_row);
 }
 
-void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values)
+void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values, size_t first_row)
 {
     forEachColumnHashBatch(
         *values,
         bloom_filter.getSeed(),
         [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
-        { bloom_filter.addHashPairs(hash_pairs, count); });
+        { bloom_filter.addHashPairs(hash_pairs, count); },
+        first_row);
 }
 
 ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
@@ -755,13 +773,13 @@ DenseBitsetRuntimeFilter::DenseBitsetRuntimeFilter(const DataTypePtr & filter_co
     chassert(isDataTypeSupported(filter_column_target_type));
 }
 
-void DenseBitsetRuntimeFilter::insert(const ColumnPtr & values)
+void DenseBitsetRuntimeFilter::insert(const ColumnPtr & values, size_t first_row)
 {
     visitDenseBitsetKeys(filter_column_target_type, values, [&](const auto & keys)
     {
-        for (const auto key : keys)
+        for (size_t row = first_row; row < keys.size(); ++row)
         {
-            const size_t index = denseBitsetIndex(key);
+            const size_t index = denseBitsetIndex(keys[row]);
             words[index / 64] |= 1ULL << (index % 64);
         }
     });
@@ -862,7 +880,7 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 {
-    /// A full exact set means the switch from it threw and the caller went on inserting. It holds every key, so retry.
+    /// A full exact set means the switch from it threw and the caller went on inserting. It holds the keys it took, so retry.
     if (const auto * exact_filter = std::get_if<ExactFilter>(&filter_); exact_filter && exact_filter->isFull())
         switchFromExactFilter(filter_);
 
@@ -885,24 +903,26 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
     if (!exact_filter || exact_filter->isFull())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
 
-    exact_filter->insert(std::move(values));
+    const size_t rows_taken = exact_filter->insert(values);
 
     if (exact_filter->isFull())
-        switchFromExactFilter(filter_);
+        switchFromExactFilter(filter_, values, rows_taken);
 }
 
-void AdaptiveSetRuntimeFilter::switchFromExactFilter(Filter & filter_)
+void AdaptiveSetRuntimeFilter::switchFromExactFilter(Filter & filter_, const ColumnPtr & block, size_t first_row)
 {
     if (dense_bitset_allowed && DenseBitsetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
-        switchToDenseBitset(filter_);
+        switchToDenseBitset(filter_, block, first_row);
     else
-        switchToApproximateFilter(filter_);
+        switchToApproximateFilter(filter_, block, first_row);
 }
 
-void AdaptiveSetRuntimeFilter::switchToDenseBitset(Filter & filter_)
+void AdaptiveSetRuntimeFilter::switchToDenseBitset(Filter & filter_, const ColumnPtr & block, size_t first_row)
 {
     DenseBitsetRuntimeFilter bitset_filter(filter_column_target_type);
     bitset_filter.insert(std::get<ExactFilter>(filter_).getValuesColumn());
+    if (block)
+        bitset_filter.insert(block, first_row);
     filter_.emplace<DenseBitsetRuntimeFilter>(std::move(bitset_filter));
     ProfileEvents::increment(ProfileEvents::RuntimeFilterDenseBitsetsBuilt);
 }
@@ -1013,7 +1033,7 @@ void AdaptiveSetRuntimeFilter::dropKeySet(Filter & filter_, RuntimeFilterDisable
     filter_.emplace<KeySetDropped>(reason);
 }
 
-ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilter(Filter & filter_)
+ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilter(Filter & filter_, const ColumnPtr & block, size_t first_row)
 {
     if (auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter_))
         return approximate_filter;
@@ -1058,6 +1078,8 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
     /// Filled before it replaces the keys, so a refused allocation leaves the filter as it was.
     ApproximateSetRuntimeFilter approximate_filter(grown_bloom_filter_bytes, bloom_filter_hash_functions);
     approximate_filter.insert(values);
+    if (block)
+        approximate_filter.insert(block, first_row);
     static_assert(std::is_nothrow_move_constructible_v<ApproximateSetRuntimeFilter>);
     return &filter_.emplace<ApproximateSetRuntimeFilter>(std::move(approximate_filter));
 }
@@ -1449,6 +1471,31 @@ static const ActionsDAG::Node & findOrAddInput(ActionsDAG & dag, const String & 
     return dag.addInput(name, type);
 }
 
+/// Whether `CAST` returns the values unchanged, as `FunctionCast::prepareImpl` decides: the types are `equals` and have the
+/// same custom name, and it is not a cast from `UInt8` to `Bool`, which converts 2 to 1.
+static bool isIdentityCast(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const auto from_nested = removeLowCardinalityAndNullable(from);
+    const auto to_nested = removeLowCardinalityAndNullable(to);
+    if (isUInt8(from_nested) && (isBool(to_nested) || isSimpleAggregateFunctionOfBool(*to_nested)))
+        return false;
+    const auto * from_name = from_nested->getCustomName();
+    const auto * to_name = to_nested->getCustomName();
+    const bool same_custom_name = from_name ? to_name && from_name->getName() == to_name->getName() : !to_name;
+    return same_custom_name && from->equals(*to);
+}
+
+/// The function of the recorded cast is reused, so that it converts with the settings it was resolved with, e.g.
+/// `date_time_overflow_behavior`.
+static const ActionsDAG::Node & addKeyCast(ActionsDAG & dag, const ActionsDAG::Node & key, const FunctionBasePtr & cast)
+{
+    Field type_name = cast->getResultType()->getName();
+    auto string_type = std::make_shared<DataTypeString>();
+    const auto & type_name_node
+        = dag.addColumn(string_type->createColumnConst(0, type_name), string_type, calculateConstantActionNodeName(type_name));
+    return dag.addFunction(cast, {&key, &type_name_node}, {});
+}
+
 static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const RuntimeFilter & filter,
     const RuntimeFilterIndexAnalysisDescriptor & descriptor,
@@ -1480,13 +1527,16 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     else
         key_node_ptr = &dag.addInput(column_name, column_type);
     const auto & key_node = *key_node_ptr;
-    const auto & key_casted = key_node.result_type->equals(*target_type)
-        ? key_node
-        : dag.addCast(key_node, target_type, {}, context);
+    /// A cast that keeps the values (e.g. a `DateTime` time zone change) is left out, so the indexes can use the key.
+    const auto & cast = descriptor.key_cast;
+    const bool apply_cast = cast && !isIdentityCast(key_node.result_type, cast->getResultType());
+    const auto & key_casted = apply_cast ? addKeyCast(dag, key_node, cast) : key_node;
+    chassert(key_casted.result_type->equals(*target_type));
 
     if (exact_values)
     {
-        ColumnWithTypeAndName set_values(exact_values, target_type, "__runtime_filter_in_values_" + column_name);
+        ColumnWithTypeAndName set_values(
+            exact_values, setTypeComparingBytes(key_casted.result_type), "__runtime_filter_in_values_" + column_name);
         auto future_set = std::make_shared<FutureSetFromTuple>(
             CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{set_values}, false, SizeLimits{});
         auto set_column = ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0);
