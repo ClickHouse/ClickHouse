@@ -1,0 +1,4 @@
+separate	500000
+subquery	500000
+separate_2	0	1	0
+subquery_2	0	0	1

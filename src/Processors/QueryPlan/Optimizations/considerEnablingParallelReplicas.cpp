@@ -32,6 +32,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -72,6 +73,11 @@ extern const Event AutoParallelReplicasBytesPerReplica;
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char auto_parallel_replicas_pause_before_building_replicas_plan[];
+}
 
 namespace Setting
 {
@@ -1212,6 +1218,8 @@ void considerEnablingParallelReplicas(
     /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
     /// adds no set that collecting later would catch.
     auto built_sets = collectBuiltSets(query_plan);
+    /// The reads of this plan already hold their storage snapshots; the plan built below takes its own.
+    FailPointInjection::pauseFailPoint(FailPoints::auto_parallel_replicas_pause_before_building_replicas_plan);
     Stopwatch plan_build_watch;
     auto build_result = optimization_settings.query_plan_with_parallel_replicas_builder(
         built_sets, makeSingleNodeReadFinder(root), getLogger("AutoParallelReplicas"));
