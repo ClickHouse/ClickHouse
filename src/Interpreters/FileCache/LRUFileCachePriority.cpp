@@ -4,6 +4,7 @@
 #include <pcg-random/pcg_random.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
@@ -28,6 +29,7 @@ namespace ProfileEvents
     extern const Event FilesystemCachePriorityIncreaseBufferFull;
     extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheAppliedPriorityIncreases;
+    extern const Event FilesystemCacheApplyPriorityIncreasesMicroseconds;
 }
 
 namespace DB
@@ -881,6 +883,7 @@ bool LRUFileCachePriority::applyPriorityIncrease(const PendingPriorityIncrease &
 
 void LRUFileCachePriority::applyPriorityIncreases(const PriorityIncreases & increases, const CachePriorityGuard::WriteLock & lock)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheApplyPriorityIncreasesMicroseconds);
     size_t applied = 0;
     {
         std::lock_guard eviction_pos_lock(eviction_pos_mutex);
