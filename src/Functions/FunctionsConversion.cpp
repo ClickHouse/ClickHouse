@@ -2730,7 +2730,10 @@ ObjectConversionPlan buildObjectConversionPlan(
             /// SimpleAggregateFunction(any, Bool) wrapper and these nested in any carrier). Reuse the column
             /// unchanged only when the types are also textually identical; otherwise force the format+parse
             /// fallback so the stored values are normalized rather than reused as raw bytes.
-            const bool reuse_unsafe = equal && it->second->getName() != dst_path_type->getName();
+            /// Equal DateTime types differ only by time zone, which does not change the stored instant, so
+            /// their column is reused as is, like the identity conversion and a CAST do.
+            const bool reuse_unsafe = equal && it->second->getName() != dst_path_type->getName()
+                && !isDateTimeToDateTimeConversion(it->second, dst_path_type);
             if (!equal || reuse_unsafe)
             {
                 plan.changed_typed_paths[path] = {it->second, dst_path_type};

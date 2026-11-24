@@ -10,6 +10,12 @@ SELECT toUnixTimestamp(CAST('{"d":1793514600}'::JSON(d DateTime('America/New_Yor
 SELECT arrayMap(x -> toUnixTimestamp(x), CAST('{"d":["2026-01-01 00:00:00"]}'::JSON(d Array(DateTime('Asia/Tokyo'))), 'JSON(d Array(DateTime64(0, ''UTC'')))').d);
 SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d LowCardinality(Nullable(DateTime('Asia/Tokyo')))), 'JSON(d DateTime64(0, ''UTC''))').d) SETTINGS allow_suspicious_low_cardinality_types = 1;
 
+SELECT '-- typed path whose time zone only changes, together with another typed path change';
+SELECT toUnixTimestamp(j.d), toUnixTimestamp(j.e), toUnixTimestamp64Milli(j.f)
+FROM (SELECT CAST('{"d":"2026-01-01 00:00:00","e":"2026-01-01 00:00:00","f":"2026-01-01 00:00:00","b":1}'::JSON(d DateTime('UTC'), e DateTime('UTC'), f DateTime64(3, 'UTC'), b Int32),
+                  'JSON(d DateTime(''Asia/Tokyo''), e DateTime64(0, ''Asia/Tokyo''), f DateTime64(3, ''Asia/Tokyo''), b Int64)') AS j);
+SELECT arrayMap(x -> toUnixTimestamp(x), j.d), toUnixTimestamp(j.n) FROM (SELECT CAST('{"d":["2026-01-01 00:00:00"],"n":"2026-01-01 00:00:00","b":1}'::JSON(d Array(DateTime('Asia/Tokyo')), n Nullable(DateTime('Asia/Tokyo')), b Int32), 'JSON(d Array(DateTime(''UTC'')), n Nullable(DateTime(''UTC'')), b Int64)') AS j);
+
 SELECT '-- a null becomes the destination default';
 SELECT toUnixTimestamp(j.d) FROM (SELECT CAST(json::JSON(d Nullable(DateTime('Asia/Tokyo'))), 'JSON(d DateTime(''UTC''))') AS j FROM values('json String', ('{"d":"2026-01-01 00:00:00"}'), ('{"d":null}')));
 SELECT arrayMap(x -> toUnixTimestamp(x), CAST('{"d":["2026-01-01 00:00:00", null]}'::JSON(d Array(Nullable(DateTime('Asia/Tokyo')))), 'JSON(d Array(DateTime64(0, ''UTC'')))').d);
@@ -67,5 +73,8 @@ DROP TABLE IF EXISTS t_json_datetime_instant;
 CREATE TABLE t_json_datetime_instant (j JSON(d DateTime('UTC'))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_json_datetime_instant VALUES ('{"d":"2026-01-01 00:00:00"}');
 ALTER TABLE t_json_datetime_instant MODIFY COLUMN j JSON(d DateTime64(0, 'Asia/Tokyo')) SETTINGS mutations_sync = 2;
+SELECT toUnixTimestamp(j.d) FROM t_json_datetime_instant;
+ALTER TABLE t_json_datetime_instant MODIFY COLUMN j JSON(d DateTime64(0, 'UTC'), b Int32) SETTINGS mutations_sync = 2;
+ALTER TABLE t_json_datetime_instant MODIFY COLUMN j JSON(d DateTime64(0, 'Asia/Tokyo'), b Int64) SETTINGS mutations_sync = 2;
 SELECT toUnixTimestamp(j.d) FROM t_json_datetime_instant;
 DROP TABLE t_json_datetime_instant;

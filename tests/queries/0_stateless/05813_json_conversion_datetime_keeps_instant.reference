@@ -4,6 +4,9 @@
 1793514600
 [1767193200]
 1767193200
+-- typed path whose time zone only changes, together with another typed path change
+1767225600	1767225600	1767225600000
+[1767193200]	1767193200
 -- a null becomes the destination default
 1767193200
 0
@@ -42,4 +45,5 @@
 1767225600
 1767193200
 -- MODIFY COLUMN
+1767225600
 1767225600
