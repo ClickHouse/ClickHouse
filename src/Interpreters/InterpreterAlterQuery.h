@@ -47,9 +47,8 @@ public:
         const String & engine = {});
 
     /// The columns and subcolumns a column with this DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression would expose, named as a
-    /// query reading them names them; `has_unbound_identifier` is set when an identifier names none of `columns`.
-    static NameSet getColumnsReadByColumnExpression(
-        const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns, bool * has_unbound_identifier = nullptr);
+    /// query reading them names them.
+    static NameSet getColumnsReadByColumnExpression(const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns);
 
     /// Returns unknown when the target storage is not available on the submitting host.
     static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);

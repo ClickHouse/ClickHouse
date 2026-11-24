@@ -634,7 +634,7 @@ struct ReadColumnsState
     UnorderedSetWithMemoryTracking<String> nested_prefixes{};
 };
 
-bool addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, NameSet & result);
+void addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, NameSet & result);
 
 /// An EPHEMERAL column cannot be read: what it carries is what its expression reads.
 void addColumnRead(const ColumnDescription & column, ReadColumnsState & state, NameSet & result)
@@ -656,9 +656,8 @@ void addColumnRead(const ColumnDescription & column, ReadColumnsState & state, N
 }
 
 /// What checking `SELECT identifier FROM t` requires; any leading parts may be a table qualifier.
-bool addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, NameSet & result)
+void addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, NameSet & result)
 {
-    bool bound = false;
     /// A qualifier is a table or `database.table`.
     for (size_t first = 0; first < std::min<size_t>(parts.size(), 3); ++first)
     {
@@ -672,7 +671,6 @@ bool addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, N
 
         if (const auto * column = state.columns.tryGet(suffix))
         {
-            bound = true;
             addColumnRead(*column, state, result);
             continue;
         }
@@ -694,7 +692,6 @@ bool addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, N
             else
                 addColumnRead(*column, state, result);
         }
-        bound |= is_subcolumn;
 
         /// `n` over the columns `n.a`, `n.b` reads them as one Nested.
         if (!is_subcolumn && !suffix.contains('.') && state.nested_prefixes.contains(suffix))
@@ -702,14 +699,10 @@ bool addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, N
             for (const auto & column : state.columns)
             {
                 if (column.name.starts_with(suffix + "."))
-                {
-                    bound = true;
                     addColumnRead(column, state, result);
-                }
             }
         }
     }
-    return bound;
 }
 
 /// Separate from `getRequiredAccessForCommand`: `KILL MUTATION` reuses that, and stopping a mutation reads nothing.
@@ -720,23 +713,35 @@ void addRequiredSelectForCommand(
     const String & table,
     const StoragePtr & storage,
     StorageMetadataHandle & metadata,
-    std::optional<ColumnsDescription> & columns,
+    std::optional<StorageInMemoryMetadata> & changed_metadata,
     bool on_cluster,
     const ContextPtr & context)
 {
-    if (command.type == ASTAlterCommand::RENAME_COLUMN)
-    {
-        required_access.emplace_back(AccessType::SELECT, database, table, getIdentifierName(command.column));
-        return;
-    }
-
-    if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN)
+    if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN
+        && command.type != ASTAlterCommand::RENAME_COLUMN && command.type != ASTAlterCommand::DROP_COLUMN)
         return;
 
-    if (storage && !metadata)
-    {
+    /// The hosts of `ON CLUSTER` run the entry without the user and bind it to their own definition of the table.
+    if (storage && !on_cluster && !metadata)
         metadata = storage->getInMemoryMetadataPtr(context, false);
-        columns = metadata->getColumnsWithVirtuals();
+
+    if (command.type == ASTAlterCommand::RENAME_COLUMN || command.type == ASTAlterCommand::DROP_COLUMN)
+    {
+        const auto column_name = getIdentifierName(command.column);
+        if (command.type == ASTAlterCommand::RENAME_COLUMN)
+            required_access.emplace_back(AccessType::SELECT, database, table, column_name);
+
+        if (!metadata || command.clear_column || command.partition)
+            return;
+        if (!changed_metadata)
+            changed_metadata.emplace(*metadata);
+        auto & columns = changed_metadata->columns;
+        if (command.type == ASTAlterCommand::DROP_COLUMN && (columns.has(column_name) || columns.hasNested(column_name)))
+            columns.remove(column_name);
+        else if (command.type == ASTAlterCommand::RENAME_COLUMN && columns.has(column_name)
+                 && !columns.has(getIdentifierName(command.rename_to)))
+            columns.rename(column_name, getIdentifierName(command.rename_to));
+        return;
     }
 
     const auto & declaration = command.col_decl->as<const ASTColumnDeclaration &>();
@@ -755,7 +760,7 @@ void addRequiredSelectForCommand(
     if (!expression)
         return;
 
-    if (!storage)
+    if (!metadata)
     {
         SetWithMemoryTracking<IdentifierParts> identifiers;
         VectorWithMemoryTracking<String> lambda_parameters;
@@ -765,23 +770,24 @@ void addRequiredSelectForCommand(
         return;
     }
 
-    bool has_unbound_identifier = false;
-    const NameSet read_columns = InterpreterAlterQuery::getColumnsReadByColumnExpression(
-        *expression, *columns, storage->supportsSubcolumns(), &has_unbound_identifier);
-    Names sorted(read_columns.begin(), read_columns.end());
-    std::ranges::sort(sorted);
-    for (auto & column : metadata->getColumns().getColumnNamesForSelectAccessCheck(sorted, context, storage->getStorageID()))
-        required_access.emplace_back(AccessType::SELECT, database, table, std::move(column));
-
-    /// The hosts of `ON CLUSTER` run the entry without the user, binding it to their own definition of the table.
-    if (on_cluster && has_unbound_identifier)
-        required_access.emplace_back(AccessType::SELECT, database, table);
+    /// An identifier can name another column after a RENAME COLUMN or DROP COLUMN earlier in the ALTER.
+    for (const StorageInMemoryMetadata * snapshot : {&*metadata, changed_metadata ? &std::as_const(*changed_metadata) : nullptr})
+    {
+        if (!snapshot)
+            continue;
+        const NameSet read_columns = InterpreterAlterQuery::getColumnsReadByColumnExpression(
+            *expression, snapshot->getColumnsWithVirtuals(), storage->supportsSubcolumns());
+        Names sorted(read_columns.begin(), read_columns.end());
+        std::ranges::sort(sorted);
+        for (auto & column : snapshot->getColumns().getColumnNamesForSelectAccessCheck(sorted, context, storage->getStorageID()))
+            required_access.emplace_back(AccessType::SELECT, database, table, std::move(column));
+    }
 }
 
 }
 
 NameSet InterpreterAlterQuery::getColumnsReadByColumnExpression(
-    const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns, bool * has_unbound_identifier)
+    const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns)
 {
     SetWithMemoryTracking<IdentifierParts> identifiers;
     VectorWithMemoryTracking<String> lambda_parameters;
@@ -796,8 +802,7 @@ NameSet InterpreterAlterQuery::getColumnsReadByColumnExpression(
     }
     NameSet result;
     for (const auto & identifier : identifiers)
-        if (!addColumnsReadBy(identifier, state, result) && has_unbound_identifier)
-            *has_unbound_identifier = true;
+        addColumnsReadBy(identifier, state, result);
     return result;
 }
 
@@ -1214,12 +1219,12 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
     }
 
     StorageMetadataHandle metadata;
-    std::optional<ColumnsDescription> columns;
+    std::optional<StorageInMemoryMetadata> changed_metadata;
     const bool on_cluster = !alter.cluster.empty();
     for (const auto & child : alter.command_list->children)
         addRequiredSelectForCommand(
-            required_access, child->as<ASTAlterCommand &>(), alter.getDatabase(), alter.getTable(), storage, metadata, columns,
-            on_cluster, getContext());
+            required_access, child->as<ASTAlterCommand &>(), alter.getDatabase(), alter.getTable(), storage, metadata,
+            changed_metadata, on_cluster, getContext());
 
     return required_access;
 }

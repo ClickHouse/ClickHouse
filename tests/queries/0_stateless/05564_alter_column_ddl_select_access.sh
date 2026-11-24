@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# ALTER ADD/MODIFY COLUMN with an expression needs SELECT on the columns the expression reads,
-# ALTER RENAME COLUMN needs SELECT on the renamed column, ALTER MODIFY COLUMN changing a type needs SELECT on the
-# column, an Alias table refuses all three forms, and an ALTER through an Alias needs ALTER on its target first.
+# ALTER ADD/MODIFY COLUMN with an expression needs SELECT on the columns the expression reads, also after an earlier
+# RENAME or DROP COLUMN of the same ALTER, ALTER RENAME COLUMN needs SELECT on the renamed column, ALTER MODIFY COLUMN
+# changing a type needs SELECT on the column, an Alias table refuses all three forms, and an ALTER through an Alias needs
+# ALTER on its target first.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,9 +17,10 @@ U_FULL="u_full_${DB}"
 U_DOT="u_dot_${DB}"
 U_ALIAS="u_alias_${DB}"
 U_ALIAS_COL="u_alias_col_${DB}"
+U_SHADOW="u_shadow_${DB}"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER IF EXISTS ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL};
+    DROP USER IF EXISTS ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW};
 
     CREATE TABLE t
     (
@@ -38,6 +40,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE TABLE t_gone (id UInt64) ENGINE = MergeTree ORDER BY id;
     CREATE TABLE t_alias_gone ENGINE = Alias('t_gone');
     DROP TABLE t_gone;
+
+    CREATE TABLE t_shadow (id UInt64, p Tuple(x String), \`p.x\` String ALIAS concat('public-', other), other String) ENGINE = MergeTree ORDER BY id;
+    INSERT INTO t_shadow (id, p, other) VALUES (1, tuple('S1'), 'o1');
 
     CREATE TABLE dict_src (id UInt64, v String) ENGINE = MergeTree ORDER BY id;
     INSERT INTO dict_src VALUES (1, 'd1'), (2, 'd2');
@@ -61,6 +66,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
     GRANT SELECT, ALTER ON ${DB}.t_alias_gone TO ${U_ALIAS};
     CREATE USER ${U_ALIAS_COL};
     GRANT SELECT(id), ALTER ON ${DB}.t_alias TO ${U_ALIAS_COL};
+    CREATE USER ${U_SHADOW};
+    GRANT SELECT, ALTER ADD COLUMN, ALTER MODIFY COLUMN, ALTER RENAME COLUMN, ALTER DROP COLUMN ON ${DB}.t_shadow TO ${U_SHADOW};
+    REVOKE SELECT(p) ON ${DB}.t_shadow FROM ${U_SHADOW};
 "
 
 # check <user|default> <label> <query> [<column>]
@@ -139,17 +147,24 @@ check "${U_COLS}" "subcolumn of a granted column" "ALTER TABLE t ADD COLUMN c_su
 check "${U_PARTIAL}" "subcolumn of a revoked column" "ALTER TABLE t ADD COLUMN p_sub String ALIAS tup.a" tup
 check "${U_DOT}" "quoted dotted column" "ALTER TABLE t ADD COLUMN d_quoted String ALIAS \`q.k\`"
 check "${U_FULL}" "full access" "ALTER TABLE t ADD COLUMN f String ALIAS concat('F-', restricted)"
+check "${U_SHADOW}" "rename, then expression" "ALTER TABLE t_shadow RENAME COLUMN \`p.x\` TO \`p.y\`, ADD COLUMN e String ALIAS p.x" p
+check "${U_SHADOW}" "rename, then modify" "ALTER TABLE t_shadow RENAME COLUMN \`p.x\` TO \`p.y\`, MODIFY COLUMN other String ALIAS p.x" p
+check "${U_SHADOW}" "drop, then expression" "ALTER TABLE t_shadow DROP COLUMN \`p.x\`, ADD COLUMN e String ALIAS p.x" p
+check "${U_SHADOW}" "expression, then rename" "ALTER TABLE t_shadow ADD COLUMN e String ALIAS p.x, RENAME COLUMN \`p.x\` TO \`p.y\`"
 check "${U_COLS}" "dictionary identifier" "ALTER TABLE t ADD COLUMN c_dict String ALIAS dictGet(d, 'v', id)"
 
 echo "-- full access, read"
 ${CLICKHOUSE_CLIENT} --user "${U_FULL}" --query "SELECT f FROM t ORDER BY id"
+echo "-- shadowing alias, read"
+${CLICKHOUSE_CLIENT} --user "${U_SHADOW}" --query "SELECT e, other FROM t_shadow ORDER BY id"
 echo "-- added columns"
 ${CLICKHOUSE_CLIENT} --query "SELECT ok_default2, c_lambda, c_field, s_a, d_quoted FROM t ORDER BY id"
 echo "-- schema"
 ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY position"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL};
+    DROP USER ${U_PARTIAL}, ${U_COLS}, ${U_SUB}, ${U_FULL}, ${U_DOT}, ${U_ALIAS}, ${U_ALIAS_COL}, ${U_SHADOW};
+    DROP TABLE t_shadow;
     DROP TABLE t_alias;
     DROP TABLE t_alias_gone;
     DROP TABLE t;

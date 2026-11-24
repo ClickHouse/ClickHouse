@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database
 
-# ALTER ... ON CLUSTER ADD COLUMN with an expression needs SELECT on the columns the expression reads,
-# and SELECT on the whole table when an identifier names no column of the initiator's table. MODIFY COLUMN changing
-# a type needs SELECT on the column, also when the initiator does not have the table. An ALTER through an Alias needs
-# ALTER on the target on the initiator, since the hosts forward it without the user.
+# ALTER ... ON CLUSTER ADD COLUMN with an expression that names a column needs SELECT on the whole table, since the
+# hosts bind it to their own table without the user. MODIFY COLUMN with a type needs SELECT on the column, also when the
+# initiator has that type or does not have the table. An ALTER through an Alias needs ALTER on the target on the
+# initiator, since the hosts forward it without the user.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,28 +12,32 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DB=${CLICKHOUSE_DATABASE}
 U_OC="u_oc_${DB}"
+U_OC_FULL="u_oc_full_${DB}"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER IF EXISTS ${U_OC};
+    DROP USER IF EXISTS ${U_OC}, ${U_OC_FULL};
     CREATE TABLE t (id UInt64, restricted String) ENGINE = MergeTree ORDER BY id;
     INSERT INTO t VALUES (1, 'S1'), (2, 'S2');
     SET allow_experimental_alias_table_engine = 1;
     CREATE TABLE t_alias ENGINE = Alias('t');
     CREATE USER ${U_OC};
-    GRANT SELECT, ALTER ADD COLUMN ON ${DB}.t TO ${U_OC};
+    GRANT SELECT, ALTER ADD COLUMN, ALTER MODIFY COLUMN ON ${DB}.t TO ${U_OC};
     REVOKE SELECT(restricted) ON ${DB}.t FROM ${U_OC};
     GRANT CLUSTER ON *.* TO ${U_OC};
     GRANT SELECT(id), ALTER ADD COLUMN, ALTER MODIFY COLUMN ON ${DB}.t_absent TO ${U_OC};
     GRANT ALTER ON ${DB}.t_alias TO ${U_OC};
+    CREATE USER ${U_OC_FULL};
+    GRANT SELECT, ALTER ADD COLUMN ON ${DB}.t TO ${U_OC_FULL};
+    GRANT CLUSTER ON *.* TO ${U_OC_FULL};
 "
 
-# check <label> <query> [<table>]
+# check <label> <query> [<table>] [<user>]
 check()
 {
-    local label=$1 query=$2 table=${3:-t}
+    local label=$1 query=$2 table=${3:-t} user=${4:-${U_OC}}
     local out rc=0
     echo "-- ${label}"
-    out=$(${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "${U_OC}" --query "${query}" 2>&1) || rc=$?
+    out=$(${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "${user}" --query "${query}" 2>&1) || rc=$?
     out=${out//${DB}./db.}
     if [ "${rc}" -eq 0 ] && [ -z "${out}" ]; then
         echo "OK"
@@ -47,7 +51,10 @@ check()
 
 check "on cluster, not granted column" "ALTER TABLE t ON CLUSTER test_shard_localhost ADD COLUMN oc_restricted String ALIAS restricted"
 check "on cluster, identifier without a column" "ALTER TABLE t ON CLUSTER test_shard_localhost ADD COLUMN oc_unbound String ALIAS concat('x', absent)"
-check "on cluster, granted column" "ALTER TABLE t ON CLUSTER test_shard_localhost ADD COLUMN oc_ok String DEFAULT toString(id)"
+check "on cluster, granted column" "ALTER TABLE t ON CLUSTER test_shard_localhost ADD COLUMN oc_granted String DEFAULT toString(id)"
+check "on cluster, whole table granted" "ALTER TABLE t ON CLUSTER test_shard_localhost ADD COLUMN oc_ok String DEFAULT toString(id)" t "${U_OC_FULL}"
+check "on cluster, constant" "ALTER TABLE t ON CLUSTER test_shard_localhost ADD COLUMN oc_const String DEFAULT 'c'"
+check "on cluster, type of the initiator" "ALTER TABLE t ON CLUSTER test_shard_localhost MODIFY COLUMN restricted String"
 check "on cluster, table only on the hosts" "ALTER TABLE t_absent ON CLUSTER test_shard_localhost ADD COLUMN oc_absent String ALIAS toString(id)" t_absent
 check "on cluster, type change, table only on the hosts" "ALTER TABLE t_absent ON CLUSTER test_shard_localhost MODIFY COLUMN x Tuple(String)" t_absent
 check "on cluster, alias without target grants" "ALTER TABLE t_alias ON CLUSTER test_shard_localhost ADD COLUMN oc_via_alias String"
@@ -59,7 +66,7 @@ echo "-- schema"
 ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY position"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-    DROP USER ${U_OC};
+    DROP USER ${U_OC}, ${U_OC_FULL};
     DROP TABLE t_alias;
     DROP TABLE t;
 "

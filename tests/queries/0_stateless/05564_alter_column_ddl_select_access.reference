@@ -96,11 +96,21 @@ ACCESS_DENIED SELECT(tup)
 OK
 -- full access
 OK
+-- rename, then expression
+ACCESS_DENIED SELECT(p)
+-- rename, then modify
+ACCESS_DENIED SELECT(p)
+-- drop, then expression
+ACCESS_DENIED SELECT(p)
+-- expression, then rename
+OK
 -- dictionary identifier
 OK
 -- full access, read
 F-S1
 F-S2
+-- shadowing alias, read
+public-o1	o1
 -- added columns
 1	[2,3]	['e1']	a1	q1
 2	[3,4]	['e2']	a2	q2
