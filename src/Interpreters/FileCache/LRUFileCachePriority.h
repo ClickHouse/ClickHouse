@@ -316,11 +316,7 @@ private:
     /// Returns whether the entry was moved.
     bool applyPriorityIncrease(const PendingPriorityIncrease & increase, const CachePriorityGuard::WriteLock &)
         TSA_REQUIRES(eviction_pos_mutex);
-    /// Applies `increases` in order, then `current_hit` if given.
-    void applyPriorityIncreases(
-        const PriorityIncreases & increases,
-        const CachePriorityGuard::WriteLock &,
-        const PendingPriorityIncrease * current_hit = nullptr);
+    void applyPriorityIncreases(const PriorityIncreases & increases, const CachePriorityGuard::WriteLock &);
     /// Pops up to `max_increases` pending increases, applies them and returns their number.
     size_t applyPendingPriorityIncreases(size_t max_increases, const CachePriorityGuard::WriteLock &);
 };

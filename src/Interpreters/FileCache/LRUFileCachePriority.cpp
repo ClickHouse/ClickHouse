@@ -26,6 +26,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictionReusedIterator;
     extern const Event FilesystemCacheBackgroundRemovedInvalidatedEntries;
     extern const Event FilesystemCachePriorityIncreaseBufferFull;
+    extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheAppliedPriorityIncreases;
 }
 
@@ -834,7 +835,10 @@ bool LRUFileCachePriority::tryIncreasePriority(
         /// Best-effort: lose this increase rather than block if the guard is contended.
         auto lock = getPriorityGuard().tryWriteLock();
         if (!lock.owns_lock())
+        {
+            ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
             return false;
+        }
 
         auto it = lru_iterator.get();
         moveEvictionPosIfEqual(it, lock);
@@ -853,9 +857,13 @@ bool LRUFileCachePriority::tryIncreasePriority(
     PriorityIncreases increases;
     auto lock = getPriorityGuard().tryWriteLock();
     if (!lock.owns_lock())
+    {
+        ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
         return false;
+    }
     pending_priority_increases.popBufferOfCurrentThread(increases);
-    applyPriorityIncreases(increases, lock, &increase);
+    increases.push_back(std::move(increase));
+    applyPriorityIncreases(increases, lock);
     return true;
 }
 
@@ -871,18 +879,13 @@ bool LRUFileCachePriority::applyPriorityIncrease(const PendingPriorityIncrease &
     return true;
 }
 
-void LRUFileCachePriority::applyPriorityIncreases(
-    const PriorityIncreases & increases,
-    const CachePriorityGuard::WriteLock & lock,
-    const PendingPriorityIncrease * current_hit)
+void LRUFileCachePriority::applyPriorityIncreases(const PriorityIncreases & increases, const CachePriorityGuard::WriteLock & lock)
 {
     size_t applied = 0;
     {
         std::lock_guard eviction_pos_lock(eviction_pos_mutex);
         for (const auto & increase : increases)
             applied += applyPriorityIncrease(increase, lock);
-        if (current_hit)
-            applied += applyPriorityIncrease(*current_hit, lock);
     }
     if (applied)
         ProfileEvents::increment(ProfileEvents::FilesystemCacheAppliedPriorityIncreases, applied);

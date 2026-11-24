@@ -19,9 +19,10 @@ struct PendingPriorityIncrease
 };
 
 /// Increases popped from `PendingPriorityIncreases`. On the stack, so that popping does not allocate.
+/// One more than a full buffer, for the hit which found it full.
 using PriorityIncreases = boost::container::static_vector<
     PendingPriorityIncrease,
-    std::max(FILECACHE_MAX_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE, FILECACHE_MAX_BATCH_PRIORITY_INCREASE_BUFFER_SIZE)>;
+    std::max(FILECACHE_MAX_BATCH_PRIORITY_INCREASE_MAX_BATCH_SIZE, FILECACHE_MAX_BATCH_PRIORITY_INCREASE_BUFFER_SIZE) + 1>;
 
 /// Priority increases recorded by cache hits and not yet applied to the priority queue: lock-free ring buffers,
 /// as many as CPU cores, each thread always adding to the same one.

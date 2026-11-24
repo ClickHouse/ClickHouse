@@ -27,6 +27,8 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/PendingPriorityIncreases.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #if CLICKHOUSE_CLOUD
@@ -5002,4 +5004,139 @@ TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
 
     hit(0);
     ASSERT_EQ(notifications, 3u);
+
+    /// A hit which finds its buffer full while the queue is locked loses its increase instead of waiting.
+    hit(1);
+    {
+        auto lock = priority.getPriorityGuard().readLock();
+        ASSERT_FALSE(priority.tryIncreasePriority(*iterators[2], true, state_guard));
+    }
+    ASSERT_EQ(events[ProfileEvents::FilesystemCachePriorityIncreaseBufferFull], buffer_full_before + 2);
+    ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 2u);
+    ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
+}
+
+namespace
+{
+
+using QueueNodes = std::list<IFileCachePriority::EntryPtr>;
+
+/// Iterators of distinct list nodes, which identify increases without entries.
+std::vector<QueueNodes::iterator> makeIterators(QueueNodes & nodes)
+{
+    std::vector<QueueNodes::iterator> iterators;
+    for (auto it = nodes.begin(); it != nodes.end(); ++it)
+        iterators.push_back(it);
+    return iterators;
+}
+
+}
+
+TEST_F(FileCacheTest, PendingPriorityIncreasesRing)
+{
+    /// The increases of one thread go to one buffer. Over many passes around the ring it fills, wakes once per
+    /// filling, reports full and is popped in order, whole or up to a limit.
+    constexpr size_t buffer_size = 4;
+    constexpr size_t passes = 100;
+    QueueNodes nodes(buffer_size * passes + 1);
+    const auto iterators = makeIterators(nodes);
+
+    PendingPriorityIncreases pending;
+    size_t notifications = 0;
+    const std::function<void()> notify = [&] { ++notifications; };
+    auto add = [&](size_t i)
+    {
+        PendingPriorityIncrease increase{{}, iterators[i]};
+        return pending.tryAdd(increase, buffer_size, notify);
+    };
+
+    for (size_t pass = 0; pass < passes; ++pass)
+    {
+        const size_t first = pass * buffer_size;
+        for (size_t i = 0; i < buffer_size; ++i)
+            ASSERT_TRUE(add(first + i));
+        ASSERT_FALSE(add(first + buffer_size));
+        ASSERT_EQ(notifications, pass + 1);
+        ASSERT_EQ(pending.getSizeApprox(), buffer_size);
+
+        PriorityIncreases increases;
+        if (pass % 2 == 0)
+        {
+            pending.popBufferOfCurrentThread(increases);
+        }
+        else
+        {
+            pending.pop(increases, 1);
+            ASSERT_EQ(increases.size(), 1u);
+            pending.pop(increases, buffer_size);
+        }
+        ASSERT_EQ(increases.size(), buffer_size);
+        for (size_t i = 0; i < buffer_size; ++i)
+            ASSERT_TRUE(increases[i].iterator == iterators[first + i]);
+        ASSERT_EQ(pending.getSizeApprox(), 0u);
+    }
+}
+
+TEST_F(FileCacheTest, PendingPriorityIncreasesConcurrent)
+{
+    /// More writers than buffers, so that writers share buffers, and one reader popping while they add.
+    /// Every increase is popped exactly once, and the increases of each writer in the order it added them.
+    constexpr size_t buffer_size = 8;
+    constexpr size_t increases_per_writer = 2000;
+    const size_t writers_count = 2 * static_cast<size_t>(getNumberOfCPUCoresToUse());
+    QueueNodes nodes(writers_count * increases_per_writer);
+    const auto iterators = makeIterators(nodes);
+    std::unordered_map<const IFileCachePriority::EntryPtr *, size_t> index_of_node;
+    for (size_t i = 0; i < iterators.size(); ++i)
+        index_of_node[&*iterators[i]] = i;
+
+    PendingPriorityIncreases pending;
+    std::atomic<size_t> notifications = 0;
+    const std::function<void()> notify = [&] { ++notifications; };
+    std::atomic<size_t> finished_writers = 0;
+
+    std::vector<std::thread> writers;
+    for (size_t writer = 0; writer < writers_count; ++writer)
+    {
+        writers.emplace_back([&, writer]
+        {
+            for (size_t i = 0; i < increases_per_writer; ++i)
+            {
+                PendingPriorityIncrease increase{{}, iterators[writer * increases_per_writer + i]};
+                while (!pending.tryAdd(increase, buffer_size, notify))
+                    std::this_thread::yield();
+            }
+            ++finished_writers;
+        });
+    }
+
+    std::vector<size_t> next_of_writer(writers_count, 0);
+    size_t popped = 0;
+    while (true)
+    {
+        const bool all_finished = finished_writers == writers_count;
+        PriorityIncreases increases;
+        pending.pop(increases, increases.capacity());
+        for (const auto & increase : increases)
+        {
+            const size_t index = index_of_node.at(&*increase.iterator);
+            const size_t writer = index / increases_per_writer;
+            EXPECT_EQ(index % increases_per_writer, next_of_writer[writer]);
+            next_of_writer[writer] = index % increases_per_writer + 1;
+        }
+        popped += increases.size();
+        if (increases.empty())
+        {
+            /// Writers which finished before the pop have published everything, so an empty pop means the end.
+            if (all_finished)
+                break;
+            std::this_thread::yield();
+        }
+    }
+
+    for (auto & writer : writers)
+        writer.join();
+    ASSERT_EQ(popped, writers_count * increases_per_writer);
+    ASSERT_EQ(pending.getSizeApprox(), 0u);
+    ASSERT_GT(notifications, 0u);
 }
