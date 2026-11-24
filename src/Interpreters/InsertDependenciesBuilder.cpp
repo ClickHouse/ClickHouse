@@ -1866,7 +1866,6 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     /// are absent from the input, never retypes present ones.
     auto to_convert = mapWidenedEnumColumnsToTargetTypes(*input_headers.at(view_id), *output_header);
 
-    /// A state goes to the sink relabelled to the target's declared function.
     for (auto & column : to_convert)
     {
         const auto * target = output_header->findByName(column.name);
