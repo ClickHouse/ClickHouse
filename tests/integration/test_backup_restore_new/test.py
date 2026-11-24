@@ -1499,6 +1499,22 @@ def test_definition_of_another_table():
     )
     assert instance.query("EXISTS test.tabl2") == "0\n"
 
+    # The definition of a temporary table must be of a temporary table.
+    session_id = new_session_id()
+    instance.http_query("CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id})
+    backup_name = new_backup_name()
+    instance.http_query(f"BACKUP TEMPORARY TABLE temp_tbl TO {backup_name}", params={"session_id": session_id})
+    path = os.path.join(get_path_to_backup(backup_name), "temporary_tables/metadata/temp_tbl.sql")
+    definition = open(path).read()
+    assert "CREATE TEMPORARY TABLE temp_tbl" in definition
+    with open(path, "w") as f:
+        f.write(definition.replace("CREATE TEMPORARY TABLE temp_tbl", "CREATE TABLE test.temp_tbl    "))
+
+    assert "is of another object" in instance.http_query_and_get_error(
+        f"RESTORE TEMPORARY TABLE temp_tbl FROM {backup_name}", params={"session_id": new_session_id()}
+    )
+    assert instance.query("EXISTS test.temp_tbl") == "0\n"
+
 
 def test_system_table():
     backup_name = new_backup_name()
