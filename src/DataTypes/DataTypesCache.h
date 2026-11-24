@@ -15,6 +15,7 @@ namespace DB
 /// and shared_ptr allocations for commonly used types.
 /// Thread-local to avoid atomic refcount contention on shared_ptr
 /// when multiple threads return copies of the same DataTypePtr.
+/// Cached serializations (here and in `DataTypesCache`) get a per-thread reference counter too.
 class SimpleDataTypesCache
 {
 public:
