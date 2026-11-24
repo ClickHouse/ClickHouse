@@ -4413,6 +4413,8 @@ but the query will fail.
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
 
 The same limit also bounds the number of nodes created by substituting `WITH` elements (common table expressions and aliased expressions) into the query. This applies wherever `WITH` elements are substituted, including `SELECT` queries, `CREATE VIEW` and `CREATE MATERIALIZED VIEW`, `ATTACH` with a full definition, `ALTER TABLE ... MODIFY QUERY`, mutation expressions in `ALTER TABLE ... UPDATE/DELETE` and lightweight `UPDATE`, distributed `INSERT ... SELECT`, and the propagation of `WITH` elements to all parts of a `UNION`. If the limit is exceeded, the query fails with the `TOO_BIG_AST` error.
+
+A filter conjunct that query plan optimizations compose from nested subqueries is kept above a `JOIN` instead of being pushed below it when it exceeds this limit written out as a tree, provided every table read below the `JOIN` is a MergeTree table or a bounded `numbers`, `numbers_mt` or `generate_series` table function.
 )", 0) \
     \
     DECLARE(Float, ast_fuzzer_runs, 0, R"(

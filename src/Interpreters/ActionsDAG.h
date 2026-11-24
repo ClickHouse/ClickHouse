@@ -611,6 +611,7 @@ public:
       * @param keep_runtime_filters_out_of_left_stream - the left stream is only matched against (RIGHT OUTER or ANTI join).
       * @param keep_runtime_filters_out_of_right_stream - the right stream is only matched against (LEFT OUTER or ANTI join).
       * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
+      * @param max_expanded_conjunct_size - a conjunct larger than this written out as a tree is not pushed down (zero means no limit).
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -625,7 +626,8 @@ public:
         const NameSet & cross_type_equivalent_columns,
         bool keep_runtime_filters_out_of_left_stream,
         bool keep_runtime_filters_out_of_right_stream,
-        bool filter_is_always_false);
+        bool filter_is_always_false,
+        size_t max_expanded_conjunct_size);
 
     /** Build filter dag from multiple filter dags.
       *

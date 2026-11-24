@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -224,13 +225,19 @@ const ActionsDAG::Node * buildPredicateFromTemplate(ActionsDAG & full_dag, const
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns);
+    const Names & available_columns,
+    size_t max_expanded_size);
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns)
+    const Names & available_columns,
+    size_t max_expanded_size)
 {
     if (!original_dag.tryFindInOutputs(filter_name))
+        return {};
+
+    /// The extraction walks the filter per path.
+    if (isExpandedSizeAbove(original_dag.tryFindInOutputs(filter_name), max_expanded_size))
         return {};
 
     ActionsDAG full_dag = original_dag.clone();

@@ -28,6 +28,8 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    [[nodiscard]] bool canLeaveConjunctsOutOfFilter() const override;
+
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     /// A replica rebuilds the read from the table's parameters. The source filter and the pushed-down

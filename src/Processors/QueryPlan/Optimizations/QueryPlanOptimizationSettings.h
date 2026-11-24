@@ -234,6 +234,9 @@ struct QueryPlanOptimizationSettings
 
     size_t max_block_size = 0;
 
+    /// A filter conjunct larger than this, written out as a tree, is not pushed below a JOIN. Zero means no limit.
+    size_t max_expanded_ast_elements = 0;
+
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     /// `EXPLAIN WHATIF` plans cannot see the projections that it weighs, so a forced projection must not fail them

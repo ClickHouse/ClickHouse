@@ -76,6 +76,9 @@ bool allReachableNodes(const ActionsDAG::NodeRawConstPtrs & roots, Predicate && 
 std::unordered_set<const ActionsDAG::Node *> findReachableNodes(
     const ActionsDAG::NodeRawConstPtrs & roots, const std::function<bool(const ActionsDAG::Node *)> & is_barrier = {});
 
+/// Whether `node` written out as a tree, a shared subexpression repeated for each of its uses and an `indexHint` counting the condition it holds, has more than `limit` nodes. Zero means no limit.
+bool isExpandedSizeAbove(const ActionsDAG::Node * node, size_t limit);
+
 /// Calls `visit(node)` once for every node reachable from `roots`, after it has been called for all the
 /// node's children: a topological order, children first. A node for which `skip(node)` is true is neither
 /// visited nor entered.
