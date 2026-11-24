@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 
 # A load queued while reloads are stopped, whose thread only starts after SYSTEM START RELOAD DICTIONARIES,
 # is not skipped as blocked.
