@@ -92,6 +92,9 @@ struct SelectQueryOptions
     /// The query as received from the initiator of a distributed read, not a subquery of it.
     bool is_secondary_query_root = false;
 
+    /// Overrides `Context::isCompoundTableIdentifierQualificationAllowed` for a query analyzed from an AST; unset keeps the context's value.
+    std::optional<bool> allow_compound_table_identifier_qualification;
+
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
@@ -233,6 +236,12 @@ struct SelectQueryOptions
     SelectQueryOptions & secondaryQueryRoot(bool value = true)
     {
         is_secondary_query_root = value;
+        return *this;
+    }
+
+    SelectQueryOptions & allowCompoundTableIdentifierQualification(bool value = true)
+    {
+        allow_compound_table_identifier_qualification = value;
         return *this;
     }
 };

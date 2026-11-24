@@ -129,7 +129,6 @@ namespace Setting
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
-    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
@@ -5604,16 +5603,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             }
             scope_to_check = scope_to_check->parent_scope;
         }
-    }
-
-    /// The query argument of a table function is a part of the calling query, not a stored definition.
-    /// Copy only when the field matters: a storage may keep a weak reference to this context.
-    if (execution_context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
-        && !execution_context->isCompoundTableIdentifierQualificationAllowed())
-    {
-        auto unrestricted_context = Context::createCopy(execution_context);
-        unrestricted_context->setAllowCompoundTableIdentifierQualification(true);
-        execution_context = unrestricted_context;
     }
 
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);

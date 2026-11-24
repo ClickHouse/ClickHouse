@@ -150,7 +150,9 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     try
     {
         /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        /// The query argument is a part of the calling query, not a stored definition.
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+            create.children[0], context, SelectQueryOptions().allowCompoundTableIdentifierQualification());
     }
     catch (Exception & e)
     {

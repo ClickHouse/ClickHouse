@@ -148,6 +148,9 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             "_shard_count",
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
+    if (select_query_options.allow_compound_table_identifier_qualification)
+        result_context->setAllowCompoundTableIdentifierQualification(*select_query_options.allow_compound_table_identifier_qualification);
+
     const auto & settings = result_context->getSettingsRef();
     // If `automatic_parallel_replicas_mode` is not zero, the heuristic for automatic parallel replicas decides whether
     // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false on the initiator while it is set, so

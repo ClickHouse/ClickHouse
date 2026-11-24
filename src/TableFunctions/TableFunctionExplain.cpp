@@ -192,6 +192,8 @@ StoragePtr TableFunctionExplain::executeImpl(
     /// To support settings inside explain subquery.
     auto mutable_context = Context::createCopy(context);
     InterpreterSetQuery::applySettingsFromQuery(query, mutable_context);
+    /// The explained query is a part of the calling query, not a stored definition.
+    mutable_context->setAllowCompoundTableIdentifierQualification(true);
     BlockIO blockio = getInterpreter(mutable_context).execute();
     Block block = executeMonoBlock(blockio.pipeline);
 

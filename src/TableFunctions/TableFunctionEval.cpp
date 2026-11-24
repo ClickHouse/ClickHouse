@@ -194,7 +194,9 @@ ColumnsDescription TableFunctionEval::getActualTableStructure(ContextPtr context
     chassert(create.children.size() == 1);
     chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
-    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+    /// The query argument is a part of the calling query, not a stored definition.
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+        create.children[0], context, SelectQueryOptions().allowCompoundTableIdentifierQualification());
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
 
