@@ -235,6 +235,14 @@ Aggregating(no keys, uniqExact(x))   =>   Aggregating(no keys, count(x))
                                             Aggregating(keys: x)
 ```
 
+The aggregation by `x` also computes a state of each other aggregate of the step for each
+value of `x`, and the step above it merges these states:
+
+```
+Aggregating(no keys, uniqExact(x), sum(y))   =>   Aggregating(no keys, count(x), sumMerge(s))
+                                                    Aggregating(keys: x, sumState(y) AS s)
+```
+
 The usual rules plan the two aggregations, as for a query written as a count over
 `GROUP BY x`: usually a partial aggregation by `x`, a shuffle of the distinct values, a merge
 and a count on every node, and a sum of the counts on one node. The plans of the original
@@ -245,6 +253,13 @@ aggregation stay in the group, and the costs select.
   strings and decimals `uniqExact` keeps a 128-bit hash. Floats are excluded: an aggregation
   in the order of its key takes `0.` and `-0.` as one value.
 - **NULL**: the count is `count(x)` for a `Nullable` argument, so the NULL group is not counted.
+  The states of the NULL group are merged as those of all other groups.
+- **Other aggregates**: `count`, `sum`, `min`, `max` and `avg`, also with `-If`. The merge of
+  their states is the state of all the rows, however the rows are grouped. The state must have
+  a fixed size and own no other memory (so not the `min` of a `String`), because the estimate
+  of the row width takes this size for a column of states. A sum or an `avg` of floats depends
+  on the order of the additions, and a `min` or `max` of floats can give the other of `0.` and
+  `-0.`: these results can differ, as between any two plans.
 - **`max_rows_to_group_by`**: the rule does not apply, because the limit would apply to the
   distinct values.
 - **Estimates**: to compare the plans, the estimates count the distinct values that the

@@ -1,0 +1,268 @@
+-- 1. a Nullable argument between two other aggregates: their states for each value of n, then count(n) and the merges
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> sum(__table1.y) UInt64 : 0
+         INPUT : 1 -> uniqExact(__table1.n) UInt64 : 1
+         INPUT :: 2 -> count() UInt64 : 2
+         ALIAS sum(__table1.y) :: 0 -> sum(y) UInt64 : 3
+         ALIAS uniqExact(__table1.n) :: 1 -> countDistinct(n) UInt64 : 0
+Positions: 3 0 2
+  MergingAggregated
+  Keys:
+  Aggregates:
+      sum(__table1.y)
+        Function: sumMerge(AggregateFunction(sum, UInt64)) → UInt64
+        Arguments: sum(__table1.y)
+      uniqExact(__table1.n)
+        Function: count(Nullable(Int32)) → UInt64
+        Arguments: __table1.n
+      count()
+        Function: countMerge(AggregateFunction(count)) → UInt64
+        Arguments: count()
+  Mode: memory-efficient
+    GatherExchange
+      Aggregating
+      Keys:
+      Aggregates:
+          sum(__table1.y)
+            Function: sumMerge(AggregateFunction(sum, UInt64)) → UInt64
+            Arguments: sum(__table1.y)
+          uniqExact(__table1.n)
+            Function: count(Nullable(Int32)) → UInt64
+            Arguments: __table1.n
+          count()
+            Function: countMerge(AggregateFunction(count)) → UInt64
+            Arguments: count()
+      Skip merging: 0
+        MergingAggregated
+        Keys: __table1.n
+        Aggregates:
+            sum(__table1.y)
+              Function: sumState(UInt64) → AggregateFunction(sum, UInt64)
+              Arguments: __table1.y
+            count()
+              Function: countState() → AggregateFunction(count)
+              Arguments: none
+          ShuffleExchange
+            Aggregating
+            Keys: __table1.n
+            Aggregates:
+                sum(__table1.y)
+                  Function: sumState(UInt64) → AggregateFunction(sum, UInt64)
+                  Arguments: __table1.y
+                count()
+                  Function: countState() → AggregateFunction(count)
+                  Arguments: none
+            Skip merging: 0
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+              Actions: INPUT : 0 -> y UInt64 : 0
+                       INPUT : 1 -> n Nullable(Int32) : 1
+                       ALIAS y :: 0 -> __table1.y UInt64 : 2
+                       ALIAS n :: 1 -> __table1.n Nullable(Int32) : 0
+              Positions: 2 0
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+                ReadType: Default
+                Parts: 2
+                Granules: 2
+-- 2. queries that the rule accepts: the split
+-- sum, count, avg
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- min, max, a sum of floats
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- -If
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- -If without rows
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- Nullable arguments
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- min, max of Nullable and float
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- Nullable argument of uniqExact
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- renamed columns, an expression
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+                ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- only the NULL row
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression (Before GROUP BY)
+                Filter ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- no rows
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        MergingAggregated
+          ShuffleExchange
+            Aggregating
+              Expression (Before GROUP BY)
+                Filter ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- 3. other aggregates that the rule does not accept: the states of uniqExact go to one node
+-- uniq
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- any
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- -OrNull
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- -State
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- only NULL
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- -If of NULL
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- max of String
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- second uniqExact
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- 4. two nodes, a narrow table, each row has its own value: the hash sets of uniqExact on one node cost more than the shuffle
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ShuffleExchange
+              ReadFromMergeTree (ParallelRead default.t_distinct_mixed)
+-- 5. the results of the queries of case 2 and of five other queries
+700	49995000	10000	4999.5
+0	700	9999	617500
+700	30009000	1000	4997
+700	2	\N
+700	3277167	7083	462.68064379500214
+700	0	149
+380	49995000	10000	1715
+700	50005000
+0	9284285	1715
+0	0	0	\N
+0	0	0	\N
+700	10000	49995000	99	380
+700	49995000	0	\N	0	0
+700	49995000
+-- 6. the same with the setting off
+700	49995000	10000	4999.5
+0	700	9999	617500
+700	30009000	1000	4997
+700	2	\N
+700	3277167	7083	462.68064379500214
+700	0	149
+380	49995000	10000	1715
+700	50005000
+0	9284285	1715
+0	0	0	\N
+0	0	0	\N
+700	10000	49995000	99	380
+700	49995000	0	\N	0	0
+700	49995000
+-- 7. the names and the types of the result columns are those of the query
+countDistinct(n)	total	avg(m)	min(m)
+UInt64	UInt64	Nullable(Float64)	Nullable(Int64)
+380	49995000	462.68064379500214	0

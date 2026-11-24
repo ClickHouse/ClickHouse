@@ -64,10 +64,9 @@ EXPLAIN SELECT count(DISTINCT x) FROM t_distinct_split WHERE y > 10 SETTINGS opt
 SELECT '-- 5. a limit on the rows of GROUP BY must not apply to the distinct values: no split';
 EXPLAIN SELECT count(DISTINCT x) FROM t_distinct_split SETTINGS max_rows_to_group_by = 1000000;
 
-SELECT '-- 6. not a single uniqExact of one column without GROUP BY: no split';
+SELECT '-- 6. not a uniqExact of one column without GROUP BY: no split';
 EXPLAIN SELECT uniqExactIf(x, y > 10) FROM t_distinct_split;
 EXPLAIN SELECT uniqExact(x, k) FROM t_distinct_split;
-EXPLAIN SELECT count(DISTINCT x), sum(y) FROM t_distinct_split;
 EXPLAIN SELECT count(DISTINCT x) FROM t_distinct_split SETTINGS count_distinct_implementation = 'uniq';
 -- The shuffle is forced, because the two distributed plans of an aggregation with keys are near in cost here.
 EXPLAIN SELECT k, count(DISTINCT x) FROM t_distinct_split GROUP BY k SETTINGS distributed_plan_force_shuffle_aggregation = 1;
