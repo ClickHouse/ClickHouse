@@ -1,0 +1,94 @@
+-- More cases of 05872_lwu_patch_null_missing_column_pending_modify: a NULL written by a lightweight update
+-- before a pending MODIFY COLUMN from a Nullable type to a non-Nullable one.
+
+SET enable_lightweight_update = 1;
+SET enable_nullable_tuple_type = 1;
+
+{% for version in ['v1', 'v2'] -%}
+
+-- killed ({{ version }}): two patches older than the pending MODIFY, with different old types (the MODIFY between them was killed).
+DROP TABLE IF EXISTS t_killed_{{ version }} SYNC;
+CREATE TABLE t_killed_{{ version }} (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_killed_{{ version }} VALUES (1), (2), (3);
+SYSTEM STOP MERGES t_killed_{{ version }};
+ALTER TABLE t_killed_{{ version }} ADD COLUMN arr Nullable(String) DEFAULT '[9]';
+UPDATE t_killed_{{ version }} SET arr = NULL WHERE id = 1;
+UPDATE t_killed_{{ version }} SET arr = '[6]' WHERE id = 3;
+ALTER TABLE t_killed_{{ version }} MODIFY COLUMN arr LowCardinality(Nullable(String)) DEFAULT '[9]' SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_killed_{{ version }}' SYNC FORMAT Null;
+UPDATE t_killed_{{ version }} SET arr = '[5]' WHERE id = 2;
+UPDATE t_killed_{{ version }} SET arr = NULL WHERE id = 3;
+ALTER TABLE t_killed_{{ version }} MODIFY COLUMN arr Array(UInt8) DEFAULT [7] SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'killed {{ version }} patch type', type FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_killed_{{ version }}' AND active AND name LIKE 'patch-%' AND column = 'arr'
+ORDER BY type;
+SELECT 'killed {{ version }}', id, arr FROM t_killed_{{ version }} ORDER BY id;
+DROP TABLE t_killed_{{ version }} SYNC;
+
+-- nodefault ({{ version }}): a second ALTER removes the DEFAULT while the MODIFY is pending.
+DROP TABLE IF EXISTS t_nodefault_{{ version }} SYNC;
+CREATE TABLE t_nodefault_{{ version }} (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_nodefault_{{ version }} VALUES (1), (2), (3);
+SYSTEM STOP MERGES t_nodefault_{{ version }};
+ALTER TABLE t_nodefault_{{ version }} ADD COLUMN s Nullable(String) DEFAULT 'old';
+UPDATE t_nodefault_{{ version }} SET s = NULL WHERE id = 1;
+UPDATE t_nodefault_{{ version }} SET s = 'u' WHERE id = 2;
+UPDATE t_nodefault_{{ version }} SET s = 'w' WHERE id = 3;
+UPDATE t_nodefault_{{ version }} SET s = NULL WHERE id = 3;
+ALTER TABLE t_nodefault_{{ version }} MODIFY COLUMN s String DEFAULT 'abc' SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_nodefault_{{ version }} MODIFY COLUMN s REMOVE DEFAULT;
+SELECT 'nodefault {{ version }} pending',
+    (SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_nodefault_{{ version }}' AND NOT is_done),
+    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_nodefault_{{ version }}'
+        AND active AND name NOT LIKE 'patch-%' AND column = 's');
+SELECT 'nodefault {{ version }} default', default_kind, default_expression FROM system.columns
+WHERE database = currentDatabase() AND table = 't_nodefault_{{ version }}' AND name = 's';
+SELECT 'nodefault {{ version }}', id, s FROM t_nodefault_{{ version }} ORDER BY id;
+DROP TABLE t_nodefault_{{ version }} SYNC;
+
+-- dropreadd ({{ version }}): the column is added again while the DROP of a stored column of that name is pending.
+{% for suffix, stored_type in [('same', 'String'), ('other', 'UInt64')] -%}
+DROP TABLE IF EXISTS t_dropreadd_{{ suffix }}_{{ version }} SYNC;
+CREATE TABLE t_dropreadd_{{ suffix }}_{{ version }} (id UInt64, s {{ stored_type }}) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_dropreadd_{{ suffix }}_{{ version }} (id) VALUES (1), (2), (3);
+SYSTEM STOP MERGES t_dropreadd_{{ suffix }}_{{ version }};
+ALTER TABLE t_dropreadd_{{ suffix }}_{{ version }} DROP COLUMN s SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_dropreadd_{{ suffix }}_{{ version }} ADD COLUMN s Nullable(String) DEFAULT 'old';
+UPDATE t_dropreadd_{{ suffix }}_{{ version }} SET s = NULL WHERE id = 1;
+UPDATE t_dropreadd_{{ suffix }}_{{ version }} SET s = 'u' WHERE id = 2;
+UPDATE t_dropreadd_{{ suffix }}_{{ version }} SET s = 'w' WHERE id = 3;
+UPDATE t_dropreadd_{{ suffix }}_{{ version }} SET s = NULL WHERE id = 3;
+ALTER TABLE t_dropreadd_{{ suffix }}_{{ version }} MODIFY COLUMN s String DEFAULT 'abc' SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'dropreadd {{ suffix }} {{ version }} pending',
+    (SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_dropreadd_{{ suffix }}_{{ version }}' AND NOT is_done),
+    (SELECT groupArray(type) FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_dropreadd_{{ suffix }}_{{ version }}'
+        AND active AND name NOT LIKE 'patch-%' AND column = 's');
+SELECT 'dropreadd {{ suffix }} {{ version }}', id, s FROM t_dropreadd_{{ suffix }}_{{ version }} ORDER BY id;
+ALTER TABLE t_dropreadd_{{ suffix }}_{{ version }} MODIFY COLUMN s REMOVE DEFAULT;
+SELECT 'dropreadd {{ suffix }} {{ version }} nodefault', id, s FROM t_dropreadd_{{ suffix }}_{{ version }} ORDER BY id;
+DROP TABLE t_dropreadd_{{ suffix }}_{{ version }} SYNC;
+
+{% endfor -%}
+
+-- omitted ({{ version }}): a column the part omits with a frozen default reads as the stored column of that type.
+{% for suffix, skip in [('frozen', 1), ('stored', 0)] -%}
+DROP TABLE IF EXISTS t_omitted_{{ suffix }}_{{ version }} SYNC;
+CREATE TABLE t_omitted_{{ suffix }}_{{ version }} (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+SETTINGS skip_empty_columns_on_insert = {{ skip }}, serialization_info_version = 'with_missing_columns',
+    enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_omitted_{{ suffix }}_{{ version }} VALUES (1, ''), (2, '');
+SYSTEM STOP MERGES t_omitted_{{ suffix }}_{{ version }};
+ALTER TABLE t_omitted_{{ suffix }}_{{ version }} MODIFY COLUMN s Nullable(String) SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_omitted_{{ suffix }}_{{ version }}' SYNC FORMAT Null;
+UPDATE t_omitted_{{ suffix }}_{{ version }} SET s = NULL WHERE id = 1;
+ALTER TABLE t_omitted_{{ suffix }}_{{ version }} MODIFY COLUMN s String DEFAULT 'abc' SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'omitted {{ suffix }} {{ version }} stored', count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_omitted_{{ suffix }}_{{ version }}' AND active AND name NOT LIKE 'patch-%' AND column = 's';
+SELECT 'omitted {{ suffix }} {{ version }}', id, s FROM t_omitted_{{ suffix }}_{{ version }} ORDER BY id; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+DROP TABLE t_omitted_{{ suffix }}_{{ version }} SYNC;
+
+{% endfor -%}
+{% endfor -%}
