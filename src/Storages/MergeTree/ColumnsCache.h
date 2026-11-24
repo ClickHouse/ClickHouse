@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <base/arithmeticOverflow.h>
 #include <Access/Common/AccessType.h>
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
@@ -40,9 +41,9 @@ struct StorageID;
 /// decompressing the granule, and with many threads the lookups contend on the cache.
 ///
 /// The column is identified by a hash of the table UUID, the part name, the column name and the
-/// identity of the schema it was read with, computed once per reader, so that a lookup neither
-/// copies strings nor hashes them. The table UUID keeps the entries across `RENAME TABLE` and
-/// does not mix tables.
+/// identity of the schema it was read with (for a MergeTree part, also the name of the column in
+/// the part), computed once per reader, so that a lookup neither copies strings nor hashes them.
+/// The table UUID keeps the entries across `RENAME TABLE` and does not mix tables.
 struct ColumnsCacheKey
 {
     UInt128 column_identity = 0;
@@ -55,7 +56,8 @@ struct ColumnsCacheKeyHash
 {
     size_t operator()(const ColumnsCacheKey & key) const
     {
-        return intHash64(key.column_identity.items[UInt128::_impl::little(0)] ^ (key.stripe * 0x9E3779B97F4A7C15ULL));
+        /// The Fibonacci multiply wraps by design.
+        return intHash64(key.column_identity.items[UInt128::_impl::little(0)] ^ common::mulIgnoreOverflow(key.stripe, 0x9E3779B97F4A7C15ULL));
     }
 };
 
@@ -70,7 +72,8 @@ struct ColumnsCacheKeyHash
 /// with the moment the new metadata is published: a reader can never hold the new schema together
 /// with the identity of the old one. It is stable across reads of an unchanged table, so repeated
 /// reads find their entries.
-UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity);
+UInt128 getColumnsCacheColumnIdentity(
+    const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity, const String & name_in_part = {});
 
 /// Whether the columns cache can hold the columns of a part: entries are keyed by the table's UUID, which only
 /// the tables of `Atomic` and `Replicated` databases have.
@@ -278,12 +281,14 @@ public:
     UInt64 getInvalidationGeneration(const UUID & table_uuid);
 
     /// Remove all cached entries for a specific data part.
-    /// Called when the part leaves the table for good: from the destructor of the part, and for
-    /// outdated parts that nobody else holds any more (`isSharedPtrUnique`). A reader holds the
-    /// part through its `data_part_info_for_read` for as long as its deferred write is pending,
-    /// so no reader can still write entries for the part after this call, and unlike removeTable
-    /// this needs no invalidation stamp: nothing per part is retained once the entries are gone.
-    /// Part names are not reused within a table, so a later part cannot find these entries either.
+    /// Called when the part leaves the table: from the destructor of the part, for outdated parts that
+    /// nobody else holds any more (`isSharedPtrUnique`), and before a part is moved to `detached`.
+    /// A reader holds the part through its `data_part_info_for_read` for as long as its deferred write
+    /// is pending, so in the first two cases no reader can still write entries for the part after this
+    /// call, and unlike removeTable this needs no invalidation stamp: nothing per part is retained once
+    /// the entries are gone. A part moved to `detached` may still be held by a running read, and a part
+    /// with its name can come back, for example by `SYSTEM RESTORE REPLICA`. Otherwise part names are
+    /// not reused within a table, so a later part cannot find these entries.
     void removePart(const UUID & table_uuid, const String & part_name);
 
     /// Whether the cache holds any entry of the part. One lookup in the index, so that the cleanup
