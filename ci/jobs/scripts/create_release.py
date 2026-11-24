@@ -95,11 +95,19 @@ class Labels:
     RELEASE_LTS = "release-lts"
 
 
+def _carries_own_version(branch: str) -> bool:
+    """Whether the version in `origin/{branch}` is the `major.minor` the branch is named after."""
+    version = CHVersion.get_version_at_commit(f"origin/{branch}")
+    return branch == f"{version.major}.{version.minor}"
+
+
 def is_latest_release_branch(branch: str) -> bool:
     """Whether `branch` has the highest major.minor among the release branches of `origin`."""
     # A glob cannot say "digits only": one or two digits for each of major and minor
     patterns = " ".join(f"'refs/remotes/origin/{major}.{minor}'" for major in ("[1-9]", "[1-9][0-9]") for minor in ("[1-9]", "[1-9][0-9]"))
-    latest_branch = Shell.get_output(f"git for-each-ref --sort=-version:refname --count=1 --format='%(refname:lstrip=3)' {patterns}", strict=True)
+    candidates = Shell.get_output(f"git for-each-ref --sort=-version:refname --format='%(refname:lstrip=3)' {patterns}", strict=True).split()
+    # A branch can be named like a release branch without being one: `30.12` was pushed to test the branch rules, and with it no release was the latest one, so no release moved the `latest` docker tag. A release branch carries the version it is named after.
+    latest_branch = next((name for name in candidates if _carries_own_version(name)), "")
     assert latest_branch, "no release branches among the origin branches"
     print(
         f"Latest release branch [{latest_branch}], checking [{branch}]:"
