@@ -73,7 +73,8 @@ public:
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
             IsShadowingColumn is_column_shadowing_map_subcolumn_,
-            JSONIndexArgumentTypes json_argument_types_);
+            JSONIndexArgumentTypes json_argument_types_,
+            NameSet names_computed_by_index_expression_ = {});
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
@@ -158,6 +159,10 @@ private:
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     IsShadowingColumn is_column_shadowing_map_subcolumn;
+    /// Names of the nodes the index expression computes. An atom reading a column with one of these names
+    /// is not analyzed: by name it would look like the index column, e.g. `upper(lower(x))` over a column
+    /// `lower(x)` next to an index on `upper(lower(x))`.
+    NameSet names_computed_by_index_expression;
 
     RPN rpn;
 };

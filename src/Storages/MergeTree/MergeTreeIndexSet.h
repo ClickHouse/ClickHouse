@@ -134,6 +134,11 @@ private:
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 
+    /// A column named like a node the index expression computes, e.g. a column `lower(x)` next to an index
+    /// on `upper(lower(x))`, makes a filter subexpression look like that node by name. Such a subexpression
+    /// must not be bound to an index column.
+    bool readsColumnNamedLikeIndexExpression(const ActionsDAG::Node & node) const;
+
     String index_name;
     size_t max_rows;
 
@@ -147,6 +152,8 @@ private:
     /// `ExpressionActions::execute` later binds the granule column by name too. A name that
     /// matches under a different type would silently substitute a differently-typed column.
     std::unordered_map<String, DataTypePtr> key_columns;
+    /// See `readsColumnNamedLikeIndexExpression`.
+    NameSet names_computed_by_index_expression;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
 

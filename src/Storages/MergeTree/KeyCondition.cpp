@@ -1720,13 +1720,8 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
     return names;
 }
 
-/// A filter names a column by its raw name and a key node by its expression, so a column
-/// named `f(x)` and the key node computing `f(x)` look the same.
-static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
+NameSet getNamesComputedByKeyExpression(const ExpressionActions & key_expr)
 {
-    if (!filter_dag.dag)
-        return {};
-
     NameSet computed_names;
     NameSet input_names;
     for (const auto & node : key_expr.getActionsDAG().getNodes())
@@ -1737,15 +1732,30 @@ static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPu
             computed_names.insert(node.result_name);
     }
 
+    for (const auto & name : input_names)
+        computed_names.erase(name);
+
+    return computed_names;
+}
+
+/// A filter names a column by its raw name and a key node by its expression, so a column
+/// named `f(x)` and the key node computing `f(x)` look the same.
+static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
+{
+    if (!filter_dag.dag)
+        return {};
+
+    const NameSet computed_names = getNamesComputedByKeyExpression(key_expr);
+
     NameSet result;
     for (const auto * input : filter_dag.dag->getInputs())
-        if (computed_names.contains(input->result_name) && !input_names.contains(input->result_name))
+        if (computed_names.contains(input->result_name))
             result.insert(input->result_name);
 
     return result;
 }
 
-static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & names)
+bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & names)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
     std::vector<const ActionsDAG::Node *> stack{&root};
