@@ -718,6 +718,10 @@ ExpireSnapshotsResult expireSnapshots(
     /// updates to it instead of a new metadata file.
     const bool catalog_commits_metadata = catalog && catalog->isTransactional();
 
+    /// The snapshots expired by the attempt that ended with a commit conflict, and their files.
+    std::set<Int64> conflicted_snapshot_ids;
+    ExpiredFiles conflicted_files;
+
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
@@ -813,8 +817,15 @@ ExpireSnapshotsResult expireSnapshots(
         /// A transactional catalog returns the snapshots it retains only with the commit.
         ExpiredFiles expired_files;
         if (!catalog_commits_metadata || options.dry_run)
-            expired_files = collect_expired_files(
-                partition.retained_snapshots, collectStatisticsPaths(metadata, partition.expired_snapshot_ids, /*expired=*/ false));
+        {
+            if (partition.expired_snapshot_ids == conflicted_snapshot_ids)
+                expired_files = conflicted_files;
+            else
+                expired_files = collect_expired_files(
+                    partition.retained_snapshots, collectStatisticsPaths(metadata, partition.expired_snapshot_ids, /*expired=*/ false));
+            conflicted_snapshot_ids = partition.expired_snapshot_ids;
+            conflicted_files = expired_files;
+        }
 
         if (options.dry_run)
         {
