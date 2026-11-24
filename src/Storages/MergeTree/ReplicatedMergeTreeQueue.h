@@ -249,6 +249,7 @@ private:
         MergeTreeDataMergerMutator & merger_mutator,
         MergeTreeData & data,
         const CommittingBlocks & committing_blocks,
+        bool merges_delayed_after_startup,
         std::unique_lock<SharedMutex> & state_lock) const;
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part

@@ -125,7 +125,7 @@ void ReadManager::init(
             {
                 return row_group.need_to_process
                     && std::none_of(row_group.columns.begin(), row_group.columns.end(),
-                        [](const ColumnChunk & column) { return static_cast<bool>(column.offset_index_prefetch); })
+                        [](const ColumnChunk & column) { return column.offset_index_prefetch || !column.offset_index.page_locations.empty(); })
                     && std::any_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return !column.served_from_cache; });
             });
@@ -517,7 +517,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 continue;
             if (is_offset_index)
             {
-                if (c.offset_index_prefetch && c.offset_index.page_locations.empty())
+                if ((c.offset_index_prefetch || c.locate_pages_from_headers) && c.offset_index.page_locations.empty())
                 {
                     LOG_TEST(getLog(), "addTasksToReadColumns: added OffsetIndex: i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
 
@@ -1366,14 +1366,19 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
-                reader.decodeOffsetIndex(column, row_group);
+                if (column.offset_index_prefetch)
+                    reader.decodeOffsetIndex(column, column_info, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 if (column.use_column_index)
                     reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
             case ReadStage::OffsetIndex:
-                reader.decodeOffsetIndex(column, row_group);
+                if (column.offset_index_prefetch)
+                    reader.decodeOffsetIndex(column, column_info, row_group);
+                /// Not for a row subgroup whose rows were all filtered out: a later one may need the pages.
+                else if (row_group.subgroups.at(task.row_subgroup_idx).filter.rows_pass > 0)
+                    reader.locatePagesFromHeaders(column, row_group, column_info);
                 column.offset_index_prefetch.reset(&diff);
                 break;
             case ReadStage::ColumnData:
