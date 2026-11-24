@@ -151,9 +151,10 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
         return selector.first + k;
 }
 
-/// Whether at least 15 of 16 sampled rows look up a key in the range. A pseudo-random row per stratum, so periodic keys do not bias it.
+/// Whether at least 15 of 16 sampled rows look up a key in the range and the keys are not in order: the CPU prefetches a table
+/// that the probe walks in order. A pseudo-random row per stratum, so periodic keys do not bias it.
 template <typename KeyGetter, typename Selector>
-bool mostSampledKeysInRange(const KeyGetter & key_getter, const JoinOnKeyColumns & keys, const Selector & selector, Arena & pool)
+bool sampledKeysNeedPrefetch(const KeyGetter & key_getter, const JoinOnKeyColumns & keys, const Selector & selector, Arena & pool)
 {
     static constexpr size_t max_samples = 64;
     const size_t rows = ScatteredBlock::Selector::size(selector);
@@ -161,15 +162,28 @@ bool mostSampledKeysInRange(const KeyGetter & key_getter, const JoinOnKeyColumns
         return false;
     const size_t samples = std::min(rows, max_samples);
     size_t in_range = 0;
+    size_t ascending = 0;
+    size_t descending = 0;
+    UInt64 previous_key = 0;
     for (size_t sample = 0; sample < samples; ++sample)
     {
         const size_t begin = sample * rows / samples;
         const size_t end = (sample + 1) * rows / samples;
         const size_t row = selectorIndexAt(selector, begin + intHash64(sample) % (end - begin));
-        in_range += !(keys.null_map && (*keys.null_map)[row]) && !keys.isRowFiltered(row)
-            && key_getter.getKeyHolderInRange(row, pool).second;
+        if ((keys.null_map && (*keys.null_map)[row]) || keys.isRowFiltered(row))
+            continue;
+        const auto [key, key_in_range] = key_getter.getKeyHolderInRange(row, pool);
+        if (!key_in_range)
+            continue;
+        if (in_range)
+        {
+            ascending += key > previous_key;
+            descending += key < previous_key;
+        }
+        previous_key = key;
+        ++in_range;
     }
-    return 16 * in_range >= 15 * samples;
+    return 16 * in_range >= 15 * samples && 8 * std::min(ascending, descending) > ascending + descending;
 }
 
 /// A range lookup rejects a key outside the range without reading the table. Such a key prefetches cell 0, which stays cached.
@@ -677,7 +691,7 @@ public:
         && range_join_prefetch_supported<typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type, const JoinMapOf<TYPE, Maps>>;
 
     /// Once per block: whether a hash table holding every value of the range would prefetch (it has at least 2 cells per key)
-    /// and nearly all rows look up a key in the range.
+    /// and nearly all rows look up a key in the range, in no order.
     template <Type TYPE, typename Maps>
     NO_INLINE bool rangeProbePrefetches(
         const JoinOnKeyColumns & keys, const ScatteredBlock::Selector::Range & selector, bool enable_prefetch) const
@@ -690,7 +704,7 @@ public:
             return false;
         Arena pool;
         const KeyGetter key_getter = createJoinKeyGetter<KeyGetter, /*is_asof_join=*/false>(keys.key_columns, key_sizes, key_range);
-        return mostSampledKeysInRange(key_getter, keys, selector, pool);
+        return sampledKeysNeedPrefetch(key_getter, keys, selector, pool);
     }
 
     /// Looks up the key of every row of `selector`. For each row, calls `on_row(i, ind, find_result, offset)` with the position `i`,
