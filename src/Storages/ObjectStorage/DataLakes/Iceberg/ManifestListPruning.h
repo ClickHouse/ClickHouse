@@ -17,6 +17,7 @@ namespace DB::Iceberg
 class ManifestListPruner
 {
 public:
+    /// `name_mapping` is the table property `schema.name-mapping.default`, nullptr when absent.
     /// `require_ready_sets` makes `IN` conditions whose sets are not built yet unknown instead of building them.
     ManifestListPruner(
         const IcebergSchemaProcessor & schema_processor_,
@@ -24,6 +25,7 @@ public:
         Int32 partition_schema_id_,
         const Poco::JSON::Array::Ptr & partition_specs,
         const DB::ActionsDAG * filter_dag,
+        const DB::IcebergNameMapping * name_mapping,
         DB::ContextPtr context,
         bool require_ready_sets = false);
 
@@ -35,6 +37,8 @@ private:
         DB::KeyDescription partition_key;
         DB::KeyCondition condition;
         std::vector<Int32TruncateWraparound> int32_truncate_wraparounds;
+        /// Index-aligned with the spec fields: the source column is one the name mapping leaves unbound.
+        std::vector<bool> unbound_fields;
     };
 
     std::unordered_map<Int32, SpecCondition> conditions_by_spec_id;

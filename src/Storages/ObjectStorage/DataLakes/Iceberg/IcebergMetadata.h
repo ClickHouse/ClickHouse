@@ -277,6 +277,12 @@ private:
     mutable std::mutex cached_latest_metadata_mutex;
     mutable std::optional<Iceberg::MetadataFileWithInfo> cached_latest_metadata TSA_GUARDED_BY(cached_latest_metadata_mutex);
 
+    /// The name mapping of the `metadata.json` at the paired path.
+    mutable std::mutex last_name_mapping_mutex;
+    mutable std::optional<std::pair<String, IcebergNameMappingPtr>> last_name_mapping TSA_GUARDED_BY(last_name_mapping_mutex);
+
+    IcebergNameMappingPtr getNameMappingOfMetadataFile(const String & metadata_file_path, ContextPtr local_context) const;
+
     Iceberg::MetadataFileWithInfo fetchLatestMetadata(
         const ContextPtr & context, bool force_fetch_latest_metadata, bool ignore_metadata_pointer_overrides) const;
 

@@ -409,7 +409,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    IcebergNameMappingPtr name_mapping_)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFileIteratorCreateMicroseconds);
 
@@ -508,7 +509,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         partition_spec_fields_count,
         total_rows,
         std::move(filter_dag_),
-        table_snapshot_schema_id_));
+        table_snapshot_schema_id_,
+        std::move(name_mapping_)));
 }
 
 ManifestFileIterator::ManifestFileIterator(
@@ -527,7 +529,8 @@ ManifestFileIterator::ManifestFileIterator(
     size_t partition_spec_fields_count_,
     size_t total_rows_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    IcebergNameMappingPtr name_mapping_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
     , format_version(format_version_)
@@ -547,6 +550,7 @@ ManifestFileIterator::ManifestFileIterator(
     , equality_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
+    , name_mapping(std::move(name_mapping_))
 {
     if (!inherited_first_row_id_.has_value())
         return;
@@ -739,6 +743,7 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
         filter_dag.get(),
         partition_key_description.get(),
         *common_partition_specification,
+        name_mapping.get(),
         context);
     return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }

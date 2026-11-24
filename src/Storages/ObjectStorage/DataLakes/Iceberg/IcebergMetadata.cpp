@@ -534,7 +534,8 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_equality_deletes,
         refresh_cursor,
         metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr,
-        metadata_object->getArray(f_statistics));
+        metadata_object->getArray(f_statistics),
+        getNameMapping(metadata_object));
 }
 
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
@@ -752,6 +753,11 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         std::nullopt);
 
     std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object);
+    if (data_snapshot)
+    {
+        std::lock_guard lock(last_name_mapping_mutex);
+        last_name_mapping.emplace(metadata_path, data_snapshot->name_mapping);
+    }
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
     table_state_snapshot.metadata_version = metadata_version;
     table_state_snapshot.metadata_file_path = metadata_path;
@@ -1784,6 +1790,7 @@ IcebergMetadata::estimateRead(
             data_snapshot->schema_id_on_snapshot_commit,
             data_snapshot->partition_specs,
             pruning_filter,
+            data_snapshot->name_mapping.get(),
             context,
             /* require_ready_sets */ true);
 
@@ -1835,6 +1842,7 @@ IcebergMetadata::estimateRead(
                         pruning_filter,
                         files_handle.getPartitionKeyDescription(),
                         *data_file->common_partition_specification,
+                        data_snapshot->name_mapping.get(),
                         context,
                         /* require_ready_sets */ true);
 
@@ -2280,7 +2288,31 @@ ColumnMapperPtr IcebergMetadata::getCurrentSchemaColumnMapperForFilters(StorageM
         auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
         iceberg_table_state = std::make_shared<TableStateSnapshot>(actual_table_state_snapshot);
     }
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
+    auto mapper = persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
+    if (mapper)
+        mapper->setIcebergNameMapping(getNameMappingOfMetadataFile(iceberg_table_state->metadata_file_path, context));
+    return mapper;
+}
+
+IcebergNameMappingPtr IcebergMetadata::getNameMappingOfMetadataFile(const String & metadata_file_path, ContextPtr local_context) const
+{
+    {
+        std::lock_guard lock(last_name_mapping_mutex);
+        if (last_name_mapping && last_name_mapping->first == metadata_file_path)
+            return last_name_mapping->second;
+    }
+
+    auto name_mapping = Iceberg::getNameMapping(getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        persistent_components.metadata_cache,
+        local_context,
+        log,
+        persistent_components.metadata_compression_method,
+        persistent_components.table_uuid));
+    std::lock_guard lock(last_name_mapping_mutex);
+    last_name_mapping.emplace(metadata_file_path, name_mapping);
+    return name_mapping;
 }
 
 KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const

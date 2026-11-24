@@ -96,11 +96,13 @@ public:
         std::shared_ptr<const RuntimeFilterPruningPredicate> predicate_,
         ContextPtr context_,
         const IcebergSchemaProcessor & schema_processor_,
-        Int32 table_schema_id_)
+        Int32 table_schema_id_,
+        IcebergNameMappingPtr name_mapping_)
         : predicate(std::move(predicate_))
         , context(std::move(context_))
         , schema_processor(schema_processor_)
         , table_schema_id(table_schema_id_)
+        , name_mapping(std::move(name_mapping_))
     {
     }
 
@@ -133,6 +135,7 @@ private:
                 predicate_dag->get(),
                 /*partition_key_=*/nullptr,
                 PartitionSpecification{},
+                name_mapping.get(),
                 context);
         return pruner.get();
     }
@@ -142,6 +145,7 @@ private:
     const ContextPtr context;
     const IcebergSchemaProcessor & schema_processor;
     const Int32 table_schema_id;
+    const IcebergNameMappingPtr name_mapping;
 
     std::mutex mutex;
     /// Never erased, so the pruner `getPruner` returns stays valid after the lock is released.
@@ -217,6 +221,7 @@ IcebergIterator::IcebergIterator(
             data_snapshot->schema_id_on_snapshot_commit,
             data_snapshot->partition_specs,
             manifest_filter_dag.get(),
+            data_snapshot->name_mapping.get(),
             local_context);
 
     ManifestFileCacheKeys delete_manifest_keys;
@@ -261,7 +266,11 @@ void IcebergIterator::setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterP
 
     LOG_DEBUG(logger, "Data files are pruned by {} JOIN runtime filter(s) once they are built", predicate->getDescriptors().size());
     runtime_filter_pruning = std::make_unique<Iceberg::RuntimeFilterFilePruning>(
-        std::move(predicate), local_context, *persistent_components.schema_processor, table_state_snapshot->schema_id);
+        std::move(predicate),
+        local_context,
+        *persistent_components.schema_processor,
+        table_state_snapshot->schema_id,
+        data_snapshot ? data_snapshot->name_mapping : nullptr);
 }
 
 void IcebergIterator::ensureDeletesReady()
@@ -380,7 +389,8 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(
         manifest_list_entry.first_row_id,
         local_context,
         manifest_filter_dag,
-        table_state_snapshot->schema_id);
+        table_state_snapshot->schema_id,
+        data_snapshot ? data_snapshot->name_mapping : nullptr);
 }
 
 Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()

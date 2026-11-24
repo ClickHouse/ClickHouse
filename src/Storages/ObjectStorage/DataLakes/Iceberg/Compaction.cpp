@@ -382,6 +382,7 @@ static void writeDataFiles(
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
             {
                 column_mapper = createColumnMapper(schema_object);
+                column_mapper->setIcebergNameMapping(Iceberg::getNameMapping(initial_plan.initial_metadata_object));
                 break;
             }
         }

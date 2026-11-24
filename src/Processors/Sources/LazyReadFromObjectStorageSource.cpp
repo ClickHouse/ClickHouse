@@ -311,6 +311,8 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         /*row_level_filter_=*/ nullptr,
         /*prewhere_info_=*/ nullptr);
+    format_filter_info->current_schema_column_mapper
+        = configuration->getCurrentSchemaColumnMapperForFilters(storage_snapshot->metadata, context);
 
     Processors sources;
     for (auto & group_files : groups)

@@ -49,6 +49,9 @@ struct SchemaConverter
     /// The key is the parquet column name, without ColumnMapper.
     UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
 
+    /// Indexed like `file_metadata.schema`: the field ids an Iceberg name mapping assigns; empty without a mapping.
+    VectorWithMemoryTracking<std::optional<Int64>> name_mapped_field_ids;
+
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
     /// failed parse caught by the caller (which leaves an empty map) does not cause
@@ -59,6 +62,11 @@ struct SchemaConverter
 
     void prepareForReading();
     NamesAndTypesList inferSchema();
+
+    /// Fills `name_mapped_field_ids`; called by `prepareForReading`, or before it by a caller that needs the field ids.
+    void assignFieldIdsFromNameMapping();
+    /// The field id of the element in the file, or the one the name mapping assigns to it.
+    [[nodiscard]] std::optional<Int64> getFieldId(const parq::SchemaElement & element) const;
 
 private:
     /// If we interpret the parquet schema tree in a straightforward way, ignoring List/Map type
@@ -92,6 +100,9 @@ private:
         /// If `parquet_name` is nullopt, the clickhouse and parquet names are equal.
         String name;
         std::optional<String> parquet_name;
+        /// The path of the node in the names of `ColumnMapper`, if it differs from `name`: a list element is `l.element`
+        /// there and `l` here. The mapped names of the children are relative to it.
+        std::optional<String> column_mapper_path;
         DataTypePtr type_hint;
         bool requested = false;
         /// Index of the key_value tuple element not read, for a requested map read by one side. Not inherited by recursive calls.
@@ -109,6 +120,11 @@ private:
             return parquet_name.has_value() ? *parquet_name : name;
         }
 
+        [[nodiscard]] const String & getColumnMapperPath() const
+        {
+            return column_mapper_path.has_value() ? *column_mapper_path : name;
+        }
+
         [[nodiscard]] String getNameForLogging() const
         {
             if (parquet_name.has_value() && *parquet_name != name)
@@ -118,6 +134,12 @@ private:
 
         void appendNameComponent(const String & parquet_field_name, std::string_view mapped_field_name)
         {
+            if (column_mapper_path.has_value())
+            {
+                if (!column_mapper_path->empty())
+                    *column_mapper_path += ".";
+                *column_mapper_path += mapped_field_name;
+            }
             if (!name.empty())
                 name += ".";
             name += mapped_field_name;
@@ -166,6 +188,10 @@ private:
 
     void checkHasColumns();
 
+    /// Adds the field id of `element` to the ids of its level; an element without one leaves the ids unknown, unless the
+    /// name mapping is used: then the element is not in the table.
+    void addFieldIdOfLevel(const parq::SchemaElement & element, std::optional<UnorderedSetWithMemoryTracking<Int64>> & level_field_ids) const;
+
     void processSubtree(TraversalNode & node);
 
     /// These functions are used by processSubtree for different kinds of SchemaElement.
@@ -204,6 +230,8 @@ private:
     /// column names with dots (e.g. `integer.col` in Iceberg).
     std::string_view useColumnMapperIfNeeded(
         const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
+    /// `subnode` is the element of a list, at `schema_idx`.
+    void setListElementColumnMapperPath(TraversalNode & subnode) const;
 
     /// Whether the file proves the field at `path` of the ColumnMapper absent: all fields at its level of the file schema
     /// have field ids and none of them is its id.

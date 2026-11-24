@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no Iceberg (Avro) support.
+
+# Data files without field ids are read through the table property `schema.name-mapping.default`.
+# `data_iceberg/name_mapping_import` was written by PyIceberg 0.11.1: `add_files` of `import_0.parquet` (nested
+# fields under old names, list element named `item`) and `import_1.parquet` (`id` and `b` only), both without field
+# ids, then an `append` (with field ids, `id` 4), then one metadata file per change of the mapping or the schema.
+# `data_iceberg/name_mapping_partitioned` (PyIceberg 0.11.1, partitioned by `day(d)`): `add_files` of one file without
+# field ids, then `d` removed from the mapping and put back, then `b` renamed to `b_old` and a new column `b` added, then
+# an `append` (with field ids, `id` 4), the `add_files` snapshot expired and the schema of its manifest removed.
+# `data_iceberg/name_mapping_struct_swap` (PyIceberg 0.11.1): `add_files` of one file without field ids with a struct
+# `s` of two fields, then the names of the two fields swapped in the mapping.
+# `data_iceberg/name_mapping_rewritten_manifest` (PyIceberg 0.11.1): `add_files` of one file without field ids, `b`
+# renamed to `b_old` and a new `b` added, then a merging `append` that rewrites the manifest under the new schema and
+# the `add_files` snapshot expired.
+# `data_iceberg/name_mapping_two_level_list` (Spark 3.5.5, Iceberg 1.10.0): `add_files` of a file without field
+# ids written by parquet-mr with a two-level list of a struct (`repeated group array`, as parquet-avro writes
+# lists), then `l.element.a` renamed to `a_new`.
+# `data_iceberg/name_mapping_geo` (PyIceberg 0.11.1): `add_files` of one GeoParquet file without field ids, a row
+# group per row, with points `g1` and `g2` and their `covering.bbox` columns, then the names of `g1_xmin` and
+# `g1_ymin` swapped by renames, then the names of `g1` and `g2`, then `g2_xmax` renamed and a second such file added.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# The path of the table is relative, so the queries run from the directory containing it.
+cd "$CUR_DIR/data_iceberg" || exit 1
+
+# T <metadata version> [<format> [<path>]]: the table at that version.
+function T()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_import/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('${3:-name_mapping_import}', ${2:+'$2', }SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
+# P <metadata version>: the partitioned table at that version.
+function P()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_partitioned/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('name_mapping_partitioned', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
+# S <metadata version>: the table with a struct at that version.
+function S()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_struct_swap/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('name_mapping_struct_swap', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
+# R <metadata version>: the table with the rewritten manifest at that version.
+function R()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_rewritten_manifest/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('name_mapping_rewritten_manifest', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
+# L <metadata version>: the table with a two-level list at that version.
+function L()
+{
+    echo "icebergLocal('name_mapping_two_level_list', SETTINGS iceberg_metadata_file_path = 'metadata/v$1.metadata.json')"
+}
+
+# G <metadata version>: the GeoParquet table at that version.
+function G()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_geo/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('name_mapping_geo', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
+V_BOTH=00004             # all fields mapped, `x`, `a`, `v` also under their old names
+V_UNMAPPED_B=00005       # `b` is not in the mapping
+V_B_NAMELESS=00006       # `b` is in the mapping with `names: []`
+V_EMPTY=00007            # the mapping is empty
+V_RENAMED=00009          # `b` renamed to `b2`
+V_RENAMED_UNMAPPED=00010 # `b2` is not in the mapping
+V_DROPPED_MAPPED=00012   # `b2` dropped, still in the mapping
+V_DROPPED_UNMAPPED=00013 # `b2` dropped, not in the mapping
+V_BAD=00014              # `names` is not an array
+SNAPSHOT_WITH_B=7321918627603401030
+V_P_MAPPED=00001         # all fields mapped
+V_P_UNMAPPED_D=00002     # `d` is not in the mapping
+V_P_REASSIGNED=00005     # `b` renamed to `b_old`, the name `b` given to a new column
+V_P_CLEANED=00008        # the schema of the manifest of the file without field ids removed
+V_S_MAPPED=00001         # all fields mapped
+V_S_SWAPPED=00002        # the names of the fields of `s` swapped
+V_R_REWRITTEN=00006      # `b` renamed to `b_old`, `b` added, the manifest rewritten, the add_files snapshot expired
+V_G_MAPPED=00001         # all fields mapped
+V_G_BBOX_SWAPPED=00004   # the names of `g1_xmin` and `g1_ymin` swapped
+V_G_POINTS_SWAPPED=00007 # then the names of `g1` and `g2` swapped
+V_G_ADDED=00009          # then `g2_xmax` renamed to `g2_xmax_new` and a file with these names added
+AROUND_10_20="[(9., 19.), (11., 19.), (11., 21.), (9., 21.)]"
+
+LAZY="query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_object_storage = 1"
+RUNTIME_FILTER="join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_join_runtime_filters = 1, \
+enable_join_runtime_filters_index_analysis = 1, use_join_runtime_filters_for_iceberg_pruning = 1, use_iceberg_partition_pruning = 1"
+
+$CLICKHOUSE_LOCAL -q "
+SELECT 'struct, list and map fields';
+SELECT id, b, s.x, l, m FROM $(T $V_BOTH) ORDER BY id;
+SELECT id, l.a, l.c FROM $(T $V_BOTH) ORDER BY id;
+SELECT count() FROM $(T $V_BOTH) WHERE has(l.a, 3);
+SELECT 'not in the mapping';
+SELECT id, b FROM $(T $V_UNMAPPED_B) ORDER BY id;
+SELECT 'empty mapping';
+SELECT count(), countIf(id IS NULL), countIf(b IS NULL) FROM $(T $V_EMPTY);
+SELECT 'renamed';
+SELECT id, b2 FROM $(T $V_RENAMED) ORDER BY id;
+SELECT 'renamed, not in the mapping';
+SELECT id, b2 FROM $(T $V_RENAMED_UNMAPPED) ORDER BY id;
+SELECT 'dropped, in the mapping';
+SELECT id, b FROM $(T $V_DROPPED_MAPPED) ORDER BY id SETTINGS iceberg_snapshot_id = $SNAPSHOT_WITH_B;
+SELECT 'dropped, not in the mapping';
+SELECT id, b FROM $(T $V_DROPPED_UNMAPPED) ORDER BY id SETTINGS iceberg_snapshot_id = $SNAPSHOT_WITH_B;
+SELECT 'lazy materialization';
+SELECT id, b FROM $(T $V_UNMAPPED_B) ORDER BY id LIMIT 2 SETTINGS $LAZY;
+SELECT count() FROM (EXPLAIN SELECT id, b FROM $(T $V_UNMAPPED_B) ORDER BY id LIMIT 2 SETTINGS $LAZY) WHERE explain LIKE '%LazilyReadFromObjectStorage%';
+SELECT 'table format ORC';
+SELECT id, b FROM $(T $V_UNMAPPED_B ORC) ORDER BY id;
+SELECT id, b FROM $(T $V_UNMAPPED_B ORC) ORDER BY id LIMIT 2 SETTINGS $LAZY;
+SELECT count() FROM (EXPLAIN SELECT id, b FROM $(T $V_UNMAPPED_B ORC) ORDER BY id LIMIT 2 SETTINGS $LAZY) WHERE explain LIKE '%LazilyReadFromObjectStorage%';
+SELECT 'manifest statistics';
+SELECT count() FROM $(T $V_UNMAPPED_B) WHERE b IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM $(T $V_BOTH) WHERE b > 55 SETTINGS use_query_condition_cache = 0;
+SELECT 'names: []';
+SELECT count(), countIf(b IS NULL) FROM $(T $V_B_NAMELESS);
+SELECT count() FROM $(T $V_B_NAMELESS) WHERE b IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'partition values';
+SELECT count() FROM $(P $V_P_MAPPED) WHERE d IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT count(), countIf(d IS NULL) FROM $(P $V_P_UNMAPPED_D);
+SELECT count() FROM $(P $V_P_UNMAPPED_D) WHERE d IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM $(P $V_P_UNMAPPED_D) WHERE icebergDay(d) IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'name given to a new column';
+SELECT id, b_old FROM $(P $V_P_REASSIGNED) ORDER BY id;
+SELECT count() FROM $(P $V_P_REASSIGNED) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'import-time schema removed';
+SELECT id, b_old FROM $(P $V_P_CLEANED) ORDER BY id;
+SELECT count() FROM $(P $V_P_CLEANED) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'rewritten manifest';
+SELECT id, b_old FROM $(R $V_R_REWRITTEN) ORDER BY id;
+SELECT count() FROM $(R $V_R_REWRITTEN) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'two-level list';
+SELECT id, l FROM $(L 3) ORDER BY id;
+SELECT id, l.c FROM $(L 3) ORDER BY id;
+SELECT id, l FROM $(L 4) ORDER BY id;
+SELECT 'columns cache';
+SELECT id, s FROM $(S $V_S_MAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
+SELECT count() > 0 FROM system.columns_cache WHERE database = '' AND column = 's';
+SELECT id, s FROM $(S $V_S_SWAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
+SELECT 'GeoParquet covering';
+SELECT id FROM $(G $V_G_MAPPED) WHERE pointInPolygon(g1, $AROUND_10_20);
+SELECT id FROM $(G $V_G_BBOX_SWAPPED) WHERE pointInPolygon(g1, $AROUND_10_20);
+SELECT id, g1_xmin, g1_ymin, g1_xmax, g1_ymax FROM $(G $V_G_BBOX_SWAPPED) WHERE pointInPolygon(g1, $AROUND_10_20);
+SELECT id FROM $(G $V_G_POINTS_SWAPPED) WHERE pointInPolygon(g1, $AROUND_10_20);
+SELECT id FROM $(G $V_G_ADDED) WHERE pointInPolygon(g2, $AROUND_10_20) ORDER BY id SETTINGS input_format_parquet_allow_missing_columns = 0;
+"
+
+# The query above prunes the data file of `id` 4 by its manifest statistics.
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
+    -q "SELECT count() FROM $(T $V_BOTH) WHERE b > 55 SETTINGS use_query_condition_cache = 0" 2>&1 >/dev/null \
+    | grep -oE 'IcebergMinMaxIndexPrunedFiles: [1-9][0-9]*' | sed 's/: .*/ > 0/'
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
+    -q "SELECT count() FROM $(P $V_P_MAPPED) WHERE d IS NULL SETTINGS use_query_condition_cache = 0" 2>&1 >/dev/null \
+    | grep -oE 'IcebergPartitionPrunedFiles: [1-9][0-9]*' | sed 's/: .*/ > 0/'
+# The second read of the same mapping is served from the columns cache.
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -q "
+SELECT id, s FROM $(S $V_S_MAPPED) SETTINGS use_columns_cache = 1 FORMAT Null;
+SELECT id, s FROM $(S $V_S_MAPPED) SETTINGS use_columns_cache = 1 FORMAT Null" 2>&1 >/dev/null \
+    | grep -oE 'ColumnsCacheHits: [1-9][0-9]*' | sed 's/: .*/ > 0/'
+# With the names kept, the query above prunes the row group of `id` 2 by its `covering.bbox` statistics.
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
+    -q "SELECT id FROM $(G $V_G_MAPPED) WHERE pointInPolygon(g1, $AROUND_10_20) FORMAT Null" 2>&1 >/dev/null \
+    | grep -oE 'ParquetPrunedRowGroups: [1-9][0-9]*' | sed 's/: .*/ > 0/'
+
+# A query condition cache entry written under one mapping is not used under another one. On the server, because
+# `clickhouse-local` has no query condition cache.
+echo 'query condition cache'
+CACHE_DIR="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+WORK_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+trap 'rm -rf "$CACHE_DIR" "$WORK_DIR"' EXIT
+rm -rf "$CACHE_DIR"
+cp -r name_mapping_import "$CACHE_DIR"
+for version in $V_BOTH $V_UNMAPPED_B
+do
+    $CLICKHOUSE_CLIENT --use_query_condition_cache=1 -q "SELECT count() FROM $(T "$version" "" "$CACHE_DIR") WHERE b IS NULL"
+done
+
+echo 'invalid mapping'
+$CLICKHOUSE_LOCAL -q "SELECT * FROM $(T $V_BAD) FORMAT Null" 2>&1 | grep -o -m1 'Code: [0-9]*'
+
+# Compaction reads the data files through the mapping and writes them with field ids. It runs only for a table with
+# position deletes, and the table is copied without the later metadata files, so that `V_UNMAPPED_B` is current.
+echo 'compaction'
+rm -rf "$WORK_DIR"
+mkdir -p "$WORK_DIR/t/metadata"
+cp -r name_mapping_import/data "$WORK_DIR/t/"
+cp name_mapping_import/metadata/*.avro "$WORK_DIR/t/metadata/"
+# The ClickHouse writer names metadata files `v<N>.metadata.json`, and refuses to commit to a table with both schemes.
+for i in $(seq 0 $((10#$V_UNMAPPED_B)))
+do
+    cp name_mapping_import/metadata/"$(printf '%05d' "$i")"-*.metadata.json "$WORK_DIR/t/metadata/v$((i + 1)).metadata.json"
+done
+cd "$WORK_DIR" || exit 1
+$CLICKHOUSE_LOCAL -q "
+CREATE TABLE t ENGINE = IcebergLocal('$WORK_DIR/t/', 'Parquet');
+ALTER TABLE t DELETE WHERE id = 6 SETTINGS allow_insert_into_iceberg = 1, mutations_sync = 2;
+OPTIMIZE TABLE t SETTINGS allow_experimental_iceberg_compaction = 1;
+"
+# The data files written by the compaction.
+$CLICKHOUSE_LOCAL -q "
+SELECT count() FROM file('$WORK_DIR/t/data/*.parquet') WHERE _file LIKE 'import%';
+SELECT id, b FROM file('$WORK_DIR/t/data/*.parquet') ORDER BY id;
+"
+
+# Two metadata files on top of `V_BOTH`, written the way other engines write them: `n`, `s.z` and `l.d` added with an
+# `initial-default`, with the data files read under that schema (as after their manifest is rewritten under it), and the
+# names of `id` and `b` swapped in the mapping. The JOIN runtime filter must not prune by the manifest bounds of `id`.
+echo 'initial-default'
+cd "$CUR_DIR/data_iceberg" || exit 1
+rm -rf "$WORK_DIR"
+mkdir -p "$WORK_DIR"
+cp -r name_mapping_import "$WORK_DIR/"
+python3 - "$WORK_DIR/name_mapping_import/metadata" <<'PY'
+import copy, glob, json, os, sys
+metadata_dir = sys.argv[1]
+with open(glob.glob(os.path.join(metadata_dir, "00004-*.metadata.json"))[0]) as f:
+    base = json.load(f)
+mapping = json.loads(base["properties"]["schema.name-mapping.default"])
+
+metadata = copy.deepcopy(base)
+schema = copy.deepcopy(metadata["schemas"][0])
+schema["schema-id"] = 1
+schema["fields"].append({"id": 13, "name": "n", "type": "int", "required": False, "initial-default": 7})
+next(f for f in schema["fields"] if f["name"] == "s")["type"]["fields"].append(
+    {"id": 14, "name": "z", "type": "int", "required": False, "initial-default": 8})
+next(f for f in schema["fields"] if f["name"] == "l")["type"]["element"]["fields"].append(
+    {"id": 15, "name": "d", "type": "int", "required": False, "initial-default": 9})
+metadata["schemas"].append(schema)
+metadata["current-schema-id"] = 1
+metadata["last-column-id"] = 15
+for snapshot in metadata["snapshots"]:
+    snapshot["schema-id"] = 1
+defaults_mapping = copy.deepcopy(mapping)
+defaults_mapping.append({"names": ["n"], "field-id": 13})
+next(f for f in defaults_mapping if f["field-id"] == 3)["fields"].append({"names": ["z"], "field-id": 14})
+next(f for f in defaults_mapping if f["field-id"] == 4)["fields"][0]["fields"].append({"names": ["d"], "field-id": 15})
+metadata["properties"]["schema.name-mapping.default"] = json.dumps(defaults_mapping)
+with open(os.path.join(metadata_dir, "00015-initial-default.metadata.json"), "w") as f:
+    json.dump(metadata, f)
+
+metadata = copy.deepcopy(base)
+for f in mapping:
+    if f["field-id"] in (1, 2):
+        f["names"] = ["b"] if f["field-id"] == 1 else ["id"]
+metadata["properties"]["schema.name-mapping.default"] = json.dumps(mapping)
+with open(os.path.join(metadata_dir, "00016-swapped.metadata.json"), "w") as f:
+    json.dump(metadata, f)
+PY
+cd "$WORK_DIR" || exit 1
+$CLICKHOUSE_LOCAL -q "SELECT id, n, s.z, l FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00015-initial-default.metadata.json') ORDER BY id"
+echo 'join runtime filter'
+# With all fields mapped, the JOIN runtime filter prunes data files by the manifest bounds of `b`.
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
+    -q "SELECT count() FROM $(T $V_BOTH) AS t INNER JOIN (SELECT 999 AS k) AS r ON t.b = r.k SETTINGS $RUNTIME_FILTER" 2>&1 >/dev/null \
+    | grep -oE 'IcebergRuntimeFilterPrunedFiles: [1-9][0-9]*' | sed 's/: .*/ > 0/'
+$CLICKHOUSE_LOCAL -q "
+SELECT t.id, t.b FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00016-swapped.metadata.json') AS t
+INNER JOIN (SELECT 50 AS k) AS r ON t.id = r.k SETTINGS $RUNTIME_FILTER"

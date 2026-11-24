@@ -1189,6 +1189,42 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         return ch_name;
     };
 
+    /// Pass pre-parsed geo_meta to SchemaConverter only when allow_geoparquet_parser is set,
+    /// so that spatial_filter_push_down alone does not change column types to Geometry.
+    /// geo_meta is not moved so Phase B can still look up covering_bbox entries directly.
+    /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
+    /// geo type resolution entirely (it will not re-parse).
+    SchemaConverter schemer(
+        *file_footer,
+        options,
+        &extended_sample_block,
+        options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
+    schemer.column_mapper = format_filter_info->column_mapper.get();
+    schemer.assignFieldIdsFromNameMapping();
+
+    UnorderedMapWithMemoryTracking<String, size_t> schema_idx_by_path;
+    /// The `geo` metadata names columns of the file, so its covering applies only if the reader reads them under these names.
+    auto covering_is_read_under_file_names = [&](auto geo_it)
+    {
+        if (!schemer.column_mapper)
+            return true;
+        const auto & bbox = *geo_it->second.covering_bbox;
+        return std::ranges::all_of(
+            std::array{&geo_it->first, &bbox.xmin_column, &bbox.ymin_column, &bbox.xmax_column, &bbox.ymax_column},
+            [&](const String * path)
+            {
+                auto idx = schema_idx_by_path.find(*path);
+                if (idx == schema_idx_by_path.end())
+                    return false;
+                const std::optional<Int64> field_id = schemer.getFieldId(file_metadata().schema.at(idx->second));
+                if (!field_id)
+                    return schemer.name_mapped_field_ids.empty();
+                const auto & names = schemer.column_mapper->getFieldIdToClickHouseName();
+                auto name = names.find(*field_id);
+                return name != names.end() && name->second == *path;
+            });
+    };
+
     /// Phase A: inject covering.bbox sub-columns into extended_sample_block BEFORE
     /// SchemaConverter runs, so the bbox primitives get proper idx_in_output_block and stats support.
     VectorWithMemoryTracking<SpatialFilter> all_spatial_filters;
@@ -1218,6 +1254,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                         return;
                     const auto & elem = schema.at(schema_idx++);
                     String path = parent.empty() ? String(elem.name) : parent + "." + elem.name;
+                    schema_idx_by_path.emplace(path, schema_idx - 1);
                     bool is_primitive = !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
                     if (is_primitive)
                         schema_leaf_paths.insert(path);
@@ -1256,7 +1293,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
             for (const String * col : raw_bbox_col_ptrs)
                 if (!schema_leaf_paths.contains(*col))
                 { all_bbox_in_schema = false; break; }
-            if (!all_bbox_in_schema)
+            if (!all_bbox_in_schema || !covering_is_read_under_file_names(geo_it))
             {
                 SpatialFilter raw_sf = sf;
                 raw_sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
@@ -1299,16 +1336,6 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     const auto & row_level_filter = format_filter_info->row_level_filter;
     const auto & prewhere_info = format_filter_info->prewhere_info;
 
-    /// Pass pre-parsed geo_meta to SchemaConverter only when allow_geoparquet_parser is set,
-    /// so that spatial_filter_push_down alone does not change column types to Geometry.
-    /// geo_meta is not moved so Phase B can still look up covering_bbox entries directly.
-    /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
-    /// geo type resolution entirely (it will not re-parse).
-    SchemaConverter schemer(
-        *file_footer,
-        options,
-        &extended_sample_block,
-        options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
     auto add_prewhere_outputs = [&](const ActionsDAG & actions)
     {
         for (const auto * node : actions.getOutputs())
@@ -1319,7 +1346,6 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         add_prewhere_outputs(row_level_filter->actions);
     if (prewhere_info)
         add_prewhere_outputs(prewhere_info->prewhere_actions);
-    schemer.column_mapper = format_filter_info->column_mapper.get();
     schemer.prepareForReading();
     primitive_columns = std::move(schemer.primitive_columns);
     total_primitive_columns_in_file = schemer.primitive_column_idx;
@@ -1395,7 +1421,8 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
             for (const auto & sf : all_spatial_filters)
             {
                 auto geo_it = resolve_geo_meta(sf.geometry_column_name);
-                if (geo_it == geo_meta->end() || !geo_it->second.covering_bbox.has_value())
+                if (geo_it == geo_meta->end() || !geo_it->second.covering_bbox.has_value()
+                    || !covering_is_read_under_file_names(geo_it))
                     continue; // already in geostats_spatial_filters
 
                 const auto & bbox_cov = *geo_it->second.covering_bbox;
@@ -5357,9 +5384,13 @@ void Reader::initColumnsCache()
     /// and the same column can be read as different types. The owning table (the nil UUID for a
     /// table function) is a part of the identity too: the same file read by a table and by a table
     /// function gives different entries, so an entry never takes the access rules of another path
-    /// in `system.columns_cache`.
+    /// in `system.columns_cache`. An Iceberg name mapping decides which tuple element a column of a
+    /// file without field ids is read into, so its hash is a part of the identity too.
     columns_cache_identities.assign(extended_sample_block.columns(), 0);
     bool any_column = false;
+    const IcebergNameMapping * name_mapping = format_filter_info && format_filter_info->column_mapper
+        ? format_filter_info->column_mapper->getIcebergNameMapping().get()
+        : nullptr;
     /// A tuple can have elements absent from the file, filled with these defaults.
     const UInt64 defaults_hash = format_filter_info && format_filter_info->column_mapper
         ? format_filter_info->column_mapper->getIcebergInitialDefaultsHash()
@@ -5375,6 +5406,8 @@ void Reader::initColumnsCache()
 
         SipHash hash;
         hash.update(cache_options.file_identity);
+        if (name_mapping)
+            hash.update(name_mapping->hash);
         hash.update(info.input_type->getName());
         hash.update(info.output_type->getName());
         hash.update(info.nullable_group);
