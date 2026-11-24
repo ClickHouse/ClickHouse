@@ -183,9 +183,9 @@ namespace
 Pulsar::InitialPosition parseSubscriptionInitialPosition(const String & value)
 {
     if (value == "earliest")
-        return Pulsar::InitialPositionEarliest;
+        return Pulsar::InitialPosition::Earliest;
     if (value == "latest")
-        return Pulsar::InitialPositionLatest;
+        return Pulsar::InitialPosition::Latest;
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Invalid `pulsar_subscription_initial_position` '{}': it must be `earliest` or `latest`",
@@ -201,9 +201,8 @@ void checkServiceURLIsAllowed(const String & service_url, const ContextPtr & con
 {
     /// A service URL is `<scheme>://host[:port]`, optionally listing several brokers as
     /// `pulsar://host1:6650,host2:6650`. The scheme also defines the default port.
-    /// This build deliberately supports only the Pulsar binary protocol. The bundled client has
-    /// no HTTP transport, so accepting `http://` or `https://` here would turn an unsupported
-    /// configuration into a retryable connection failure after the client has been constructed.
+    /// Only the Pulsar binary protocol is supported. The client has no HTTP transport, so
+    /// `http://` and `https://` are rejected here, when the table is created.
     static constexpr std::pair<std::string_view, UInt16> schemes[]
         = {{"pulsar+ssl://", 6651}, {"pulsar://", 6650}};
 
@@ -247,35 +246,15 @@ void checkServiceURLIsAllowed(const String & service_url, const ContextPtr & con
 Pulsar::ClientConfiguration createClientConfiguration()
 {
     Pulsar::ClientConfiguration config;
-    /// The client verifies only the certificate chain of a `pulsar+ssl://` broker by default, so any
-    /// trusted certificate issued for another host would be accepted. Check the hostname as well.
-    config.setValidateHostName(true);
     /// The service URL is checked against `remote_url_allow_hosts` when the table is created, but
     /// the client also follows lookup responses and dials the returned broker addresses directly,
     /// so a redirecting broker could otherwise steer the server to a host outside the allowlist.
-    /// Validate every physical address the client is about to open a connection to. The callback
-    /// runs on the client's executor threads and must not throw through the client's frames, so
-    /// a rejection is logged here and reported to the client as a failed connection (fail-close,
-    /// including when the global context is already gone during shutdown).
-    config.setConnectionValidator(
-        [](const std::string & physical_address) -> bool
-        {
-            try
-            {
-                auto global_context = Context::getGlobalContextInstance();
-                if (!global_context)
-                    return false;
-                checkServiceURLIsAllowed(physical_address, global_context);
-                return true;
-            }
-            catch (...)
-            {
-                tryLogCurrentException(
-                    getLogger("StoragePulsar"),
-                    fmt::format("Rejected a connection to the Pulsar broker at '{}'", physical_address));
-                return false;
-            }
-        });
+    /// The client calls the validator before every connection, on the thread of the call that
+    /// connects, and the exception rejecting the address propagates out of that call.
+    config.connection_validator = [](const String & host, UInt16 port)
+    {
+        Context::getGlobalContextInstance()->getRemoteHostFilter().checkHostAndPort(host, toString(port));
+    };
     return config;
 }
 
@@ -472,7 +451,7 @@ void StoragePulsar::returnConsumer(PulsarConsumerPtr consumer)
         std::lock_guard lock{consumers_mutex};
         --created_consumers;
     }
-    consumer->consumer.close();
+    consumer->consumer->close();
     LOG_DEBUG(log, "Dropped an unusable Pulsar consumer; a new one will be created");
     if (!shutdown_called.load())
         init_task->schedule();
@@ -487,8 +466,7 @@ void StoragePulsar::createConsumers()
             if (created_consumers >= num_consumers)
                 return;
         }
-        auto consumer = std::make_shared<PulsarConsumer>(log);
-        createConsumer(consumer->consumer);
+        auto consumer = createConsumer();
         {
             std::lock_guard lock{consumers_mutex};
             ++created_consumers;
@@ -586,11 +564,9 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
 
 ProducerPtr StoragePulsar::createProducer()
 {
-    ProducerPtr producer = std::make_shared<Pulsar::Producer>();
     Pulsar::ProducerConfiguration config;
-    /// The client treats a zero (or negative) send timeout as no timeout at all: a synchronous `send` would
-    /// then wait forever for a broker that stopped acknowledging, and `KILL QUERY` could not interrupt it.
-    /// Use the same effective timeout as the consumers and require it to fit into the client's `int`.
+    /// `send` waits for the receipt of the broker for the send timeout, so the timeout must be positive.
+    /// Use the same effective timeout as the consumers, with the same upper bound.
     const size_t send_timeout_ms = getPollTimeoutMilliseconds();
     if (send_timeout_ms == 0 || send_timeout_ms > static_cast<size_t>(std::numeric_limits<int>::max()))
         throw Exception(
@@ -599,46 +575,47 @@ ProducerPtr StoragePulsar::createProducer()
             "of the Pulsar producer, must be positive and not bigger than {} milliseconds, but it is {}",
             std::numeric_limits<int>::max(),
             send_timeout_ms);
-    config.setSendTimeout(static_cast<int>(send_timeout_ms));
-    config.setBlockIfQueueFull(true);
+    config.send_timeout = std::chrono::milliseconds(send_timeout_ms);
 
     if (topics.size() > 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Pulsar table with multiple topics!");
 
-    auto result = pulsar_client.createProducer(topics[0], config, *producer);
-    if (result != Pulsar::ResultOk)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_PULSAR,
-            "Cannot create Pulsar producer for topic {}: {}",
-            topics[0],
-            Pulsar::strResult(result));
-    return producer;
+    try
+    {
+        return pulsar_client.createProducer(topics[0], config);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While creating a Pulsar producer for the topic {}", topics[0]);
+        throw;
+    }
 }
 
-void StoragePulsar::createConsumer(Pulsar::Consumer & consumer)
+PulsarConsumerPtr StoragePulsar::createConsumer()
 {
     const size_t poll_timeout_ms = getPollTimeoutMilliseconds();
-    /// A zero timeout would make `batchReceive` wait for a full batch without a timer, so a read from
-    /// an idle topic could block cancellation and `shutdown` forever.
+    /// With a zero timeout `batchReceive` would return without waiting for any message,
+    /// so a read from a topic would spin instead of waiting for the broker.
     if (poll_timeout_ms == 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The setting `pulsar_poll_timeout_ms` (or the inherited `stream_poll_timeout_ms`) must be positive");
 
     Pulsar::ConsumerConfiguration config;
-    config.setConsumerType(Pulsar::ConsumerType::ConsumerShared);
-    /// NOLINTNEXTLINE(google-runtime-int)
-    config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(poll_timeout_ms)});
-    /// The client defaults to `InitialPositionLatest`, which would silently skip the backlog of a non-empty topic.
-    config.setSubscriptionInitialPosition(parseSubscriptionInitialPosition((*pulsar_settings)[PulsarSetting::pulsar_subscription_initial_position].value));
+    /// The client defaults to `InitialPosition::Latest`, which would silently skip the backlog of a non-empty topic.
+    config.initial_position = parseSubscriptionInitialPosition((*pulsar_settings)[PulsarSetting::pulsar_subscription_initial_position].value);
 
-    auto result = pulsar_client.subscribe(topics, group_name, config, consumer);
-    if (result != Pulsar::ResultOk)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_PULSAR,
-            "Cannot subscribe to Pulsar topics [{}]: {}",
-            fmt::join(topics, ", "),
-            Pulsar::strResult(result));
+    std::unique_ptr<Pulsar::Consumer> consumer;
+    try
+    {
+        consumer = pulsar_client.subscribe(topics, group_name, config);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While subscribing to the Pulsar topics [{}]", fmt::join(topics, ", "));
+        throw;
+    }
+    return std::make_shared<PulsarConsumer>(log, std::move(consumer), getPollMaxBatchSize(), std::chrono::milliseconds(poll_timeout_ms));
 }
 
 size_t StoragePulsar::getPollTimeoutMilliseconds() const
@@ -656,9 +633,8 @@ size_t StoragePulsar::getPollMaxBatchSize() const
 
     /// A single `batchReceive` must not prefetch more than one block: a larger prefetch would leave
     /// an unread tail attached to the consumer, which an aborted SELECT then has to negative-ack.
-    /// The result also feeds a narrowing cast to `int` in `setBatchReceivePolicy`, and the generic
-    /// `max_block_size` / `max_insert_block_size` defaults are not validated at CREATE, so clamp it:
-    /// a wrapped negative value would silently disable the prefetch cap.
+    /// The generic `max_block_size` / `max_insert_block_size` defaults are not validated at CREATE,
+    /// so the result is clamped to the same bound as `pulsar_poll_max_batch_size`.
     return std::min({batch_size, getMaxBlockSize(), static_cast<size_t>(std::numeric_limits<int>::max())});
 }
 
@@ -1151,7 +1127,7 @@ void registerStoragePulsar(StorageFactory & factory)
                 max_consumers);
 
         /// A zero block size would stop `PulsarSource` after its first (empty) loop iteration,
-        /// and a zero poll batch size would be passed straight into `setBatchReceivePolicy`.
+        /// and a zero poll batch size would make `batchReceive` return no messages.
         if ((*pulsar_settings)[PulsarSetting::pulsar_max_block_size].changed
             && (*pulsar_settings)[PulsarSetting::pulsar_max_block_size].value < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_max_block_size` must be at least 1");

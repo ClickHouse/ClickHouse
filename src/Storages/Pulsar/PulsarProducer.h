@@ -9,7 +9,7 @@
 namespace DB
 {
 
-using ProducerPtr = std::shared_ptr<Pulsar::Producer>;
+using ProducerPtr = std::unique_ptr<Pulsar::Producer>;
 
 class PulsarProducer : public IMessageProducer
 {
@@ -30,8 +30,5 @@ private:
     std::atomic<bool> & shutdown_called;
 
     std::optional<size_t> key_column_index;
-
-    /// Set once `finish` has closed the producer on the broker.
-    bool closed = false;
 };
 }

@@ -15,8 +15,7 @@ namespace DB
 {
 
 using PulsarConsumerPtr = std::shared_ptr<PulsarConsumer>;
-using ConsumerPtr = std::shared_ptr<Pulsar::Consumer>;
-using ProducerPtr = std::shared_ptr<Pulsar::Producer>;
+using ProducerPtr = std::unique_ptr<Pulsar::Producer>;
 
 class ReadFromStoragePulsar;
 
@@ -124,7 +123,7 @@ private:
     /// Owned by the single streaming task; used by `stream_control.claimCycle`.
     UInt64 last_seen_refresh_epoch = 0;
 
-    void createConsumer(Pulsar::Consumer & consumer);
+    PulsarConsumerPtr createConsumer();
     /// Create consumers until there are `num_consumers` of them. Throws on the first failure.
     void createConsumers();
     /// The body of `init_task`: retries `createConsumers` until it succeeds.

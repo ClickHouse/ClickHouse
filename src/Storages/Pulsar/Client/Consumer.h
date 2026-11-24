@@ -1,69 +1,47 @@
 #pragma once
 
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <vector>
+#include "config.h"
 
-#include <Storages/Pulsar/Client/Configuration.h>
+#if USE_PULSAR
+
 #include <Storages/Pulsar/Client/Message.h>
-#include <Storages/Pulsar/Client/Result.h>
-#include <Common/Logger.h>
+
+#include <chrono>
+#include <memory>
+#include <span>
+
 
 namespace DB::Pulsar
 {
 
 class ConsumerImpl;
-class ConnectionRegistry;
 
-/// A handle to a shared subscription over one or more topics. Default-constructed empty and filled by
-/// `Client::subscribe`. Copies share the same subscription.
+/// A consumer of a `Shared` subscription to all partitions of some topics, created by `Client::subscribe`.
 class Consumer
 {
 public:
-    /// One topic of the subscription, already resolved to its owning broker by lookup.
-    struct TopicBroker
-    {
-        std::string topic;
-        std::string host;
-        uint16_t port;
-    };
-
-    Consumer();
+    explicit Consumer(std::unique_ptr<ConsumerImpl> impl_);
     ~Consumer();
-    Consumer(const Consumer &);
-    Consumer & operator=(const Consumer &);
 
-    /// Opens a connection and subscribes for every resolved topic. On failure returns an empty handle,
-    /// sets `result`, and leaves nothing subscribed (any partial connections are closed).
-    static Consumer open(
-        const std::vector<TopicBroker> & topics,
-        const std::string & subscription,
-        const ClientConfiguration & client_config,
-        const ConsumerConfiguration & consumer_config,
-        ConnectionRegistry & registry,
-        const LoggerPtr & log,
-        Result & result);
+    /// Returns at most `max_messages`: as soon as that many are received, or as soon as some are received and no more
+    /// can arrive before the received ones are returned, or when `timeout` expires (possibly none).
+    Messages batchReceive(size_t max_messages, std::chrono::milliseconds timeout);
 
-    /// Receives up to `batch_receive_policy.max_messages`, waiting at most its timeout. An empty result
-    /// with `ResultOk` means the subscription was idle. Returns an error only on a terminal condition
-    /// (the connection dropped or the broker closed the consumer), after which the handle is unusable.
-    Result batchReceive(Messages & messages);
+    /// Sends the acknowledgements and waits until the socket accepts them. Those on a connection lost before that are not
+    /// sent, and the broker redelivers their messages. Those of a partition that is subscribing again are sent when it has
+    /// subscribed.
+    void acknowledge(std::span<const MessageId> ids);
 
-    /// Acknowledges the given messages. For messages inside a batch the broker is told which indices of
-    /// the entry are still outstanding, so the entry is released only once all of them are acknowledged.
-    Result acknowledge(const MessageIdList & message_ids);
+    /// Requests redelivery. Does nothing on a consumer that has failed, because closing it redelivers anyway.
+    void negativeAcknowledge(const MessageId & id) noexcept;
 
-    /// Requests immediate redelivery of one message (used to roll back an aborted read).
-    Result negativeAcknowledge(const MessageId & message_id);
-
-    /// Closes the subscription's connections. The broker redelivers any unacknowledged messages to the
-    /// other consumers of the shared subscription.
-    Result close();
+    /// The broker redelivers the unacknowledged messages.
+    void close() noexcept;
 
 private:
-    explicit Consumer(std::shared_ptr<ConsumerImpl> impl_);
-    std::shared_ptr<ConsumerImpl> impl;
+    std::unique_ptr<ConsumerImpl> impl;
 };
 
 }
+
+#endif

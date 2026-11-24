@@ -7,7 +7,8 @@
 #include <Common/Logger.h>
 #include <Common/assert_cast.h>
 
-#include <Storages/Pulsar/Client/Message.h>
+#include <optional>
+#include <string_view>
 
 namespace DB
 {
@@ -15,12 +16,11 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ABORTED;
-extern const int CANNOT_CONNECT_PULSAR;
 }
 
 PulsarProducer::PulsarProducer(
     ProducerPtr producer_, const std::string & topic_, std::atomic<bool> & shutdown_called_, const Block & header)
-    : IMessageProducer(getLogger("PulsarProducer")), producer(producer_), topic(topic_), shutdown_called(shutdown_called_)
+    : IMessageProducer(getLogger("PulsarProducer")), producer(std::move(producer_)), topic(topic_), shutdown_called(shutdown_called_)
 {
     if (header.has("_ordering_key"))
     {
@@ -33,73 +33,49 @@ PulsarProducer::PulsarProducer(
 
 PulsarProducer::~PulsarProducer()
 {
-    /// Destroying the client's producer only unregisters it locally: without `close` the broker keeps
-    /// the publisher registered until the table's connection is closed, so every `INSERT` that failed
-    /// before `finish` would leave one behind. The result is ignored, there is nothing more to do here.
-    if (!closed)
-        producer->close();
+    /// Unregister the publisher on the broker: each `INSERT` creates its own producer, so one
+    /// that failed before `finish` must not stay registered. Closing a closed producer does nothing.
+    producer->close();
 }
 
 void PulsarProducer::produce(const String & message, size_t /* rows_in_message */, const Columns & columns, size_t last_row)
 {
-    Pulsar::MessageBuilder builder;
-    builder.setContent(message);
-
-    // Note: if it will be few rows per message - it will take the value from last row of block
+    /// If there are several rows per message, the value of the last row of the message is used.
+    std::optional<std::string_view> ordering_key;
     if (key_column_index)
     {
         const auto & key_column = assert_cast<const ColumnString &>(*columns[key_column_index.value()]);
-        const auto key_data = key_column.getDataAt(last_row);
-        builder.setOrderingKey(std::string(key_data));
+        ordering_key = key_column.getDataAt(last_row);
     }
-
-    auto final_message = builder.build();
 
     if (shutdown_called.load())
         throw Exception(ErrorCodes::ABORTED, "Cannot send message to Pulsar: table is shut down");
 
-    /// The producer is configured with `setBlockIfQueueFull(true)`, so transient backpressure is
-    /// handled by blocking inside `send` (bounded by the send timeout). Every non-OK result is
-    /// therefore a real error and must fail the insert instead of being retried indefinitely.
-    auto result = producer->send(final_message);
-    if (result != Pulsar::ResultOk)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_PULSAR,
-            "Failed to send message to Pulsar topic {}: {}",
-            topic,
-            Pulsar::strResult(result));
+    /// `send` waits for the receipt of the broker, reconnecting if needed, within the send timeout.
+    /// An exception is therefore a real error and fails the insert.
+    try
+    {
+        producer->send(message, ordering_key);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While sending a message to the Pulsar topic {}", topic);
+        throw;
+    }
 }
 
 void PulsarProducer::finish()
 {
-    auto result = producer->flush();
-    if (result != Pulsar::ResultOk)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_PULSAR,
-            "Failed to flush messages to Pulsar topic {}: {}",
-            topic,
-            Pulsar::strResult(result));
-
-    /// Unregister the publisher on the broker: each `INSERT` creates its own producer
-    /// on the connection shared by the table, so an unclosed one would stay there.
-    /// The producer is marked as closed only on success, so the destructor still tries to close it
-    /// after a failure. The failure cases leave nothing on the broker anyway: a timed out
-    /// `CloseProducer` request has already been sent, and a broken connection drops its producers.
-    result = producer->close();
-    if (result != Pulsar::ResultOk)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_PULSAR,
-            "Failed to close the producer for Pulsar topic {}: {}",
-            topic,
-            Pulsar::strResult(result));
-    closed = true;
+    /// Nothing is pending: every `send` has already waited for the receipt of the broker.
+    /// Unregister the publisher on the broker, because each `INSERT` creates its own producer.
+    producer->close();
 }
 
 void PulsarProducer::cancel() noexcept
 {
-    /// Closing the producer aborts a `send` blocked on a full queue and fails all pending sends,
-    /// so a cancelled `INSERT` does not hang on a stuck broker.
-    producer->close();
+    /// Makes the `send` in progress (possibly on another thread) and all later ones throw,
+    /// so a cancelled `INSERT` does not hang on a stuck broker. The destructor closes the producer.
+    producer->interrupt();
 }
 
 }

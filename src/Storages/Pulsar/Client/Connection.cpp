@@ -1,490 +1,1021 @@
 #include <Storages/Pulsar/Client/Connection.h>
 
-#include <Storages/Pulsar/Client/Checksum.h>
+#if USE_PULSAR
+
+#include <Common/DNSResolver.h>
+#include <Common/Exception.h>
+#include <Common/config_version.h>
 #include <Common/logger_useful.h>
+#include <base/errnoToString.h>
+#include <base/scope_guard.h>
 
-#include <chrono>
-#include <cstring>
+#include <Poco/Net/IPAddress.h>
+#include <Poco/Net/NetException.h>
 
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
+#if USE_SSL
+#include <Poco/Net/SecureStreamSocket.h>
+#include <openssl/x509v3.h>
+#endif
+
+#include <fmt/format.h>
+
 #include <poll.h>
 #include <sys/socket.h>
-#include <unistd.h>
 
-namespace DB::Pulsar
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+    extern const int CANNOT_CONNECT_PULSAR;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int UNEXPECTED_PACKET_FROM_SERVER;
+}
+
+namespace Pulsar
 {
 
 namespace
 {
 
-/// Magic numbers that may precede the message metadata inside a frame (see the Pulsar binary protocol).
-constexpr uint16_t MAGIC_CRC32C = 0x0e01;
-constexpr uint16_t MAGIC_BROKER_ENTRY_METADATA = 0x0e02;
+/// The protocol version 20 adds `TOPIC_MIGRATED`; with 19 the broker closes the consumers and producers instead.
+constexpr Int32 PROTOCOL_VERSION = 19;
+constexpr size_t READ_CHUNK_SIZE = 64 * 1024;
+/// Bounds one call of `process`, so that the calls check their deadlines while data keeps arriving.
+constexpr size_t MAX_INPUT_PER_PROCESS = 16 * READ_CHUNK_SIZE;
 
-/// A hard ceiling on a single frame, independent of the negotiated message size, so a corrupt length
-/// prefix cannot make the client allocate an unbounded buffer.
-constexpr uint32_t MAX_FRAME_SIZE = 128 * 1024 * 1024;
-
-int64_t nowMs()
+String stripBrackets(const String & host)
 {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-void putBE16(std::string & out, uint16_t value)
-{
-    out.push_back(static_cast<char>((value >> 8) & 0xFF));
-    out.push_back(static_cast<char>(value & 0xFF));
-}
-
-void putBE32(std::string & out, uint32_t value)
-{
-    out.push_back(static_cast<char>((value >> 24) & 0xFF));
-    out.push_back(static_cast<char>((value >> 16) & 0xFF));
-    out.push_back(static_cast<char>((value >> 8) & 0xFF));
-    out.push_back(static_cast<char>(value & 0xFF));
-}
-
-uint16_t getBE16(const char * p)
-{
-    return static_cast<uint16_t>((static_cast<unsigned char>(p[0]) << 8) | static_cast<unsigned char>(p[1]));
-}
-
-uint32_t getBE32(const char * p)
-{
-    return (static_cast<uint32_t>(static_cast<unsigned char>(p[0])) << 24)
-        | (static_cast<uint32_t>(static_cast<unsigned char>(p[1])) << 16)
-        | (static_cast<uint32_t>(static_cast<unsigned char>(p[2])) << 8)
-        | static_cast<uint32_t>(static_cast<unsigned char>(p[3]));
-}
-
-/// A bounds-checked cursor over a received buffer. Every read verifies there are enough bytes left, so
-/// a malformed frame can never read out of bounds; `ok` turns false on the first short read.
-struct Cursor
-{
-    const char * data;
-    size_t size;
-    size_t offset = 0;
-    bool ok = true;
-
-    bool has(size_t n) const { return offset + n <= size; }
-
-    uint16_t u16()
-    {
-        if (!has(2)) { ok = false; return 0; }
-        uint16_t v = getBE16(data + offset);
-        offset += 2;
-        return v;
-    }
-
-    uint32_t u32()
-    {
-        if (!has(4)) { ok = false; return 0; }
-        uint32_t v = getBE32(data + offset);
-        offset += 4;
-        return v;
-    }
-
-    std::string_view view(size_t n)
-    {
-        if (!has(n)) { ok = false; return {}; }
-        std::string_view v(data + offset, n);
-        offset += n;
-        return v;
-    }
-
-    std::string_view rest()
-    {
-        std::string_view v(data + offset, size - offset);
-        offset = size;
-        return v;
-    }
-};
-
-/// The `request_id` of a response command, or -1 if the command type does not carry one.
-int64_t responseRequestId(const pulsar::proto::BaseCommand & command)
-{
-    using BaseCommand = pulsar::proto::BaseCommand;
-    switch (command.type())
-    {
-        case BaseCommand::SUCCESS:
-            return static_cast<int64_t>(command.success().request_id());
-        case BaseCommand::ERROR:
-            return static_cast<int64_t>(command.error().request_id());
-        case BaseCommand::PRODUCER_SUCCESS:
-            return static_cast<int64_t>(command.producer_success().request_id());
-        case BaseCommand::LOOKUP_RESPONSE:
-            return static_cast<int64_t>(command.lookuptopicresponse().request_id());
-        case BaseCommand::PARTITIONED_METADATA_RESPONSE:
-            return static_cast<int64_t>(command.partitionmetadataresponse().request_id());
-        default:
-            return -1;
-    }
+    if (host.size() >= 2 && host.front() == '[' && host.back() == ']')
+        return host.substr(1, host.size() - 2);
+    return host;
 }
 
 }
 
-Connection::Connection(int fd_, const ClientConfiguration & config_, LoggerPtr log_)
-    : fd(fd_), config(config_), log(std::move(log_))
+void throwUnexpected(const char * what)
 {
+    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "Unexpected frame from the Pulsar broker: {}", what);
+}
+
+
+void Interrupter::interrupt() noexcept
+{
+    std::lock_guard lock(mutex);
+    interrupted = true;
+    for (int fd : fds)
+        ::shutdown(fd, SHUT_RDWR);
+}
+
+bool Interrupter::isInterrupted() const
+{
+    std::lock_guard lock(mutex);
+    return interrupted;
+}
+
+void Interrupter::add(int fd)
+{
+    std::lock_guard lock(mutex);
+    fds.push_back(fd);
+    if (interrupted)
+        ::shutdown(fd, SHUT_RDWR);
+}
+
+void Interrupter::remove(int fd)
+{
+    std::lock_guard lock(mutex);
+    std::erase(fds, fd);
+}
+
+
+String BrokerAddress::toString() const
+{
+    String res;
+    for (const auto & [host, port] : hosts)
+        res += fmt::format("{}{}:{}", res.empty() ? "" : ",", host, port);
+    if (!proxy_to_broker_url.empty())
+        res += fmt::format(" (proxy to {})", proxy_to_broker_url);
+    return res;
+}
+
+
+Connection::Connection(ClientState & client_, BrokerAddress address_, Interrupter * owner_interrupter_)
+    : client(client_)
+    , broker_address(std::move(address_))
+    , owner_interrupter(owner_interrupter_)
+    , serial(client.next_serial++)
+    , limits(client.limits)
+    , log(client.log)
+{
+    last_write_progress = last_received = step_started = Clock::now();
+    startNextAddress();
 }
 
 Connection::~Connection()
 {
-    close();
-    if (fd >= 0)
-        ::close(fd);
+    unregisterSocket();
 }
 
-std::unique_ptr<Connection>
-Connection::open(const std::string & host, uint16_t port, const ClientConfiguration & config, const LoggerPtr & log, Result & result)
+void Connection::unregisterSocket()
 {
-    const std::string physical_url = "pulsar://" + host + ":" + std::to_string(port);
-    if (config.connection_validator && !config.connection_validator(physical_url))
+    if (registered_fd < 0)
+        return;
+    client.interrupter.remove(registered_fd);
+    if (owner_interrupter)
+        owner_interrupter->remove(registered_fd);
+    registered_fd = -1;
+}
+
+void Connection::startNextAddress()
+{
+    while (true)
     {
-        LOG_ERROR(log, "Connection to {} rejected by the connection validator", physical_url);
-        result = ResultConnectError;
-        return nullptr;
-    }
+        unregisterSocket();
+        socket.reset();
 
-    addrinfo hints{};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    addrinfo * addresses = nullptr;
-    if (::getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &addresses) != 0 || !addresses)
-    {
-        LOG_ERROR(log, "Cannot resolve Pulsar broker address {}", physical_url);
-        result = ResultConnectError;
-        return nullptr;
-    }
-
-    int fd = -1;
-    const int64_t deadline = nowMs() + config.operation_timeout_ms;
-    for (addrinfo * ai = addresses; ai != nullptr; ai = ai->ai_next)
-    {
-        fd = ::socket(ai->ai_family, ai->ai_socktype | SOCK_CLOEXEC, ai->ai_protocol);
-        if (fd < 0)
-            continue;
-
-        /// Connect with a timeout: switch to non-blocking, start the connect, then wait for writability.
-        int flags = ::fcntl(fd, F_GETFL, 0);
-        ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-        int rc = ::connect(fd, ai->ai_addr, ai->ai_addrlen);
-        if (rc != 0 && errno == EINPROGRESS)
+        if (address_index < addresses.size())
         {
-            pollfd pfd{fd, POLLOUT, 0};
-            const int64_t remaining = deadline - nowMs();
-            rc = ::poll(&pfd, 1, remaining > 0 ? static_cast<int>(remaining) : 0);
-            if (rc == 1)
+            const auto & address = addresses[address_index++];
+            try
             {
-                int error = 0;
-                socklen_t len = sizeof(error);
-                ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
-                rc = error == 0 ? 0 : -1;
+                if (client.service.tls)
+                {
+#if USE_SSL
+                    /// The default client context, configured in the `openSSL.client` section.
+                    auto secure_socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+                    secure_socket->setPeerHostName(host);
+                    socket = std::move(secure_socket);
+#else
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "TLS connections to Pulsar are disabled, because ClickHouse was built without SSL support");
+#endif
+                }
+                else
+                {
+                    socket = std::make_unique<Poco::Net::StreamSocket>();
+                }
+                socket->connectNB(address);
+                int fd = socket->impl()->sockfd();
+                client.interrupter.add(fd);
+                if (owner_interrupter)
+                {
+                    try
+                    {
+                        owner_interrupter->add(fd);
+                    }
+                    catch (...)
+                    {
+                        client.interrupter.remove(fd);
+                        throw;
+                    }
+                }
+                registered_fd = fd;
+                current_state = State::TCPConnecting;
+                step_started = Clock::now();
+                LOG_TRACE(log, "Connecting to {} ({})", broker_address.toString(), address.toString());
+                return;
             }
-            else
-                rc = -1;
+            catch (const Exception &)
+            {
+                throw;
+            }
+            catch (const Poco::Exception & e)
+            {
+                last_error = fmt::format("{}: {}", address.toString(), e.displayText());
+                continue;
+            }
         }
 
-        if (rc == 0)
+        if (host_index >= broker_address.hosts.size())
+            throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Cannot connect to the Pulsar broker {}: {}", broker_address.toString(), last_error);
+
+        const auto & [name, port] = broker_address.hosts[host_index++];
+        if (client.configuration.connection_validator)
+            client.configuration.connection_validator(name, port);
+        host = stripBrackets(name);
+        addresses.clear();
+        address_index = 0;
+        try
         {
-            ::fcntl(fd, F_SETFL, flags); /// back to blocking
-            int one = 1;
-            ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+            auto resolved = DNSResolver::instance().resolveAddressList(host, port);
+            addresses.assign(resolved.begin(), resolved.end());
+            if (addresses.empty())
+                last_error = fmt::format("{} has no addresses", name);
+        }
+        catch (const Exception & e)
+        {
+            last_error = e.message();
+        }
+        catch (const Poco::Exception & e)
+        {
+            last_error = e.displayText();
+        }
+    }
+}
+
+void Connection::onTCPConnected()
+{
+    pollfd poll_fd{.fd = registered_fd, .events = POLLOUT, .revents = 0};
+    int res = ::poll(&poll_fd, 1, 0);
+    if (res <= 0)
+    {
+        if (Clock::now() - step_started > client.configuration.connection_timeout)
+        {
+            last_error = fmt::format("timeout of {} ms", client.configuration.connection_timeout.count());
+            startNextAddress();
+        }
+        return;
+    }
+
+    int error = socket->impl()->socketError();
+    if (error)
+    {
+        last_error = errnoToString(error);
+        startNextAddress();
+        return;
+    }
+
+    socket->setNoDelay(true);
+    step_started = Clock::now();
+    if (client.service.tls)
+        current_state = State::TlsHandshake;
+    else
+        sendConnect();
+}
+
+void Connection::verifyPeerHostName()
+{
+#if USE_SSL
+    /// Poco checks the host name only with extended verification and not for loopback hosts, so check it here.
+    auto & secure_socket = static_cast<Poco::Net::SecureStreamSocket &>(*socket);
+    X509 * certificate = secure_socket.peerCertificate();
+    if (!certificate)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "The Pulsar broker {} did not present a certificate", host);
+    SCOPE_EXIT(X509_free(certificate));
+
+    Poco::Net::IPAddress ip;
+    bool matches = Poco::Net::IPAddress::tryParse(host, ip)
+        ? X509_check_ip_asc(certificate, host.c_str(), 0) == 1
+        : X509_check_host(certificate, host.data(), host.size(), 0, nullptr) == 1;
+    if (!matches)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "The certificate of the Pulsar broker does not match its host name {}", host);
+#endif
+}
+
+void Connection::sendConnect()
+{
+    PulsarProto::BaseCommand command;
+    command.set_type(PulsarProto::BaseCommand::CONNECT);
+    auto & connect = *command.mutable_connect();
+    connect.set_client_version(fmt::format("ClickHouse {}", VERSION_STRING));
+    connect.set_protocol_version(PROTOCOL_VERSION);
+    connect.mutable_feature_flags();
+    if (!broker_address.proxy_to_broker_url.empty())
+        connect.set_proxy_to_broker_url(broker_address.proxy_to_broker_url);
+    output.emplace_back(encodeCommand(command));
+    current_state = State::ConnectSent;
+    step_started = Clock::now();
+}
+
+void Connection::send(const PulsarProto::BaseCommand & command)
+{
+    sendFrame(encodeCommand(command));
+}
+
+void Connection::sendFrame(StringWithMemoryTracking bytes)
+{
+    if (current_state == State::Closed)
+        return;
+    if (output.empty())
+        last_write_progress = Clock::now();
+    output.emplace_back(std::move(bytes));
+}
+
+void Connection::markClosed(const String & reason)
+{
+    if (current_state == State::Closed)
+        return;
+    LOG_INFO(log, "The connection to the Pulsar broker {} is closed: {}", broker_address.toString(), reason);
+    current_state = State::Closed;
+    close();
+}
+
+void Connection::close() noexcept
+{
+    if (!socket)
+        return;
+    try
+    {
+        if (current_state == State::Ready || current_state == State::ConnectSent)
+            processOutput();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: best effort, the broker redelivers the unacknowledged messages anyway.
+    }
+    current_state = State::Closed;
+    output.clear();
+    input.clear();
+    input_begin = 0;
+    unregisterSocket();
+    try
+    {
+        socket->close();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ok: the descriptor is released by the destructor anyway.
+    }
+    socket.reset();
+}
+
+void Connection::processOutput()
+{
+    while (!output.empty())
+    {
+        auto & front = output.front();
+        int to_send = static_cast<int>(std::min<size_t>(front.size() - output_offset, std::numeric_limits<int>::max()));
+        int sent = socket->sendBytes(front.data() + output_offset, to_send);
+        if (sent <= 0)
+        {
+            /// Would block. For TLS, the same bytes are sent again later, as OpenSSL requires.
+#if USE_SSL
+            tls_wants_write = sent == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE;
+#endif
+            return;
+        }
+        last_write_progress = Clock::now();
+        output_offset += sent;
+        if (output_offset == front.size())
+        {
+            output.pop_front();
+            output_offset = 0;
+        }
+    }
+    tls_wants_write = false;
+}
+
+void Connection::processInput(FrameHandler & handler)
+{
+    if (read_buffer.empty())
+        read_buffer.resize(READ_CHUNK_SIZE);
+    size_t received_total = 0;
+    while (current_state != State::Closed)
+    {
+        /// The size of every frame is checked before the buffer grows beyond one chunk.
+        while (input.size() - input_begin >= FRAME_SIZE_LENGTH)
+        {
+            size_t size = decodeFrameSize(input.data() + input_begin, limits);
+            if (input.size() - input_begin - FRAME_SIZE_LENGTH < size)
+                break;
+            std::string_view body(input.data() + input_begin + FRAME_SIZE_LENGTH, size);
+            input_begin += FRAME_SIZE_LENGTH + size;
+            handleFrame(handler, body);
+            if (current_state == State::Closed)
+                return;
+        }
+        if (input_begin > 0)
+        {
+            input.erase(0, input_begin);
+            input_begin = 0;
+        }
+        if (received_total >= MAX_INPUT_PER_PROCESS)
+            return;
+
+        int received = socket->receiveBytes(read_buffer.data(), static_cast<int>(read_buffer.size()));
+        if (received == 0)
+        {
+            markClosed("closed by the broker");
+            return;
+        }
+        if (received < 0)
+        {
+#if USE_SSL
+            if (received == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE)
+                tls_wants_write = true;
+#endif
+            return;
+        }
+        input.append(read_buffer.data(), received);
+        received_total += received;
+        last_received = Clock::now();
+        ping_sent.reset();
+    }
+}
+
+void Connection::handleFrame(FrameHandler & handler, std::string_view body)
+{
+    decodeFrame(body, limits, frame);
+    if (!frame.command.has_type())
+    {
+        LOG_TRACE(log, "Ignoring a command of an unknown type from {}", broker_address.toString());
+        return;
+    }
+
+    using Type = PulsarProto::BaseCommand;
+    switch (frame.command.type())
+    {
+        case Type::CONNECTED:
+        {
+            if (current_state != State::ConnectSent || !frame.command.has_connected())
+                throwUnexpected("CONNECTED");
+            const auto & connected = frame.command.connected();
+            if (connected.has_max_message_size())
+            {
+                if (connected.max_message_size() <= 0)
+                    throwUnexpected("CONNECTED with a non-positive max_message_size");
+                limits.max_message_size = std::min<size_t>(connected.max_message_size(), MAX_ALLOWED_MESSAGE_SIZE);
+            }
+            current_state = State::Ready;
+            LOG_TRACE(log, "Connected to {}", broker_address.toString());
+            return;
+        }
+        case Type::PING:
+        {
+            /// The broker takes any bytes as a response, so the queued output answers a PING too.
+            if (output.empty())
+            {
+                PulsarProto::BaseCommand pong;
+                pong.set_type(Type::PONG);
+                pong.mutable_pong();
+                send(pong);
+            }
+            return;
+        }
+        case Type::PONG:
+            return;
+        case Type::AUTH_CHALLENGE:
+            throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "The Pulsar broker {} requires authentication, which is not supported", broker_address.toString());
+        case Type::ERROR:
+            if (current_state == State::ConnectSent)
+                throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "The Pulsar broker {} rejected the connection: {}",
+                    broker_address.toString(), frame.command.has_error() ? frame.command.error().message() : "");
+            break;
+        default:
+            break;
+    }
+
+    if (current_state != State::Ready)
+        throwUnexpected("a command before CONNECTED");
+
+    if (frame.command.type() == Type::MESSAGE)
+    {
+        /// The payload of the message is kept without copying again.
+        auto buffer = std::make_shared<StringWithMemoryTracking>(body);
+        frame.tail = std::string_view(*buffer).substr(body.size() - frame.tail.size());
+        handler.onFrame(*this, frame, buffer);
+        return;
+    }
+    handler.onFrame(*this, frame, nullptr);
+}
+
+void Connection::checkTimeouts()
+{
+    const auto now = Clock::now();
+    const auto operation_timeout = client.configuration.operation_timeout;
+    const auto keep_alive = client.configuration.keep_alive_interval;
+    if ((current_state == State::TlsHandshake || current_state == State::ConnectSent) && now - step_started > operation_timeout)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Connecting to the Pulsar broker {} did not complete within {} ms",
+            broker_address.toString(), operation_timeout.count());
+
+    if (current_state != State::Ready)
+        return;
+
+    if (!output.empty() && now - last_write_progress > operation_timeout)
+    {
+        markClosed(fmt::format("the broker did not read for {} ms", operation_timeout.count()));
+        return;
+    }
+    if (ping_sent)
+    {
+        if (now - *ping_sent > keep_alive)
+            markClosed(fmt::format("no response to PING within {} ms", keep_alive.count()));
+    }
+    else if (now - last_received > keep_alive)
+    {
+        PulsarProto::BaseCommand ping;
+        ping.set_type(PulsarProto::BaseCommand::PING);
+        ping.mutable_ping();
+        send(ping);
+        ping_sent = now;
+    }
+}
+
+void Connection::process(FrameHandler & handler)
+{
+    if (current_state == State::Closed)
+        return;
+
+    checkTimeouts();
+
+    if (current_state == State::TCPConnecting)
+        onTCPConnected();
+
+    if (current_state == State::TlsHandshake)
+    {
+#if USE_SSL
+        int res = 0;
+        try
+        {
+            res = static_cast<Poco::Net::SecureStreamSocket &>(*socket).completeHandshake();
+        }
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "TLS handshake with the Pulsar broker {} failed: {}",
+                broker_address.toString(), e.displayText());
+        }
+        if (res == 1)
+        {
+            verifyPeerHostName();
+            sendConnect();
+        }
+        else if (res == 0)
+            throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "The Pulsar broker {} closed the connection during the TLS handshake", broker_address.toString());
+        else
+        {
+            tls_wants_write = res == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE;
+            return;
+        }
+#endif
+    }
+
+    if (current_state != State::ConnectSent && current_state != State::Ready)
+        return;
+
+    try
+    {
+        processOutput();
+        processInput(handler);
+        if (current_state != State::Closed)
+            processOutput();
+    }
+    catch (const Exception &)
+    {
+        /// Protocol violations.
+        throw;
+    }
+    catch (const Poco::Exception & e)
+    {
+        /// Network errors.
+        if (current_state != State::Ready)
+            throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Cannot connect to the Pulsar broker {}: {}", broker_address.toString(), e.displayText());
+        markClosed(e.displayText());
+    }
+}
+
+int Connection::fd() const
+{
+    return registered_fd;
+}
+
+Int16 Connection::pollEvents() const
+{
+    switch (current_state)
+    {
+        case State::TCPConnecting:
+            return POLLOUT;
+        case State::TlsHandshake:
+            return tls_wants_write ? POLLOUT : POLLIN;
+        case State::ConnectSent:
+        case State::Ready:
+            return static_cast<Int16>(POLLIN | ((output.empty() && !tls_wants_write) ? 0 : POLLOUT));
+        case State::Closed:
+            return 0;
+    }
+}
+
+bool Connection::hasBufferedInput() const
+{
+    if (!socket || !client.service.tls || (current_state != State::ConnectSent && current_state != State::Ready))
+        return false;
+    try
+    {
+        return socket->impl()->available() > 0;
+    }
+    catch (...)
+    {
+        /// Ok: the next read reports the error.
+        return false;
+    }
+}
+
+TimePoint Connection::wakeUpTime() const
+{
+    const auto & configuration = client.configuration;
+    switch (current_state)
+    {
+        case State::TCPConnecting:
+            return step_started + configuration.connection_timeout;
+        case State::TlsHandshake:
+        case State::ConnectSent:
+            return step_started + configuration.operation_timeout;
+        case State::Ready:
+        {
+            TimePoint res = ping_sent ? *ping_sent + configuration.keep_alive_interval : last_received + configuration.keep_alive_interval;
+            if (!output.empty())
+                res = std::min(res, last_write_progress + configuration.operation_timeout);
+            return res;
+        }
+        case State::Closed:
+            return TimePoint::max();
+    }
+}
+
+
+Session::Session(ClientStatePtr client_, Owner & owner_, Interrupter * owner_interrupter_)
+    : client_state(std::move(client_))
+    , owner(owner_)
+    , owner_interrupter(owner_interrupter_)
+    , log(client_state->log)
+{
+}
+
+Session::~Session()
+{
+    close();
+}
+
+Session::RequestPtr Session::lookup(const String & topic)
+{
+    auto request = std::make_shared<Request>();
+    request->topic = topic;
+    request->is_lookup = true;
+    request->started = Clock::now();
+    requests_to_send.push_back(request);
+    return request;
+}
+
+Session::RequestPtr Session::partitionedMetadata(const String & topic)
+{
+    auto request = std::make_shared<Request>();
+    request->topic = topic;
+    request->started = Clock::now();
+    requests_to_send.push_back(request);
+    return request;
+}
+
+UInt64 Session::nextRequestId()
+{
+    return next_request_id++;
+}
+
+bool Session::wasIssued(UInt64 request_id) const
+{
+    return request_id != 0 && request_id < next_request_id;
+}
+
+Connection & Session::connection(const BrokerAddress & address)
+{
+    for (auto & connection : connections)
+        if (!connection->isClosed() && connection->address() == address)
+            return *connection;
+    connections.push_back(std::make_unique<Connection>(*client_state, address, owner_interrupter));
+    return *connections.back();
+}
+
+Connection * Session::findConnection(UInt64 id)
+{
+    for (auto & connection : connections)
+        if (connection->id() == id)
+            return connection.get();
+    return nullptr;
+}
+
+Connection & Session::serviceConnection()
+{
+    for (auto & connection : connections)
+        if (connection->id() == service_connection_id && !connection->isClosed())
+            return *connection;
+
+    /// Every new service connection starts from the next host.
+    const auto & hosts = client_state->service.hosts;
+    BrokerAddress address;
+    size_t start = client_state->next_service_host++;
+    for (size_t i = 0; i < hosts.size(); ++i)
+        address.hosts.push_back(hosts[(start + i) % hosts.size()]);
+    Connection & res = connection(address);
+    service_connection_id = res.id();
+    return res;
+}
+
+BrokerAddress Session::parseBrokerUrl(const String & url) const
+{
+    ServiceUrl parsed;
+    try
+    {
+        parsed = parseServiceUrl(url);
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "Invalid broker URL in a Pulsar lookup response: {}", e.message());
+    }
+    if (parsed.hosts.size() != 1 || parsed.tls != client_state->service.tls)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "Unexpected broker URL '{}' in a Pulsar lookup response", url);
+    BrokerAddress res;
+    res.hosts = std::move(parsed.hosts);
+    return res;
+}
+
+void Session::sendRequest(Request & request)
+{
+    Connection & connection = request.target.hosts.empty() ? serviceConnection() : this->connection(request.target);
+    if (!connection.isReady())
+        return;
+
+    request.request_id = nextRequestId();
+    request.connection_id = connection.id();
+    PulsarProto::BaseCommand command;
+    if (request.is_lookup)
+    {
+        command.set_type(PulsarProto::BaseCommand::LOOKUP);
+        auto & lookup = *command.mutable_lookuptopic();
+        lookup.set_topic(request.topic);
+        lookup.set_request_id(request.request_id);
+        lookup.set_authoritative(request.authoritative);
+    }
+    else
+    {
+        command.set_type(PulsarProto::BaseCommand::PARTITIONED_METADATA);
+        auto & metadata = *command.mutable_partitionmetadata();
+        metadata.set_topic(request.topic);
+        metadata.set_request_id(request.request_id);
+    }
+    connection.send(command);
+}
+
+void Session::completeLookup(const RequestPtr & request_ptr, const PulsarProto::CommandLookupTopicResponse & response)
+{
+    Request & request = *request_ptr;
+    using Response = PulsarProto::CommandLookupTopicResponse;
+    const bool tls = client_state->service.tls;
+    if (!response.has_response() || response.response() == Response::Failed)
+    {
+        request.done = true;
+        request.error = fmt::format("lookup of topic {} failed: {} {}", request.topic,
+            response.has_error() ? PulsarProto::ServerError_Name(response.error()) : "", response.message());
+        return;
+    }
+
+    if ((tls && !response.has_brokerserviceurltls()) || (!tls && !response.has_brokerserviceurl()))
+    {
+        request.done = true;
+        request.error = fmt::format("lookup of topic {} returned no {} URL", request.topic, tls ? "TLS" : "broker");
+        return;
+    }
+    const String & url = tls ? response.brokerserviceurltls() : response.brokerserviceurl();
+
+    BrokerAddress broker;
+    if (response.proxy_through_service_url())
+    {
+        broker.hosts = client_state->service.hosts;
+        broker.proxy_to_broker_url = url;
+    }
+    else
+        broker = parseBrokerUrl(url);
+
+    if (response.response() == Response::Connect)
+    {
+        request.done = true;
+        request.broker = std::move(broker);
+        return;
+    }
+
+    if (++request.redirects > MAX_LOOKUP_REDIRECTS)
+        throwUnexpected("too many lookup redirects");
+    request.target = std::move(broker);
+    request.authoritative = response.authoritative();
+    request.started = Clock::now();
+    request.connection_id = 0;
+    requests_to_send.push_back(request_ptr);
+}
+
+void Session::onFrame(Connection & connection, Frame & frame, const SharedBuffer & buffer)
+{
+    using Type = PulsarProto::BaseCommand;
+    const auto & command = frame.command;
+
+    auto take_request = [&](UInt64 request_id) -> RequestPtr
+    {
+        auto it = requests_in_flight.find(request_id);
+        if (it == requests_in_flight.end() || it->second->connection_id != connection.id())
+            return nullptr;
+        RequestPtr request = it->second;
+        requests_in_flight.erase(it);
+        return request;
+    };
+
+    switch (command.type())
+    {
+        case Type::LOOKUP_RESPONSE:
+        {
+            if (!command.has_lookuptopicresponse() || !command.lookuptopicresponse().has_request_id())
+                throwUnexpected("LOOKUP_RESPONSE");
+            const auto & response = command.lookuptopicresponse();
+            RequestPtr request = take_request(response.request_id());
+            if (!request)
+            {
+                if (!wasIssued(response.request_id()))
+                    throwUnexpected("LOOKUP_RESPONSE for an unknown request");
+                LOG_DEBUG(log, "Ignoring LOOKUP_RESPONSE for the request {}, which is not awaited", response.request_id());
+                return;
+            }
+            if (!request->is_lookup)
+                throwUnexpected("LOOKUP_RESPONSE for an unknown request");
+            if (!request->done)
+                completeLookup(request, response);
+            return;
+        }
+        case Type::PARTITIONED_METADATA_RESPONSE:
+        {
+            if (!command.has_partitionmetadataresponse() || !command.partitionmetadataresponse().has_request_id())
+                throwUnexpected("PARTITIONED_METADATA_RESPONSE");
+            const auto & response = command.partitionmetadataresponse();
+            RequestPtr request = take_request(response.request_id());
+            if (!request)
+            {
+                if (!wasIssued(response.request_id()))
+                    throwUnexpected("PARTITIONED_METADATA_RESPONSE for an unknown request");
+                LOG_DEBUG(log, "Ignoring PARTITIONED_METADATA_RESPONSE for the request {}, which is not awaited", response.request_id());
+                return;
+            }
+            if (request->is_lookup)
+                throwUnexpected("PARTITIONED_METADATA_RESPONSE for an unknown request");
+            if (request->done)
+                return;
+            request->done = true;
+            if (response.has_response() && response.response() == PulsarProto::CommandPartitionedTopicMetadataResponse::Failed)
+                request->error = fmt::format("getting the partitions of topic {} failed: {} {}", request->topic,
+                    response.has_error() ? PulsarProto::ServerError_Name(response.error()) : "", response.message());
+            else
+                request->partitions = response.partitions();
+            return;
+        }
+        case Type::ERROR:
+        {
+            if (!command.has_error() || !command.error().has_request_id())
+                throwUnexpected("ERROR");
+            if (RequestPtr request = take_request(command.error().request_id()))
+            {
+                if (!request->done)
+                {
+                    request->done = true;
+                    request->error = fmt::format("request for topic {} failed: {} {}", request->topic,
+                        PulsarProto::ServerError_Name(command.error().error()), command.error().message());
+                }
+                return;
+            }
             break;
         }
-
-        ::close(fd);
-        fd = -1;
+        default:
+            break;
     }
-    ::freeaddrinfo(addresses);
-
-    if (fd < 0)
-    {
-        LOG_ERROR(log, "Cannot connect to Pulsar broker {}", physical_url);
-        result = ResultConnectError;
-        return nullptr;
-    }
-
-    std::unique_ptr<Connection> connection(new Connection(fd, config, log));
-
-    /// Handshake: CONNECT -> CONNECTED.
-    pulsar::proto::BaseCommand connect_command;
-    connect_command.set_type(pulsar::proto::BaseCommand::CONNECT);
-    auto * connect = connect_command.mutable_connect();
-    connect->set_client_version("ClickHouse");
-    connect->set_protocol_version(21);
-    if (Result send_result = connection->send(connect_command); send_result != ResultOk)
-    {
-        result = send_result;
-        return nullptr;
-    }
-
-    Incoming incoming;
-    if (Result receive_result = connection->receive(incoming, config.operation_timeout_ms); receive_result != ResultOk)
-    {
-        LOG_ERROR(log, "No CONNECTED response from Pulsar broker {}", physical_url);
-        result = receive_result;
-        return nullptr;
-    }
-    if (incoming.command.type() != pulsar::proto::BaseCommand::CONNECTED)
-    {
-        LOG_ERROR(log, "Unexpected handshake response from Pulsar broker {}: {}", physical_url, static_cast<int>(incoming.command.type()));
-        result = ResultConnectError;
-        return nullptr;
-    }
-    if (incoming.command.connected().has_max_message_size())
-        connection->max_message_size = incoming.command.connected().max_message_size();
-
-    LOG_TRACE(log, "Connected to Pulsar broker {}", physical_url);
-    result = ResultOk;
-    return connection;
+    owner.onFrame(connection, frame, buffer);
 }
 
-void Connection::close()
+void Session::sendRequests()
 {
-    if (!closed.exchange(true, std::memory_order_acq_rel))
+    auto to_send = std::move(requests_to_send);
+    requests_to_send.clear();
+    for (auto & request : to_send)
     {
-        /// Unblock a read in progress on another thread without closing the descriptor, which the
-        /// destructor does once no one uses it any more.
-        if (fd >= 0)
-            ::shutdown(fd, SHUT_RDWR);
+        if (request->done)
+            continue;
+        if (request->connection_id == 0)
+            sendRequest(*request);
+        if (request->connection_id != 0)
+            requests_in_flight.emplace(request->request_id, request);
+        else
+            requests_to_send.push_back(request);
     }
 }
 
-Result Connection::writeAll(const char * data, size_t size)
+void Session::process()
 {
-    size_t written = 0;
-    while (written < size)
+    checkInterrupted();
+
+    /// New connections are created here, before processing them all.
+    sendRequests();
+    for (auto & connection : connections)
+        connection->process(*this);
+    /// On the connections that became ready. The output is sent by the next call, `wait` does not wait for it.
+    sendRequests();
+
+    for (size_t i = 0; i < connections.size();)
     {
-        if (isClosed())
-            return ResultAlreadyClosed;
-        ssize_t n = ::send(fd, data + written, size - written, MSG_NOSIGNAL);
-        if (n > 0)
+        Connection & connection = *connections[i];
+        if (!connection.isClosed())
         {
-            written += static_cast<size_t>(n);
+            ++i;
             continue;
         }
-        if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
-            continue;
-        return ResultConnectError;
-    }
-    return ResultOk;
-}
-
-Result Connection::readAll(char * buffer, size_t size, int64_t deadline_ms)
-{
-    size_t read_bytes = 0;
-    while (read_bytes < size)
-    {
-        if (isClosed())
-            return ResultAlreadyClosed;
-
-        const int64_t remaining = deadline_ms - nowMs();
-        if (remaining <= 0)
-            return read_bytes == 0 ? ResultTimeout : ResultConnectError;
-
-        pollfd pfd{fd, POLLIN, 0};
-        const int slice = static_cast<int>(std::min<int64_t>(remaining, 1000));
-        int rc = ::poll(&pfd, 1, slice);
-        if (rc == 0)
-            continue; /// nothing yet; re-check the deadline and the closed flag
-        if (rc < 0)
+        owner.onConnectionClosed(connection);
+        /// The requests on a lost connection start again on the service.
+        for (auto it = requests_in_flight.begin(); it != requests_in_flight.end();)
         {
-            if (errno == EINTR)
-                continue;
-            return ResultConnectError;
-        }
-
-        ssize_t n = ::recv(fd, buffer + read_bytes, size - read_bytes, 0);
-        if (n > 0)
-        {
-            read_bytes += static_cast<size_t>(n);
-            continue;
-        }
-        if (n == 0)
-            return ResultAlreadyClosed; /// peer closed
-        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
-            continue;
-        return ResultConnectError;
-    }
-    return ResultOk;
-}
-
-Result Connection::readFrame(std::string & frame, int64_t deadline_ms)
-{
-    char length_prefix[4];
-    if (Result r = readAll(length_prefix, 4, deadline_ms); r != ResultOk)
-        return r;
-
-    const uint32_t total_size = getBE32(length_prefix);
-    if (total_size < 4 || total_size > MAX_FRAME_SIZE)
-    {
-        LOG_ERROR(log, "Received a Pulsar frame of invalid size {}", total_size);
-        return ResultError;
-    }
-
-    frame.resize(total_size);
-    /// Once a frame has started the rest should follow promptly; allow a bounded grace period.
-    const int64_t body_deadline = std::max<int64_t>(deadline_ms, nowMs() + config.operation_timeout_ms);
-    if (Result r = readAll(frame.data(), total_size, body_deadline); r != ResultOk)
-        return r == ResultTimeout ? ResultConnectError : r;
-
-    return ResultOk;
-}
-
-Result Connection::receive(Incoming & incoming, int timeout_ms)
-{
-    const int64_t deadline = nowMs() + timeout_ms;
-    while (true)
-    {
-        std::string frame;
-        if (Result r = readFrame(frame, deadline); r != ResultOk)
-            return r;
-
-        Cursor cursor{frame.data(), frame.size()};
-        const uint32_t command_size = cursor.u32();
-        std::string_view command_bytes = cursor.view(command_size);
-        if (!cursor.ok || !incoming.command.ParseFromArray(command_bytes.data(), static_cast<int>(command_bytes.size())))
-        {
-            LOG_ERROR(log, "Cannot parse a Pulsar command from a frame of {} bytes", frame.size());
-            return ResultError;
-        }
-
-        const auto type = incoming.command.type();
-
-        if (type == pulsar::proto::BaseCommand::PING)
-        {
-            pulsar::proto::BaseCommand pong;
-            pong.set_type(pulsar::proto::BaseCommand::PONG);
-            pong.mutable_pong();
-            send(pong);
-            continue;
-        }
-        if (type == pulsar::proto::BaseCommand::PONG)
-            continue;
-
-        incoming.is_message = type == pulsar::proto::BaseCommand::MESSAGE;
-        incoming.metadata.clear();
-        incoming.payload.clear();
-
-        if (incoming.is_message)
-        {
-            /// Layout after the command: [optional broker-entry-metadata][optional CRC32C][metadata][payload].
-            if (cursor.has(2) && getBE16(cursor.data + cursor.offset) == MAGIC_BROKER_ENTRY_METADATA)
+            if (it->second->connection_id == connection.id())
             {
-                cursor.u16();
-                const uint32_t broker_meta_size = cursor.u32();
-                cursor.view(broker_meta_size); /// skip it
+                Request & request = *it->second;
+                request.connection_id = 0;
+                request.target = {};
+                request.redirects = 0;
+                request.authoritative = false;
+                if (!request.done)
+                    requests_to_send.push_back(it->second);
+                it = requests_in_flight.erase(it);
             }
-
-            bool verify_crc = false;
-            uint32_t expected_crc = 0;
-            if (cursor.has(2) && getBE16(cursor.data + cursor.offset) == MAGIC_CRC32C)
-            {
-                cursor.u16();
-                expected_crc = cursor.u32();
-                verify_crc = true;
-            }
-
-            const size_t checksummed_offset = cursor.offset;
-            const uint32_t metadata_size = cursor.u32();
-            std::string_view metadata = cursor.view(metadata_size);
-            std::string_view payload = cursor.rest();
-
-            if (!cursor.ok)
-            {
-                LOG_ERROR(log, "Received a malformed Pulsar message frame");
-                return ResultError;
-            }
-
-            if (verify_crc)
-            {
-                const uint32_t actual_crc = crc32c(frame.data() + checksummed_offset, frame.size() - checksummed_offset);
-                if (actual_crc != expected_crc)
-                {
-                    LOG_WARNING(log, "Dropping a Pulsar message with a bad checksum");
-                    continue; /// leave it unacknowledged; the broker will redeliver it
-                }
-            }
-
-            incoming.metadata.assign(metadata);
-            incoming.payload.assign(payload);
+            else
+                ++it;
         }
-
-        return ResultOk;
+        connections.erase(connections.begin() + i);
     }
-}
 
-Result Connection::send(const pulsar::proto::BaseCommand & command)
-{
-    const std::string command_bytes = command.SerializeAsString();
-
-    std::string frame;
-    frame.reserve(8 + command_bytes.size());
-    putBE32(frame, static_cast<uint32_t>(4 + command_bytes.size())); /// total size
-    putBE32(frame, static_cast<uint32_t>(command_bytes.size())); /// command size
-    frame += command_bytes;
-
-    return writeAll(frame.data(), frame.size());
-}
-
-Result Connection::sendMessage(const pulsar::proto::BaseCommand & command, const std::string & metadata, const std::string & payload)
-{
-    const std::string command_bytes = command.SerializeAsString();
-
-    /// The region protected by the checksum: [metadataSize][metadata][payload].
-    std::string checksummed;
-    checksummed.reserve(4 + metadata.size() + payload.size());
-    putBE32(checksummed, static_cast<uint32_t>(metadata.size()));
-    checksummed += metadata;
-    checksummed += payload;
-
-    const uint32_t checksum = crc32c(checksummed.data(), checksummed.size());
-
-    std::string body;
-    body.reserve(4 + command_bytes.size() + 2 + 4 + checksummed.size());
-    putBE32(body, static_cast<uint32_t>(command_bytes.size()));
-    body += command_bytes;
-    putBE16(body, MAGIC_CRC32C);
-    putBE32(body, checksum);
-    body += checksummed;
-
-    std::string frame;
-    frame.reserve(4 + body.size());
-    putBE32(frame, static_cast<uint32_t>(body.size()));
-    frame += body;
-
-    return writeAll(frame.data(), frame.size());
-}
-
-Result Connection::request(const pulsar::proto::BaseCommand & command, uint64_t request_id, pulsar::proto::BaseCommand & response)
-{
-    if (Result r = send(command); r != ResultOk)
-        return r;
-
-    const int64_t deadline = nowMs() + config.operation_timeout_ms;
-    while (true)
+    /// The requests that did not complete in time fail. A late response to them is ignored.
+    const auto now = Clock::now();
+    const auto timeout = client_state->configuration.operation_timeout;
+    auto expire = [&](Request & request)
     {
-        const int64_t remaining = deadline - nowMs();
-        if (remaining <= 0)
-            return ResultTimeout;
-
-        Incoming incoming;
-        if (Result r = receive(incoming, static_cast<int>(remaining)); r != ResultOk)
-            return r;
-
-        if (responseRequestId(incoming.command) == static_cast<int64_t>(request_id))
+        if (!request.done && now - request.started > timeout)
         {
-            response = incoming.command;
-            return ResultOk;
+            request.done = true;
+            request.error = fmt::format("{} of topic {} did not complete within {} ms",
+                request.is_lookup ? "lookup" : "getting the partitions", request.topic, timeout.count());
         }
-        /// A dedicated connection never multiplexes requests, so anything else is unexpected; ignore it.
+    };
+    for (auto it = requests_in_flight.begin(); it != requests_in_flight.end();)
+    {
+        expire(*it->second);
+        if (it->second->done)
+            it = requests_in_flight.erase(it);
+        else
+            ++it;
     }
+    for (auto & request : requests_to_send)
+        expire(*request);
+    std::erase_if(requests_to_send, [](const RequestPtr & request) { return request->done; });
+
+    checkInterrupted();
+}
+
+void Session::wait(TimePoint deadline)
+{
+    checkInterrupted();
+
+    const auto now = Clock::now();
+    /// Interruption shuts the sockets down, which wakes up `poll`; waking up regularly is only a safety net.
+    TimePoint until = std::min(deadline, now + std::chrono::seconds(1));
+    VectorWithMemoryTracking<pollfd> fds;
+    for (const auto & connection : connections)
+    {
+        until = std::min(until, connection->wakeUpTime());
+        if (connection->hasBufferedInput())
+            until = now;
+        if (connection->fd() >= 0 && connection->pollEvents())
+            fds.push_back({.fd = connection->fd(), .events = connection->pollEvents(), .revents = 0});
+    }
+    for (const auto & [_, request] : requests_in_flight)
+        if (!request->done)
+            until = std::min(until, request->started + client_state->configuration.operation_timeout);
+    for (const auto & request : requests_to_send)
+        until = std::min(until, request->started + client_state->configuration.operation_timeout);
+
+    if (until <= now)
+        return;
+    auto timeout_ms = std::chrono::ceil<std::chrono::milliseconds>(until - now).count();
+    [[maybe_unused]] int res = ::poll(fds.data(), static_cast<nfds_t>(fds.size()), static_cast<int>(timeout_ms));
+}
+
+bool Session::hasPendingOutput() const
+{
+    for (const auto & connection : connections)
+        if (connection->hasPendingOutput())
+            return true;
+    return false;
+}
+
+void Session::checkInterrupted() const
+{
+    if (client_state->interrupter.isInterrupted())
+        throw Exception(ErrorCodes::ABORTED, "The Pulsar client is closed");
+    if (owner_interrupter && owner_interrupter->isInterrupted())
+        throw Exception(ErrorCodes::ABORTED, "The Pulsar producer is interrupted");
+}
+
+void Session::close() noexcept
+{
+    for (auto & connection : connections)
+        connection->close();
+    connections.clear();
+    requests_in_flight.clear();
+    requests_to_send.clear();
 }
 
 }
+
+}
+
+#endif

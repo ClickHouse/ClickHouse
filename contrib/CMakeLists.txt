@@ -9,7 +9,15 @@ endif ()
 
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     # 3rd-party libraries usually not intended to work with UBSan.
-    add_compile_options(-fno-sanitize=undefined)
+    # `unsigned-integer-overflow` is not a part of the `undefined` group and has to be listed
+    # separately. Header-only third-party code, which is compiled as a part of our own translation
+    # units and therefore is not affected by these options, is excluded in `tests/ubsan_ignorelist.txt`.
+    # Only C/C++ (and GNU-style ASM handled by clang) understand these; scope them away from other
+    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler reads `-fno-sanitize=undefined`
+    # as `-f no-sanitize=undefined`, an output format, and fails with `unrecognised output format`.
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=undefined>
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=unsigned-integer-overflow>)
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
@@ -332,7 +340,6 @@ add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)
 
 add_contrib (sz3-cmake sz3)
-
 
 # cuDF and friends. Guarded by ENABLE_GPU inside each -cmake file, and listed in
 # dependency order: cccl before cuCollections, spdlog before rapids-logger before rmm.
