@@ -31,6 +31,8 @@ template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
 DataTypePtr getLeastSupertype(const DataTypes & types);
 
 /// Whether `lhs.equals(rhs)` and both have `Bool` in the same places: `equals` does not tell `Bool` from `UInt8`.
+/// A `SimpleAggregateFunction` with `Variant` alternatives that differ only in `Bool` only needs `equals`: `CAST`
+/// converts it element by element and refuses such `Variant`s.
 bool equalsIncludingBool(const IDataType & lhs, const IDataType & rhs);
 
 /// Same as above but return String type instead of throwing exception.

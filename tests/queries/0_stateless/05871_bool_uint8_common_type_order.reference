@@ -58,14 +58,26 @@ Array(AggregateFunction(anyTuple, Tuple(UInt8)))	Array(AggregateFunction(anyTupl
 1
 1
 1
-UInt8	0	1
-UInt8	1	0
-UInt8	0	1
-UInt8	1	0
-UInt8	0	1
-UInt8	1	0
-UInt8	0	1
-UInt8	1	0
+0	1
+1	0
+0	1
+1	0
+0	1
+1	0
+0	1
+1	0
+0	1
+1	0
+0	1
+1	0
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
 0	UInt16
 2	UInt16
 0	UInt16

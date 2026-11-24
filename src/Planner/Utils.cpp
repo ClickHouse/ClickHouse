@@ -8,10 +8,8 @@
 #include <Parsers/parseQuery.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/getLeastSuperColumn.h>
@@ -188,8 +186,7 @@ void addConvertingToCommonHeaderActionsIfNeeded(
         {
             const auto & common_column = union_common_header.getByPosition(column);
             if (!equalsIncludingBool(*outputs[column]->result_type, *common_column.type))
-                outputs[column] = &actions_dag.addAlias(
-                    addCastThroughSimpleAggregateFunction(actions_dag, *outputs[column], common_column.type, context), common_column.name);
+                outputs[column] = &actions_dag.addAlias(actions_dag.addCast(*outputs[column], common_column.type, {}, context), common_column.name);
         }
 
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
@@ -198,17 +195,6 @@ void addConvertingToCommonHeaderActionsIfNeeded(
 
         query_plans_headers[i] = query_node_plan->getCurrentHeader();
     }
-}
-
-const ActionsDAG::Node & addCastThroughSimpleAggregateFunction(
-    ActionsDAG & dag, const ActionsDAG::Node & node, const DataTypePtr & type, const ContextPtr & context)
-{
-    DataTypePtr argument;
-    if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(node.result_type->getCustomName()))
-        argument = simple->getArgumentsDataTypes().front();
-    const bool has_variant = argument && anyInTypeTree(*argument, [](const IDataType & child) { return isVariant(child); });
-    const auto & source = has_variant ? dag.addCast(node, argument, {}, context) : node;
-    return dag.addCast(source, type, {}, context);
 }
 
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name)
