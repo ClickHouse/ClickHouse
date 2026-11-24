@@ -5168,6 +5168,12 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
+    /// Bool shares the UInt8 type id, so the dispatch below would reuse the column unchanged. It also comes
+    /// before the identity shortcut: a Bool column may hold a raw byte (e.g. from `reinterpret`), which
+    /// Bool -> Bool normalizes too.
+    if (isUInt8(from_type) && (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type)))
+        return createUInt8ToBoolWrapper(from_type, to_type);
+
     /// Only an identical type is an identity cast. equals is not enough: it ignores custom names (Bool vs UInt8)
     /// and time zones, also inside a container, where a leaf may still need a conversion. Such a type goes
     /// through its regular wrapper, which reuses the columns that need no conversion.
@@ -5184,10 +5190,6 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
     }
     else if (WhichDataType(from_type).isNothing())
         return createNothingWrapper(to_type.get());
-
-    /// Bool shares the UInt8 type id, so the dispatch below would reuse the column unchanged.
-    if (isUInt8(from_type) && (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type)))
-        return createUInt8ToBoolWrapper(from_type, to_type);
 
     WrapperType ret;
 
