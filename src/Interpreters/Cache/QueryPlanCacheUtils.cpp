@@ -1258,7 +1258,7 @@ bool queryTreeIsEligibleImpl(const IQueryTreeNode & node, const ContextPtr & con
         if (mentionsAggregateFunctionCheckingAccessOnCreate(function_node->getFunctionName()))
             return false;
 
-        if (function_node->isOrdinaryFunction())
+        if (function_node->isOrdinaryCall())
         {
             /// `arrayJoin` reports `isDeterministic() = false` because it is multi-valued, but it is
             /// pure (same argument - same set of rows), so it is safe for the plan cache. Mirror the
