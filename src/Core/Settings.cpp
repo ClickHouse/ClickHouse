@@ -167,6 +167,8 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 </Note>
 
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. The block is made smaller still when the codec could compress it to more than 512 MiB, which only a chain of expanding codecs does. Data written in larger blocks by older versions cannot be read.
 )", 0) \
     DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
 In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
@@ -362,6 +364,13 @@ This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent 
 `clickhouse-client` or over the HTTP interface. The writing side of the pipeline
 (squashing the blocks and writing them to the destination table) is parallelized
 across up to this many threads.
+
+Destinations whose results depend on insertion order keep a single write stream when the input has one stream:
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(including their replicated variants), `MergeTree` tables with a `UNIQUE KEY`, `EmbeddedRocksDB`, and `Distributed`
+(the engine of the table on the shard is not known). A `SELECT` with multiple output streams has no input order
+to preserve, so these destinations can retain parallel sinks. `KeeperMap` always keeps a single write stream.
+These restrictions also apply to destinations reached through a materialized view or an `Alias` table.
 
 Possible values:
 
@@ -724,6 +733,12 @@ Maximum number of files that could be returned in batch by ListObject request
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
+    DECLARE(S3RequestPayer, s3_request_payer, S3RequestPayer::NONE, R"(
+Set to `requester` to access a requester-pays `S3` bucket: every request then carries the header `x-amz-request-payer: requester`, so the requester pays for the request and the data transfer. Possible values: `none` (default, the header is not sent), `requester`.
+
+It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk or an `S3` table with its own credentials. For those, use the `request_payer` key of an endpoint section of the `<s3>` server configuration or of the disk definition, which also takes precedence over this setting.
+)", 0, \
+        {"26.12", "none", "none", "New setting to access requester-pays S3 buckets."}) \
     DECLARE(Bool, azure_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all azure requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
@@ -1238,6 +1253,15 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0, \
         {"24.10", true, true, "New setting"}) \
+    DECLARE(Bool, optimize_move_to_prewhere_respect_short_circuit, true, R"(
+When moving conditions from WHERE to PREWHERE, keep a condition that can throw behind the conditions written before it
+if short-circuit evaluation would evaluate it only on the rows that these conditions keep.
+For example, `a = 'one' AND toDateTime64(s, 3) > '2020-01-01'` does not parse `s` in the rows where `a != 'one'`.
+Such a condition is not ordered by cost. With the setting disabled, the conditions are ordered as if
+[short_circuit_function_evaluation](#short_circuit_function_evaluation) were `disable`, and the query can throw
+on the rows that a preceding condition excludes.
+)", 0, \
+        {"26.12", false, true, "New setting: automatic PREWHERE keeps a condition that can throw behind the conditions that short-circuit evaluation applies before it. `compatibility` below 26.12 restores the previous order."}) \
     DECLARE(Bool, apply_string_filters_during_scan, true, R"(
 Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
 
@@ -1462,7 +1486,7 @@ Possible values:
 In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates a misuse
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_suspicious_indexes, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
 )", 0, allow_suspicious_indices, \
         {"26.11", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
         {"23.4", true, false, "If true, index can defined with identical expressions"}) \
@@ -3975,8 +3999,8 @@ The ratio of available memory that is allowed for `GROUP BY`. Once reached,
 external memory is used for aggregation.
 
 For example, if set to `0.6`, `GROUP BY` will allow using 60% of the available memory
-(to server/user/merges) at the beginning of the execution, after that, it will
-start using external aggregation.
+(under the query's `max_memory_usage` and the server/user/merges limits) at the beginning of the execution, after that, it will
+start using external aggregation. The userspace page cache above `page_cache_min_size` counts as available memory.
 )", 0, \
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
@@ -4032,14 +4056,14 @@ Possible values:
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
 The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
 
-For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (under the query's `max_memory_usage` and the server/user/merges limits) at the beginning of the execution, after that, it will start using external sort. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
 )", 0, \
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.
 )", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
@@ -4056,14 +4080,12 @@ See [DISTINCT in external memory](/reference/statements/select/distinct#distinct
 )", 0, \
         {"26.9", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
-Fraction of available server or user memory used to calculate the external `DISTINCT` threshold at
-the start of execution. For example, `0.5` uses half of the available memory.
+Fraction of the memory available under the query's `max_memory_usage` and the server or user memory limits,
+used to calculate the external `DISTINCT` threshold at the start of execution. For example, `0.5` uses half
+of the available memory. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
-server or user memory limit, the ratio has no effect.
-
-`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
-use `max_bytes_before_external_distinct`, leaving room for additional memory usage.
+query, server or user memory limit, the ratio has no effect.
 )", 0, \
         {"26.9", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."}) \
     \
@@ -4079,14 +4101,13 @@ See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
         {"26.10", 0, 0, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_set` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_set, 0.5, R"(
-Fraction of available server or user memory used to calculate the threshold for spilling the set of `IN`
-with a subquery to disk, at the start of execution. For example, `0.5` uses half of the available memory.
+Fraction of the memory available under the query's `max_memory_usage` and the server or user memory limits,
+used to calculate the threshold for spilling the set of `IN` with a subquery to disk, at the start of
+execution. For example, `0.5` uses half of the available memory. The userspace page cache above
+`page_cache_min_size` counts as available memory.
 
 Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
-server or user memory limit, the ratio has no effect.
-
-`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
-use `max_bytes_before_external_set`, leaving room for additional memory usage.
+query, server or user memory limit, the ratio has no effect.
 )", 0, \
         {"26.11", 0.5, 0.5, "The default change to 0.5 was backported to 26.10."}, \
         {"26.10", 0., 0.5, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
@@ -4522,7 +4543,7 @@ value honors this setting, including the ones that spill to disk: reaching the
 limit stops the query rather than triggering a spill. The exception is
 `legacy_join_size_limits_trigger_spilling`: with it on, the part of a join that
 already runs on disk spills further instead of acting on this setting.
-`ie_join` honors it as well, on the input it accumulates from both sides. `partial_merge` still
+`inequality` honors it as well, on the input it accumulates from both sides. `partial_merge` still
 handles the limits by switching strategy — see
 [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
@@ -4558,7 +4579,7 @@ See also:
 - [Join table engine](/reference/engines/table-engines/special/join)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash,ie_join", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash,inequality", R"(
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
@@ -4622,11 +4643,11 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
 
-- ie_join
+- inequality
 
- The sort-based [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
+ The sort-based [inequality join](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`. The former name `ie_join` is accepted as an alias.
 
- The position in the list sets the priority. Listed after other algorithms, as in the default value, `ie_join` is used only when the `ON` section has no equality conditions. Listed first, it is used whenever the `ON` section has two inequality conditions, and any remaining conditions are applied as a filter over the join result. When there are more than two inequality conditions, the two used by the algorithm are chosen by their estimated selectivity from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics); without statistics, the first two in syntax order are used. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other join kinds as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+ The position in the list sets the priority. Listed after other algorithms, as in the default value, `inequality` is used only when the `ON` section has no equality conditions. Listed first, it is used whenever the `ON` section has two inequality conditions, and any remaining conditions are applied as a filter over the join result. When there are more than two inequality conditions, the two used by the algorithm are chosen by their estimated selectivity from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics); without statistics, the first two in syntax order are used. Without `inequality` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other join kinds as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
  Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
@@ -4652,8 +4673,9 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
  Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
 )", 0, \
+        {"26.12", "direct,hash,ie_join", "direct,hash,inequality", "Renamed `ie_join` to `inequality`. The former name `ie_join` is still accepted as an alias."}, \
         {"26.11", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."}, \
-        {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
+        {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` (now named `inequality`) to the default list, so a join whose `ON` section has only inequality conditions is executed with the inequality join algorithm instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
         {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}) \
     DECLARE(Bool, allow_block_nested_loop_join, true, R"(
 Allow executing a `JOIN` with an arbitrary `ON` condition, one with no equality between the joined tables, as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
@@ -5374,6 +5396,10 @@ With this setting, repeated staged keys do not thaw a table, and a remembered ve
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \
         {"24.7", false, true, "Use buffering before merging while reading in order of primary key"}) \
+    DECLARE(UInt64, read_in_order_max_bytes_to_prefetch, 128_MiB, R"(
+Maximal total size in bytes of the blocks buffered ahead when reading a single part in order of the primary key with a filter, where the part is split into several streams that are concatenated in order instead of merged. The streams that come later in the order read ahead into memory while the earlier ones are consumed, and this budget is given to the nearest streams first. A larger value allows more streams to be read in parallel. The stream that is currently consumed may buffer a couple of blocks beyond this limit. With 0, there is no limit by bytes, and every stream reads ahead only a couple of blocks.
+)", 0, \
+        {"26.12", 0, 134217728, "New setting to limit the memory for reading ahead the streams concatenated in order when reading a single part in order of the primary key."}) \
     DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, R"(
 Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.
 )", 0) \
@@ -5998,6 +6024,15 @@ Possible values:
 - 0 — Queries will be executed with delay.
 - 1 — Queries will be executed without delay.
 )", 0) \
+    DECLARE(Bool, truncate_removes_parts_immediately, false, R"(
+If enabled, `TRUNCATE` of a non-replicated `MergeTree` table removes the truncated parts from disk at once. Otherwise they become inactive and are removed after `old_parts_lifetime` seconds, like the source parts of a merge, so that running queries and readers with a stale list of parts can still read them. Replicated tables always remove the parts at once.
+
+Possible values:
+
+- 0 - The truncated parts are removed after `old_parts_lifetime` seconds.
+- 1 - The truncated parts are removed at once.
+)", 0, \
+        {"26.12", true, false, "New setting. `TRUNCATE` of a `MergeTree` table keeps the removed parts for `old_parts_lifetime` seconds instead of removing them at once"}) \
     DECLARE(Bool, enable_scalar_subquery_optimization, true, R"(
 If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
 )", 0, \
@@ -6025,9 +6060,9 @@ Possible values:
     DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
 Enables or disables the optimization of a trivial query `SELECT ... FROM table GROUP BY key_expr LIMIT n` (with no `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window clauses and no `GROUP BY` modifiers) by capping the aggregation at `n + offset` distinct keys.
 
-With no aggregate functions in the projection, the cap is applied by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'` (this form also applies on the shards of distributed queries). With aggregate functions in the projection, the cap is applied only when the server performs the complete aggregation locally: once any aggregation thread exceeds the cap, all threads are restricted to a single shared set of `n + offset` kept keys, so the aggregate values of the returned keys stay exact.
+With no aggregate functions in the projection, the aggregation of such a query (also of such a subquery, and also on the shards of distributed queries) works as with `max_rows_to_group_by = n + offset` and `group_by_overflow_mode = 'any'`. The settings are not changed, so the aggregations in the views and subqueries that the query reads are not affected, unless they have this shape themselves. With aggregate functions in the projection, the cap is applied only when the server performs the complete aggregation locally: once any aggregation thread exceeds the cap, all threads are restricted to a single shared set of `n + offset` kept keys, so the aggregate values of the returned keys stay exact.
 
-The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), when the user has already set a tighter `max_rows_to_group_by`, and with [exact_rows_before_limit](#exact_rows_before_limit) (the cap would make `rows_before_limit_at_least` report at most `n + offset`).
+The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), when the user has already set a tighter `max_rows_to_group_by`, in a correlated subquery and in a query with a correlated subquery in the projection, with [make_distributed_plan](#make_distributed_plan) (also when only an enclosing query enables it), and with [exact_rows_before_limit](#exact_rows_before_limit) (the cap would make `rows_before_limit_at_least` report at most `n + offset`).
 
 The aggregate-function form excludes the `GROUP BY` top-K heap of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization) on the same query. The heap is faster, so the cutoff is applied only when the heap does not apply: when it is disabled, when `n + offset` exceeds [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization), when `max_rows_to_group_by` is set, or when the query plan is serialized.
 
@@ -6132,7 +6167,7 @@ For `DELETE FROM ... ON CLUSTER`, each executing host derives the mode from its 
 hosts whose profiles set different defaults can run the delete in different modes. A replicated
 shard executes on one replica, so there it is that replica's settings that decide. Setting it in
 the session of the initiating query overrides this, because the distributed DDL entry carries
-session changes at `distributed_ddl_entry_format_version` 2 and above, which the default satisfies.
+session changes.
 A host that constrains the setting clamps the value back.
 )", 0, \
         {"25.5", "alter_update", "alter_update", "A new setting"}) \
@@ -7218,6 +7253,14 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
+    DECLARE(NonZeroUInt64, iceberg_metadata_previous_versions_max, 100, R"(
+The maximum number of entries in the `metadata-log` of an Iceberg table that a write keeps, including the entry of the metadata file it writes. When a write adds an entry over the limit, the oldest entries are removed. The metadata files themselves are not deleted.
+
+The Iceberg table property `write.metadata.previous-versions-max` takes precedence over this setting. As in the Java implementation, the property is the number of previous metadata files and is at least one, so the `metadata-log` keeps one entry more than its value.
+
+The setting has no effect on tables in a catalog that writes the metadata files itself, such as a REST catalog: the catalog maintains the `metadata-log` according to its own configuration and the table property.
+)", 0, \
+        {"26.12", std::numeric_limits<UInt64>::max(), 100, "New setting. Writes into Iceberg tables bound the `metadata-log`, which previously grew with every commit."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
 Data files smaller than this are selected for compaction.
 
@@ -7227,19 +7270,25 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", 0, \
         {"26.9", 10 * 1024 * 1024, 384 * 1024 * 1024, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `min-file-size-bytes`: 0.75 of the target file size (512 MiB). Compaction now selects files below 384 MiB instead of below 10 MiB."}, \
         {"26.5", 10_MiB, 10_MiB, "New setting"}) \
-    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
-Data files larger than this are selected for compaction.
-
-The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
-(512 MiB), which is how the `rewrite_data_files` procedure derives its `max-file-size-bytes` option,
-see https://iceberg.apache.org/docs/1.5.2/configuration/.
+    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 100, R"(
+Max number of data files merged by one compaction merge of an Iceberg table, the same as `max_parts_to_merge_at_once` for `MergeTree`.
+A merge reads all its input files at once, so its memory grows with the number of inputs.
 )", 0, \
-        {"26.9", 10ULL * 1024 * 1024 * 1024, 512ULL * 1024 * 1024 * 9 / 5, "Aligned with how the Iceberg `rewrite_data_files` procedure derives `max-file-size-bytes`: 1.8 of the target file size (512 MiB)."}, \
-        {"26.5", 10_GiB, 10_GiB, "New setting"}) \
-    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
-Threshold for compaction data files in iceberg.
-)", 0, \
+        {"26.11", 1000, 100, "The same as `max_parts_to_merge_at_once` for `MergeTree`: a merge reads all its inputs at once, and the selection of merges keeps the candidate ranges of every partition."}, \
         {"26.5", 1000, 1000, "New setting"}) \
+    DECLARE(UInt64, iceberg_compaction_max_bytes_to_merge, 150_GiB, R"(
+Max total size of the data files merged by one compaction merge of an Iceberg table, the sum of their sizes in the object storage.
+The same as `max_bytes_to_merge_at_max_space_in_pool` for `MergeTree`: when the background pool has fewer free entries than
+`number_of_free_entries_in_pool_to_lower_max_size_of_merge`, the limit is lowered down to `max_bytes_to_merge_at_min_space_in_pool`
+(both from the `merge_tree` section of the config).
+The files of a partition that do not fit are merged by the next merges. Does not apply to a merge that applies position delete files.
+)", 0, \
+        {"26.11", 150_GiB, 150_GiB, "New setting. Limits the total size of the files of a compaction merge, the same way as `max_bytes_to_merge_at_max_space_in_pool` does for `MergeTree`."}) \
+    DECLARE(UInt64, iceberg_compaction_max_rows_to_merge, std::numeric_limits<UInt64>::max(), R"(
+Max total number of rows of the data files merged by one compaction merge of an Iceberg table.
+The files of a partition that do not fit are merged by the next merges. Does not apply to a merge that applies position delete files.
+)", 0, \
+        {"26.11", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting. Restores the limit on the total number of rows of the files of a compaction merge, which was decided by `iceberg_compaction_max_rows_in_data_file` before."}) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 
@@ -7286,19 +7335,10 @@ Minimum time of delay between 2 background compaction operations.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
     DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
-The time after which the data will be deleted.
+With `enable_cleanup_old_data_files_compaction`, the time after which a snapshot of an Iceberg table that a newer one replaced is
+expired, together with the files that only it references. The longer of this and `iceberg_outdated_snapshot_lifetime_seconds` applies.
 )", 0, \
         {"26.5", 60 * 60 * 3, 60 * 60 * 3, "New setting"}) \
-    DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
-Number of merged data files that background Iceberg compaction accumulates before publishing them in a new snapshot.
-
-Compaction results are published in any case once there are no candidates left to compact, so this setting only bounds
-how long already merged files stay unpublished while compaction keeps finding new work. `0` restores the old behaviour
-of publishing only when compaction runs out of candidates - a state that is never reached while the table keeps
-receiving new data files, so every merged output is then written to object storage and never referenced by a snapshot.
-)", 0, \
-        {"26.9", 100, 100, "New setting"}, \
-        {"26.8", 100, 100, "New setting"}) \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](/concepts/features/performance/caches/query-cache). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
@@ -7898,7 +7938,20 @@ Possible values:
 Cloud default value: `none_only_active`.
 )", 0) \
     DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
-Compatibility version of distributed DDL (ON CLUSTER) queries
+Compatibility version of distributed DDL (ON CLUSTER) queries. Use a lower value to keep older servers in the
+cluster able to execute the queries.
+
+Servers do not execute entries with versions `1` and `2`. Older servers write those for the setting values `1`, `2`
+and `3`, so before upgrading set this setting to at least `4` on all servers and wait until the distributed DDL
+queue is processed.
+
+Possible values:
+- `3` — The same as `4`. It is written as `4`, because older servers reject entries with version `3`.
+- `4` — The entry carries the settings changed in the session and the OpenTelemetry tracing context, and `CREATE` queries are normalized on the initiator.
+- `5` — Also preserves the `initial_query_id` of the query.
+- `6` — Also carries whether the query is a part of `BACKUP` or `RESTORE`.
+- `7` — Also carries the UUID of the parent table, which a `Replicated` database uses to execute the query only if the table exists.
+- `8` — Also carries the user and the roles of the initiator, which the hosts use with the server setting `distributed_ddl_use_initial_user_and_roles`.
 
 Cloud default value: `6`.
 )", 0) \
@@ -8205,14 +8258,17 @@ Toggles a query-plan-level optimization which copies filter conjuncts from one s
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
 on the other side can use them.
 
-Applies when the filter and the `MergeTree` read are separated from the join only by expression
-and filter steps, and when the copied conjunct compares a primary key column with a constant
-(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
-comparison between two key columns, is left alone: it could not drive primary key pruning on the
-other side, so copying it would only add work.
+Applies when the filter and the read are separated from the join only by expression and filter
+steps, and when the copied conjunct compares a constant (including `IN` with a constant set) with
+either a primary key column of a `MergeTree` read, or a column of a `Parquet` read (`file`, `url`,
+object storage that is not a data lake) of an integer of up to 64 bits, `Date`, `Date32` or `Decimal` type without a
+default expression, whose row groups the read can skip by min/max statistics. A predicate below a
+nested join or below `DISTINCT`, or a comparison between two key columns, is left alone: it could
+not drive pruning on the other side, so copying it would only add work.
 
 Only takes effect if `query_plan_enable_optimizations` is 1.
 )", 0, \
+        {"26.11", true, true, "Also copies filter conjuncts onto integer, Date and Decimal columns of Parquet reads, which skip row groups by their statistics."}, \
         {"26.9", false, true, "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."}) \
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
@@ -8280,7 +8336,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, false, R"(
+    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, R"(
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
@@ -8293,6 +8349,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, optimize_read_in_window_order, \
+        {"26.11", false, true, "Enable by default again: the sorting now scatters the merged stream by the `PARTITION BY` columns, so the window functions run in parallel. This also applies to the alias `optimize_read_in_window_order`."}, \
         {"26.1", true, false, "Disable this logic by default. This also applies to the alias `optimize_read_in_window_order`."}) \
     DECLARE(Bool, query_plan_lift_up_union, true, R"(
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
@@ -8919,9 +8976,10 @@ Use userspace page cache when distributed cache is used.
 Use userspace page cache when reading from local disks. Used for testing, unlikely to improve performance in practice. Requires local_filesystem_read_method = 'pread' or 'read'. Doesn't disable the OS page cache; min_bytes_to_use_direct_io can be used for that. Only affects regular tables, not file() table function or File() table engine.
 )", 0, \
         {"26.2", false, false, "New setting to use userspace page cache for local disks"}) \
-    DECLARE(Bool, use_page_cache_for_object_storage, false, R"(
-Use userspace page cache when reading from object storage table functions (s3, azure, hdfs) and table engines (S3, Azure, HDFS).
+    DECLARE(Bool, use_page_cache_for_object_storage, true, R"(
+Use userspace page cache when reading from object storage table functions (s3, azure, hdfs, Iceberg, Delta Lake, etc.) and table engines (S3, Azure, HDFS, Iceberg, Delta Lake, etc.). It has an effect only if the userspace page cache is configured on the server (`page_cache_max_size`), and only for objects with a strong ETag or with an immutable identity taken from the table records (data files of Iceberg and Delta Lake). It is not used together with the filesystem cache. Together with the distributed cache, it is used only if `use_page_cache_with_distributed_cache` is also enabled.
 )", 0, \
+        {"26.12", false, true, "Use the userspace page cache for object storage table engines and table functions by default, if the page cache is configured on the server."}, \
         {"26.2", false, false, "New setting to use userspace page cache for object storage table functions"}) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
@@ -9221,7 +9279,7 @@ Maximum time to read from a pipe for receiving information from the threads when
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
 
-Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`, and is refused in readonly mode (`readonly` above 0, which every HTTP GET request implies). `DESCRIBE` does not build the data-reading pipeline that renames, so neither of these two restrictions applies to it.
 
 ### Placeholders
 
@@ -9342,9 +9400,10 @@ Only has an effect in ClickHouse Cloud. Allow to read only from current availabi
 Only has an effect in ClickHouse Cloud. The maximum size of the buffer which is written to distributed cache servers, per write buffer. It is independent of the buffer which is written to the object storage: that one keeps growing towards the upload part size. If 0, `DBMS_DEFAULT_BUFFER_SIZE` (1 MiB) is used. The buffer starts at `adaptive_write_buffer_initial_size` and grows up to this size only as the stream is written, so that a part does not allocate it for every stream it writes.
 )", 0, \
         {"25.7", 0, 0, "New cloud setting"}) \
-    DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc). The cache is keyed on the object's ETag, so that an object overwritten in place is not served stale. An object whose ETag is missing or is not a strong content identifier is read from the object storage directly.
+    DECLARE(BoolAuto, table_engine_read_through_distributed_cache, Field("auto"), R"(
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, Iceberg, Delta Lake, etc). `auto` (the default) means to read through the distributed cache when it is used for other reads, as decided by the server setting `enable_read_through_distributed_cache` and the setting `force_read_through_distributed_cache`. The cache is keyed on the object's ETag, so that an object overwritten in place is not served stale, or on the immutable identity of a data file taken from the table records (Iceberg, Delta Lake), so that no `HEAD` request is needed. An object without a strong ETag or such an identity is read from the object storage directly, as are reads that the cache server cannot repeat: `url` tables, `s3` reads with `NOSIGN` or with `headers`, data files with a fully qualified path (a Delta Lake shallow clone), and, unless the setting is `1`, `azure` reads.
 )", 0, \
+        {"26.12", false, "auto", "Read object storage table engines and table functions through the distributed cache when it is used for other reads."}, \
         {"25.7", false, false, "New setting"}) \
     DECLARE(UInt64, distributed_cache_connect_backoff_min_ms, default_distributed_cache_connect_backoff_min_ms, R"(
 Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distributed cache connection creation.
@@ -9991,9 +10050,19 @@ Lets automatic parallel replicas remember, per query plan, where the replicas' s
 repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
 replicas.
 
-Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
+Disables remembered boundaries. To benchmark the cost of building the plan with parallel replicas, also set
+`automatic_parallel_replicas_undecided_retry_after_executions = 0`: the plans whose last build ended without a
+decision are skipped independently of this setting.
 )", 0, \
         {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
+    DECLARE(UInt64, automatic_parallel_replicas_undecided_retry_after_executions, 10, R"(
+How many executions of a query plan skip building the plan with parallel replicas after its last build ended without a decision in automatic parallel replicas: the two plans could not be compared, the planner used no parallel replicas
+in the plan built with them, a step of the plan cannot collect the statistics, or the collection measured nothing. Concurrent executions take turns: one in every `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan again.
+After the first such outcome for a query plan, the next execution builds the plan again at once just in case the first execution populated other statistics caches and the planning decisions will change.
+
+0 disables deferral after undecided outcomes. It is independent of `automatic_parallel_replicas_remember_boundary`, which spares the build for plans decided from statistics.
+)", 0, \
+        {"26.12", 0, 10, "New setting. Automatic parallel replicas now skips building the plan with parallel replicas for a number of executions of a query plan whose last build ended without a decision; previously every execution built it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
@@ -10066,6 +10135,10 @@ This is internal setting that should not be used directly and represents an impl
     DECLARE(UInt64, parallel_replica_offset, 0, R"(
 This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the index of the replica participating in query processing among parallel replicas.
 )", BETA) \
+    DECLARE(UInt64, distributed_group_by_top_k, 0, R"(
+This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. The initiator sends it as `n` with a `GROUP BY ... LIMIT n` query without `ORDER BY` when it keeps the smallest `n` merged groups by all grouping keys. Then each replica keeps only its smallest `n` groups in its partial aggregation (see `enable_group_by_top_k_optimization`). It is not forwarded further.
+)", BETA, \
+        {"26.12", 0, 0, "New internal setting: the initiator of a query with parallel replicas lets the replicas apply the `GROUP BY` top-K heap to `GROUP BY ... LIMIT` without `ORDER BY`."}) \
     DECLARE(String, parallel_replicas_custom_key, "", R"(
 An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
@@ -10615,6 +10688,24 @@ independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_max_data_files_in_upload, 8, R"(
+The maximum number of finished data files of one insert stream whose upload is not waited for while the `INSERT` writes the next
+file, for object storages that upload in the background (S3, Azure). Such a file holds its upload buffers until its upload
+completes, so higher values hide more upload latency at the cost of memory. `0` waits for the upload of each data file before
+writing the next one.
+)", 0, \
+        {"26.11", 0, 8, "New setting. An INSERT into Iceberg on S3 or Azure no longer waits for the upload of each finished data file."}) \
+    DECLARE(UInt64, iceberg_insert_max_sort_buffer_bytes, 1_GiB, R"(
+Max uncompressed bytes an `INSERT` into an Iceberg table with a sort order buffers across all partitions before
+writing them sorted. Past it, the largest buffer is written early as a smaller sorted data file. 0 means unlimited.
+)", 0, \
+        {"26.12", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(Bool, iceberg_write_table_statistics_ndv, false, R"(
+A commit to an Iceberg table records the number of distinct values of each column in the table statistics of its
+snapshot, for [`use_iceberg_table_statistics_ndv`](#use_iceberg_table_statistics_ndv). A commit to a table in a REST
+or Unity catalog throws.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
@@ -10623,30 +10714,23 @@ snapshot with its own manifest, so an `INSERT` writes exactly one manifest only 
 `ALTER TABLE ... DROP PARTITION` cannot drop a partition whose manifest is shared with other partitions.
 )", 0, \
         {"26.11", false, false, "New setting."}) \
-    DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
-`iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
-Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
-)", 0, \
-        {"26.9", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}, \
-        {"26.7", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."}) \
-    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
-Max bytes of an iceberg parquet data file produced by compaction.
-
-The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
-see https://iceberg.apache.org/docs/1.5.2/configuration/. The limit is compared against the size of the file
-written so far, that is, the compressed size, the same measure as `iceberg_data_file_size_lower_threshold_compaction`,
-so a file can exceed it by what the writer still buffers, such as incomplete Parquet row groups and the ones being
-encoded. Keep it above
-`iceberg_data_file_size_lower_threshold_compaction`, otherwise every output file stays below the lower threshold
-and is selected for compaction again.
-)", 0, \
-        {"26.9", std::numeric_limits<UInt64>::max(), 512 * 1024 * 1024, "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit. The default is aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/. Previously compaction merged all eligible files of a partition into a single output file."}, \
-        {"26.7", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."}) \
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0, \
         {"25.12", 100, 100, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_initial_backoff_ms, 10, R"(
+The upper bound of the delay before the first retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit.
+The bound doubles with each next retry, up to `iceberg_insert_commit_retry_max_backoff_ms`, and each delay is chosen at random
+between zero and the bound, so that the writers that lost the same race do not retry at the same moment and collide again.
+The delay is taken before the latest metadata is looked up, so with many concurrent writers it also limits how often the metadata
+directory is listed. `0` retries without a delay.
+)", 0, \
+        {"26.12", 0, 10, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_max_backoff_ms, 5000, R"(
+The maximum of the delay bound before a retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit,
+see `iceberg_insert_commit_retry_initial_backoff_ms`.
+)", 0, \
+        {"26.12", 0, 5000, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
     DECLARE(Bool, database_datalake_require_metadata_access, true, R"(
 Either to throw error or not if we don't have rights to get table's metadata in database engine DataLakeCatalog.
 )", 0, \
@@ -10840,6 +10924,10 @@ instead of glob listing. 0 means disabled.
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0, \
         {"26.1", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."}) \
+    DECLARE(Bool, json_use_optimized_type_conversion, true, R"(
+When enabled, conversions between JSON types with different parameters (typed paths, skip rules) use an optimized path that reuses unchanged sub-columns by pointer and applies CAST only to changed paths. This avoids the full serialize-to-string and parse-from-string pipeline. Disable to force the legacy format+parse conversion for all JSON type changes.
+)", 0, \
+        {"26.12", true, true, "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."}) \
     DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, true, R"(
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
@@ -10878,7 +10966,7 @@ If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `def
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, a hash join spills the right-side data to disk. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill. After the spill, the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (see `max_bytes_before_external_join`).
 
-For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
+For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (under the query's `max_memory_usage` and the server/user/merges limits) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
@@ -10902,17 +10990,23 @@ Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nu
 
 Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join` is not affected either.
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join keeps exact keys when its hash table fits in the L2 cache of the CPU, and also when it would hash every left key and the right side has fewer rows than `min_rows_for_packed_string_keys_in_hash_join`. With that setting at 0, every join is packed, also one whose hash table fits in the L2 cache.
 )", 0, \
         {"26.11", false, true, "New setting to make hash joins on a single `String` key faster and use less memory."}) \
     DECLARE(UInt64, min_rows_for_packed_string_keys_in_hash_join, 100'000, R"(
-The minimum estimated number of rows in the right side of a join for `enable_packed_string_keys_in_hash_join` to apply. Smaller joins gain little from it, and can be slower with long keys.
+A hash join whose right side has a row estimate packs its `String` keys (see `enable_packed_string_keys_in_hash_join`) only when the hash table with exact keys would be larger than about the L2 cache of the CPU, or when this setting is 0. The size of the table is the number of right-side rows times the bytes of one row: a cell of 32 bytes plus the average length of the key, which adds 0 when unknown. Smaller joins gain little from packed keys, and can be slower.
 
-The estimate is the number of right-side rows in an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate. `parallel_hash_join_threshold` uses the same estimate. A join without an estimate always uses `enable_packed_string_keys_in_hash_join`.
+A packed key of more than 15 bytes is hashed for every row of the left side. A join with a runtime filter that passes mostly the rows with a match (see `enable_join_runtime_filters`) hashes only the rows that match, so it needs no minimum. Without such a filter, this setting is the minimum number of right-side rows. It applies when the average length of the key is more than 15 bytes, and when the length is unknown, because it then counts as long. The length is known from the `basic` column statistics of the key. `MergeTree` tables collect them by default, see `auto_statistics_types`.
 
-0 means no minimum.
+The key has no statistics when it is a column of a `Memory` table, the result of an aggregate function of a subquery, or the result of an expression in `ON`, such as `concat(k, 'x')` or `hex(k)`. A join with `OR` does not use them. A subquery that only passes the column on, or groups by it, keeps them.
+
+A `LEFT` join other than `SEMI` and `ANTI`, and a `FULL` join, keep all rows of their left side, so they get no runtime filter. The filter of a `LEFT ANTI` join passes the rows without a match, so it does not count.
+
+The number of rows is the right-side rows of an earlier run of the same join, if `collect_hash_table_stats_during_joins` is enabled. Otherwise it is the query optimizer's estimate, which `parallel_hash_join_threshold` uses too. Without an optimizer estimate, it is the estimate of this server for its own read of the right table. A join with neither packs the keys, unless the server that planned the query estimated the right side below this minimum. Each server of a distributed query decides from its own estimate, statistics and cache size.
+
+0 packs the keys of every join.
 )", 0, \
-        {"26.11", 0, 100'000, "New setting: `enable_packed_string_keys_in_hash_join` applies only when the right side of the join is estimated at 100000 rows or more, or has no estimate."}) \
+        {"26.11", 0, 100'000, "New setting: the minimum number of right-side rows for a hash join that would hash every left key, that is a key of an average length of more than 15 bytes, or of unknown length, without a runtime filter. `enable_packed_string_keys_in_hash_join` also needs a hash table larger than the L2 cache. 0 packs every join."}) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0, \
         {"26.6", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"}) \
@@ -11409,11 +11503,13 @@ Allow to execute `insert` queries into iceberg.
         {"26.2", false, false, "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}, \
         {"25.7", false, false, "New setting."}) \
     DECLARE_WITH_ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
-Allow to clean up old data files during Iceberg compaction.
+Allow to clean up old data files of Iceberg tables with background compaction.
 
-The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
-way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
-of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
+A background task of the table expires the snapshots that a newer one replaced longer than `iceberg_compaction_data_cleanup` ago,
+except those that branches and tags reference, the same way as `expire_snapshots`: removes them from the table metadata and deletes
+the files that no other snapshot references. It also drops the metadata files replaced as long ago from the metadata log and deletes
+them, unless a transactional catalog writes the metadata of the table. The snapshots that a query on any replica is reading stay
+until a later run. Does nothing for a table of the format version 1.
 )", EXPERIMENTAL, allow_experimental_cleanup_old_data_files_compaction, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_cleanup_old_data_files_compaction`."}, \
         {"26.5", false, false, "New setting"}) \
@@ -11742,7 +11838,8 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to too many relations or disconnected components), the next one is used as a fallback.
 )", BETA, \
-        {"26.11", "greedy", "dpsub,greedy", "`dpsub` is now the default join order algorithm; queries with more than 12 relations fall back to `greedy`."}, \
+        {"26.11", "dpsub,greedy", "dpsub,greedy", "The change was backported to 26.10 and is recorded there."}, \
+        {"26.10", "greedy", "dpsub,greedy", "`dpsub` is now the default join order algorithm; queries with more than 12 relations fall back to `greedy`."}, \
         {"25.12", "greedy", "greedy", "New experimental setting."}) \
     DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::CD_C, R"(
 Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
@@ -11751,14 +11848,16 @@ decide which join reorderings are valid. The following values are available:
  - `'a'` - the CD-A conflict detector, which is correct but incomplete
  - `'c'` (default) - the CD-C conflict detector, which is correct and complete
 )", BETA, \
-        {"26.11", "", "c", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}, \
+        {"26.11", "c", "c", "The change was backported to 26.10 and is recorded there."}, \
+        {"26.10", "", "c", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}, \
         {"26.9", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}) \
     DECLARE(Bool, query_plan_join_order_use_interesting_orders, true, R"(
 Only affects the `dpsub` join order algorithm. Makes it aware of the sort order of the joined tables: for each inner equi-join it chooses between a hash join and `full_sorting_merge` by cost, and keeps partial plans whose result is sorted by a join key that a later join can use.
 
 An input counts as sorted by a join key when `optimize_read_in_order` can read it in the order of that key from a `MergeTree` table, or when it is the result of a `full_sorting_merge` join on that key. A join chosen to run as `full_sorting_merge` tries it first, with the `join_algorithm` list as its fallback. The choice is made only when `join_algorithm` has its default value: any other list is a priority list, used as it is. Requires `enable_join_transitive_predicates`.
 )", BETA, \
-        {"26.11", false, true, "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}) \
+        {"26.11", true, true, "The change was backported to 26.10 and is recorded there."}, \
+        {"26.10", false, true, "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}) \
     DECLARE_WITH_ALIAS(Bool, enable_database_paimon_rest_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'paimon_rest'`
 )", EXPERIMENTAL, allow_experimental_database_paimon_rest_catalog, \
@@ -11809,6 +11908,16 @@ Enable table function `eval`.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), \
+        {"26.11", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "Obsolete: a compaction merge of Iceberg data files writes one output file, without a limit on its size."}) \
+    MAKE_OBSOLETE(M, UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, \
+        {"26.11", 512 * 1024 * 1024, 512 * 1024 * 1024, "Obsolete: a compaction merge of Iceberg data files writes one output file, without a limit on its size."}) \
+    MAKE_OBSOLETE(M, UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, \
+        {"26.11", 512ULL * 1024 * 1024 * 9 / 5, 512ULL * 1024 * 1024 * 9 / 5, "Obsolete: compaction no longer splits big data files, because a compaction merge writes one output file without a limit on its size."}) \
+    MAKE_OBSOLETE(M, UInt64, iceberg_compaction_commit_batch_size, 100, \
+        {"26.12", 100, 100, "Obsolete: the background compaction of Iceberg tables publishes the result of every merge in a new snapshot as soon as the merge finishes, instead of accumulating merged files."}, \
+        {"26.9", 100, 100, "New setting"}, \
+        {"26.8", 100, 100, "New setting"}) \
     MAKE_OBSOLETE(M, Bool, enable_optimize_predicate_expression, true, \
         {"18.12.17", 0, 1, "Optimize predicates to subqueries by default"}) \
     MAKE_OBSOLETE(M, Bool, parallel_replicas_only_with_analyzer, true, \

@@ -162,6 +162,15 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
+bool ReadFromObjectStorageStep::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    /// The format of a data lake is only the format new files are written in.
+    if (configuration->isDataLakeConfiguration())
+        return false;
+    return formatSkipsDataByStatistics(configuration->format, format_settings ? *format_settings : getFormatSettings(getContext()))
+        && info.canSkipDataByStatisticsOf(column);
+}
+
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     info = updateFormatPrewhereInfo(info, prewhere_info_value);
@@ -179,9 +188,8 @@ std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCrea
     return data_lake_read_estimate;
 }
 
-/// Zero means "always preliminary-merge", so it must never reach the group-count division.
-/// The cap and the grouping have to read the same value or the cap admits a file count the
-/// grouping cannot divide.
+/// Zero means "always preliminary-merge". The cap and the in-order pipe read the same value,
+/// so no merge group holds more than this many files.
 static size_t effectiveTwoLevelMergeThreshold(const Settings & settings)
 {
     return std::max<size_t>(1, settings[Setting::read_in_order_two_level_merge_threshold]);
@@ -256,7 +264,8 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
 
     /// Never collapse to one port: the sorting step installs no merge above a single port, so a
     /// single group would leave the concatenation unmerged.
-    const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
+    /// One group per stream, so the preliminary merges run in parallel.
+    const size_t num_groups = std::max<size_t>(2, std::min(num_streams, num_files));
     VectorWithMemoryTracking<Pipes> grouped(num_groups);
     for (size_t i = 0; i < num_files; ++i)
         grouped[i % num_groups].emplace_back(std::move(pipes[i]));
@@ -320,6 +329,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         /// The amount of keys (zero) was probably underestimated.
         /// We will keep one stream for this particular case.
         num_streams = 1;
+    }
+
+    if (lazy_row_index_registry)
+    {
+        std::lock_guard lock(lazy_row_index_registry->mutex);
+        lazy_row_index_registry->main_read_streams = num_streams;
     }
 
     // here create for node -> query -> level thread pool
@@ -427,10 +442,9 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
-void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
-    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
-    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+    join_runtime_filters_for_file_pruning.push_back(descriptor);
 }
 
 void ReadFromObjectStorageStep::createIterator()
@@ -791,7 +805,9 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         format_settings,
         std::move(*lazy_info),
         getContext(),
-        max_block_size);
+        max_block_size,
+        /*main_read_leaf_columns_=*/ countLeafColumns(info.format_header).value_or(1),
+        /*max_num_streams_=*/ max_num_streams);
 
     return lazy_step;
 }

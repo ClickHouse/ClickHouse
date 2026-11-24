@@ -18,6 +18,7 @@
 
 #include <base/types.h>
 #include <base/sleep.h>
+#include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Common/AsyncLoader.h>
 #include <Common/ProfileEvents.h>
@@ -575,6 +576,51 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
         ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
         ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
+}
+
+namespace
+{
+
+/// Destroying the returned function allocates: its array has more non-empty nested arrays than the inline
+/// worklist of `Field::destroyContainerIteratively` holds.
+auto jobFuncThatAllocatesOnDestruction()
+{
+    Array wide;
+    for (UInt64 i = 0; i < 32; ++i)
+        wide.emplace_back(Array{Field(i)});
+    return [captured = Field(std::move(wide))] (AsyncLoader &, const LoadJobPtr &) {};
+}
+
+}
+
+TEST(AsyncLoader, ExecutedJobFunctionMayAllocateOnDestruction)
+{
+    AsyncLoaderTest t;
+    auto job = makeLoadJob({}, "job", jobFuncThatAllocatesOnDestruction());
+    auto task = t.schedule({job});
+    t.loader.unpause();
+    t.loader.wait(job);
+    ASSERT_EQ(job->status(), LoadStatus::OK);
+}
+
+TEST(AsyncLoader, RemovedJobFunctionMayAllocateOnDestruction)
+{
+    AsyncLoaderTest t;
+    auto job = makeLoadJob({}, "job", jobFuncThatAllocatesOnDestruction());
+    auto task = t.schedule({job});
+    task->remove();
+    ASSERT_EQ(job->status(), LoadStatus::CANCELED);
+}
+
+TEST(AsyncLoader, CanceledOnScheduleJobFunctionMayAllocateOnDestruction)
+{
+    AsyncLoaderTest t;
+    auto canceled_job = makeLoadJob({}, "canceled_job", [] (AsyncLoader &, const LoadJobPtr &) {});
+    auto canceled_task = t.schedule({canceled_job});
+    canceled_task->remove();
+    auto job = makeLoadJob({canceled_job}, "job", jobFuncThatAllocatesOnDestruction());
+    auto task = t.schedule({job});
+    ASSERT_EQ(job->status(), LoadStatus::CANCELED);
 }
 
 TEST(AsyncLoader, IgnoreDependencyFailure)
