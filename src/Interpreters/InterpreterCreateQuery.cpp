@@ -2793,8 +2793,8 @@ try
 }
 catch (...)
 {
-    /// Only a new table owns its data; an attached one keeps it.
-    if (isFreshDefinition(mode) && !expectsExistingState(mode))
+    /// Only a new table owns its data; an attached or restored one may reference existing external data.
+    if (mode == LoadingStrictnessLevel::CREATE)
     {
         try
         {
