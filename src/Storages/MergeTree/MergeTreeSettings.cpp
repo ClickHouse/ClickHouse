@@ -2555,7 +2555,7 @@ The format of the messages of the table as a topic of the [Kafka interface](/int
 
 If empty, a table with a column `value` stores the message as is in this column, and a table without it uses the format of the `kafka_protocol.format` server setting.
 )", 0, \
-        {"26.11", "", "", "New setting"}) \
+        {"26.12", "", "", "New setting"}) \
     DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
 Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
 
