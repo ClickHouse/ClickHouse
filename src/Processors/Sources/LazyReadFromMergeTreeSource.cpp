@@ -349,7 +349,6 @@ VectorWithMemoryTracking<Names> LazyReadFromMergeTreeSource::splitColumnsIntoGro
     const auto & header = outputs.front().getHeader();
     VectorWithMemoryTracking<Names> column_groups(1, header.getNames());
 
-    /// A query whose main branch reads with one thread has no other thread for the readers of the column groups.
     const size_t max_column_groups = context->getSettingsRef()[Setting::query_plan_max_column_groups_for_lazy_materialization];
     const size_t num_streams = parts_with_ranges.size();
     const size_t threads = std::min(max_threads, lazy_materializing_rows->num_threads);
@@ -374,7 +373,6 @@ VectorWithMemoryTracking<Names> LazyReadFromMergeTreeSource::splitColumnsIntoGro
                 return column_groups;
     }
 
-    /// Only the physical columns are balanced, the other ones (virtual columns, subcolumns) are in the first column group.
     struct Column
     {
         UInt64 bytes = 0;
@@ -401,7 +399,7 @@ VectorWithMemoryTracking<Names> LazyReadFromMergeTreeSource::splitColumnsIntoGro
         columns_to_split.push_back(column);
     }
 
-    /// About four readers per thread, at most one column group per eight physical columns: every reader also finds the rows.
+    /// Every reader also finds the rows, so a column group gets at least eight physical columns.
     static constexpr size_t readers_per_thread = 4;
     static constexpr size_t min_columns_in_column_group = 8;
     const size_t column_group_count = std::min(
@@ -411,7 +409,6 @@ VectorWithMemoryTracking<Names> LazyReadFromMergeTreeSource::splitColumnsIntoGro
     if (column_group_count <= 1)
         return column_groups;
 
-    /// The largest columns first, each to the column group with the fewest bytes so far.
     std::ranges::stable_sort(columns_to_split, std::ranges::greater{}, &Column::bytes);
     VectorWithMemoryTracking<UInt64> column_group_bytes(column_group_count, 0);
     VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> column_group_positions(column_group_count);
@@ -457,7 +454,6 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     {
         StorageSnapshotPtr snapshot;
         RangesInDataParts parts;
-        /// One pool per column group.
         VectorWithMemoryTracking<std::shared_ptr<MergeTreeReadPoolInOrder>> pools;
     };
     VectorWithMemoryTracking<Group> groups;
