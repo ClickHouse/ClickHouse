@@ -531,6 +531,47 @@ def test_nats_insert(nats_cluster):
     nats_helpers.check_result(result, True)
 
 
+def test_nats_insert_racing_drop(nats_cluster):
+    # `DROP TABLE` stops the event loop which writes the buffer of the producer connection,
+    # so the running `INSERT` must stop with `ABORTED` instead of waiting for it forever.
+    instance.query(
+        """
+        CREATE TABLE test.nats_drop (key UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'insert_racing_drop',
+                     nats_format = 'TSV';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats_drop")
+
+    query_id = "nats_insert_racing_drop"
+    errors = []
+    insert = threading.Thread(
+        target=lambda: errors.append(
+            instance.query_and_get_error(
+                "INSERT INTO test.nats_drop SELECT number FROM numbers(50000000)",
+                query_id=query_id,
+                timeout=300,
+            )
+        ),
+        daemon=True,
+    )
+    insert.start()
+
+    # Wait until the sink has rows, so the INSERT already holds the table.
+    deadline = time.monotonic() + 60
+    written_rows = f"SELECT sum(written_rows) FROM system.processes WHERE query_id = '{query_id}'"
+    while instance.query(written_rows).strip() in ("", "0"):
+        assert time.monotonic() < deadline, "the INSERT did not start"
+        time.sleep(0.1)
+
+    instance.query("DROP TABLE test.nats_drop")
+    insert.join(timeout=60)
+    assert not insert.is_alive(), "INSERT into NATS hangs after DROP TABLE"
+    assert errors and "Table is detached" in errors[0] and "(ABORTED)" in errors[0], errors
+
+
 def test_nats_insert_materialized_column(nats_cluster):
     instance.query(
         """
