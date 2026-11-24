@@ -61,8 +61,11 @@ read_part "outside"
 
 echo "-- a part with a single file symlinked outside the root of the disk"
 cp -r "${READER_ROOT}/copy_part" "${READER_ROOT}/one_file"
-rm "${READER_ROOT}/one_file/all_1_1_0/id.bin"
-ln -s "${SOURCE_PART_PATH%/}/id.bin" "${READER_ROOT}/one_file/all_1_1_0/id.bin"
+# The name of the data file of the only column is not always `id.bin`: on a case-insensitive filesystem
+# (macOS) the names of the files of a part are replaced with their hashes.
+DATA_FILE=$(basename "$(ls "${SOURCE_PART_PATH%/}"/*.bin)")
+rm "${READER_ROOT}/one_file/all_1_1_0/${DATA_FILE}"
+ln -s "${SOURCE_PART_PATH%/}/${DATA_FILE}" "${READER_ROOT}/one_file/all_1_1_0/${DATA_FILE}"
 read_part "one_file"
 
 rm -rf "${BASE_ROOT}"
