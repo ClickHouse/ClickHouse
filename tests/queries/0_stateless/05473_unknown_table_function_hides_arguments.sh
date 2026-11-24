@@ -57,3 +57,29 @@ $CLICKHOUSE_CLIENT --log_queries=1 --query_id "$query_id" --query "SELECT * FROM
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, text_log"
 $CLICKHOUSE_CLIENT --query "SELECT query, exception_code, position(exception, 'TopSecretValue') = 0 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id' AND event_date >= yesterday() SETTINGS enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT --query "SELECT countIf(message LIKE '%TopSecretValue%'), countIf(logger_name = 'executeQuery' AND message LIKE '%[HIDDEN]%') > 0 FROM system.text_log WHERE query_id = '$query_id' AND event_date >= yesterday() AND event_time >= now() - 600 SETTINGS enable_parallel_replicas = 0"
+
+# Parsed outside of a SELECT, such a call is reported as an unknown table function; a function still names the database.
+nc="${CLICKHOUSE_DATABASE}_remote"
+udf="${CLICKHOUSE_DATABASE}_database"
+$CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION $nc AS addresses_expr = '127.0.0.1', table = 'one'"
+$CLICKHOUSE_CLIENT --query "CREATE FUNCTION $udf AS () -> 'system'"
+query_id="${CLICKHOUSE_DATABASE}_unknown_nested_table_function_parsed"
+while read -r query; do
+    $CLICKHOUSE_CLIENT --log_queries=1 --query_id "$query_id" --query "$query" 2>&1 | grep -o -m1 -e 'Unknown table function s3Clustr' -e TopSecretValue
+done <<EOF
+DESCRIBE TABLE remote('127.0.0.1', s3Clustr('TopSecretValue'))
+DESCRIBE TABLE cluster(test_shard_localhost, s3Clustr('TopSecretValue'))
+CREATE TABLE t AS remoteSecure('127.0.0.1', s3Clustr('TopSecretValue'))
+INSERT INTO FUNCTION clusterAllReplicas(test_shard_localhost, s3Clustr('TopSecretValue')) SELECT 1
+CREATE TABLE t (x UInt8) ENGINE = Remote('127.0.0.1', s3Clustr('TopSecretValue'))
+DESCRIBE TABLE remote($nc, database = s3Clustr('TopSecretValue'))
+DESCRIBE TABLE remote($nc, db = s3Clustr('TopSecretValue'))
+EOF
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, text_log"
+$CLICKHOUSE_CLIENT --query "SELECT countIf(type != 'QueryStart'), countIf(position(query, 'TopSecretValue') > 0 OR position(exception, 'TopSecretValue') > 0) FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id' AND event_date >= yesterday() SETTINGS enable_parallel_replicas = 0"
+$CLICKHOUSE_CLIENT --query "SELECT countIf(message LIKE '%TopSecretValue%') FROM system.text_log WHERE query_id = '$query_id' AND event_date >= yesterday() AND event_time >= now() - 600 SETTINGS enable_parallel_replicas = 0"
+$CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote('127.0.0.1', concat('sys', 'tem'), 'one')" | cut -f1,2
+$CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote('127.0.0.1', $udf(), 'one')" | cut -f1,2
+$CLICKHOUSE_CLIENT --query "DESCRIBE TABLE remote($nc, database = $udf())" | cut -f1,2
+$CLICKHOUSE_CLIENT --query "DROP FUNCTION $udf"
+$CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION $nc"

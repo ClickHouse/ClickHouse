@@ -1,5 +1,9 @@
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -31,8 +35,26 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_FUNCTION;
 }
 
+namespace
+{
+
+/// In the table function position a call to no function can only be a table function.
+void throwIfUnknownTableFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function)
+        return;
+    const String & name = function->name;
+    if (FunctionFactory::instance().has(name) || AggregateFunctionFactory::instance().isAggregateFunctionName(name)
+        || UserDefinedSQLFunctionFactory::instance().has(name) || UserDefinedExecutableFunctionFactory::has(name, context))
+        return;
+    throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}{}", name, TableFunctionFactory::instance().getHintsMessage(name));
+}
+
+}
 
 ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     ASTs & all_args,
@@ -118,8 +140,11 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
                 if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
                     remote_table_function_ptr = arg_ast;
                 else
+                {
+                    throwIfUnknownTableFunction(arg_ast, context);
                     database = checkAndGetLiteralArgument<String>(
                         evaluateConstantExpressionForDatabaseName(arg_ast, context), "database");
+                }
             }
             else if (arg_name == "sharding_key")
                 sharding_key = arg_ast;
@@ -243,6 +268,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
             }
             else
             {
+                throwIfUnknownTableFunction(args[arg_num], context);
                 args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
                 database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
 

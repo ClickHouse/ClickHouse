@@ -31,3 +31,15 @@ SELECT * FROM remote('127.0.0.1', numbers(1))
 UNKNOWN_FUNCTION
 SELECT * FROM remote(\'127.0.0.1\', \'[HIDDEN]\')	46	1
 0	1
+Unknown table function s3Clustr
+Unknown table function s3Clustr
+Unknown table function s3Clustr
+Unknown table function s3Clustr
+Unknown table function s3Clustr
+Unknown table function s3Clustr
+Unknown table function s3Clustr
+7	0
+0
+dummy	UInt8
+dummy	UInt8
+dummy	UInt8
