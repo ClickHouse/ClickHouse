@@ -10,7 +10,6 @@
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
-#include <Core/ColumnLessBlock.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -430,19 +429,16 @@ static Block adaptBlockStructure(Block block, const Block & header, bool header_
 
         /// The result is known to have no columns, but the remote server may still send the columns it
         /// computed for it, e.g. a filter column of a constant view that is not needed after the filter.
-        /// Only the number of rows matters then: keep it in the block info and drop the columns.
+        /// Only the number of rows matters then: keep it and drop the columns.
         Block res;
         res.info = block.info;
-        if (block.columns() != 0)
-            res.info.num_rows_without_columns = block.rows();
+        res.setRowsWithoutColumns(block.rows());
         return res;
     }
 
-    /// A block with no columns keeps its number of rows in the block info - `Block::rows` reports zero
-    /// for it. The columns synthesized below have to be sized from that count, or the rows of such a
-    /// block are lost right here.
     /// Columns may be moved out of `block` below, so compute the number of rows up front.
-    const size_t num_rows = getNumRowsIncludingColumnLess(block);
+    /// The block can have rows and no columns: the columns synthesized below are sized from that number.
+    const size_t num_rows = block.rows();
 
     /// Both `block` and `header` may contain several columns with the same name. Match the same-named elements
     /// of `header` to the same-named columns of `block` in order, so that each of them reads its own column.
@@ -530,11 +526,6 @@ static Block adaptBlockStructure(Block block, const Block & header, bool header_
 
         res.insert({column, elem.type, elem.name});
     }
-
-    /// The result carries its rows in its columns now, so the count kept aside is not needed any more.
-    if (res.columns() != 0)
-        res.info.num_rows_without_columns = 0;
-
     return res;
 }
 
@@ -1053,8 +1044,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// will return earlier. We should consider doing it.
             throwIfColumnLessResultFromOldServer();
 
-            /// A block with no columns carries its number of rows in the block info.
-            if (getNumRowsIncludingColumnLess(packet.block) > 0)
+            /// A block with rows and no columns is data too: its rows carry no values.
+            if (packet.block.rows() > 0)
             {
                 got_data_from_replica = true;
                 return ReadResult(adaptBlockStructure(std::move(packet.block), *header, header_describes_result));

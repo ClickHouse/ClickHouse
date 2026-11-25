@@ -1,5 +1,4 @@
 #include <Core/ProtocolDefines.h>
-#include <Core/ColumnLessBlock.h>
 #include <Client/LocalConnection.h>
 #include <memory>
 #include <Client/ClientBase.h>
@@ -671,11 +670,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 {
     /// Data sent to the server always has columns. Treating a block of rows without columns as the end
     /// of the data would silently drop its rows.
-    if (block.columns() == 0 && block.info.num_rows_without_columns > 0)
+    if (block.empty() && block.rows() > 0)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Cannot send a block of {} rows without columns as data to the server",
-            block.info.num_rows_without_columns);
+            block.rows());
 
     if (block.empty())
         return;
@@ -913,7 +912,7 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (state->block && !hasNoColumnsAndNoRows(state->block.value()))
+    if (state->block && !state->block.value().hasNoColumnsAndNoRows())
     {
         next_packet_type = Protocol::Server::Data;
         return true;
@@ -983,7 +982,7 @@ bool LocalConnection::pollImpl()
 
     /// A block with no columns is the timeout of the executor only when it has no rows either:
     /// its rows can carry no values at all, and they are still a part of the result.
-    const bool has_data = !hasNoColumnsAndNoRows(block);
+    const bool has_data = !block.hasNoColumnsAndNoRows();
 
     if (!has_data && next_read)
     {
@@ -1033,7 +1032,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
-            if (state->block && !hasNoColumnsAndNoRows(state->block.value()))
+            if (state->block && !state->block.value().hasNoColumnsAndNoRows())
             {
                 packet.block = std::move(state->block.value());
                 state->block.reset();

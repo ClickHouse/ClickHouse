@@ -1,4 +1,3 @@
-#include <Core/ColumnLessBlock.h>
 #include <Columns/ColumnBLOB.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/IProcessor.h>
@@ -212,11 +211,8 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     else
         block = query_executor->readBlock();
 
-    /// A block with no columns carries its number of rows in the block info; it is the end of the data
-    /// only when it has no rows either.
-    UInt64 num_rows = getNumRowsIncludingColumnLess(block);
-
-    if (hasNoColumnsAndNoRows(block))
+    /// A block with no columns is the end of the data only when it has no rows either.
+    if (block.hasNoColumnsAndNoRows())
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
@@ -224,6 +220,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         return {};
     }
 
+    UInt64 num_rows = block.rows();
     rows += num_rows;
     Chunk chunk(block.getColumns(), num_rows);
 

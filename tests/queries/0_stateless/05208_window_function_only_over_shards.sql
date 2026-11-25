@@ -1,7 +1,7 @@
 -- When the SELECT list of a query over several shards consists of window functions only, the shards
 -- have nothing to return: the rows of their part of the result carry no values at all, and a block
--- takes its number of rows from its columns. The rows of every shard but the local one used to be
--- lost, so the window step on the initiator saw fewer rows, or none at all.
+-- used to take its number of rows from its columns only. The rows of every shard but the local one
+-- were lost, so the window step on the initiator saw fewer rows, or none at all.
 --
 -- The labels are added outside the distributed subquery on purpose: a constant in the SELECT list of
 -- the query over the shards would be computed by the shards, which hides the bug.

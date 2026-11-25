@@ -1,4 +1,3 @@
-#include <Core/ColumnLessBlock.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
@@ -40,15 +39,14 @@ public:
         auto block = reader->read();
         approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - block_start;
 
-        /// A block with no columns keeps its number of rows in the block info; it is the end of the data
-        /// only when it has no rows either.
-        if (hasNoColumnsAndNoRows(block))
+        /// A block with no columns is the end of the data only when it has no rows either.
+        if (block.hasNoColumnsAndNoRows())
             return {};
 
         assertBlocksHaveEqualStructure(getPort().getHeader(), block, getName());
         block.checkNumberOfRows();
 
-        size_t num_rows = getNumRowsIncludingColumnLess(block);
+        size_t num_rows = block.rows();
         return Chunk(block.getColumns(), num_rows);
     }
 
@@ -104,9 +102,9 @@ protected:
             auto block = getPort(PortKind::Main).getHeader();
             block.setColumns(chunk.detachColumns());
 
-            /// A block takes its number of rows from its columns, so without them the count has to be kept aside.
-            if (block.columns() == 0)
-                block.info.num_rows_without_columns = num_rows;
+            /// A block takes its number of rows from its columns, so without them it has to be told.
+            if (block.empty())
+                block.setRowsWithoutColumns(num_rows);
 
             writer.write(block);
         }

@@ -89,9 +89,9 @@ bool PullingPipelineExecutor::pull(Block & block)
     const size_t num_rows = chunk.getNumRows();
     block = pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
 
-    /// A block takes its number of rows from its columns, so without them the count has to be kept aside.
-    if (block.columns() == 0)
-        block.info.num_rows_without_columns = num_rows;
+    /// A block takes its number of rows from its columns, so without them it has to be told.
+    if (block.empty())
+        block.setRowsWithoutColumns(num_rows);
 
     if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {

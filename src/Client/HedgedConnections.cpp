@@ -1,4 +1,3 @@
-#include <Core/ColumnLessBlock.h>
 #include <Core/Protocol.h>
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
@@ -527,8 +526,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Data:
             /// If we received the first not empty data packet and still can change replica,
             /// disable changing replica with this offset.
-            if (offset_states[replica_location.offset].can_change_replica
-                && getNumRowsIncludingColumnLess(packet.block) > 0)
+            if (offset_states[replica_location.offset].can_change_replica && packet.block.rows() > 0)
                 disableChangingReplica(replica_location);
             replica_with_last_received_packet = replica_location;
             break;

@@ -28,7 +28,7 @@ namespace
 Block makeColumnLessBlock(size_t num_rows)
 {
     Block block;
-    block.info.num_rows_without_columns = num_rows;
+    block.setRowsWithoutColumns(num_rows);
     return block;
 }
 
@@ -69,7 +69,7 @@ TEST(NativeColumnLessBlock, RowCountRoundTrips)
     constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT;
     auto result = readFromString(writeToString(makeColumnLessBlock(42), revision), revision);
     ASSERT_EQ(result.columns(), 0);
-    ASSERT_EQ(result.info.num_rows_without_columns, 42);
+    ASSERT_EQ(result.rows(), 42);
 }
 
 /// A peer below that revision rejects a column-less block that declares rows, and sending zero rows to it
@@ -94,7 +94,7 @@ TEST(NativeColumnLessBlock, OlderPeerGetsEmptyBlock)
     constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT - 1;
     auto result = readFromString(writeToString(makeColumnLessBlock(0), revision), revision);
     ASSERT_EQ(result.columns(), 0);
-    ASSERT_EQ(result.info.num_rows_without_columns, 0);
+    ASSERT_EQ(result.rows(), 0);
 }
 
 /// The new layout read below the revision is malformed data, as it was before the revision existed.
@@ -119,7 +119,7 @@ TEST(NativeColumnLessBlock, OutputFormatRowCountRoundTrips)
     constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT;
     auto result = readFromString(writeWithOutputFormat(makeColumnLessBlock(42), revision), revision);
     ASSERT_EQ(result.columns(), 0);
-    ASSERT_EQ(result.info.num_rows_without_columns, 42);
+    ASSERT_EQ(result.rows(), 42);
 }
 
 /// Below that revision (a `Native` file, for one) the `Native` output format refuses the rows instead of

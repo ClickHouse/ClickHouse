@@ -217,7 +217,7 @@ Block NativeReader::read()
         if (server_revision < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
 
-        res.info.num_rows_without_columns = rows;
+        res.setRowsWithoutColumns(rows);
     }
 
     /// `rows` comes from the block header, and the limit it is checked against is deliberately
@@ -411,8 +411,7 @@ Block NativeReader::read()
         res.swap(tmp_res);
     }
 
-    /// A block with no columns keeps its row count in the block info, `Block::rows` reports zero for it.
-    if (res.columns() != 0 && res.rows() != rows)
+    if (res.rows() != rows)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
