@@ -1269,6 +1269,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                     frame.hi = std::max(new_hi, new_lo);
                     frame.matched += chunk.size();
                 };
+                VectorWithMemoryTracking<UInt8> found(wanted_bbox_paths.size());
                 VectorWithMemoryTracking<Frame> stack;
                 stack.push_back({schema.at(0).num_children, 0, wanted_bbox_paths.size(), 0, true});
                 size_t schema_idx = 1;
@@ -1294,8 +1295,11 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                     bool is_primitive = !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
                     if (is_primitive)
                     {
-                        if (frame.lo < frame.hi && wanted_bbox_paths[frame.lo].size() == frame.matched)
+                        if (frame.lo < frame.hi && wanted_bbox_paths[frame.lo].size() == frame.matched && !found[frame.lo])
+                        {
+                            found[frame.lo] = 1;
                             bbox_paths_in_schema.emplace(String(wanted_bbox_paths[frame.lo]));
+                        }
                     }
                     else
                     {

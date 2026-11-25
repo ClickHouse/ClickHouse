@@ -144,6 +144,23 @@ def geo_decoy():
         schema_elem(fmd, nm, repetition=0, ptype=5)
     return footer(fmd, last, [("geo", GEO)])
 
+def geo_repeated(name_len, n):
+    """covering.bbox names `<long>.` (an empty last component) and a group with that long name holds
+    n empty-named leaves with no physical type, so every leaf matches the same path."""
+    name = "a" * name_len
+    geo = json.dumps({"version": "1.1.0", "primary_column": "geometry", "columns": {"geometry": {
+        "encoding": "WKB", "geometry_types": [],
+        "covering": {"bbox": {k: [name, ""] for k in ("xmin", "ymin", "xmax", "ymax")}}}}},
+        separators=(",", ":"))
+    fmd, last = header(1 + 2 + n)
+    schema_elem(fmd, "root", repetition=None, num_children=2)
+    schema_elem(fmd, "geometry", repetition=0, ptype=6)
+    schema_elem(fmd, name, repetition=0, num_children=n)
+    leaf = W()
+    schema_elem(leaf, "", repetition=0)
+    fmd.out += bytes(leaf.out) * n
+    return footer(fmd, last, [("geo", geo)])
+
 open(f"{work}/deep.parquet", "wb").write(build(50000))
 open(f"{work}/shallow.parquet", "wb").write(build(8))
 # The root and every group declare INT32_MAX children; no geo metadata.
@@ -156,6 +173,7 @@ open(f"{work}/georootliar.parquet", "wb").write(geo_liar(100, 1, 2147483647, bbo
 open(f"{work}/geonested.parquet", "wb").write(geo_nested())
 open(f"{work}/geodecoy.parquet", "wb").write(geo_decoy())
 open(f"{work}/geocomb.parquet", "wb").write(geo_comb(300000))
+open(f"{work}/georepeated.parquet", "wb").write(geo_repeated(2000000, 500000))
 PYEOF
 
 # Deeply nested schema must be rejected with a catchable error (not crash the process).
@@ -262,4 +280,16 @@ if [ -z "$geodecoy" ]; then
     echo "geo absent bbox filtered: ok"
 else
     echo "geo absent bbox filtered: UNEXPECTED: $geodecoy"
+fi
+
+# 500000 leaves of a 2 MB-named group all match the same covering.bbox path: the search must find it
+# without copying or hashing that path once per leaf. The error names the path, hence the cut.
+georepeated=$(timeout 60 ${CLICKHOUSE_LOCAL} --query "
+    SELECT * FROM file('${WORK_DIR}/georepeated.parquet', Parquet, 'geometry Point')
+    WHERE pointInPolygon(geometry, ${POLY})
+    SETTINGS input_format_parquet_spatial_filter_push_down = 1 FORMAT Null" 2>&1)
+if echo "$georepeated" | grep -qF "missing physical type for column aaaa"; then
+    echo "geo repeated bbox filtered: rejected"
+else
+    echo "geo repeated bbox filtered: UNEXPECTED: ${georepeated:0:300}"
 fi

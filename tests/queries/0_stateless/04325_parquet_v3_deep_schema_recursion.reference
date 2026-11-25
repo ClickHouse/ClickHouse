@@ -6,3 +6,4 @@ geo comb filtered: rejected
 geo root liar filtered: rejected
 geo nested bbox filtered: rejected
 geo absent bbox filtered: ok
+geo repeated bbox filtered: rejected
