@@ -157,6 +157,8 @@ private:
     {
         CompressedBlockRanges ranges;
         ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
+        /// The name of the file in the part, which tells it apart from the files of the columns.
+        String file_name;
     };
     FileRangesRead postings_ranges_read;
     FileRangesRead positions_ranges_read;
