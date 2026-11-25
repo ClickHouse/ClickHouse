@@ -8,9 +8,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <Note>
   Интеграция с каталогом SeaweedFS работает только с таблицами Iceberg.
@@ -25,27 +25,23 @@ SeaweedFS — это распределённое хранилище файло�
 * **Обслуживание на стороне сервера** — автоматическая компактация файлов Parquet и удаление устаревших снимков без внешнего сервиса обслуживания
 
 <Note>
-  Поскольку эта возможность экспериментальная, её необходимо включить с помощью:
-  `SET allow_experimental_database_iceberg = 1;`
+  Эта возможность находится в стадии бета-тестирования. Чтобы включить её, выполните:
+  `SET allow_database_iceberg = 1;`
+
+  В версиях до 25.8, где эта возможность ещё экспериментальная, используйте вместо этого `SET allow_experimental_database_iceberg = 1;`.
 </Note>
 
-<div id="local-development-setup">
-  ## Настройка локальной среды разработки
-</div>
+## Настройка локальной среды разработки {#local-development-setup}
 
 Для локальной разработки и тестирования SeaweedFS и ClickHouse можно запустить с помощью Docker Compose. Этот подход идеально подходит для обучения, прототипирования и разработки.
 
-<div id="local-prerequisites">
-  ### Предварительные требования
-</div>
+### Предварительные требования {#local-prerequisites}
 
 1. **Docker и Docker Compose**: убедитесь, что Docker установлен и запущен.
 2. **Версии**: SeaweedFS 4.42 или новее; ClickHouse 26.8 или новее (версии начиная с 25.8 поддерживают чтение и вставку, но для создания таблиц через каталог требуется версия 26.8).
 3. **Python с PyIceberg** (необязательно): используется ниже для заполнения демонстрационных данных.
 
-<div id="setting-up-local-seaweedfs-catalog">
-  ### Настройка локального каталога SeaweedFS
-</div>
+### Настройка локального каталога SeaweedFS {#setting-up-local-seaweedfs-catalog}
 
 **Шаг 1:** Создайте папку для запуска примера, затем создайте файл `s3config.json` с учётными данными для шлюза S3 и каталога:
 
@@ -109,9 +105,7 @@ networks:
 docker compose up -d
 ```
 
-<div id="seeding-sample-data">
-  ### Заполнение тестовыми данными
-</div>
+### Заполнение тестовыми данными {#seeding-sample-data}
 
 Каталог изначально пуст. Создайте таблицу и добавьте в неё несколько строк с помощью PyIceberg (`pip install pyiceberg pyarrow`):
 
@@ -144,9 +138,7 @@ table = catalog.create_table("sales.orders", schema=rows.schema)
 table.append(rows)
 ```
 
-<div id="connecting-to-local-seaweedfs-catalog">
-  ### Подключение к локальному каталогу SeaweedFS
-</div>
+### Подключение к локальному каталогу SeaweedFS {#connecting-to-local-seaweedfs-catalog}
 
 Подключитесь к контейнеру ClickHouse:
 
@@ -157,7 +149,7 @@ docker exec -it seaweedfs-clickhouse clickhouse-client
 Затем создайте подключение к каталогу SeaweedFS:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE lake
 ENGINE = DataLakeCatalog('http://seaweedfs:8181/v1', 'tutorialkey', 'tutorialsecret')
@@ -170,9 +162,7 @@ SETTINGS catalog_type = 'rest',
 
 Аргументы движка содержат учетные данные S3, которые ClickHouse использует для чтения данных таблицы, а `catalog_credential` и `oauth_server_uri` используются для аутентификации в самом каталоге по потоку OAuth2 Client Credentials. SeaweedFS принимает один и тот же ключ доступа и секретный ключ в обоих случаях.
 
-<div id="querying-seaweedfs-catalog-tables-using-clickhouse">
-  ## Выполнение запросов к таблицам каталога SeaweedFS в ClickHouse
-</div>
+## Выполнение запросов к таблицам каталога SeaweedFS в ClickHouse {#querying-seaweedfs-catalog-tables-using-clickhouse}
 
 Теперь, когда соединение установлено, можно выполнять запросы к каталогу SeaweedFS. Например:
 
@@ -211,15 +201,13 @@ ORDER BY total DESC;
 └────────┴────────┘
 ```
 
-<div id="creating-tables-and-writing-data-from-clickhouse">
-  ## Создание таблиц и запись данных из ClickHouse
-</div>
+## Создание таблиц и запись данных из ClickHouse {#creating-tables-and-writing-data-from-clickhouse}
 
 Вы также можете создавать таблицы в каталоге SeaweedFS и записывать в них данные непосредственно из ClickHouse:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_database_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 SET write_full_path_in_iceberg_metadata = 1;
 
 CREATE TABLE lake.`sales.returns` (id Int64, reason String)
@@ -239,15 +227,15 @@ SELECT * FROM lake.`sales.returns` ORDER BY id;
 
 Предложение движка `IcebergS3` задает путь в хранилище для новой таблицы, а `write_full_path_in_iceberg_metadata` указывает ClickHouse зарегистрировать в каталоге полный путь к таблице.
 
+В версиях до 26.2 настройка вставки называется `allow_experimental_insert_into_iceberg`.
+
 <Note>
   Для создания таблиц через каталог требуется ClickHouse версии 26.8 или выше. Версии с 26.4 по 26.7 записывают файлы таблицы до регистрации пространства имен, что SeaweedFS отклоняет, если пространство имен еще не существует в каталоге; версии до 26.4, по-видимому, выполняются успешно, но файлы таблицы записываются в объектное хранилище без регистрации в каталоге.
 </Note>
 
-При коммите вставки ClickHouse каталог SeaweedFS исправляет метаданные, которые экспериментальный writer пока не создает: заполняет отсутствующие ID полей в манифестах, преобразует пути к файлам относительно бакета в абсолютные пути и задает для таблицы сопоставление имен по умолчанию. После этого строгие reader, такие как PyIceberg и Spark, могут читать строки, записанные ClickHouse. Для этого требуется SeaweedFS версии 4.42 или выше.
+При коммите вставки ClickHouse SeaweedFS версии 4.42 или выше добавляет или исправляет метаданные, благодаря чему PyIceberg и Spark могут читать вставленные данные. В частности, SeaweedFS заполняет отсутствующие ID полей, преобразует пути к файлам относительно бакета в абсолютные пути и добавляет сопоставление имен столбцов по умолчанию.
 
-<div id="loading-data-from-your-data-lake-into-clickhouse">
-  ## Загрузка данных из озера данных в ClickHouse
-</div>
+## Загрузка данных из озера данных в ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
 
 Чтобы загрузить данные из каталога SeaweedFS в ClickHouse, сначала создайте локальную таблицу ClickHouse:
 

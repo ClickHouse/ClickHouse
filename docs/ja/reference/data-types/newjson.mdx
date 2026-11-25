@@ -29,6 +29,7 @@ import WhenToUseJson from '/snippets/ja/_when-to-use-json.mdx';
     max_dynamic_paths=N,
     max_dynamic_types=M,
     some.path TypeName,
+    SHARED some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp'
 )
@@ -41,6 +42,7 @@ import WhenToUseJson from '/snippets/ja/_when-to-use-json.mdx';
 | `max_dynamic_paths`         | 省略可能なパラメータで、個別に保存される1つの block のデータ全体にわたって、サブカラムとして個別に保存できるパスの数を示します (たとえば、MergeTree テーブルの1つの data part 全体) 。<br /><br />この上限を超えると、それ以外のすべてのパスは [共有データ](#shared-data-structure) と呼ばれる単一の構造にまとめて保存されます。<br /><br />また、このパラメータを変更せずに動的パスの上限を変更する[方法](#controlling-the-number-of-dynamic-paths)もあります。 | `1024`        |
 | `max_dynamic_types`         | `1` から `255` までの省略可能なパラメータで、型が `Dynamic` の単一パスカラム内に、個別に保存される1つの block のデータ全体にわたって、何種類の異なるデータ型を個別に保存できるかを示します (たとえば、MergeTree テーブルの1つの data part 全体) 。<br /><br />この上限を超えると、以降の新しい型はすべて `shared variant` と呼ばれる単一の構造にまとめて保存されます。                                                                    | `32`          |
 | `some.path TypeName`        | JSON 内の特定のパスに対する省略可能な型ヒントです。こうしたパスは、指定された型のサブカラムとして常に保存されます。                                                                                                                                                                                                                                      |               |
+| `SHARED some.path TypeName` | 型ヒントの一種で、指定したパスは専用のファイルではなく、カラム内の他の `SHARED` パスとともに、MergeTree のデータパート内の一定数のファイルにまとめて保存されます。[`SHARED` 型指定されたパス](#shared-typed-paths)を参照してください。                                                                                                                                                     |               |
 | `SKIP path.to.skip`         | JSON のパース時にスキップする特定のパスを指定する省略可能なヒントです。こうしたパスは JSON カラムには保存されません。指定したパスがネストされた JSONオブジェクトである場合は、そのネストされたオブジェクト全体がスキップされます。                                                                                                                                                                         |               |
 | `SKIP REGEXP 'path_regexp'` | JSON のパース時にパスをスキップするための正規表現を指定する、省略可能なヒントです。この正規表現に一致するすべてのパスは JSON カラムには保存されません。                                                                                                                                                                                                                 |               |
 
@@ -904,6 +906,28 @@ JSONカラムの内容を調べるために使用する関数の詳細につい�
 chunk のサイズは MergeTree 設定 [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows)(デフォルトは 8192)で制御されます。
 これは厳密な上限ではありません。最後の chunk が目標値の半分より小さくなる場合は直前の chunk とマージされるため、実際の chunk サイズは `target/2` から `1.5 * target` の範囲になります。
 
+## `SHARED` 型付きパス {#shared-typed-paths}
+
+[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) のパーツでは、型付きパスはそれぞれ独立したカラムのように保存され、その型のサブストリームごとに 1 つのファイルが作成されます。型付きパスを数百個持つカラムでは、パーツごとに数百ものファイルが生成されます。さらにオブジェクトストレージ上では、ファイルを 1 つ読み取るたびに個別のリクエストが発生します。型付きパスを `SHARED` としてマークすると、そのパスは個別のファイルではなく、パーツの型付き共有データに保存されます。カラム内のすべての `SHARED` パスは、数にかかわらず 3 つのファイルにまとめて書き込まれます。データはグラニュール単位、さらにパス単位で配置され、各パスのデータの位置が記録されます。そのため、1 つのパスを読み取る場合でも、デコードされるのはそのパスのみです。
+
+```sql
+CREATE TABLE test (json JSON(SHARED a UInt32, SHARED b.c Array(String), d String)) ENGINE = MergeTree ORDER BY tuple();
+```
+
+ここでは、`a` と `b.c` は型付きの共有データに格納され、`d` は独立したカラムとして格納されます。格納方法を除けば、`SHARED` パスは他の型付きパスと変わりません。値は宣言された型へパースおよび CAST され、パスとそのサブカラムは同じ構文 (`json.a`、`json.b.c`、`json.b.c.size0`) で読み取られ、サブオブジェクトや結合サブカラムの読み取りにも含まれます。MergeTree パーツ以外、たとえば `Memory` エンジンや `Native` フォーマットでは、この修飾子は何の影響も与えません。
+
+型付きパスを多数持つカラム、特にオブジェクトストレージ上のカラムには `SHARED` を選択してください。オブジェクトストレージでは、1 つのパスで読み取るバイト数よりも、パーツあたりのファイル数のほうが重要になるためです。1 つの `SHARED` パスを読み取る際は、そのデータを保持する圧縮ブロックを読み取ります。このブロックは隣接するパスと共有されている場合があるため、独自のファイルを持つパスよりもやや多くのデータを読み取ることがあります。ただし、ブロックは `min_compress_block_size` に達した時点で切り詰められるため、超過分には上限があります。
+
+この修飾子は `ALTER TABLE ... MODIFY COLUMN` で追加または削除できます:
+
+```sql
+ALTER TABLE test MODIFY COLUMN json JSON(SHARED a UInt32, SHARED b.c Array(String), SHARED d String);
+```
+
+[Lazy 型ヒント](#lazy-type-hints)が有効な場合、これは metadata-only な変更となり、既存のパーツはマージされるまで元のレイアウトを維持します。無効な場合は、パーツが書き換えられます。両方のレイアウトのパーツは、まとめて読み取られます。
+
+型指定された共有データの on-disk 形式は、MergeTree 設定 `object_typed_shared_data_serialization_version` によってバージョン管理されています。現時点で利用可能なバージョンは `v1` のみです。
+
 ## MergeTree パーツ内の JSON の動的パス数を制御する {#controlling-the-number-of-dynamic-paths}
 
 JSON の動的パスに上限を設定する主な方法は、JSON 型の宣言内で `max_dynamic_paths` パラメータを使用することです。
@@ -1367,6 +1391,7 @@ JSON パスがグラニュール内に存在しない場合、サブカラムは
 `JSON`カラムを作成してデータを読み込む前に、次の点を検討してください。
 
 * データを調査し、型付きのパスヒントをできるだけ多く指定してください。これにより、保存と読み取りの効率が大幅に向上します。
+* `MergeTree` テーブルに型付きパスが多数ある場合、特にオブジェクトストレージ上では、それらを `SHARED` として宣言し、パーツあたりのファイル数を一定に保ってください。詳しくは [`SHARED` 型付きパス](#shared-typed-paths)を参照してください。
 * 必要になるパスと不要なパスを検討してください。不要なパスは`SKIP`セクションで指定し、必要に応じて`SKIP REGEXP`セクションも使用してください。これにより、ストレージ効率が向上します。
 * `max_dynamic_paths`パラメータは極端に大きな値に設定しないでください。保存と読み取りの効率が低下する可能性があります。
   これはメモリや CPU などのシステムパラメータに大きく依存しますが、一般的な目安としては、ローカル filesystem ストレージでは`max_dynamic_paths`を 10 000 を超えて設定せず、リモート filesystem ストレージでは 1024 を超えて設定しないことを推奨します。
