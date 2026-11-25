@@ -16,7 +16,7 @@ doc_type: 'reference'
 * Создавать, настраивать и масштабировать сервисы ClickHouse Cloud, создавать их резервные копии и выполнять к ним запросы
 * Создавать, отслеживать, настраивать и восстанавливать сервисы [ClickHouse Managed Postgres](/ru/products/managed-postgres/overview)
 * Создавать ClickPipes и управлять ими для приёма данных из объектного хранилища, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB и BigQuery
-* Управлять источниками, панелями мониторинга, оповещениями, вебхуками, сохранёнными поисками и ролями в сервисе [Управляемый ClickStack](/ru/clickstack/deployment/managed)
+* Управлять источниками, панелями мониторинга, оповещениями, вебхуками, сохранёнными поисками и ролями в сервисе [Самостоятельно управляемый ClickHouse Observability](/ru/clickstack/self-configured/deployment/managed)
 * Разрабатывать исполняемые UDF локально и развертывать их в ClickHouse Cloud
 * Управлять участниками организации, приглашениями, ключами API и ролями
 * Устанавливать официальные ClickHouse agent skills в агенты для программирования
@@ -430,7 +430,7 @@ clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # Postgres an
 
 ### ClickStack {#clickstack}
 
-`cloud clickstack` управляет источниками, панелями мониторинга, оповещениями, вебхуками, сохранёнными поисками и ролями в существующем сервисе [Управляемый ClickStack](/ru/clickstack/deployment/managed). Ресурсы описываются в JSON‑файлах (`--file` или `-` для stdin). Для операций чтения поддерживается OAuth, а для операций записи требуется ключ API.
+`cloud clickstack` управляет источниками, панелями мониторинга, оповещениями, вебхуками, сохранёнными поисками и ролями в существующем сервисе [Самостоятельно управляемый ClickHouse Observability](/ru/clickstack/self-configured/deployment/managed). Ресурсы описываются в JSON‑файлах (`--file` или `-` для stdin). Для операций чтения поддерживается OAuth, а для операций записи требуется ключ API.
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>

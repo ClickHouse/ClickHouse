@@ -7,7 +7,7 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## نظرة عامة
+  ## نظرة عامة {#overview}
 </div>
 
 ClickHouse Private هي حزمة ذاتية النشر تتألف من النسخة الاحتكارية نفسها من ClickHouse التي تعمل على ClickHouse Cloud، إلى جانب ClickHouse Operator، ومُهيأة وفق نمط فصل الحوسبة عن التخزين.
@@ -19,7 +19,7 @@ ClickHouse Private هي حزمة ذاتية النشر تتألف من النس�
 </Info>
 
 <div id="benefits-over-os">
-  ## المزايا مقارنةً بعمليات النشر مفتوحة المصدر
+  ## المزايا مقارنةً بعمليات النشر مفتوحة المصدر {#benefits-over-os}
 </div>
 
 تُميّز الميزات التالية ClickHouse Private عن عمليات النشر مفتوحة المصدر المُدارة ذاتيًا:
@@ -31,18 +31,14 @@ ClickHouse Private هي حزمة ذاتية النشر تتألف من النس�
 
 ## المعمارية {#architecture}
 
-يعمل ClickHouse Private بصورة مستقلة بالكامل داخل بيئة النشر الخاصة بك، ويوفّر فصلًا سحابيًا أصيلًا بين الحوسبة والتخزين.
+يعمل ClickHouse Private بصورة مستقلة بالكامل داخل بيئة النشر الخاصة بك، ويوفّر فصلًا سحابيًا Native للحوسبة عن التخزين.
 
 <br />
 
 <div className="ch-image-md ch-image-background-black">
-
-<Frame>
-
-![معمارية ClickHouse Private](/images/cloud/reference/private-gov-architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![معمارية ClickHouse Private](/images/cloud/reference/private-gov-architecture.webp)
+  </Frame>
 </div>
 
 <br />
@@ -59,7 +55,7 @@ ClickHouse Private هي حزمة ذاتية النشر تتألف من النس�
 | Azure                      | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | معاينة |
 
 <div id="onboarding-process">
-  ## عملية التهيئة
+  ## عملية التهيئة {#onboarding-process}
 </div>
 
 يمكن للعملاء المهتمين بـ ClickHouse Private [التواصل معنا](https://clickhouse.com/company/contact) لتحديد موعد لمكالمة مراجعة لمناقشة حالة الاستخدام الخاصة بهم. وستُؤخذ الطلبات التي تستوفي الحد الأدنى لمتطلبات الحجم وتستهدف التكوينات المدعومة في الاعتبار، مع العلم أن سعة التهيئة محدودة. وتتضمن عملية التهيئة اتباع دليل تثبيت خاص بالبيئة باستخدام صور الحاويات ومخططات Helm المسحوبة من AWS ECR.

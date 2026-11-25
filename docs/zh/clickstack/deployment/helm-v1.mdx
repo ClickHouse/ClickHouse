@@ -3,7 +3,7 @@ slug: /use-cases/observability/clickstack/deployment/helm-v1
 title: 'Helm（v1.x）'
 description: '通过 v1.x 内联模板 Helm 图表部署 ClickStack'
 doc_type: 'guide'
-keywords: ['ClickStack Helm 图表', 'Helm ClickHouse 部署', 'HyperDX Helm 安装', 'Kubernetes 可观测性栈', 'ClickStack Kubernetes 部署']
+keywords: ['ClickStack Helm 图表', 'Helm ClickHouse 部署', 'ClickStack 用户界面 Helm 安装', 'Kubernetes 可观测性栈', 'ClickStack Kubernetes 部署']
 ---
 
 import JSONSupport from '/snippets/zh/_json_support.mdx';
@@ -19,7 +19,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
 默认情况下，Helm 图表会部署所有核心组件，包括：
 
 * **ClickHouse**
-* **HyperDX**
+* **ClickStack 用户界面**
 * **OpenTelemetry (OTel) collector**
 * **MongoDB** (用于持久化应用状态)
 
@@ -33,14 +33,14 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
 * Secrets 管理和身份验证设置
 
 <div id="suitable-for">
-  ### 适用场景
+  ### 适用场景 {#suitable-for}
 </div>
 
 * 概念验证
 * 生产环境
 
 <div id="deployment-steps">
-  ## 部署步骤
+  ## 部署步骤 {#deployment-steps}
 </div>
 
 <br />
@@ -80,7 +80,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
   </Step>
 
   <Step title="端口转发" id="forward-ports">
-    通过端口转发，我们可以访问并配置 HyperDX。部署到生产环境时，建议改为通过入口或负载均衡器暴露该服务，以确保网络访问、TLS 终止和可扩展性都得到妥善保障。端口转发最适合用于本地开发或一次性的管理操作，不适用于长期运行或高可用环境。
+    通过端口转发，我们可以访问并配置 ClickStack 用户界面。部署到生产环境时，建议改为通过入口或负载均衡器暴露该服务，以确保网络访问、TLS 终止和可扩展性都得到妥善保障。端口转发最适合用于本地开发或一次性的管理操作，不适用于长期运行或高可用环境。
 
     ```shell
     kubectl port-forward \
@@ -96,18 +96,14 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
   </Step>
 
   <Step title="进入 UI" id="navigate-to-the-ui">
-    访问 [http://localhost:8080](http://localhost:8080) 以打开 HyperDX UI。
+    访问 [http://localhost:8080](http://localhost:8080) 以打开 ClickStack 用户界面。
 
     创建用户时，请提供符合要求的用户名和密码。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack 用户界面](/images/use-cases/observability/hyperdx-login.webp)
+      </Frame>
     </div>
 
     点击 `Create` 后，将为通过 Helm 图表部署的 ClickHouse 实例创建数据源。
@@ -160,9 +156,9 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
   </Step>
 
   <Step title="使用 Secret (可选)" id="using-secrets">
-    如需处理 API 密钥或数据库凭据等敏感数据，请使用 Kubernetes Secret。HyperDX Helm 图表提供了默认的 Secret 文件，你可以修改后将其应用到集群。
+    如需处理 API 密钥或数据库凭据等敏感数据，请使用 Kubernetes Secret。ClickStack 用户界面 Helm 图表提供了默认的 Secret 文件，你可以修改后将其应用到集群。
 
-    #### 使用预配置的 Secret
+#### 使用预配置的 Secret {#using-pre-configured-secrets}
 
     Helm 图表包含一个默认的 Secret 模板，位于 [`charts/clickstack/templates/secrets.yaml`](https://github.com/ClickHouse/ClickStack-helm-charts/blob/main/charts/clickstack/templates/secrets.yaml)。该文件为管理 Secret 提供了基础结构。
 
@@ -186,7 +182,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
     kubectl apply -f secrets.yaml
     ```
 
-    #### 创建自定义 Secret
+#### 创建自定义 Secret {#creating-a-custom-secret}
 
     如果需要，你也可以手动创建自定义 Kubernetes Secret：
 
@@ -195,7 +191,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
       --from-literal=API_KEY=my-secret-api-key
     ```
 
-    #### 引用 Secret
+#### 引用 Secret {#referencing-a-secret}
 
     在 `values.yaml` 中引用 Secret：
 
@@ -217,7 +213,7 @@ ClickStack 的 Helm 图表可在[此处](https://github.com/ClickHouse/ClickStac
 </Steps>
 
 <div id="using-clickhouse-cloud">
-  ## 使用 ClickHouse Cloud
+  ## 使用 ClickHouse Cloud {#using-clickhouse-cloud}
 </div>
 
 如果使用 ClickHouse Cloud，请禁用通过 Helm 图表部署的 ClickHouse 实例，并指定 Cloud 凭据：
@@ -278,7 +274,7 @@ helm install my-clickstack clickstack/clickstack -f values.yaml
 </Tip>
 
 <div id="production-notes">
-  ## 生产注意事项
+  ## 生产注意事项 {#production-notes}
 </div>
 
 默认情况下，此 图表 也会安装 ClickHouse 和 OTel collector。不过，在生产环境中，建议分别管理 ClickHouse 和 OTel collector。
@@ -302,19 +298,19 @@ helm install my-clickstack clickstack/clickstack \
 </Tip>
 
 <div id="task-configuration">
-  ## 任务配置
+  ## 任务配置 {#task-configuration}
 </div>
 
-默认情况下，Chart 配置中有一个以 CronJob 形式运行的任务，负责检查是否应触发告警。以下是它的配置选项：
+默认情况下，图表 配置中有一个以 CronJob 形式运行的任务，负责检查是否应触发告警。以下是它的配置选项：
 
-| Parameter                     | Description                                                                           | Default          |
-| ----------------------------- | ------------------------------------------------------------------------------------- | ---------------- |
-| `tasks.enabled`               | 在集群中启用/禁用 cron 任务。默认情况下，HyperDX 镜像会在进程内运行 cron 任务。如果你更希望在集群中使用独立的 cron 任务，请将其设为 true。 | `false`          |
-| `tasks.checkAlerts.schedule`  | check-alerts 任务的 Cron 调度计划                                                            | `*/1 * * * *`    |
-| `tasks.checkAlerts.resources` | check-alerts 任务的资源请求与限制                                                               | 参见 `values.yaml` |
+| Parameter                     | Description                                                                                  | Default          |
+| ----------------------------- | -------------------------------------------------------------------------------------------- | ---------------- |
+| `tasks.enabled`               | 在集群中启用/禁用 cron 任务。默认情况下，ClickStack 用户界面镜像会在进程内运行 cron 任务。如果你更希望在集群中使用独立的 cron 任务，请将其设为 true。 | `false`          |
+| `tasks.checkAlerts.schedule`  | check-alerts 任务的 Cron 调度计划                                                                   | `*/1 * * * *`    |
+| `tasks.checkAlerts.resources` | check-alerts 任务的资源请求与限制                                                                      | 参见 `values.yaml` |
 
 <div id="upgrading-the-chart">
-  ## 升级 Helm 图表
+  ## 升级 Helm 图表 {#upgrading-the-chart}
 </div>
 
 要升级到更新的版本：
@@ -336,7 +332,7 @@ helm search repo clickstack
 </Info>
 
 <div id="uninstalling-clickstack">
-  ## 卸载 ClickStack
+  ## 卸载 ClickStack {#uninstalling-clickstack}
 </div>
 
 要删除该部署：
@@ -348,11 +344,11 @@ helm uninstall my-clickstack
 这将删除与该 release 关联的所有资源，但持久化数据 (如有) 可能仍会保留。
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="checking-logs">
-  ### 查看日志
+  ### 查看日志 {#checking-logs}
 </div>
 
 ```shell
@@ -360,7 +356,7 @@ kubectl logs -l app.kubernetes.io/name=clickstack
 ```
 
 <div id="debugging-a-failed-install">
-  ### 调试安装失败问题
+  ### 调试安装失败问题 {#debugging-a-failed-install}
 </div>
 
 ```shell
@@ -368,7 +364,7 @@ helm install my-clickstack clickstack/clickstack --debug --dry-run
 ```
 
 <div id="verifying-deployment">
-  ### 验证部署
+  ### 验证部署 {#verifying-deployment}
 </div>
 
 ```shell
@@ -387,11 +383,11 @@ kubectl get pods -l app.kubernetes.io/name=clickstack
 <JSONSupport />
 
 <div id="related-documentation">
-  ## 相关文档
+  ## 相关文档 {#related-documentation}
 </div>
 
 <div id="deployment-guides">
-  ### v1.x 部署指南
+  ### v1.x 部署指南 {#deployment-guides}
 </div>
 
 * [部署选项 (v1.x) ](/zh/clickstack/deployment/helm-deployment-options-v1) - 外部 ClickHouse、OTel collector 和最小化部署
@@ -399,17 +395,17 @@ kubectl get pods -l app.kubernetes.io/name=clickstack
 * [Cloud 部署 (v1.x) ](/zh/clickstack/deployment/helm-cloud-v1) - GKE、EKS、AKS 配置和生产环境最佳实践
 
 <div id="v2x-documentation">
-  ### v2.x 文档
+  ### v2.x 文档 {#v2x-documentation}
 </div>
 
 * [Helm (v2.x)](/zh/clickstack/deployment/helm) - v2.x 部署指南
 * [升级指南](/zh/clickstack/deployment/helm-upgrade) - 从 v1.x 升级到 v2.x
 
 <div id="additional-resources">
-  ### 其他资源
+  ### 其他资源 {#additional-resources}
 </div>
 
-* [ClickStack 入门指南](/zh/clickstack/getting-started/index) - ClickStack 简介
+* [ClickStack 入门指南](/zh/clickstack/getting-started/oss) - ClickStack 简介
 * [ClickStack Helm 图表仓库](https://github.com/ClickHouse/ClickStack-helm-charts) - 图表源码及 values 参考
 * [Kubernetes 文档](https://kubernetes.io/docs/) - Kubernetes 参考文档
 * [Helm 文档](https://helm.sh/docs/) - Helm 参考文档

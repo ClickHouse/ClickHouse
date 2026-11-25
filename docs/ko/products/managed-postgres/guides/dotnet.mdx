@@ -2,16 +2,12 @@
 slug: /cloud/managed-postgres/guides/dotnet
 sidebarTitle: '.NET (EF Core)'
 title: 'ClickHouse Managed Postgres에서 .NET 및 Entity Framework Core 사용하기'
-description: 'Entity Framework Core와 Npgsql을 사용해 ASP.NET Core minimal API를 ClickHouse Managed Postgres에 연결하고, EF Core 마이그레이션을 실행한 뒤, 검증된 TLS 연결로 쿼리를 수행합니다'
+description: 'Entity Framework Core와 Npgsql을 사용해 ASP.NET Core 최소 API를 ClickHouse Managed Postgres에 연결하고, EF Core 마이그레이션(Migrations)을 실행한 뒤, 검증된 TLS 연결로 쿼리를 수행합니다'
 keywords: ['managed postgres', '.net', 'dotnet', 'c#', 'asp.net core', 'entity framework core', 'ef core', 'npgsql', 'migrations', 'pgbouncer', 'tls']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-dotnet-beta" />
-
-[Entity Framework Core](https://learn.microsoft.com/ef/core/)(EF Core)는 .NET용 ORM이며, [Npgsql](https://www.npgsql.org/efcore/)은 EF Core용 PostgreSQL provider입니다. 이 가이드에서는 ASP.NET Core 최소 API(minimal API)를 빌드하고, EF Core 마이그레이션으로 테이블을 생성한 뒤 생성, 조회, 수정, 삭제(CRUD) 엔드포인트를 제공합니다. 모든 연결은 TLS를 사용하며 인증서 검증을 완전하게 수행합니다.
+[Entity Framework Core](https://learn.microsoft.com/ef/core/)(EF Core)는 .NET용 ORM이며, [Npgsql](https://www.npgsql.org/efcore/)은 EF Core용 PostgreSQL provider입니다. 이 가이드에서는 ASP.NET Core 최소 API를 빌드하고, EF Core 마이그레이션(Migrations)으로 테이블을 생성한 뒤 생성, 조회, 수정, 삭제(CRUD) 엔드포인트를 제공합니다. 모든 연결은 TLS를 사용하며 인증서 검증을 완전하게 수행합니다.
 
 ## 사전 요구 사항 {#prerequisites}
 
