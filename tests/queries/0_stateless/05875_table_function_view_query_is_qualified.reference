@@ -1,0 +1,23 @@
+-- 1. a table of the current database
+1
+1
+1
+-- 2. a common table expression is not a table
+11
+11
+11
+-- 3. recursive and materialized ones
+3
+21
+-- 4. a temporary table
+7
+-- 5. a table on the right of IN and in a subquery
+1
+1
+-- 6. a nested view and a join
+1
+2
+-- 7. a table qualified with its database
+1
+-- 8. the query sent to a remote server is not changed
+5

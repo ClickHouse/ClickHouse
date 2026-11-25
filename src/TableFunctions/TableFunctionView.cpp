@@ -52,9 +52,11 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
     chassert(create.children.size() == 1);
     chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
-    /// The query argument is a part of the calling query, not a stored definition.
+    /// The query is qualified with the current database and read as written, like a stored view body.
     SharedHeader sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
-        create.children[0], context, SelectQueryOptions().allowCompoundTableIdentifierQualification());
+        StorageView::qualifyQueryOfTableFunction(create.children[0], context),
+        context,
+        SelectQueryOptions().allowCompoundTableIdentifierQualification(false));
 
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
@@ -63,7 +65,9 @@ StoragePtr TableFunctionView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     auto columns = getActualTableStructure(context, is_insert_query);
-    auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+    ASTCreateQuery qualified_create;
+    qualified_create.set(qualified_create.select, StorageView::qualifyQueryOfTableFunction(create.children[0], context));
+    auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), qualified_create, columns, "");
     res->startup();
     return res;
 }
