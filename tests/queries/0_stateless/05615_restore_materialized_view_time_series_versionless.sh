@@ -15,7 +15,7 @@ inner_table=".inner_id.$mv_uuid"
 
 # Simulate an older stored definition: the view has no version setting, but its
 # hidden target is explicitly version 0.
-$CLIENT -q "CREATE TABLE \`$inner_table\` UUID '$inner_uuid' ENGINE = TimeSeries SETTINGS version = 0"
+$CLIENT -m -q "SET send_logs_level = 'error'; CREATE TABLE \`$inner_table\` UUID '$inner_uuid' ENGINE = TimeSeries SETTINGS version = 0"
 $CLIENT -m -q "SET send_logs_level = 'error'; ATTACH MATERIALIZED VIEW mv_ts_legacy UUID '$mv_uuid' TO INNER UUID '$inner_uuid' (a UInt8) ENGINE = TimeSeries AS SELECT 1 AS a"
 $CLIENT -q "INSERT INTO \`$inner_table\` (metric_name, tags, time_series) SELECT 'cpu', map('host', 'a'), [(toDateTime64('2026-01-01 00:00:00', 3), 1.5)] UNION ALL SELECT 'mem', map('host', 'b'), [(toDateTime64('2026-01-01 00:00:10', 3), 100)]"
 
