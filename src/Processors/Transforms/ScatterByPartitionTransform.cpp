@@ -9,12 +9,12 @@
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include <Common/MapToRange.h>
 #include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
+#include <Common/assert_cast.h>
 #include <Common/randomSeed.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <cmath>
