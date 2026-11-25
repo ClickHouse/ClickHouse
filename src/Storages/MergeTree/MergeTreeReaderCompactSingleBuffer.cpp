@@ -59,9 +59,7 @@ void MergeTreeReaderCompactSingleBuffer::registerReadRanges()
     if (!read_ranges)
         read_ranges = &read_ranges_registry->getReadRanges(
             data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
-    ReadRangesRegistry::Batch batch;
-    read_ranges_registry->registerRanges(batch, *read_ranges, ranges_read);
-    read_ranges_registry->commit(batch);
+    read_ranges_registry->commit(read_ranges_registry->registerRanges(*read_ranges, ranges_read));
 
     if (read_ranges_registry->stopped())
     {
