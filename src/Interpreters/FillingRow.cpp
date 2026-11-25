@@ -214,6 +214,11 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
 
 bool FillingRow::hasSomeConstraints(size_t pos) const
 {
+    /// A key at or past its TO limits only its own values.
+    if (fills_groups_past_to && !row[pos].isNull() && !constraints[pos].isNull()
+        && !less(row[pos], constraints[pos], getDirection(pos)))
+        return false;
+
     return !constraints[pos].isNull();
 }
 
@@ -269,15 +274,6 @@ void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t c
 void FillingRow::fillGroupsPastTo()
 {
     fills_groups_past_to = true;
-    steps_reach_every_value.resize(size());
-    for (size_t i = 0; i < size(); ++i)
-    {
-        const auto & descr = getFillDescription(i);
-        const WhichDataType which(descr.fill_column_type);
-        steps_reach_every_value[i] = !descr.step_kind
-            && (equals(descr.fill_step, Field(Int64(1))) || equals(descr.fill_step, Field(Int64(-1))))
-            && (isInteger(descr.fill_column_type) || which.isDate() || which.isDate32() || which.isDateTime());
-    }
 }
 
 void FillingRow::checkFillingTowardsConstraintsFitsColumnTypes()
@@ -360,6 +356,10 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (row[pos].isNull())
             continue;
 
+        /// Without a next row, a key that constrains nothing is done.
+        if (next_original_row[pos].isNull() && !hasSomeConstraints(pos))
+            continue;
+
         const Field & border = fills_groups_past_to && !next_original_row[pos].isNull() ? next_original_row[pos]
             : findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
         logDebug("border: {}", border);
@@ -383,8 +383,8 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         return false;
 
     /// TO limits only the values generated for its own column: towards a next row, the later columns are walked first.
-    const bool fills_group_past_to = fills_groups_past_to && !next_original_row[pos].isNull();
-    if (!fills_group_past_to && !constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
+    const bool towards_next_row = fills_groups_past_to && !next_original_row[pos].isNull();
+    if (!towards_next_row && !constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 
     /// A NaN border (a NaN `fill_to` or a staleness border derived from a NaN row) generates nothing: `accurateLess`
@@ -450,10 +450,12 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
 
-    /// The steps reach the next row's value at or past TO, where no value is generated.
-    if (fills_group_past_to && steps_reach_every_value[pos] && !constraints[pos].isNull()
+    /// The steps from the filling row reach the next row's value at or past TO, where no value is generated.
+    if (towards_next_row && !constraints[pos].isNull()
         && !less(next_original_row[pos], constraints[pos], getDirection(pos))
-        && !(less(row[pos], next_value, getDirection(pos)) && less(next_value, constraints[pos], getDirection(pos))))
+        && !(less(row[pos], next_value, getDirection(pos)) && less(next_value, constraints[pos], getDirection(pos)))
+        && !(getFillDescription(pos).step_kind && getFillDescription(pos).step_kind->getKind() > IntervalKind::Kind::Hour)
+        && equals(doLongJump(getFillDescription(pos), pos, next_original_row[pos]), next_original_row[pos]))
     {
         row[pos] = next_original_row[pos];
         value_changed = true;

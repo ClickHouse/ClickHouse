@@ -62,3 +62,21 @@ ORDER BY p, b WITH FILL TO 1, c WITH FILL FROM 0 TO 5;
 SELECT * FROM values('p Int64, b Int64, c Int64', (0, 2, 2), (1, 2, 4), (1, 3, 1))
 ORDER BY p, b WITH FILL TO 1, c WITH FILL FROM 0 TO 5
 SETTINGS max_block_size = 1;
+
+SELECT '--- last group';
+SELECT * FROM values('b Int64, c Int64', (2, 2), (3, 1))
+ORDER BY b WITH FILL TO 1, c WITH FILL FROM 0 TO 5;
+
+SELECT '--- FROM row after the first row of its group';
+SELECT * FROM values('b Int64, c Int64', (2, 2), (3, -5), (3, 4))
+ORDER BY b WITH FILL TO 1, c WITH FILL FROM 0 TO 5;
+
+SELECT '--- STEP 2, a group on the steps is entered';
+SELECT * FROM values('b Int64, c Int64', (2, 2), (4, 4))
+ORDER BY b WITH FILL TO 1 STEP 2, c WITH FILL FROM 0 TO 5;
+SELECT * FROM values('b Int64, c Int64', (4, 2), (2, 4))
+ORDER BY b DESC WITH FILL TO 5 STEP -2, c WITH FILL FROM 0 TO 5;
+
+SELECT '--- DateTime64';
+SELECT * FROM values('d DateTime64(3, ''UTC''), c Int64', ('2020-01-01 00:00:05', 1), ('2020-01-01 00:00:06', 1))
+ORDER BY d WITH FILL TO toDateTime64('2020-01-01 00:00:00', 3, 'UTC') STEP INTERVAL 1 SECOND, c WITH FILL FROM 0 TO 3;
