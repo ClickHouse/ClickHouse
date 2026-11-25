@@ -2416,10 +2416,11 @@ Possible values:
 )", 0, \
         {"26.9", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."}) \
     DECLARE(Bool, use_statistics_for_sum_avg_aggregation, true, R"(
-Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `Nullable` or
-`LowCardinality`, without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
+Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `LowCardinality`,
+without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
 `auto_statistics_types` `MergeTree` setting) for the data parts that have them materialized, and read only the remaining
-parts. `count(column)` of a column that is not `Nullable` or `LowCardinality` is answered there from the number of rows.
+parts. `count(column)` of a column that is not `LowCardinality` is answered there from the number of rows. Over a
+`Nullable` column, the statistics hold the sum of the non-NULL values and the NULL count, which the aggregates skip.
 The result is exactly the same as when reading the data.
 
 Possible values:
@@ -8310,6 +8311,10 @@ Extend `query_plan_convert_outer_join_to_inner_join` to consider a filter furthe
 Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to non-distributed plans.
 )", 0, \
         {"26.8", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."}) \
+    DECLARE(Bool, query_plan_remove_unused_joins, true, R"(
+Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them. The other side is then not read at all.
+)", 0, \
+        {"26.12", false, true, "New setting to remove a `LEFT` or `RIGHT` `JOIN` whose other side is not read and which outputs every row of the preserved side exactly once."}) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
 Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 )", 0, \
@@ -10003,9 +10008,9 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
     DECLARE(Bool, use_join_runtime_filters_for_iceberg_pruning, true, R"(
-Skip Iceberg data files, and the Parquet row groups and pages of the files that are read, that cannot contain a key of a JOIN runtime filter (see [enable_join_runtime_filters](#enable_join_runtime_filters)). Once the build side of the join finishes, the filter's keys (or their min/max range, if the set is too large) are checked against the column bounds in the manifest files, the row group statistics and the page index. Data files requested earlier are read in full.
+Skip the Parquet row groups and pages of any read from object storage (`s3`, `azureBlobStorage`, `hdfs` and their table engines, `Iceberg`, `DeltaLake`, `Hudi`), and whole data files of an Iceberg table, that cannot contain a key of a JOIN runtime filter (see [enable_join_runtime_filters](#enable_join_runtime_filters)). Once the build side of the join finishes, the filter's keys (or their min/max range, if the set is too large) are checked against the column bounds in the Iceberg manifest files, the row group statistics and the page index. Files requested earlier are read in full. Row groups and pages are pruned only by a key the file stores under the column's own name, so not by a Hive partition column, a virtual column, a Delta Lake column stored under another name or a column with a default expression.
 
-Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), and pages require it and [input_format_parquet_page_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
+Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis). Skipping Iceberg data files also requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), and pages require it and [input_format_parquet_page_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 )", 0, \
         {"26.11", false, true, "New setting to prune Iceberg data files, Parquet row groups and pages by JOIN runtime filters."}) \
     DECLARE(Bool, use_datalake_metadata_statistics, false, R"(
@@ -10304,6 +10309,10 @@ but makes distributed index analysis less efficient if large tables are used in 
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0, \
         {"26.1", false, false, "New setting"}) \
+    DECLARE(Bool, distributed_index_analysis_on_stateless_workers, false, R"(
+Runs distributed index analysis on stateless workers in an initial query that runs as a distributed plan (`make_distributed_plan`) and holds or can lease workers, independently of `distributed_index_analysis`. The workers analyze the tables on object storage of a shared table. For now enabling this setting turns off index analysis on the replicas (`distributed_index_analysis`), so the reads the workers do not take, and the reads of other queries, are analyzed locally. The workers need streaming exchanges: with `Persisted` ones (`distributed_plan_force_exchange_kind`, or no streaming listener configured) the reads are analyzed locally. The MergeTree settings `distributed_index_analysis_min_parts_to_activate` and `distributed_index_analysis_min_indexes_bytes_to_activate` apply.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_iceberg, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'iceberg'`
 
@@ -11771,7 +11780,7 @@ Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
-For an Iceberg table, the setting also allows skipping whole data files and the Parquet row groups and pages of the files that are read, see [use_join_runtime_filters_for_iceberg_pruning](#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
+For a read from object storage, the setting also allows skipping the Parquet row groups and pages of the files that are read, and whole data files of an Iceberg table, see [use_join_runtime_filters_for_iceberg_pruning](#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
