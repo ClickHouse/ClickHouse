@@ -2884,6 +2884,16 @@ static BlockIO executeQueryImpl(
                     /// analyzed and freed before that.
                     context->getProcessList().chargeCurrentThreadGroupToUser(context);
 
+                    /// The compilation resolves the names of the tables and writes them into the compiled query. So
+                    /// the database of the request (the setting `database`) and its external tables are set up before
+                    /// it, while for a query in SQL it is enough to do that below, before the query is interpreted.
+                    if (const String & database_setting = settings[Setting::database];
+                        !database_setting.empty() && database_setting != context->getCurrentDatabase())
+                    {
+                        context->setCurrentDatabase(database_setting);
+                    }
+                    context->initializeExternalTablesIfSet();
+
                     out_ast = compileQProgram(*q_query, context);
                 }
             }

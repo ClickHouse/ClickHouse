@@ -899,7 +899,8 @@ void ClientBase::adjustQueryEnd(
 /// Convert external tables to ExternalTableData and send them using the connection.
 void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
-    const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
+    /// A program in the `q` dialect is compiled into a `SELECT` query on the server.
+    bool select = parsed_query->as<ASTSelectWithUnionQuery>() || parsed_query->as<ASTQQuery>();
     bool has_external_data = !external_tables.empty() || !external_scalars.empty();
     if (!select && has_external_data)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
