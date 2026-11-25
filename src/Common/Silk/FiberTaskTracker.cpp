@@ -34,11 +34,15 @@ namespace FailPoints
 namespace Silk
 {
 
-FiberTaskTracker::FiberTaskTracker(size_t max_tasks, size_t max_inflight, DB::ThreadGroupPtr thread_group_)
+FiberTaskTracker::FiberTaskTracker(size_t max_tasks, size_t max_inflight, DB::ThreadGroupPtr thread_group_, FiberSemaphore * limit_)
     : thread_group(std::move(thread_group_))
+    , limit(limit_)
     , slot_count(max_inflight == 0 ? max_tasks : std::min(max_tasks, max_inflight))
     , slots(std::make_unique<Slot[]>(slot_count))
 {
+    /// The permits are taken and released through fiber locks.
+    chassert(!limit || isInsideFiber());
+
     if (slot_count == 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "FiberTaskTracker needs at least one slot, got max_tasks = 0");
 
@@ -73,6 +77,8 @@ int FiberTaskTracker::runTask(Slot & slot) noexcept
     {
         slot.exception = std::current_exception();
     }
+    /// Before the waiter is signaled, so that a waiting `add` of any tracker can start its task.
+    slot.permit.reset();
     return 0;
 }
 
@@ -88,6 +94,10 @@ void FiberTaskTracker::add(Callback && callback)
 
     const size_t index = free_slots.back();
     Slot & slot = slots[index];
+
+    if (limit)
+        slot.permit.emplace(*limit);
+
     slot.callback = std::move(callback);
     slot.thread_group = thread_group;
     slot.query_cancellation_blocked = DB::ThreadStatus::QueryCancellationBlocker::isActive();
@@ -104,6 +114,7 @@ void FiberTaskTracker::add(Callback && callback)
     {
         slot.callback = {};
         slot.thread_group.reset();
+        slot.permit.reset();
         throw;
     }
 
@@ -111,6 +122,7 @@ void FiberTaskTracker::add(Callback && callback)
     {
         slot.callback = {};
         slot.thread_group.reset();
+        slot.permit.reset();
         throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK, "Cannot start a fiber: {}", errnoToString(result));
     }
 
@@ -129,6 +141,7 @@ std::exception_ptr FiberTaskTracker::finish(size_t index)
     /// Left in the slot if the fiber finished before running the task.
     slot.callback = {};
     slot.thread_group.reset();
+    slot.permit.reset();
     free_slots.push_back(index);
 
     if (auto exception = std::exchange(slot.exception, nullptr))

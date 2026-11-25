@@ -9,6 +9,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Silk/FiberScheduler.h>
+#include <Common/Silk/FiberSemaphore.h>
 #include <Common/Silk/FiberTaskTracker.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -256,6 +257,89 @@ TEST_F(SilkFiberTaskTrackerTest, TaskRunsUnderQueryCancellationBlockerOfCaller)
 
     EXPECT_EQ(blocked_in_task, true);
     EXPECT_EQ(unblocked_in_task, false);
+}
+
+TEST_F(SilkFiberTaskTrackerTest, SharedLimitBoundsTasksOfAllTrackers)
+{
+    Silk::FiberSemaphore limit;
+    limit.setLimit(2);
+    std::atomic<size_t> active = 0;
+    std::atomic<size_t> max_active = 0;
+    std::atomic<size_t> finished = 0;
+
+    EXPECT_EQ(Silk::runBlocking([&]
+    {
+        auto task = [&]
+        {
+            size_t now = ++active;
+            size_t prev = max_active.load();
+            while (prev < now && !max_active.compare_exchange_weak(prev, now))
+            {
+            }
+            silk::FiberScheduler::yield();
+            --active;
+            ++finished;
+        };
+
+        /// Each tracker alone would run 4 tasks at once.
+        Silk::FiberTaskTracker first(/* max_tasks= */ 8, /* max_inflight= */ 4, nullptr, &limit);
+        Silk::FiberTaskTracker second(/* max_tasks= */ 8, /* max_inflight= */ 4, nullptr, &limit);
+        for (size_t i = 0; i < 8; ++i)
+        {
+            first.add(task);
+            second.add(task);
+        }
+        first.waitAll();
+        second.waitAll();
+        return 0;
+    }), 0);
+
+    EXPECT_EQ(finished, 16);
+    EXPECT_LE(max_active, 2);
+}
+
+/// With a limit of one permit, the next task can start only if the permit of a task that never ran came back.
+TEST_F(SilkFiberTaskTrackerTest, PermitOfTaskThatDidNotRunIsReleased)
+{
+    Silk::FiberSemaphore limit;
+    limit.setLimit(1);
+    int spawn_error_code = 0;
+    int main_error_code = 0;
+    std::atomic<size_t> finished = 0;
+
+    EXPECT_EQ(Silk::runBlocking([&]
+    {
+        Silk::FiberTaskTracker tracker(/* max_tasks= */ 3, /* max_inflight= */ 3, nullptr, &limit);
+
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::silk_fiber_task_tracker_spawn_failure);
+        try
+        {
+            tracker.add([] {});
+        }
+        catch (const DB::Exception & e)
+        {
+            spawn_error_code = e.code();
+        }
+
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::silk_fiber_main_failure);
+        tracker.add([] {});
+        try
+        {
+            tracker.waitAll();
+        }
+        catch (const DB::Exception & e)
+        {
+            main_error_code = e.code();
+        }
+
+        tracker.add([&] { ++finished; });
+        tracker.waitAll();
+        return 0;
+    }), 0);
+
+    EXPECT_EQ(spawn_error_code, DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
+    EXPECT_EQ(main_error_code, DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
+    EXPECT_EQ(finished, 1);
 }
 
 #endif

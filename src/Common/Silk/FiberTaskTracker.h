@@ -4,6 +4,7 @@
 
 #if USE_SILK
 
+#include <Common/Silk/FiberSemaphore.h>
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <silk/fibers/future.h>
@@ -12,6 +13,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace Silk
@@ -27,12 +29,16 @@ namespace Silk
 /// A task runs attached to `thread_group`, and under a `DB::ThreadStatus::QueryCancellationBlocker` if `add` was
 /// called under one, as a `ThreadPool` job does. Silk signals the future before it destroys the fiber, so a task
 /// releases its callback and the group reference itself before it finishes.
+///
+/// With `limit`, every task also holds a permit of that semaphore, which bounds the tasks of all trackers that share it.
+/// `add` takes the permit before it starts the fiber, so a caller waits instead of starting fibers that would only wait,
+/// and such a tracker is used in a fiber.
 class FiberTaskTracker
 {
 public:
     using Callback = std::function<void()>;
 
-    FiberTaskTracker(size_t max_tasks, size_t max_inflight, DB::ThreadGroupPtr thread_group_);
+    FiberTaskTracker(size_t max_tasks, size_t max_inflight, DB::ThreadGroupPtr thread_group_, FiberSemaphore * limit_ = nullptr);
     ~FiberTaskTracker();
 
     FiberTaskTracker(const FiberTaskTracker &) = delete;
@@ -57,6 +63,8 @@ private:
         std::exception_ptr exception;
         bool query_cancellation_blocked = false;
         bool started = false;
+        /// A permit of `limit`, from `add` until the task ends, or `finish` if the task never ran.
+        std::optional<FiberSemaphore::Permit> permit;
     };
 
     static int runTask(Slot & slot) noexcept;
@@ -65,6 +73,7 @@ private:
     std::exception_ptr finish(size_t index);
 
     const DB::ThreadGroupPtr thread_group;
+    FiberSemaphore * const limit;
     const size_t slot_count;
     const std::unique_ptr<Slot[]> slots;
     /// The futures of all slots, for `silk::FiberFuture::waitForMultiple`.
