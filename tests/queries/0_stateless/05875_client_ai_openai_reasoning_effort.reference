@@ -1,0 +1,4 @@
+gpt-5.1: reasoning_effort = none
+gpt-5.4: reasoning_effort = none
+gpt-5-mini: reasoning_effort = minimal
+gpt-4o: reasoning_effort = not sent
