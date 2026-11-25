@@ -327,7 +327,6 @@ struct PreparedJoinKeys
     {
         ready_begin = range.first;
         prepare_end = range.second;
-        /// So that a search that stops early builds few keys it does not read.
         next_chunk_rows = small_first_chunks ? min_chunk_rows : max_chunk_rows;
         skip_rows = skip;
         prepared_keys.clear();

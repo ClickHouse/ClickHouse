@@ -41,7 +41,7 @@ struct LeftBlockState
 
     /// The work of the two-step paths for the current batch, over all disjuncts. Their contents are dead between batches.
     /// Only their capacity lasts across the calls of the block.
-    /// The match words of the batch (`JoinRightColumns::match_words`).
+    /// The match words of the batch (`JoinRightColumnsData::match_words`).
     PaddedPODArray<MatchWord> match_words;
     /// For a join with an additional filter and a used flag per key: the cell offset of the key of each row of the batch.
     PODArray<size_t> key_offsets;

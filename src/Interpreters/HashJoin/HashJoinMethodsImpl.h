@@ -7,7 +7,6 @@
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 
 #include <algorithm>
-#include <span>
 #include <type_traits>
 
 namespace DB
@@ -101,11 +100,8 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
 
-    const auto functions = JoinProbe::selectFunctions<KIND, STRICTNESS, MapsTemplate>(
-        join.keyType(), join.data->tables.size(), added_columns.additional_filter_expression != nullptr);
-    size_t processed_rows
-        = JoinProbe::JoinRightColumns(functions, join.data->tables, added_columns, left_block_state, *join.used_flags, block.getSelector())
-              .run();
+    size_t processed_rows = JoinProbe::probeBlock<KIND, STRICTNESS, MapsTemplate>(
+        join.keyType(), join.data->tables, *join.used_flags, added_columns, left_block_state, block.getSelector());
     if (processed_rows == block.rows())
         left_block_state = {};
 
