@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <base/types.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/CurrentMetrics.h>
@@ -8,6 +10,12 @@
 #include <memory>
 #include <mutex>
 
+#if USE_SILK
+namespace Silk
+{
+class FiberSemaphore;
+}
+#endif
 
 namespace DB
 {
@@ -78,5 +86,11 @@ private:
 #define DECLARE_STATIC_THREAD_POOL_GETTER(SUFFIX, NAME, METRIC) StaticThreadPool & get##SUFFIX##ThreadPool();
 APPLY_FOR_STATIC_THREAD_POOLS(DECLARE_STATIC_THREAD_POOL_GETTER)
 #undef DECLARE_STATIC_THREAD_POOL_GETTER
+
+#if USE_SILK
+/// The fiber counterpart of the backups IO pool: bounds the S3 requests that copies of backups run in fibers by the
+/// same `max_backups_io_thread_pool_size` that bounds the threads of the pool. No limit until the server sets one.
+Silk::FiberSemaphore & getBackupsIOFiberSemaphore();
+#endif
 
 }

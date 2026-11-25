@@ -11,6 +11,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
+#include <IO/S3/copyS3File.h>
 
 #include <functional>
 
@@ -78,6 +79,7 @@ private:
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
+    const S3MultipartCopyExecution multipart_copy_execution;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     S3BackupDiskClientFactory disk_client_factory;
@@ -141,6 +143,7 @@ private:
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
+    const S3MultipartCopyExecution multipart_copy_execution;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     S3Capabilities s3_capabilities;

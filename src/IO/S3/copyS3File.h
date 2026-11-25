@@ -20,6 +20,16 @@ class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
+/// Where a native multipart copy runs: `CreateMultipartUpload`, the `UploadPartCopy` requests,
+/// and `CompleteMultipartUpload` or `AbortMultipartUpload`. Other routes of the copy are not affected.
+enum class S3MultipartCopyExecution : uint8_t
+{
+    /// The calling thread runs the lifecycle, parts are scheduled with `schedule`.
+    ThreadPool,
+    /// Silk fibers run the whole lifecycle, the calling thread waits for it.
+    Fibers,
+};
+
 /// Builds the S3 upload request body for the part [offset, offset + size) of the source.
 /// The part is read fully into memory up front, so the returned body has no failable inner
 /// source buffer: the AWS SDK can rewind (clear(); seekg(0)) and resend the body on a retry
@@ -51,7 +61,8 @@ bool copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    S3MultipartCopyExecution multipart_copy_execution = S3MultipartCopyExecution::ThreadPool);
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -74,7 +85,8 @@ bool copyS3FileRange(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    S3MultipartCopyExecution multipart_copy_execution = S3MultipartCopyExecution::ThreadPool);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3

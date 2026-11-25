@@ -1,6 +1,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/Silk/FiberSemaphore.h>
 #include <Common/ThreadPool.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/Field.h>
@@ -149,6 +150,14 @@ StaticThreadPool & get##SUFFIX##ThreadPool() \
 /// NOLINTEND(bugprone-macro-parentheses)
 APPLY_FOR_STATIC_THREAD_POOLS(DEFINE_STATIC_THREAD_POOL_GETTER)
 #undef DEFINE_STATIC_THREAD_POOL_GETTER
+
+#if USE_SILK
+Silk::FiberSemaphore & getBackupsIOFiberSemaphore()
+{
+    static Silk::FiberSemaphore instance;
+    return instance;
+}
+#endif
 
 void StaticThreadPool::shutdownAll()
 {

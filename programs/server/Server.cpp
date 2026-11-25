@@ -170,6 +170,7 @@
 
 #include "config.h"
 #if USE_SILK
+#    include <Common/Silk/FiberSemaphore.h>
 #    include <glibc-rseq/rseq.h>
 #endif
 #include <Common/config_version.h>
@@ -1815,6 +1816,9 @@ try
         server_settings[ServerSetting::max_backups_io_thread_pool_size],
         server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
         server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
+#if USE_SILK
+    getBackupsIOFiberSemaphore().setLimit(server_settings[ServerSetting::max_backups_io_thread_pool_size]);
+#endif
 
     getFetchPartitionThreadPool().initialize(
         server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
@@ -3049,6 +3053,9 @@ try
                 new_server_settings[ServerSetting::max_backups_io_thread_pool_size],
                 new_server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
                 new_server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
+#if USE_SILK
+            getBackupsIOFiberSemaphore().setLimit(new_server_settings[ServerSetting::max_backups_io_thread_pool_size]);
+#endif
 
             getFetchPartitionThreadPool().reloadConfiguration(
                 new_server_settings[ServerSetting::max_fetch_partition_thread_pool_size],

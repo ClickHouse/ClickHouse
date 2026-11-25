@@ -758,6 +758,10 @@ When set to `false`, each thread handles s3 request backoff independently of the
         {"25.10", false, false, "Disable the setting by default"}, \
         {"25.8", false, false, "New setting"}, \
         {"25.6", false, false, "New setting"}) \
+    DECLARE(Bool, backup_restore_s3_use_silk, false, R"(
+Experimental. Run native multipart copies to S3 made by `BACKUP`, `RESTORE` and copies inside a backup in Silk fibers: `CreateMultipartUpload`, the parallel `UploadPartCopy` requests, and `CompleteMultipartUpload` or `AbortMultipartUpload`. The backup thread waits for the copy to finish. On the server, at most `max_backups_io_thread_pool_size` `UploadPartCopy` requests made in fibers run at once, as at most that many threads of the backups IO pool copy parts without fibers. Requires the server setting `enable_silk_runtime`.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New experimental setting to run native multipart copies of backups to S3 in Silk fibers."}) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \

@@ -955,6 +955,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.", ValueType::Number) \
+    M(S3MultipartCopyInFibers, "Number of native multipart copies to S3 whose lifecycle ran in Silk fibers (see the setting `backup_restore_s3_use_silk`).", ValueType::Number) \
     M(S3UploadPart, "Number of S3 API UploadPart calls.", ValueType::Number) \
     M(S3AbortMultipartUpload, "Number of S3 API AbortMultipartUpload calls.", ValueType::Number) \
     M(S3CompleteMultipartUpload, "Number of S3 API CompleteMultipartUpload calls.", ValueType::Number) \
