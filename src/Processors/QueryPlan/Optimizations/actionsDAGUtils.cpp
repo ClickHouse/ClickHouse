@@ -1107,10 +1107,26 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
             continue;
         }
 
+        /// An element of an array column: an index on the array can skip the granules that have no value of the filter.
+        bool is_array_element = false;
+        bool is_left_array_join = false;
+        if (key_arg->type == ActionsDAG::ActionType::ARRAY_JOIN)
+        {
+            is_array_element = true;
+            key_arg = key_arg->children.front();
+            is_left_array_join = key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+                && key_arg->function_base->getName() == "emptyArrayToSingle";
+            if (is_left_array_join)
+                key_arg = key_arg->children.front();
+            while (key_arg->type == ActionsDAG::ActionType::ALIAS)
+                key_arg = key_arg->children.front();
+        }
+
         if (key_arg->type != ActionsDAG::ActionType::INPUT)
             continue;
 
-        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type, /*is_global_row_index=*/false, cast});
+        res.push_back(
+            {std::move(filter_id), key_arg->result_name, key_arg->result_type, /*is_global_row_index=*/false, cast, is_array_element, is_left_array_join});
     }
 
     return res;

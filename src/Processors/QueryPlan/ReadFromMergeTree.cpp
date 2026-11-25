@@ -3442,6 +3442,13 @@ static bool isRuntimeFilterGlobalRowIndexUsable(const StorageInMemoryMetadata & 
     return !columns.has("_part_offset") && !columns.has("_part_starting_offset");
 }
 
+static bool isRuntimeFilterSkipIndexUsable(const String & index_type, const RuntimeFilterIndexAnalysisDescriptor & descriptor)
+{
+    if (descriptor.is_array_element)
+        return index_type == "bloom_filter" || index_type == "text";
+    return index_type == "bloom_filter" || index_type == "minmax" || index_type == "set";
+}
+
 void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
     const auto & column_name = descriptor.key_column_name;
@@ -3457,14 +3464,15 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const Runtim
     }
 
     /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
+    /// For an element of an array column, only a bloom_filter or text index of the array knows the elements.
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
-    const bool is_primary_key_column
-        = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
+    const bool is_primary_key_column = !descriptor.is_array_element
+        && std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
 
     bool has_applicable_skip_index = false;
     for (const auto & index : metadata.getSecondaryIndices())
     {
-        if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
+        if (!isRuntimeFilterSkipIndexUsable(index.type, descriptor))
             continue;
         if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
         {
@@ -6283,7 +6291,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 runtime_prune_global_row_index = isRuntimeFilterGlobalRowIndexUsable(metadata);
                 continue;
             }
-            if (std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
+            if (!descr.is_array_element && std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
             {
                 runtime_prune_primary_key = true;
                 continue;
@@ -6294,7 +6302,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             {
                 if (ignored_index_names.contains(index.name))
                     continue;
-                if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
+                if (!isRuntimeFilterSkipIndexUsable(index.type, descr))
                     continue;
                 if (std::find(index.column_names.begin(), index.column_names.end(), descr.key_column_name) == index.column_names.end())
                     continue;
@@ -6378,7 +6386,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             [lookup = runtime_filter_lookup, descriptors = std::move(key_descriptors), bloom_filter_in_cap]
             (const IMergeTreeIndex & index) -> bool
             {
-                if (index.index.type != "bloom_filter")
+                /// the cost of these indexes grows with the number of values
+                if (index.index.type != "bloom_filter" && index.index.type != "text")
                     return true;
                 for (const auto & descr : descriptors)
                 {

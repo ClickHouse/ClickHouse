@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinUtils.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -716,6 +717,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     /// column's name. Unlike that pass, nothing is attached to the step's filter and no
     /// index analysis is redone: only the applied `__applyFilter` conjuncts are registered.
     VectorWithMemoryTracking<const ActionsDAG *> expression_dags;
+    ListWithMemoryTracking<ActionsDAG> array_join_dags;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (const auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
@@ -728,7 +730,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
             {
                 if (read_step)
                     read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
-                else if (object_storage_read_step && !descr.is_global_row_index)
+                else if (object_storage_read_step && !descr.is_global_row_index && !descr.is_array_element)
                     object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
             }
         }
@@ -738,6 +740,14 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
             if (expression_step->getExpression().hasArrayJoin())
                 break;
             expression_dags.push_back(&expression_step->getExpression());
+        }
+        else if (const auto * array_join_step = typeid_cast<ArrayJoinStep *>(iter->node->step.get()))
+        {
+            /// a key above the step becomes `arrayJoin(column)`
+            auto dag = array_join_step->toActionsDAG();
+            if (!dag)
+                break;
+            expression_dags.push_back(&array_join_dags.emplace_back(std::move(*dag)));
         }
         else
             break;
