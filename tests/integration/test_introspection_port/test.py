@@ -15,7 +15,12 @@ node = cluster.add_instance(
     main_configs=["configs/introspection.xml", "configs/startup_scripts.xml"],
 )
 node_reload = cluster.add_instance(
-    "node_reload", main_configs=["configs/introspection.xml", "configs/node_reload.xml"]
+    "node_reload",
+    main_configs=[
+        "configs/introspection.xml",
+        "configs/introspection_ipv6.xml",
+        "configs/node_reload.xml",
+    ],
 )
 
 INTROSPECTION_PORT = 9010
@@ -102,15 +107,19 @@ def test_introspection_port(started_cluster):
 
 
 @pytest.mark.parametrize(
-    "endpoint",
+    "endpoint, port",
     [
         # The introspection flag is removed from the running endpoint.
-        "introspection_native",
+        ("introspection_native", INTROSPECTION_PORT),
+        # The same, and the endpoint moves to a free port.
+        ("introspection_native", 9013),
         # The introspection endpoint is replaced by a regular one on its port.
-        "native_on_introspection_port",
+        ("native_on_introspection_port", INTROSPECTION_PORT),
     ],
 )
-def test_reload_with_regular_endpoint_on_introspection_port(started_cluster, endpoint):
+def test_reload_with_regular_endpoint_on_introspection_port(
+    started_cluster, endpoint, port
+):
     client = Client(
         node_reload.ip_address, INTROSPECTION_PORT, command=cluster.client_bin_path
     )
@@ -118,7 +127,7 @@ def test_reload_with_regular_endpoint_on_introspection_port(started_cluster, end
     try:
         node_reload.replace_config(
             INTROSPECTION_CONFIG,
-            f"<clickhouse><protocols><{endpoint}><type>tcp</type><port>{INTROSPECTION_PORT}</port></{endpoint}></protocols></clickhouse>",
+            f"<clickhouse><protocols><{endpoint}><type>tcp</type><port>{port}</port></{endpoint}></protocols></clickhouse>",
         )
         # The introspection listener is not reconfigured on reload and keeps its address until restart.
         for query in [
@@ -156,4 +165,22 @@ def test_reload_marking_regular_endpoint_as_introspection(started_cluster):
         node_reload.replace_in_config(
             NODE_RELOAD_CONFIG, "<introspection>true</introspection>", ""
         )
+        node_reload.query("SYSTEM RELOAD CONFIG")
+
+
+@pytest.mark.parametrize("port_name", ["grpc_port", "arrowflight_port"])
+def test_reload_adding_grpc_port_on_introspection_port(started_cluster, port_name):
+    # gRPC treats `0.0.0.0` as a dual-stack wildcard, so it overlaps the introspection listener on `::`.
+    warning = f"for {port_name}: the address is used by the introspection listener"
+    port_config = f"<{port_name}>9012</{port_name}>"
+    try:
+        node_reload.replace_in_config(
+            NODE_RELOAD_CONFIG,
+            "<listen_try>0</listen_try>",
+            f"<listen_try>0</listen_try>{port_config}",
+        )
+        node_reload.query("SYSTEM RELOAD CONFIG")
+        assert node_reload.contains_in_log(warning)
+    finally:
+        node_reload.replace_in_config(NODE_RELOAD_CONFIG, port_config, "")
         node_reload.query("SYSTEM RELOAD CONFIG")

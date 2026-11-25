@@ -1,0 +1,10 @@
+<clickhouse>
+    <protocols>
+        <introspection_ipv6>
+            <type>tcp</type>
+            <introspection>true</introspection>
+            <host>::</host>
+            <port>9012</port>
+        </introspection_ipv6>
+    </protocols>
+</clickhouse>

@@ -811,13 +811,13 @@ bool listenHostsOverlap(const std::string & lhs, const std::string & rhs)
     return unmapped(lhs_address) == unmapped(rhs_address) || covers(lhs_address, rhs_address) || covers(rhs_address, lhs_address);
 }
 
-#if USE_GRPC || USE_ARROWFLIGHT
 bool isWildcardListenHost(const std::string & listen_host)
 {
     Poco::Net::IPAddress address;
     return Poco::Net::IPAddress::tryParse(listen_host, address) && address.isWildcard();
 }
 
+#if USE_GRPC || USE_ARROWFLIGHT
 /// gRPC treats `::` and `0.0.0.0` as one family-agnostic wildcard: for either of them it binds a
 /// dual-stack `::` socket and falls back to `0.0.0.0` only on a host without IPv6 (see
 /// `add_wildcard_addrs_to_server` in `contrib/grpc`). A wildcard listener therefore overlaps every
@@ -851,9 +851,13 @@ void Server::createServer(
     if (introspection_servers_ptr && global_context->isServerCompletelyStarted() && !config.getString(port_name, "").empty())
     {
         const auto port = config.getInt(port_name);
+        /// A gRPC-based listener on a wildcard address overlaps every listener on its port, see `getGRPCListenHosts`.
+        const std::string_view name = port_name;
+        const bool is_grpc_wildcard = (name == "grpc_port" || name == "arrowflight_port") && isWildcardListenHost(listen_host);
         const auto overlaps = [&](const ProtocolServerAdapter & server)
         {
-            return !server.isStopping() && server.portNumber() == port && listenHostsOverlap(server.getListenHost(), listen_host);
+            return !server.isStopping() && server.portNumber() == port
+                && (is_grpc_wildcard || listenHostsOverlap(server.getListenHost(), listen_host));
         };
         const auto is_listening = [&](const ProtocolServerAdapter & server)
         {
