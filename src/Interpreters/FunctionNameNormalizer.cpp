@@ -54,9 +54,13 @@ void FunctionNameNormalizer::visit(IAST * ast)
     // have the same name as function, e.g. Log.
     if (auto * node_storage = ast->as<ASTStorage>())
     {
-        visit(node_storage->partition_by);
+        /// An Iceberg table's `PARTITION BY` and `ORDER BY` name Iceberg transforms, e.g. `day`, not the aliases of other functions.
+        if (!node_storage->engine || !node_storage->engine->name.starts_with("Iceberg"))
+        {
+            visit(node_storage->partition_by);
+            visit(node_storage->order_by);
+        }
         visit(node_storage->primary_key);
-        visit(node_storage->order_by);
         visit(node_storage->sample_by);
         visit(node_storage->ttl_table);
         return;

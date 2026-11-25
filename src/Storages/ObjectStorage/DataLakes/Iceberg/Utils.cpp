@@ -757,13 +757,14 @@ bool commitMetadataFile(
 
 String normalizeIcebergTransformFunctionName(const String & function_name)
 {
-    if (function_name == "toYearNumSinceEpoch")
+    const String lower_name = Poco::toLower(function_name);
+    if (function_name == "toYearNumSinceEpoch" || lower_name == "year")
         return "icebergYear";
-    if (function_name == "toMonthNumSinceEpoch")
+    if (function_name == "toMonthNumSinceEpoch" || lower_name == "month")
         return "icebergMonth";
-    if (function_name == "toRelativeDayNum")
+    if (function_name == "toRelativeDayNum" || lower_name == "day")
         return "icebergDay";
-    if (function_name == "toRelativeHourNum")
+    if (function_name == "toRelativeHourNum" || lower_name == "hour")
         return "icebergHour";
     return function_name;
 }
