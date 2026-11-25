@@ -308,7 +308,8 @@ def setup_build_caches_env(info):
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
 
 
-THINLTO_CACHE_S3_PATH = f"{Settings.CACHE_S3_PATH}/thinlto_cache"
+# Next to sccache: PR runners can only read the `ccache` prefix.
+THINLTO_CACHE_S3_PATH = f"{Settings.S3_ARTIFACT_BUCKET}/ccache/thinlto_cache"
 THINLTO_CACHE_DIR = f"{temp_dir}/thinlto_cache"
 THINLTO_CACHE_MARKER = f"{temp_dir}/thinlto_cache.restored"
 
