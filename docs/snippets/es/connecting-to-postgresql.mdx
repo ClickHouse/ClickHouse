@@ -19,9 +19,7 @@ Esta página cubre las siguientes opciones para integrar PostgreSQL con ClickHou
   Consulta nuestro servicio [ClickHouse Managed Postgres](/es/products/managed-postgres/overview). Con almacenamiento NVMe ubicado físicamente junto al cómputo, ofrece un rendimiento hasta 10 veces más rápido para cargas de trabajo cuyo rendimiento depende del disco en comparación con alternativas que usan almacenamiento conectado por red, como EBS, y te permite replicar tus datos de Postgres en ClickHouse mediante el conector Postgres CDC de ClickPipes.
 </Tip>
 
-<div id="using-the-postgresql-table-engine">
-  ## Uso del motor de tabla PostgreSQL
-</div>
+## Uso del motor de tabla PostgreSQL {#using-the-postgresql-table-engine}
 
 El motor de tabla `PostgreSQL` permite realizar operaciones **SELECT** y **INSERT** sobre datos almacenados en un servidor PostgreSQL remoto desde ClickHouse.
 Este artículo ilustra métodos básicos de integración utilizando una sola tabla.
@@ -205,9 +203,7 @@ Este artículo ilustra métodos básicos de integración utilizando una sola tab
 Este ejemplo mostró la integración básica entre PostgreSQL y ClickHouse mediante el motor de tabla `PostrgeSQL`.
 Consulta la [página de documentación del motor de tabla PostgreSQL](/es/reference/engines/table-engines/integrations/postgresql) para conocer más funciones, como especificar esquemas, devolver solo un subconjunto de columnas y conectarse a múltiples réplicas. Consulta también la entrada del blog [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres).
 
-<div id="using-the-materializedpostgresql-database-engine">
-  ## Uso del motor de base de datos MaterializedPostgreSQL
-</div>
+## Uso del motor de base de datos MaterializedPostgreSQL {#using-the-materializedpostgresql-database-engine}
 
 <CloudNotSupportedBadge />
 
@@ -303,7 +299,7 @@ Este artículo ilustra métodos básicos de integración usando una base de dato
     2. Habilite la función experimental de PostgreSQL para el motor de base de datos:
 
     ```sql
-    SET allow_experimental_database_materialized_postgresql=1
+    SET enable_database_materialized_postgresql=1
     ```
 
     3. Cree la nueva base de datos que se va a replicar y defina la tabla inicial:

@@ -7,27 +7,23 @@ doc_type: 'guide'
 ---
 
 確約契約で前払いクレジットを購入した場合、そのクレジットを ClickHouse 組織間でどのように割り当てるかを管理できます。
-残高の確認や組織間でのクレジットの移動には、**Prepaid credits** ページを使用します。
+残高の確認や組織間でのクレジットの移管には、**前払いクレジット** ページを使用します。
 
 ## 前払いクレジットへのアクセス {#access-prepaid-credits}
 
-ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Prepaid credits** を選択します。
+ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **前払いクレジット** を選択します。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Prepaid credits under Account in the Settings sidebar](/images/cloud/reference/billing/prepaid-credits-navigation.png)
-
-</Frame>
-
+  <Frame>
+    ![前払いクレジット under Account in the Settings sidebar](/images/cloud/reference/billing/prepaid-credits-navigation.png)
+  </Frame>
 </div>
 
 前払いクレジットの残高を表示するには、確約契約のクレジットが割り当てられた組織で、次のいずれかのロールを持っている必要があります。
 
 * [Admin](/ja/products/cloud/reference/security/console-roles#organization-roles)
 * [Billing](/ja/products/cloud/reference/security/console-roles#organization-roles)
-* [請求情報の表示または管理](/ja/products/cloud/reference/security/console-roles#console-permissions)の権限を付与する[カスタムロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#create-custom-role)
+* [請求情報の表示または管理](/ja/products/cloud/reference/security/console-roles#console-permissions)のアクセス許可を付与する[カスタムロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#create-custom-role)
 
 このページには、これらのロールまたはアクセス許可を持つすべての組織が表示されます。前払いクレジットのない組織も含まれます。
 
@@ -67,16 +63,12 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 | **Expires soon**       | 組織に有効な前払い残高が 1 つだけあり、60 日以内に有効期限が切れます。このステータスは、残高の有効期限が切れるまで維持されます。 |
 | **Expired**            | 組織のすべての前払い残高の終了日が過去の日付になっています。                                      |
 | **Spent**              | 組織のすべての前払い残高が消費済みですが、有効期限は切れていません。このステータスは **Active** よりも優先されます。    |
-| **No Prepaid Credits** | 組織に前払いクレジットがありません。                                                  |
+| **前払いクレジットなし** | 組織に前払いクレジットがありません。                                                  |
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Prepaid credit summary metrics and balances by organization](/images/cloud/reference/billing/prepaid-credits-balances.png)
-
-</Frame>
-
+  <Frame>
+    ![前払いクレジットのサマリーメトリクスと組織別の残高](/images/cloud/reference/billing/prepaid-credits-balances.png)
+  </Frame>
 </div>
 
 ## クレジットの移管 {#transfer-credits}
@@ -85,30 +77,26 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 
 クレジットを移管するには、[Manage billing details](/ja/products/cloud/reference/security/console-roles#console-permissions) のアクセス許可が必要です。View billing details のアクセス許可では、残高の閲覧はできますが移管はできません。
 
-1. 移管元の組織の行にある **Transfer** をクリックします。
+1. 移管元の組織の行にある **移管** をクリックします。
 2. 有効なクレジットグラントを選択します。パネルには、移管元の組織の有効なグラントとその有効期限が一覧表示されます。
 3. アクセス権を持つ組織の中から移管先の組織を選択します。
 4. 移管する金額を入力します。
-5. 移管後の残高を確認し、**Transfer credits** をクリックします。
+5. 移管後の残高を確認し、**クレジットを移管** をクリックします。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![移管元のグラント、移管先の組織、移管金額、移管後の残高を表示したクレジット移管パネル](/images/cloud/reference/billing/prepaid-credits-transfer.png)
-
-</Frame>
-
+  <Frame>
+    ![移管元のグラント、移管先の組織、移管額、および移管後の残高が表示されたクレジット移管パネル](/images/cloud/reference/billing/prepaid-credits-transfer.png)
+  </Frame>
 </div>
 
-### 移管のルール {#transfer-rules}
+### 移管ルール {#transfer-rules}
 
-* 移管できるのは**有効な 前払いクレジット** のみです。trial credits は移管できません。
-* クレジットの移管により、移管元および移管先の組織で利用可能な 前払いクレジット が変動します。確約契約に基づいて付与された有効なクレジットの合計は変わりません。
-* trial 中の組織、または未払いによる猶予期間中の組織に 前払いクレジット を移管すると、その組織は prepaid 組織となり、移管したクレジットの消費を開始します。
-* 移管元組織から残りのすべての 前払いクレジット を移管できるのは、その組織に[バックアップの支払い方法](/ja/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org)が設定されている場合、またはサービスが存在しない場合のみです。それ以外の場合、移管の上限は移管元組織のクレジット残高の 75% となります。
-* ClickHouse Cloud と [Bring Your Own Cloud (BYOC)](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) の組織間でクレジットを移管することはできません。
-* AWS Marketplace と Google Cloud Marketplace のように、異なるクラウドマーケットプレイス経由で請求されている組織間でクレジットを移管することはできません。
+* 移管できるのは**有効な前払いクレジット**のみです。トライアルクレジットは移管できません。
+* クレジットを移管すると、移管元と移管先の組織で利用可能な前払いクレジットが変わります。確約契約に基づいて付与された有効なクレジットの総額は変わりません。
+* 無料試用中、または未払いによる猶予期間中の組織に前払いクレジットを移管すると、その組織は前払い組織となり、移管されたクレジットの消費が始まります。
+* 移管元の組織から残りの前払いクレジットをすべて移管できるのは、その組織に[予備の支払い方法](/ja/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org)が設定されている場合、またはサービスが存在しない場合に限られます。それ以外の場合、移管できるのは移管元の組織のクレジット残高の 75% までです。
+* ClickHouse Cloud の組織と [Bring Your Own Cloud (BYOC)](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) の組織の間では、クレジットを移管できません。
+* AWS Marketplace と Google Cloud Marketplace のように、異なるクラウドマーケットプレイスを通じて請求される組織間では、クレジットを移管できません。
 
 ### 移管後のマーケットプレイス請求 {#marketplace-billing-after-a-transfer}
 

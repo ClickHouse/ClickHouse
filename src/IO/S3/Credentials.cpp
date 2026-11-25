@@ -53,6 +53,7 @@ namespace S3
 #    include <aws/core/platform/Environment.h>
 #    include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
 #    include <aws/core/utils/json/JsonSerializer.h>
+#    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/utils/DateTime.h>
 #    include <aws/core/http/HttpClientFactory.h>
@@ -963,11 +964,39 @@ SSOCredentialsProvider::SSOCredentialsProvider(DB::S3::PocoHTTPClientConfigurati
 
 Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
 {
-    if (Silk::isInsideFiber())
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "SSO credentials are not implemented for fibers");
-    refreshIfExpired();
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    std::lock_guard lock(get_aws_credentials_mutex);
+    if (IsSetNeedRefresh() || areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
+        Reload();
     return credentials;
+}
+
+void SSOCredentialsProvider::SetNeedRefresh()
+{
+    std::lock_guard lock(get_aws_credentials_mutex);
+    AWSCredentialsProvider::SetNeedRefresh();
+}
+
+Aws::Auth::AWSBearerToken SSOCredentialsProvider::BearerTokenProvider::GetAWSBearerToken()
+{
+    /// A copy of `Aws::Auth::SSOBearerTokenProvider::GetAWSBearerToken` without its `ReaderWriterLock`, which it holds
+    /// across file and network I/O: the SDK cache and refresh policy are kept.
+    if (m_token.IsEmpty())
+        Reload();
+
+    if (!m_token.IsEmpty())
+    {
+        const auto now = Aws::Utils::DateTime::Now();
+        if (now >= m_token.GetExpiration() - std::chrono::seconds(REFRESH_WINDOW_BEFORE_EXPIRATION_S)
+            && m_lastUpdateAttempt + std::chrono::seconds(REFRESH_ATTEMPT_INTERVAL_S) < now)
+            RefreshFromSso();
+    }
+
+    if (m_token.IsExpiredOrEmpty())
+    {
+        AWS_LOGSTREAM_ERROR("SSOBearerTokenProvider", "SSOBearerTokenProvider is unable to provide a token")
+        return Aws::Auth::AWSBearerToken("", Aws::Utils::DateTime(0.0));
+    }
+    return m_token;
 }
 
 void SSOCredentialsProvider::Reload()
@@ -975,6 +1004,10 @@ void SSOCredentialsProvider::Reload()
     auto profile = Aws::Config::GetCachedConfigProfile(profile_to_use);
     const auto access_token = [&]
     {
+        /// The SDK reads the token files here and may refresh the token of an SSO session, so this runs in thread mode,
+        /// while the request for the credentials below uses the cooperative transport of the fiber.
+        Silk::ThreadModeScope thread_mode;
+
         // If we have an SSO Session set, use the refreshed token.
         if (profile.IsSsoSessionSet())
         {
@@ -1032,20 +1065,6 @@ void SSOCredentialsProvider::Reload()
     credentials = result.creds;
 }
 
-void SSOCredentialsProvider::refreshIfExpired()
-{
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
-        return;
-
-    guard.UpgradeToWriterLock();
-
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
-        return;
-
-    Reload();
-}
-
 Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_access_token_path)
 {
     LOG_TEST(logger, "Preparing to load token from: {}", sso_access_token_path);
@@ -1086,6 +1105,69 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
 
     LOG_TEST(logger, "Unable to open token file on path: {}", sso_access_token_path);
     return "";
+}
+
+namespace
+{
+
+/// A copy of `Aws::Auth::ProfileConfigFileAWSCredentialsProvider` that serializes access with `Silk::FiberMutex` instead
+/// of the SDK `ReaderWriterLock` and reads the credentials file inside `Silk::ThreadModeScope`. Overriding `Reload` of
+/// the SDK provider is not enough: the SDK holds its native lock across `Reload`, so a fiber would enter thread mode
+/// with that lock held, and a fiber that waits for it would block its scheduler thread.
+class ProfileConfigFileAWSCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
+{
+public:
+    ProfileConfigFileAWSCredentialsProvider()
+        : profile_to_use(Aws::Auth::GetConfigProfileName())
+        , credentials_file_loader(Aws::Auth::ProfileConfigFileAWSCredentialsProvider::GetCredentialsProfileFilename())
+    {
+        LOG_DEBUG(
+            getLogger("ProfileConfigFileAWSCredentialsProvider"),
+            "Setting provider to read credentials from {} for credentials file and {} for the config file, for use with profile {}",
+            Aws::Auth::ProfileConfigFileAWSCredentialsProvider::GetCredentialsProfileFilename(),
+            Aws::Auth::GetConfigProfileFilename(),
+            profile_to_use);
+    }
+
+    Aws::Auth::AWSCredentials GetAWSCredentials() override
+    {
+        std::lock_guard lock(get_aws_credentials_mutex);
+        if (IsTimeToRefresh(Aws::Auth::REFRESH_THRESHOLD))
+            Reload();
+
+        const auto & profiles = credentials_file_loader.GetProfiles();
+        const auto profile = profiles.find(profile_to_use);
+        if (profile == profiles.end())
+            return {};
+
+        auto credentials = profile->second.GetCredentials();
+        if (!credentials.IsEmpty())
+            credentials.AddUserAgentFeature(Aws::Client::UserAgentFeature::CREDENTIALS_PROFILE);
+        return credentials;
+    }
+
+    void SetNeedRefresh() override
+    {
+        std::lock_guard lock(get_aws_credentials_mutex);
+        AWSCredentialsProvider::SetNeedRefresh();
+    }
+
+private:
+    void Reload() override
+    {
+        {
+            Silk::ThreadModeScope thread_mode;
+            credentials_file_loader.Load();
+        }
+        /// Preserve the SDK's refresh interval even when the file is missing or empty.
+        AWSCredentialsProvider::Reload();
+    }
+
+    const Aws::String profile_to_use;
+    Aws::Config::AWSConfigFileProfileConfigLoader credentials_file_loader;
+    Silk::FiberMutex get_aws_credentials_mutex;
+};
+
 }
 
 Aws::Auth::AWSCredentials GeneralHTTPCredentialsProvider::GetAWSCredentials()
@@ -1253,7 +1335,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         /// disabled the chain stays empty and the request goes out unsigned (anonymous).
         /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
         /// in chain.
-        AddProvider(Aws::MakeShared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>("S3Credentials"));
+        AddProvider(Aws::MakeShared<ProfileConfigFileAWSCredentialsProvider>("S3Credentials"));
     }
 }
 
