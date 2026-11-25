@@ -15,6 +15,7 @@ WITH if(changed, trimBoth(value), 'user_files/') AS user_files_path,
 SELECT
     concat(base, 'part/') AS part,
     concat(base, 'sort/') AS sort,
+    concat(base, 'sort_hour_date/') AS sort_hour_date,
     concat(base, 'day_of_month/') AS day_of_month,
     concat(base, 'day_of_month_alias/') AS day_of_month_alias
 FROM system.server_settings WHERE name = 'user_files_path';
@@ -41,6 +42,14 @@ INSERT INTO t_sort SELECT 1, toDateTime('2026-01-01 10:00:00', 'UTC');
 SELECT 'sort', k, toString(a, 'UTC') FROM t_sort;
 SELECT 'sort key', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_sort';
 
+-- `hour` takes only timestamps, like `icebergHour`: the rejected CREATE writes nothing, so the path stays free.
+CREATE TABLE t_sort_hour_date (k Int64, b Date)
+ENGINE = IcebergLocal((SELECT sort_hour_date FROM iceberg_path), 'Parquet')
+ORDER BY (hour(b)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+CREATE TABLE t_sort_hour_date (k Int64, b Date)
+ENGINE = IcebergLocal((SELECT sort_hour_date FROM iceberg_path), 'Parquet')
+ORDER BY (b);
+
 -- The ClickHouse functions keep their own meaning: day of month is not an Iceberg transform.
 CREATE TABLE t_day_of_month (k Int64, a DateTime('UTC'))
 ENGINE = IcebergLocal((SELECT day_of_month FROM iceberg_path), 'Parquet')
@@ -55,4 +64,5 @@ SELECT 'merge tree', partition_key FROM system.tables WHERE database = currentDa
 
 DROP TABLE t_part;
 DROP TABLE t_sort;
+DROP TABLE t_sort_hour_date;
 DROP TABLE t_mt;

@@ -1761,6 +1761,14 @@ static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPt
     return result;
 }
 
+static void mapIcebergTransformFunctionNames(IAST & ast)
+{
+    if (auto * function = ast.as<ASTFunction>())
+        function->name = normalizeIcebergTransformFunctionName(function->name);
+    for (const auto & child : ast.children)
+        mapIcebergTransformFunctionNames(*child);
+}
+
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
@@ -1852,7 +1860,10 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
     if (order_by)
     {
-        auto sort_columns_key_description = KeyDescription::getKeyFromAST(order_by, columns, {}, context);
+        /// Type-check with the Iceberg transforms the names stand for, e.g. `hour` as `icebergHour`, which takes only timestamps.
+        auto order_by_for_analysis = order_by->clone();
+        mapIcebergTransformFunctionNames(*order_by_for_analysis);
+        auto sort_columns_key_description = KeyDescription::getKeyFromAST(order_by_for_analysis, columns, {}, context);
 
         SortDescription sort_description;
         Names sort_columns = sort_columns_key_description.column_names;
